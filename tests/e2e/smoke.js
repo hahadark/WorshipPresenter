@@ -18,7 +18,8 @@ app.whenReady().then(async () => {
     w.webContents.on('console-message', e => { if (e.level === 'error' || /Uncaught|TypeError|ReferenceError/.test(e.message)) R.console.push(e.message.slice(0, 300)); });
     const ev = c => w.webContents.executeJavaScript(`(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)); const $ = s => document.querySelector(s); const $$ = s => [...document.querySelectorAll(s)]; try { ${c} } catch (e) { return { jsErr: String(e.stack).slice(0, 400) }; } })()`);
     const shot = name => w.webContents.capturePage().then(i => fs.writeFileSync(path.join(OUT, name + '.png'), i.toPNG()));
-    const load = async () => { await w.loadURL(`http://127.0.0.1:${port}/control/`); await wait(3500); await ev(`if (!$('#modal').hidden) $('#modalClose').click(); return 1;`); };
+    // 화면이 스스로 다시 읽으면(언어 바꿈 등) loadURL 이 ERR_ABORTED(-3) 로 끝날 수 있다 → 잠깐 뒤 다시
+    const load = async () => { for (let k = 0; ; k++) { try { await w.loadURL(`http://127.0.0.1:${port}/control/`); break; } catch (e) { if (k >= 3 || !/\(-3\)|ERR_ABORTED/.test(String(e && e.message))) throw e; await wait(1500); } } await wait(3500); await ev(`if (!$('#modal').hidden) $('#modalClose').click(); return 1;`); };
     await load();
 
     // ---- 1. 화면이 뜨고 기본 요소가 있다
