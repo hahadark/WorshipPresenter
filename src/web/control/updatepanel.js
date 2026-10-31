@@ -59,7 +59,7 @@
     on('#updOpenM', () => act('open'));
     on('#updSkip', async () => { if (await act('skip', { version: u.version })) { app.closeModal(); app.showMsg(`${u.version} 은 건너뜁니다. 다음 버전이 나오면 다시 알립니다 (설정 → 정보 에서 취소).`, 'info', 4000); if (app.renderStatus) app.renderStatus(); } });
     on('#updUnskip', async () => { if (await act('unskip')) { open(); if (app.renderStatus) app.renderStatus(); } });
-    on('#updPage', e => { e.preventDefault(); app.cmd('openLink', { url: u.notesUrl || u.page || 'https://github.com/hahadark/WorshipCue/releases/latest' }); });
+    on('#updPage', e => { e.preventDefault(); app.cmd('openLink', { url: u.notesUrl || u.page || 'https://github.com/hahadark/WorshipPresenter/releases/latest' }); });
   }
 
   window.BCUpdate = { open, notesHtml };

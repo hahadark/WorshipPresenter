@@ -1,8 +1,8 @@
 # 워십프리젠터 (WorshipPresenter, 옛 이름 WorshipCue) — 이어서 작업하는 에이전트를 위한 핸드오프
 
-> 2026-10-31 이름 변경: 화면·설치 파일·문서의 이름만 '워십프리젠터'(영어 Worship Presenter, 파일 WorshipPresenter-…)로 바꿨다. **바꾸지 않은 것**: 저장소 주소 hahadark/WorshipCue(자동 업데이트가 여기를 봄) · appId org.worshipcue.app · 데이터 폴더 %APPDATA%\WorshipCue (main.js 에서 userData 도 여기로 고정) · 문서\WorshipCue 찬양 PPT · 동기화 파일 WorshipCue-sync.json · X-WorshipCue 머리글 · 코드 이름(WorshipCueCore, wc- 저장소 키, 패키지 name worshipcue).
+> 2026-10-31 이름 변경: 화면·설치 파일·문서의 이름만 '워십프리젠터'(영어 Worship Presenter, 파일 WorshipPresenter-…)로 바꿨다. **저장소** 도 같은 날 hahadark/WorshipCue → **hahadark/WorshipPresenter** 로 바꿨다 (옛 주소는 GitHub 이 301 로 넘겨줌, package.json publish · updater.js REPO 도 새 이름). **바꾸지 않은 것**: appId org.worshipcue.app · 데이터 폴더 %APPDATA%\WorshipCue (main.js 에서 userData 도 여기로 고정) · 문서\WorshipCue 찬양 PPT · 동기화 파일 WorshipCue-sync.json · X-WorshipCue 머리글 · 코드 이름(WorshipCueCore, wc- 저장소 키, 패키지 name worshipcue).
 
-교회 예배 순서(큐시트) 통합 송출 프로그램. Electron 44 + node:sqlite, 조작 화면은 바닐라 JS. 저장소 `hahadark/WorshipCue`.
+교회 예배 순서(큐시트) 통합 송출 프로그램. Electron 44 + node:sqlite, 조작 화면은 바닐라 JS. 저장소 `hahadark/WorshipPresenter`.
 사용자(hahadark)는 한국어로 대화하고, 설명·커밋 메시지·주석도 한국어로 쓴다. 데모 데이터는 홍길동·○○교회처럼 가상으로.
 
 ## 지키는 규칙 (꼭)

@@ -8,7 +8,7 @@ A **worship presentation program for churches** (Windows).
 
 Build your order of service ahead of time, and during the service you just press **F6**: Bible passages, song lyrics, hymn scores, announcements and videos go out in order to the sanctuary screen (second monitor) and to OBS for streaming.
 
-**⬇ Download**: [Latest release](https://github.com/hahadark/WorshipCue/releases/latest) — Windows `WorshipPresenter-…-English-Portable.exe` (no install) · Mac `WorshipPresenter-…-English-mac-arm64.dmg` (Apple Silicon) ([macOS notes](#macos)) — includes the **World English Bible (WEB, public domain)** and starts in English.
+**⬇ Download**: [Latest release](https://github.com/hahadark/WorshipPresenter/releases/latest) — Windows `WorshipPresenter-…-English-Portable.exe` (no install) · Mac `WorshipPresenter-…-English-mac-arm64.dmg` (Apple Silicon) ([macOS notes](#macos)) — includes the **World English Bible (WEB, public domain)** and starts in English.
 The Korean build (`WorshipPresenter-…-Portable.exe`) includes the Korean Revised Version. Both builds contain the same program; switch the language any time in `View → 🌐 Language`.
 
 ![Worship Presenter control screen](docs/images/main-en.png)
@@ -30,7 +30,7 @@ The Korean build (`WorshipPresenter-…-Portable.exe`) includes the Korean Revis
 
 ## Get started in 5 minutes
 
-1. **Download and run** `WorshipPresenter-…-English-Setup.exe` (installer — **notifies you of new versions**; download the new English-Setup from the release page) or `…-English-Portable.exe` (no install, USB — notifies you of new versions) from [Releases](https://github.com/hahadark/WorshipCue/releases/latest). Updates keep your cue sheets, Bible data and settings; see `Settings → About`.
+1. **Download and run** `WorshipPresenter-…-English-Setup.exe` (installer — **notifies you of new versions**; download the new English-Setup from the release page) or `…-English-Portable.exe` (no install, USB — notifies you of new versions) from [Releases](https://github.com/hahadark/WorshipPresenter/releases/latest). Updates keep your cue sheets, Bible data and settings; see `Settings → About`.
    - 📊 **Anonymous usage count**: once a day the app sends only a **random install ID, version, UI language and OS** so we can count how many installs are in use (no names, church, Bible or cue sheet content). Turn it off in `Settings → About → Send anonymous usage statistics`. If Windows SmartScreen warns you, click "More info → Run anyway".
 2. **Sanctuary screen**: connect a second monitor and click `Second screen` at the bottom (Ctrl+Shift+F). Choose the monitor in `File → ⚙ Settings → Output`.
 3. **OBS** (when streaming): add a Browser source with `http://127.0.0.1:37528/outputs/main` (full screen) or `/outputs/overlay` (transparent lower third), 1920×1080.
@@ -105,7 +105,7 @@ It only works on this PC, so no PIN is needed. Turning off the second screen als
 
 ## macOS
 
-- Download `WorshipPresenter-…-English-mac-arm64.dmg` (Apple Silicon M1/M2/M3… only — Intel Macs are not supported) from [Releases](https://github.com/hahadark/WorshipCue/releases/latest), open it and drag Worship Presenter to `Applications`.
+- Download `WorshipPresenter-…-English-mac-arm64.dmg` (Apple Silicon M1/M2/M3… only — Intel Macs are not supported) from [Releases](https://github.com/hahadark/WorshipPresenter/releases/latest), open it and drag Worship Presenter to `Applications`.
 - **First launch**: the app isn't signed with an Apple Developer certificate, so macOS warns about an unidentified developer. Right-click (Control-click) Worship Presenter in `Applications` → **Open** → **Open**. (macOS 15+: try opening once, then `System Settings → Privacy & Security` → **Open Anyway**.) If it says the app "is damaged", run `xattr -cr /Applications/WorshipPresenter.app` once in Terminal.
 - **Shortcuts**: Ctrl on Windows is **⌘ (Command)** on Mac (⌘K search · ⌘E slide editor · ⌘B bold · ⌘⇧F second screen), and the app shows ⌘. On MacBooks press **fn** with F5/F6/F9/F10, or turn on "Use F1, F2, etc. keys as standard function keys" in `System Settings → Keyboard → Keyboard Shortcuts → Function Keys`. All shortcuts can be changed in `Settings → Shortcuts`.
 - **Camera**: macOS asks for camera permission the first time. If you denied it, enable Worship Presenter in `System Settings → Privacy & Security → Camera`.

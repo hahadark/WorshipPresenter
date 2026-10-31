@@ -6,7 +6,7 @@
 const { app, shell } = require('electron');
 const https = require('https');
 
-const REPO = 'hahadark/WorshipCue';
+const REPO = 'hahadark/WorshipPresenter';
 const PAGE = `https://github.com/${REPO}/releases/latest`;
 
 function newer(a, b) { // a > b ?
@@ -15,9 +15,11 @@ function newer(a, b) { // a > b ?
   return false;
 }
 
-function latestRelease() {
+function latestRelease(url = `https://api.github.com/repos/${REPO}/releases/latest`, hops = 0) {
   return new Promise((resolve, reject) => {
-    const req = https.get(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { 'User-Agent': 'WorshipPresenter', Accept: 'application/vnd.github+json' }, timeout: 15000 }, res => {
+    const req = https.get(url, { headers: { 'User-Agent': 'WorshipPresenter', Accept: 'application/vnd.github+json' }, timeout: 15000 }, res => {
+      // 저장소 이름이 바뀌면 GitHub 이 301 로 새 주소를 알려 준다 → 따라간다
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && hops < 3) { res.resume(); latestRelease(res.headers.location, hops + 1).then(resolve, reject); return; }
       let body = '';
       res.on('data', c => { body += c; });
       res.on('end', () => { try { const j = JSON.parse(body); if (!j.tag_name) throw new Error('no tag'); resolve(j); } catch (e) { reject(e); } });

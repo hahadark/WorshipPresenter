@@ -9,7 +9,7 @@
 예배 순서를 미리 만들어 두면 예배 중에는 **F6 하나로** 성경 · 찬양 가사 · 찬송가 악보 · 광고 · 영상이 차례대로 예배당 화면(보조 모니터)과 OBS 방송에 나갑니다.
 성경 송출 프로그램 [BibleCast](https://github.com/hahadark/BibleCast)를 바탕으로 만들었습니다.
 
-**⬇ 받기**: [최신판](https://github.com/hahadark/WorshipCue/releases/latest) — 윈도우 **`…-Setup.exe` (설치판, 자동 업데이트 — 추천)** 또는 `…-Portable.exe` (설치 없이 실행, 새 버전 알림만) · 맥 `…-mac-arm64.dmg` (애플 실리콘) ([맥 안내](#-맥macos에서-쓰기)) — 개역한글 포함 · 다른 번역본은 베들레헴 성경에서 가져오기
+**⬇ 받기**: [최신판](https://github.com/hahadark/WorshipPresenter/releases/latest) — 윈도우 **`…-Setup.exe` (설치판, 자동 업데이트 — 추천)** 또는 `…-Portable.exe` (설치 없이 실행, 새 버전 알림만) · 맥 `…-mac-arm64.dmg` (애플 실리콘) ([맥 안내](#-맥macos에서-쓰기)) — 개역한글 포함 · 다른 번역본은 베들레헴 성경에서 가져오기
 **🌐 English**: 영어판(`…-English-Portable.exe`, WEB 성경 포함)도 있고, 어느 판이든 `보기 → 🌐 Language · 언어` 에서 화면 언어를 바꿀 수 있습니다.
 **📖 설명서**: [사용자 설명서](docs/사용자설명서.md) · [OBS 설정 가이드](docs/OBS설정가이드.md)
 
@@ -28,7 +28,7 @@
 
 ## 5분 만에 시작하기
 
-1. **받아서 실행**: [Releases](https://github.com/hahadark/WorshipCue/releases/latest) 의 `WorshipPresenter-…-Setup.exe` (설치판 — 새 버전을 미리 받아 두었다가 **프로그램을 끌 때 자동 설치**, 예배 중에는 다시 시작하지 않음) 또는 `…-Portable.exe` (설치 없이 실행 · USB 용 — 새 버전이 나오면 알려 줌). 업데이트해도 큐시트·성경 데이터·설정은 그대로입니다. `설정 → 정보` 에서 지금 버전 확인·자동 업데이트 끄기
+1. **받아서 실행**: [Releases](https://github.com/hahadark/WorshipPresenter/releases/latest) 의 `WorshipPresenter-…-Setup.exe` (설치판 — 새 버전을 미리 받아 두었다가 **프로그램을 끌 때 자동 설치**, 예배 중에는 다시 시작하지 않음) 또는 `…-Portable.exe` (설치 없이 실행 · USB 용 — 새 버전이 나오면 알려 줌). 업데이트해도 큐시트·성경 데이터·설정은 그대로입니다. `설정 → 정보` 에서 지금 버전 확인·자동 업데이트 끄기
    - 📊 **익명 사용 통계**: 몇 대에서 쓰는지 세려고 하루 한 번 **무작위 설치 번호 · 버전 · 화면 언어 · OS** 만 보냅니다 (이름·교회·성경·큐시트 내용은 보내지 않음). `설정 → 정보 → 익명 사용 통계 보내기` 에서 끌 수 있습니다
 2. **예배당 화면**: 보조 모니터를 연결하고 하단 `보조 화면` (Ctrl+Shift+F). 모니터는 `설정 → 출력`
 3. **OBS** (방송할 때): 브라우저 소스 `http://127.0.0.1:37528/outputs/main` (전체) · `/outputs/overlay` (하단 자막) → [OBS 설정 가이드](docs/OBS설정가이드.md)
@@ -384,7 +384,7 @@ BibleCast 와 **동시에 실행할 수 있도록** 데이터 폴더(`%APPDATA%\
 
 ## 🍎 맥(macOS)에서 쓰기
 
-- [Releases](https://github.com/hahadark/WorshipCue/releases/latest) 에서 `WorshipPresenter-…-mac-arm64.dmg` (M1·M2·M3… 애플 실리콘 맥 전용 — 인텔 맥은 지원하지 않음) 를 받아 열고, 워십프리젠터 를 `응용 프로그램` 폴더로 끌어다 놓습니다. 영어판은 `…-English-mac-….dmg`.
+- [Releases](https://github.com/hahadark/WorshipPresenter/releases/latest) 에서 `WorshipPresenter-…-mac-arm64.dmg` (M1·M2·M3… 애플 실리콘 맥 전용 — 인텔 맥은 지원하지 않음) 를 받아 열고, 워십프리젠터 를 `응용 프로그램` 폴더로 끌어다 놓습니다. 영어판은 `…-English-mac-….dmg`.
 - **처음 열 때**: 애플 개발자 인증서로 서명하지 않은 프로그램이라 "확인되지 않은 개발자" 경고가 나옵니다. `응용 프로그램` 에서 워십프리젠터 를 **오른쪽 클릭(Control+클릭) → 열기 → 열기**. (macOS 15 이상: 한 번 열어 본 뒤 `시스템 설정 → 개인정보 보호 및 보안` 맨 아래 **그래도 열기**.) "손상되었기 때문에 열 수 없습니다" 가 나오면 터미널에서 `xattr -cr /Applications/WorshipPresenter.app` 을 한 번 실행하세요.
 - **단축키**: 윈도우의 Ctrl 은 맥에서 **⌘(Command)** 입니다 (예: ⌘K 검색 · ⌘E 슬라이드 편집 · ⌘B 굵게 · ⌘⇧F 보조 화면). 화면에도 ⌘ 로 보입니다. 맥북에서 F5·F6·F9·F10 은 **fn** 을 같이 누르거나, `시스템 설정 → 키보드 → 키보드 단축키 → 기능 키` 에서 'F1, F2 등의 키를 표준 기능 키로 사용' 을 켜세요. 단축키는 `설정 → 단축키` 에서 바꿀 수 있습니다.
 - **카메라**: 처음 쓸 때 카메라 허용 창이 뜹니다. 거절했다면 `시스템 설정 → 개인정보 보호 및 보안 → 카메라` 에서 워십프리젠터 를 켜세요.

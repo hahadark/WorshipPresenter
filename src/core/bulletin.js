@@ -274,7 +274,7 @@ async function askAI({ apiKey, model, input, fetchImpl = fetch, extra = '', endp
   if (extra) content.push({ type: 'text', text: '추가 요청: ' + extra });
   const r = await fetchImpl(endpoint || DEFAULT_ENDPOINT, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://github.com/hahadark/WorshipCue', 'X-Title': 'Worship Presenter' },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://github.com/hahadark/WorshipPresenter', 'X-Title': 'Worship Presenter' },
     body: JSON.stringify({ model: model || DEFAULT_MODEL, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content }], temperature: 0.1, response_format: { type: 'json_object' } }),
   });
   const body = await r.json().catch(() => ({}));
