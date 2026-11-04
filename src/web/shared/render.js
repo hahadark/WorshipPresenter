@@ -87,7 +87,8 @@
   }
 
   function partsHtml(slide, t) {
-    if (isHanging(t)) return hangingHtml(slide, t);
+    // 가사·공지(text)는 내어쓰기와 상관없이 줄바꿈을 지킨다 (내어쓰기는 성경 절 번호용 — 찬송가 두 줄이 한 줄로 합쳐지던 문제)
+    if (isHanging(t) && slide.kind !== 'text') return hangingHtml(slide, t);
     if (slide.kind === 'text') {
       const strip = global.BCGroup ? global.BCGroup.stripChords : (t => t);
       return slide.parts.map(p => {

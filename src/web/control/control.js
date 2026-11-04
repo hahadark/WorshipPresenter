@@ -48,11 +48,19 @@
    * 출력 템플릿. over = { main, overlay } 순서별 템플릿 (큐시트 순서에 따로 정한 것)
    * 미리보기는 미리보기 중인 순서의 것, LIVE 는 송출 중인 순서의 것을 쓴다
    */
-  const tplFor = (output, over) => {
-    const id = over && over[output] && settings().templates.some(t => t.id === over[output]) ? over[output] : settings().activeTemplates[output];
-    return tplById(id);
+  const tplFor = (output, over, lyrics) => {
+    const s = settings();
+    if (over && over[output] && s.templates.some(t => t.id === over[output])) return tplById(over[output]);
+    // OBS 자막: 찬송가·찬양 가사는 따로 정한 템플릿 (코어 templateFor 와 같은 규칙)
+    if (output === 'overlay' && lyrics && s.activeTemplates.overlayLyrics && s.templates.some(t => t.id === s.activeTemplates.overlayLyrics)) return tplById(s.activeTemplates.overlayLyrics);
+    return tplById(s.activeTemplates[output]);
   };
   app.tplFor = tplFor;
+  /** 찬송가·찬양 가사인가 (코어 isLyrics 와 같음): 큐시트 순서 종류 · 찬송가 PPT·악보 슬라이드 */
+  const isLyrics = (passage, slide, cue) => !!((cue && (cue.type === 'hymn' || cue.type === 'song'))
+    || (passage && (passage.lyrics || passage.itemType === 'hymn' || passage.itemType === 'song'))
+    || (slide && (slide.kind === 'score' || (slide.kind === 'image' && typeof slide.caption === 'string'))));
+  app.isLyrics = isLyrics;
   // ---------------- 배경 빼기: 순서 배경(그 순서에서 지움) · 템플릿 배경(템플릿을 단색으로) ----------------
   const MEDIA_BG = ['image', 'video', 'camera'];
   /** i 번째 큐시트 순서의 배경이 어디서 오는지 */
@@ -149,6 +157,7 @@
       app.connected = true;
       $('#conn').hidden = true;
       if (first) init2();
+      if (first) setTimeout(() => app.checkOutputSetup && app.checkOutputSetup(), 1500); // 처음 실행: 보조 화면 모니터 설정 확인
       renderLive();
       renderStatus();
       renderScreenLayers();
@@ -200,6 +209,7 @@
       app.state.outputs = JSON.parse(e.data);
       renderStatus();
       if (window.BCSettings) window.BCSettings.onState('outputs');
+      checkOutputSetup();
     });
     es.addEventListener('extend-request', e => handleExtend(JSON.parse(e.data)));
     es.addEventListener('cue-next', e => window.BCCue && window.BCCue.onCueNext(JSON.parse(e.data)));
@@ -394,7 +404,7 @@
   function passageMeta(p, query) {
     const v = p.verses || [];
     const cue = app.preview && app.preview.passage === p ? app.preview.cue : null;
-    const cueMeta = cue ? { cueId: cue.id, cueIndex: cue.index, itemTitle: cue.title, note: cue.note || '', itemType: cue.type || '', credit: cue.credit || '', ...(cue.auto ? { auto: cue.auto } : {}), ...(cue.hideAfter ? { hideAfter: cue.hideAfter } : {}), ...(cue.edgeHide ? { edgeHide: true } : {}) } : {};
+    const cueMeta = cue ? { cueId: cue.id, cueIndex: cue.index, itemTitle: cue.title, note: cue.note || '', itemType: cue.type || '', ...(cue.type === 'hymn' || cue.type === 'song' ? { lyrics: true } : {}), credit: cue.credit || '', ...(cue.auto ? { auto: cue.auto } : {}), ...(cue.hideAfter ? { hideAfter: cue.hideAfter } : {}), ...(cue.edgeHide ? { edgeHide: true } : {}) } : {};
     const tpl = app.preview && app.preview.passage === p && app.preview.tpl ? { tpl: app.preview.tpl } : {};
     if (!v.length) return { title: p.title, versionId: '', versionName: p.versionName || '', book: null, query: query || p.title, first: null, last: null, ...cueMeta, ...tpl };
     return {
@@ -564,8 +574,8 @@
   function renderPreview() {
     const scr = $('#pvScreen');
     if (!app.state) return;
-    const tpl = tplFor(app.view.pv, pvOver());
     const p = app.preview;
+    const tpl = tplFor(app.view.pv, pvOver(), p && isLyrics(p.passage, p.slides && p.slides[p.index], p.cue));
     if (!p) {
       R.renderInto(scr, null, tpl, { checker: true, overlays: overlaysFor(app.view.pv) });
       scr.insertAdjacentHTML('beforeend', '<div class="ph">검색한 본문이 여기에 표시됩니다</div>');
@@ -608,7 +618,7 @@
   function renderLive() {
     if (!app.state) return;
     const live = app.state.live;
-    const tpl = tplFor(app.view.lv, lvOver());
+    const tpl = tplFor(app.view.lv, lvOver(), live.hasLive && isLyrics(live.passage, live.slide));
     const pane = $('.pane.live');
     pane.classList.toggle('is-hidden', live.hasLive && !live.visible);
     $('#lvHidden').hidden = !(live.hasLive && !live.visible);
@@ -1293,11 +1303,15 @@
     $('#qToggle').textContent = c ? '펴기 ▴' : '접기 ▾';
     try { localStorage.setItem('bc.quickCollapsed', c ? '1' : ''); } catch { /* 무시 */ }
   };
-  $('#qToggle').onclick = () => setQuickCollapsed(!$('#quick').classList.contains('collapsed'));
+  // 접기: 빠른 설정이 든 창(탭 묶음) 전체를 탭 줄만 남기고 접어 위 패널(본문·썸네일) 자리를 넓힌다
+  $('#qToggle').onclick = () => {
+    if (window.BCDock && window.BCDock.toggleFold) { setQuickCollapsed(false); window.BCDock.toggleFold('quick'); return; }
+    setQuickCollapsed(!$('#quick').classList.contains('collapsed'));
+  };
   // 자세히: 지금 고른 출력의 템플릿을 편집기에서 연다 / 테마: 테마 고르기
   $('#qMore').onclick = () => window.BCSettings.open('templates', { templateId: tplFor(quick.out).id });
   $('#qTheme').onclick = () => window.BCSettings.open('themes');
-  try { if (localStorage.getItem('bc.quickCollapsed')) setQuickCollapsed(true); } catch { /* 무시 */ }
+  try { if (localStorage.getItem('bc.quickCollapsed')) setQuickCollapsed(!window.BCDock); } catch { /* 무시 */ } // 독이 있으면 창을 접는 방식 (예전 '내용만 접기' 는 풀어 둔다)
   $('#splitMode').onchange = e => {
     const v = e.target.value;
     cmd('updateSettings', { patch: { split: v === 'auto' ? { mode: 'auto' } : { mode: 'count', count: +v } } });
@@ -1382,6 +1396,31 @@
     else showMsg(st.enabled ? `보조 화면 출력을 켰습니다: ${st.displayLabel}` : (settings().output.linkObs !== false ? '보조 화면 출력을 껐습니다. OBS 화면도 숨겼습니다.' : '보조 화면 출력을 껐습니다.'), st.enabled ? 'ok' : 'info', 2500);
   }
   $('#bOutput').onclick = toggleOutputWindow;
+
+  /**
+   * 보조 화면을 켰는데 띄울 모니터가 없으면(처음 실행 · 모니터가 하나뿐 · 고른 모니터가 빠짐)
+   * 설정 → 출력 을 열어 모니터를 고르게 한다. 같은 상태에서는 한 번만 (다른 창이 열려 있으면 닫힌 뒤에)
+   */
+  let outputSetupShown = false;
+  let outputSetupTimer = null;
+  function checkOutputSetup() {
+    const d = app.state && app.state.outputs && app.state.outputs.desktop;
+    if (!d) return;
+    const broken = d.enabled && !d.valid;
+    if (!broken) { outputSetupShown = false; clearTimeout(outputSetupTimer); outputSetupTimer = null; return; }
+    if (outputSetupShown || outputSetupTimer) return;
+    const tryOpen = (left = 80) => {
+      outputSetupTimer = null;
+      const now = app.state.outputs && app.state.outputs.desktop;
+      if (!now || !now.enabled || now.valid) return;
+      if (!$('#modal').hidden && left > 0) { outputSetupTimer = setTimeout(() => tryOpen(left - 1), 1500); return; } // 안내 창 등이 닫히면
+      outputSetupShown = true;
+      if (window.BCSettings) window.BCSettings.open('output');
+      showMsg('보조 화면(예배당 모니터)을 띄울 모니터가 정해져 있지 않습니다. 출력할 모니터를 고르세요. (모니터가 하나뿐이면 프로젝터·TV 를 연결하고 Windows 디스플레이 설정에서 ‘확장’ 으로)', 'info', 9000);
+    };
+    tryOpen();
+  }
+  app.checkOutputSetup = checkOutputSetup;
 
   function renderOutputButton() {
     const d = app.state.outputs && app.state.outputs.desktop;

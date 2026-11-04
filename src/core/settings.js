@@ -67,7 +67,8 @@ function defaults() {
     navMode: 'range', // range: 선택 범위 안에서만 | continuous: 범위 끝에서 다음 절로 이어감(책 경계에서 멈춤)
     output: { enabled: false, displayId: null, cursorHidden: true, autoOnSend: true, linkObs: true, obsPip: false },
     templates: defaultTemplates(),
-    activeTemplates: { main: 'worship', overlay: 'overlay' },
+    // overlayLyrics: OBS 자막 중 찬송가·찬양 가사에 쓰는 템플릿 (성경·공지는 overlay)
+    activeTemplates: { main: 'worship', overlay: 'overlay', overlayLyrics: 'overlay-lyrics' },
     shortcuts: { ...DEFAULT_SHORTCUTS },
     globalShortcuts: false,
     reservedKeys: '', // OBS 등 다른 프로그램에서 쓰는 단축키(충돌 검사용), 쉼표 구분
@@ -152,6 +153,9 @@ class Settings {
         data.shortcuts = { ...DEFAULT_SHORTCUTS, ...(raw.shortcuts || {}) };
         if (!raw.cueTimesV2) { data.cueTimes = false; data.cueTimesV2 = true; } // 시계는 기본 끔으로 바뀜: 예전 설정도 한 번 끈다
         data.templates = (Array.isArray(raw.templates) && raw.templates.length ? raw.templates : defaultTemplates()).map(normalizeTemplate);
+        // 새 프리셋(찬송가·찬양 OBS 자막)이 없던 예전 설정에도 넣는다
+        for (const p of defaultTemplates()) if (p.id === 'overlay-lyrics' && !data.templates.some(t => t.id === p.id)) data.templates.push(normalizeTemplate(p));
+        if (!data.templates.some(t => t.id === data.activeTemplates.overlayLyrics)) data.activeTemplates.overlayLyrics = 'overlay-lyrics';
         if (f === this.file) {
           try { fs.copyFileSync(f, this.backup); } catch { /* 백업 실패는 무시 */ }
         } else {

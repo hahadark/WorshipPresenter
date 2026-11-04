@@ -121,11 +121,11 @@
         ${info.available ? `
           <label>출력 모니터</label>
           <div class="row-flex">
-            <select id="oDisplay">${info.displays.map(x => `<option value="${x.id}" ${x.id === st.displayId ? 'selected' : ''}>${esc(x.label)}</option>`).join('') || '<option>모니터 없음</option>'}</select>
+            <select id="oDisplay">${(() => { const cur = info.displays.some(x => x.id === st.displayId) ? st.displayId : ((info.displays.find(x => !x.primary) || info.displays[0] || {}).id); return info.displays.map(x => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${esc(x.label)}</option>`).join(''); })() || '<option>모니터 없음</option>'}</select>
             <label><input type="checkbox" id="oEnabled" ${s.output.enabled ? 'checked' : ''}> 전체 화면 출력 켜기</label>
           </div>
           <span></span>
-          <div class="note">${st.enabled ? (st.valid ? `<span class="ok-text">출력 중: ${esc(st.displayLabel)}</span>` : '<span class="err-text">지정한 모니터가 연결되어 있지 않아 출력 창을 숨겼습니다. 모니터를 다시 연결하면 자동으로 복구됩니다.</span>') : '꺼짐'}
+          <div class="note">${st.enabled ? (st.valid ? `<span class="ok-text">출력 중: ${esc(st.displayLabel)}</span>` : `<span class="err-text">보조 화면을 띄울 모니터가 없습니다. ${info.displays.length > 1 ? '위에서 출력할 모니터를 고르세요.' : '모니터가 하나뿐입니다. 프로젝터·TV 를 연결하고 Windows 디스플레이 설정(Win+P)에서 ‘확장’ 을 고르면 자동으로 그 모니터에 뜹니다. 이 모니터에 띄우려면 위에서 고르세요.'}</span>`) : '꺼짐'}
             ${st.sameAsControl ? '<br><span class="warn-text">조작 화면과 같은 모니터입니다. 조작 화면이 가려질 수 있습니다.</span>' : ''}</div>
         ` : `<span></span><div class="note">브라우저에서 실행 중이므로 모니터 출력 창을 직접 만들 수 없습니다.<br>출력 화면 주소를 다른 창에서 열어 전체 화면(F11)으로 사용할 수 있습니다.</div>`}
         <label><input type="checkbox" id="oCursor" ${s.output.cursorHidden ? 'checked' : ''}> 마우스 커서 숨김</label><span></span>
@@ -134,8 +134,9 @@
 
         <h4>출력별 템플릿</h4>
         <label>예배당 전체 화면 / OBS 전체</label><select id="oTplMain">${tplOpts(s.activeTemplates.main)}</select>
-        <label>OBS 투명 자막</label><select id="oTplOverlay">${tplOpts(s.activeTemplates.overlay)}</select>
-        <span></span><div class="note">두 출력은 같은 본문을 표시하되 디자인은 각각 적용됩니다. 템플릿을 바꾸면 송출 중인 화면에 즉시 반영됩니다.</div>
+        <label>OBS 투명 자막 — 성경·공지</label><select id="oTplOverlay">${tplOpts(s.activeTemplates.overlay)}</select>
+        <label>OBS 투명 자막 — 찬송가·찬양</label><select id="oTplOverlayLyrics">${tplOpts(s.activeTemplates.overlayLyrics || s.activeTemplates.overlay)}</select>
+        <span></span><div class="note">두 출력은 같은 본문을 표시하되 디자인은 각각 적용됩니다. OBS 자막은 찬송가·찬양 가사에 따로 정한 템플릿을 씁니다 (기본: 가운데 두 줄). 템플릿을 바꾸면 송출 중인 화면에 즉시 반영됩니다.</div>
 
         <h4>OBS 브라우저 소스 주소</h4>
         <label>전체 화면</label><div class="row-flex"><span class="url">http://127.0.0.1:${port}/outputs/main</span><button data-copy="http://127.0.0.1:${port}/outputs/main">복사</button></div>
@@ -173,6 +174,7 @@
     $('#oLanKey').onclick = async () => { if (!confirm('열쇠를 바꾸면 송출 PC 의 OBS 에 넣은 주소를 모두 다시 넣어야 합니다. 바꿀까요?')) return; await cmd('newLanKey'); setTimeout(drawOutput, 300); };
     $('#oTplMain').onchange = e => cmd('setTemplate', { output: 'main', templateId: e.target.value });
     $('#oTplOverlay').onchange = e => cmd('setTemplate', { output: 'overlay', templateId: e.target.value });
+    $('#oTplOverlayLyrics').onchange = e => cmd('setTemplate', { output: 'overlayLyrics', templateId: e.target.value });
     $('#oPortSave').onclick = async () => {
       const r = await cmd('updateSettings', { patch: { port: +$('#oPort').value } });
       if (r.ok) app.showMsg('포트를 저장했습니다. 프로그램을 다시 시작하면 적용됩니다.', 'ok');

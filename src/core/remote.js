@@ -160,7 +160,16 @@ class RemoteServer {
       case 'next': return core.command('nextSlide');
       case 'prev': return core.command('previousSlide');
       case 'toggle': return core.command('toggleLive');
-      case 'off': return core.command('clearAll'); // 아예 끄기: 글 · 배경 · 오버레이 · 로고 · 송출 배경 (다음 송출에서 배경은 다시)
+      case 'off': {
+        // 아예 끄기: 글 · 배경 · 오버레이 · 로고 · 송출 배경을 지우고, 보조 화면(예배당 모니터) 창도 바로 끈다
+        // (다음에 송출하면 '송출할 때 보조 화면 자동으로 켜기' 로 다시 켜짐)
+        const r = core.command('clearAll');
+        if (core.desktop && core.settings.get().output.enabled) {
+          const o = core.command('outputOff');
+          if (!o.ok) core.logger.warn('리모컨 끄기: 보조 화면을 끄지 못했습니다 — ' + o.error);
+        }
+        return r;
+      }
       case 'goto': return core.command('gotoSlide', { index: Number(a.index) || 0 });
       case 'cue': control(); core.emit('remote-cue', { index: Number(a.index) || 0 }); return { sent: true };
       case 'message': return core.command('stageMessage', { text: String(a.text || '') });

@@ -75,6 +75,19 @@ const PRESETS = [
     stroke: { width: 2, color: '#000000' },
     shadow: { enabled: true, blur: 10, x: 0, y: 2, color: 'rgba(0,0,0,0.9)' },
   }),
+  // OBS 자막 중 찬송가·찬양 가사 전용 (성경은 위 OBS 자막 템플릿): 가운데 두 줄, 엷은 띠
+  make({
+    id: 'overlay-lyrics', name: '찬송가·찬양 두 줄 (OBS 자막)', preset: true,
+    background: { type: 'transparent' },
+    clearHidesBackground: true,
+    valign: 'bottom', align: 'center',
+    padding: { top: 740, right: 140, bottom: 56, left: 140 },
+    font: { size: 56, minSize: 38, lineHeight: 1.35, weight: 700 },
+    reference: { show: false, position: 'bottom', size: 28, align: 'center' },
+    verseNumbers: { show: false },
+    box: { enabled: true, color: '#000000', opacity: 0.42, radius: 14, padding: 24 },
+    shadow: { enabled: true, blur: 8, x: 0, y: 2, color: 'rgba(0,0,0,0.85)' },
+  }),
   make({ id: 'custom', name: '사용자 설정', preset: false }),
 ];
 

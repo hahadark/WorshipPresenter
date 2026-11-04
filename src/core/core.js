@@ -35,6 +35,13 @@ const { BOOKS, getBook } = require('./books');
 const { formatTitle } = require('./db');
 
 const OUTPUTS = ['main', 'overlay'];
+// 템플릿을 고를 수 있는 자리: 예배당 · OBS 자막(성경·공지) · OBS 자막 찬송가·찬양
+const TEMPLATE_SLOTS = [...OUTPUTS, 'overlayLyrics'];
+/** 찬송가·찬양 가사인가: 큐시트 순서 종류 · 라이브러리에서 보낸 가사 표시 · 찬송가 PPT·악보 슬라이드 */
+function isLyrics(passage, slide) {
+  if (passage && (passage.lyrics || passage.itemType === 'hymn' || passage.itemType === 'song')) return true;
+  return !!(slide && (slide.kind === 'score' || (slide.kind === 'image' && typeof slide.caption === 'string')));
+}
 const PRINTABLE_PLAIN = /^(?:[A-Z0-9]|Space|Enter|Backspace|Tab|Minus|Equal|Comma|Period|Slash|Semicolon|Quote|BracketLeft|BracketRight|Backslash|Backquote)$/;
 
 /** 외부 단추 동작 목록 (스트림덱·Companion 안내용) */
@@ -351,7 +358,12 @@ class WorshipCueCore extends EventEmitter {
     // 송출 중인 순서에 따로 정한 템플릿이 있으면 그것
     const live = this.presentation.live;
     const over = live && live.passage && live.passage.tpl ? live.passage.tpl[output] : '';
-    const id = (over && s.templates.some(t => t.id === over)) ? over : s.activeTemplates[output];
+    let id = (over && s.templates.some(t => t.id === over)) ? over : s.activeTemplates[output];
+    // OBS 자막: 찬송가·찬양 가사는 따로 정한 템플릿 (성경·공지와 모양을 다르게)
+    if (output === 'overlay' && !over && live && isLyrics(live.passage, live.slides && live.slides[live.index])) {
+      const ly = s.activeTemplates.overlayLyrics;
+      if (ly && s.templates.some(t => t.id === ly)) id = ly;
+    }
     return s.templates.find(t => t.id === id) || s.templates[0];
   }
 
@@ -560,7 +572,7 @@ WorshipCueCore.prototype.commands = {
 
   // ---- 템플릿 ----
   setTemplate(a) {
-    if (!OUTPUTS.includes(a.output)) throw new Error('출력 대상이 올바르지 않습니다.');
+    if (!TEMPLATE_SLOTS.includes(a.output)) throw new Error('출력 대상이 올바르지 않습니다.');
     const s = this.settings.get();
     if (!s.templates.some(t => t.id === a.templateId)) throw new Error('템플릿을 찾을 수 없습니다.');
     this.settings.update(d => { d.activeTemplates[a.output] = a.templateId; });

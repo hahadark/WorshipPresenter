@@ -75,7 +75,16 @@ if (!app.requestSingleInstanceLock()) {
   /** 출력 창을 설정에 맞게 만들고/옮기고/숨긴다. 유효하지 않은 모니터로는 절대 출력하지 않는다. */
   function syncOutputWindow() {
     const s = core.settings.get().output;
-    const d = s.enabled && s.displayId != null ? findDisplay(s.displayId) : null;
+    let d = s.enabled && s.displayId != null ? findDisplay(s.displayId) : null;
+    // 저장한 모니터가 없으면(처음 실행 · 케이블을 다시 꼽아 번호가 바뀜) 조작 화면과 다른 모니터로
+    if (s.enabled && !d) {
+      const alt = defaultOutputDisplay();
+      if (alt) {
+        core.settings.update(x => { x.output.displayId = alt.id; });
+        core.logger.info(`보조 화면 모니터를 자동으로 골랐습니다: ${displayLabel(alt, screen.getAllDisplays().findIndex(x => x.id === alt.id))}`);
+        d = alt;
+      }
+    }
     if (!d) {
       if (outputWin && !outputWin.isDestroyed()) outputWin.hide();
       core.emit('outputs');

@@ -54,12 +54,102 @@
     };
     b.onclick = () => {
       const floating = group.api.location && group.api.location.type === 'floating';
-      if (floating) group.api.moveTo({ position: 'right' });
-      else api.addFloatingGroup(group, { width: 520, height: 420 });
+      if (floating) { expand(group); group.api.moveTo({ position: 'right' }); }
+      else { expand(group); api.addFloatingGroup(group, { width: 520, height: 420 }); }
       sync();
     };
+    // 접기: 탭 줄만 남기고 접어 위·아래 패널(예: 본문·썸네일) 자리를 넓힌다. 다시 누르면 원래 높이
+    const f = document.createElement('button');
+    f.type = 'button';
+    f.className = 'dock-fold';
+    const syncFold = () => {
+      const floating = group.api.location && group.api.location.type === 'floating';
+      f.hidden = !!floating;
+      const c = isCollapsed(group);
+      f.textContent = c ? '▴' : '▾';
+      f.title = c ? '펼치기 (원래 높이로)' : '접기 (탭 줄만 남기고 위·아래 패널에 자리를 줌)';
+    };
+    f.onclick = () => { toggleCollapse(group); syncFold(); };
+    group.__syncFold = syncFold;
+    // 접힌 묶음의 탭을 누르면 펼친다 (고른 탭을 다시 눌러도)
+    if (group.element) group.element.addEventListener('pointerdown', e => {
+      if (isCollapsed(group) && e.target.closest('.dv-tab')) setTimeout(() => { expand(group); syncFold(); requestAnimationFrame(fitScreens); }, 0);
+    }, true);
+    el.appendChild(f);
     el.appendChild(b);
-    return { element: el, init() { sync(); }, dispose() {} };
+    return { element: el, init() { sync(); syncFold(); }, dispose() {} };
+  }
+
+  // ---------------- 패널 묶음 접기 ----------------
+  const FOLD_KEY = 'wc-dock-folded'; // 접어 둔 묶음의 패널 아이디들 (다음 실행에도)
+  const folded = new Map(); // group.id → 접기 전 높이
+  const isCollapsed = g => folded.has(g.id);
+  const headH = g => { const h = g.element && g.element.querySelector('.dv-tabs-and-actions-container'); return Math.max(24, (h && h.offsetHeight) || 34); };
+  /** 저장: [{ ids:[묶음의 패널들], h: 접기 전 높이 }] */
+  function rememberFolds() {
+    try {
+      const list = [];
+      for (const g of api.groups) if (folded.has(g.id)) list.push({ ids: g.panels.map(p => p.id), h: folded.get(g.id) });
+      localStorage.setItem(FOLD_KEY, JSON.stringify(list));
+    } catch { /* 무시 */ }
+  }
+  function collapse(g) {
+    if (!g || folded.has(g.id) || (g.api.location && g.api.location.type === 'floating')) return false;
+    const before = g.api.height;
+    const h = headH(g);
+    g.api.setConstraints({ minimumHeight: h, maximumHeight: h });
+    g.api.setSize({ height: h });
+    if (Math.abs(g.api.height - before) < 4 && before > h + 4) {
+      // 위·아래로 나뉜 자리가 아니라 높이를 줄일 수 없음
+      g.api.setConstraints({ minimumHeight: 100, maximumHeight: Number.MAX_SAFE_INTEGER });
+      return false;
+    }
+    folded.set(g.id, Math.max(160, before));
+    g.element.classList.add('dock-folded');
+    return true;
+  }
+  function expand(g) {
+    if (!g || !folded.has(g.id)) return;
+    const before = folded.get(g.id);
+    folded.delete(g.id);
+    g.element.classList.remove('dock-folded');
+    g.api.setConstraints({ minimumHeight: 100, maximumHeight: Number.MAX_SAFE_INTEGER });
+    g.api.setSize({ height: before });
+    if (g.__syncFold) g.__syncFold();
+    rememberFolds();
+  }
+  function toggleCollapse(g) {
+    if (!g) return;
+    if (folded.has(g.id)) { expand(g); return; }
+    if (!collapse(g)) { app.showMsg('위·아래로 나뉜 패널만 접을 수 있습니다.', 'info', 2500); return; }
+    if (g.__syncFold) g.__syncFold();
+    rememberFolds();
+    requestAnimationFrame(fitScreens);
+  }
+  /** 패널 아이디로 (예: 빠른 설정의 '접기' 단추) */
+  function toggleFold(id) {
+    const p = api && api.getPanel(id);
+    if (!p) return false;
+    toggleCollapse(p.group);
+    return isCollapsed(p.group);
+  }
+  const isFolded = id => { const p = api && api.getPanel(id); return !!(p && isCollapsed(p.group)); };
+  /** 시작할 때: 지난번에 접어 둔 묶음을 다시 접기 */
+  function restoreFolds() {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(FOLD_KEY) || '[]'); } catch { list = []; }
+    if (!Array.isArray(list)) return;
+    const done = new Set();
+    for (const x of list) {
+      const ids = typeof x === 'string' ? [x] : (x && x.ids) || [];
+      const p = ids.map(id => api.getPanel(id)).find(Boolean);
+      if (!p || done.has(p.group.id)) continue;
+      done.add(p.group.id);
+      if (collapse(p.group)) {
+        if (x && Number(x.h) > 0) folded.set(p.group.id, Math.max(160, Number(x.h))); // 펼칠 때 접기 전 높이로
+        if (p.group.__syncFold) p.group.__syncFold();
+      }
+    }
   }
 
   function defaultLayout() {
@@ -326,6 +416,7 @@
     }, true);
     api.onDidRemovePanel(p => park(p.id));
     api.onDidLayoutChange(() => { save(); requestAnimationFrame(fitScreens); });
+    setTimeout(() => { try { restoreFolds(); } catch { /* 무시 */ } }, 600);
     // 창 크기·표시가 바뀌면 배치를 다시 계산 (숨긴 채 시작하거나 최대화가 늦을 때도)
     const relayout = () => { if (el.clientWidth && el.clientHeight) { try { api.layout(el.clientWidth, el.clientHeight, true); } catch { /* 무시 */ } } requestAnimationFrame(fitScreens); };
     new ResizeObserver(relayout).observe(el);
@@ -352,6 +443,8 @@
   }
   function resetLayout() {
     restoring = true;
+    folded.clear();
+    try { localStorage.removeItem(FOLD_KEY); } catch { /* 무시 */ }
     try { defaultLayout(); } finally { restoring = false; }
     app.cmd('setActiveWorkspace', { id: 'b-default' });
     if (app.state) app.state.settings.activeWorkspace = 'b-default';
@@ -397,7 +490,7 @@
   let lastGap = null;
 
   window.BCDock = {
-    init, show, hide, isOpen, openMenu, fitScreens, resetLayout, applyTheme, panels: PANELS,
+    init, show, hide, isOpen, openMenu, fitScreens, resetLayout, applyTheme, toggleFold, isFolded, panels: PANELS,
     workspaces: allWorkspaces, activeWorkspace, applyWorkspace, saveAsWorkspace, overwriteWorkspace, manageWorkspaces,
   };
 })();

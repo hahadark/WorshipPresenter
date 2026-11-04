@@ -1882,3 +1882,51 @@ test('부를 순서 여러 개: 찬양에 이름 붙여 저장 · 같은 이름�
   core.command('setSyncDir', { dir: '' });
   core.store.close();
 });
+test('OBS 자막: 찬송가·찬양은 따로 정한 템플릿 · 리모컨 끄기는 보조 화면도 끔', () => {
+  const core = newCore('obs-lyrics');
+  const s = core.settings.get();
+  // 새 프리셋과 자리 (예전 설정에도 들어간다)
+  assert.ok(s.templates.some(t => t.id === 'overlay-lyrics'));
+  assert.equal(s.activeTemplates.overlayLyrics, 'overlay-lyrics');
+  const slides = [{ kind: 'text', ref: '', label: '1', parts: [{ book: 0, chapter: 0, verse: 0, text: '첫 줄\n둘째 줄' }] }];
+  const send = passage => core.command('sendLive', { passage: { title: 'x', versionId: '', query: 'x', ...passage }, slides, index: 0 });
+  // 찬송가·찬양 순서 → OBS 자막은 '찬송가·찬양' 템플릿, 예배당은 그대로
+  assert.equal(send({ itemType: 'hymn' }).ok, true);
+  assert.equal(core.templateFor('overlay').id, 'overlay-lyrics');
+  assert.equal(core.templateFor('main').id, s.activeTemplates.main);
+  assert.equal(core.outputPayload('overlay').template.id, 'overlay-lyrics');
+  send({ itemType: 'song' });
+  assert.equal(core.templateFor('overlay').id, 'overlay-lyrics');
+  // 성경 · 공지는 원래 OBS 자막 템플릿
+  send({ itemType: 'bible' });
+  assert.equal(core.templateFor('overlay').id, s.activeTemplates.overlay);
+  send({ itemType: 'text' });
+  assert.equal(core.templateFor('overlay').id, s.activeTemplates.overlay);
+  // 순서에 따로 고른 OBS 템플릿이 있으면 그것이 먼저
+  send({ itemType: 'hymn', tpl: { main: '', overlay: 'overlay' } });
+  assert.equal(core.templateFor('overlay').id, 'overlay');
+  // 찬송가 PPT 그림 슬라이드(가사 붙음)는 순서 종류가 없어도 가사로
+  core.command('sendLive', { passage: { title: 'ppt', versionId: '', query: 'ppt' }, slides: [{ kind: 'image', image: '/x.png', ref: 'x', label: '1', parts: [], caption: '가사' }], index: 0 });
+  assert.equal(core.templateFor('overlay').id, 'overlay-lyrics');
+  // 자리 바꾸기: 찬송가·찬양 자리에 다른 템플릿
+  assert.equal(core.command('setTemplate', { output: 'overlayLyrics', templateId: 'overlay' }).ok, true);
+  assert.equal(core.settings.get().activeTemplates.overlayLyrics, 'overlay');
+  assert.equal(core.command('setTemplate', { output: 'nope', templateId: 'overlay' }).ok, false);
+  // 리모컨 '끄기': 모두 지우기 + 보조 화면 끄기 (켜져 있을 때)
+  const calls = [];
+  core.desktop = { setOutput: o => { calls.push(o); core.settings.update(d => { if (typeof o.enabled === 'boolean') d.output.enabled = o.enabled; }); return { enabled: !!o.enabled }; }, status: () => ({ enabled: core.settings.get().output.enabled, valid: true }) };
+  core.settings.update(d => { d.output.enabled = true; });
+  send({ itemType: 'bible' });
+  const { RemoteServer } = require('../src/core/remote');
+  const remote = new RemoteServer(core);
+  const r = remote.act({ action: 'off' });
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual(calls.filter(c => c.enabled === false).length, 1);
+  assert.equal(core.settings.get().output.enabled, false);
+  assert.equal(core.presentation.getLiveState().visible, false);
+  // 이미 꺼져 있으면 보조 화면은 건드리지 않는다
+  remote.act({ action: 'off' });
+  assert.equal(calls.filter(c => c.enabled === false).length, 1);
+  core.desktop = null;
+  core.store.close();
+});

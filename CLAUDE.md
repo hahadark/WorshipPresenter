@@ -100,3 +100,11 @@
 | 글 한 줄 묻기 | — | `ask.js` (app.ask) — **Electron 은 prompt() 가 없다. prompt() 쓰지 말 것** | — |
 
 테스트: 단위 65개 · e2e 46개.
+
+## 2026-11-04 사용자 피드백 반영 (아직 릴리스 전)
+
+- **OBS 자막 성경·찬송가 따로**: `activeTemplates.overlayLyrics` (기본 프리셋 `overlay-lyrics` '찬송가·찬양 두 줄', 예전 설정에는 `settings.js load` 가 넣음). 고르는 규칙은 코어 `isLyrics`(core.js) = 조작 화면 `app.isLyrics`(control.js): passage.lyrics · itemType hymn/song · 그림/악보 슬라이드에 caption. 순서에만 고른 tpl.overlay 가 먼저. 템플릿 자리는 `TEMPLATE_SLOTS` (main · overlay · overlayLyrics). 빠른 설정 탭 'OBS 성경 | OBS 찬송가'.
+- **가사 줄바꿈 버그**: `render.js partsHtml` 에서 내어쓰기(align 'hanging')면 text 슬라이드도 hangingHtml 로 가 줄바꿈이 없어졌다 → text 는 늘 bc-pre.
+- **리모컨 ■ 끄기**: `remote.js act('off')` = clearAll + (보조 화면이 켜져 있으면) outputOff.
+- **보조 화면 모니터**: `main.js syncOutputWindow` 가 저장한 displayId 가 없으면 조작 화면과 다른 모니터로 바꿔 저장. 그래도 없으면 조작 화면 `checkOutputSetup` 이 설정 → 출력 을 연다(같은 상태에선 한 번). 사용자 PC 에서 실제로 저장된 displayId(1102995331)가 지금 모니터와 달랐다.
+- **패널 접기**: `dock.js` collapse/expand (setConstraints 로 탭 줄 높이에 고정), 머리 단추 ▾/▴ · 탭 누르면 펴짐 · localStorage `wc-dock-folded` [{ids,h}] · 빠른 설정 '접기' 는 `BCDock.toggleFold('quick')`.

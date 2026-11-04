@@ -1524,3 +1524,8 @@ footer.bottom .quick-btn.on { border-color: var(--accent); color: var(--accent);
 /* ---- 저장한 부를 순서 (cue.js arrRow) ---- */
 .ce-arr { flex-wrap: wrap; gap: 4px; }
 .ce-arr button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+/* ---------------- 패널 묶음 접기 (dock.js) ---------------- */
+.dock-actions .dock-fold { font-size: 12px; min-width: 26px; }
+.dock-actions .dock-fold[hidden] { display: none; }
+.wc-dock .dv-groupview.dock-folded .dv-content-container { visibility: hidden; }
+.wc-dock .dv-groupview.dock-folded .dock-fold { color: var(--accent); }
