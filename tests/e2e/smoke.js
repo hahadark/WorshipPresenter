@@ -185,8 +185,8 @@ app.whenReady().then(async () => {
       const S = [1, 2, 3].map(n => svg(n, '#335')), B = [1, 2, 3].map(n => svg(n, '#533'));
       let asked = null;
       window.fetch = async (u, o) => {
-        if (String(u).includes('/api/command') && o && /"cmd":"loadHymn"/.test(o.body)) return new Response(JSON.stringify({ ok: true, result: { mode: 'slides', key: 'abc', slides: S, slideTexts: ['주일 예배', '', '광고'], scores: [], texts: [] } }));
-        if (String(u).includes('/api/command') && o && /"cmd":"pptTextLayers"/.test(o.body)) { asked = JSON.parse(o.body).args; return new Response(JSON.stringify({ ok: true, result: { bgs: B, slides: [[{ id: 'p0i0', type: 'image', x: 60, y: 50, w: 30, h: 30, src: svg(9, '#e9c46a'), fit: 'contain' }, { id: 'p0t1', type: 'text', x: 5, y: 5, w: 90, h: 20, text: '주일 예배', size: 88, color: '#ffff00', bold: true, align: 'center', valign: 'middle', padding: 14, font: '맑은 고딕', fit: true, lineHeight: 1.2 }], [], [{ id: 'p2t0', type: 'text', x: 10, y: 40, w: 80, h: 20, text: '광고', size: 81, color: '#ff0000', align: 'right', valign: 'middle', fit: true }]] } })); }
+        if (String(u).includes('/api/command') && o && /"cmd":"loadHymn"/.test(o.body)) return new Response(JSON.stringify({ ok: true, result: { mode: 'pptx', layers: true, key: 'abc', slides: S, slideTexts: ['주일 예배', '', '광고'], scores: [], texts: [] } }));
+        if (String(u).includes('/api/command') && o && /"cmd":"pptTextLayers"/.test(o.body)) { asked = JSON.parse(o.body).args; return new Response(JSON.stringify({ ok: true, result: { bgs: B, slides: [[{ id: 'p0i0', type: 'image', x: 60, y: 50, w: 30, h: 30, src: svg(9, '#e9c46a'), fit: 'contain' }, { id: 'p0t1', type: 'text', x: 5, y: 5, w: 90, h: 20, text: '주일 예배', size: 88, color: '#ffff00', bold: true, align: 'center', valign: 'middle', padding: 14, font: '맑은 고딕', fit: true, lineHeight: 1.2 }, { id: 'p0s2', type: 'shape', x: 2, y: 60, w: 20, h: 10, fill: '#1d3557', radius: 20 }, { id: 'p0i3', type: 'image', x: 30, y: 60, w: 20, h: 20, src: svg(7, '#2a9d8f'), fit: 'cover', crop: { l: 0.25, t: 0.1, r: 0, b: 0 } }], [], [{ id: 'p2t0', type: 'text', x: 10, y: 40, w: 80, h: 20, text: '광고', size: 81, color: '#ff0000', align: 'right', valign: 'middle', fit: true }]] } })); }
         return realFetch(u, o);
       };
       const c = (await window.BC.cmd('saveCue', { cue: { name: 'PPT 글자 점검', items: [{ type: 'hymn', title: '주보 PPT', file: 'C:\\\\가짜\\\\글자.pptx', edits: { 0: { items: [{ id: 'mine1', type: 'text', text: '덧붙임', x: 1, y: 80, w: 30, h: 10 }] } } }] } })).result;
@@ -197,7 +197,7 @@ app.whenReady().then(async () => {
       const e0 = it.edits && it.edits['0'], e1 = it.edits && it.edits['1'], e2 = it.edits && it.edits['2'];
       const pv = window.BC.preview.slides.map(s => (B.includes(s.image) ? 'bg' : S.includes(s.image) ? 'orig' : '?'));
       const txt = $$('#pvScreen .bc-etext').map(x => x.textContent);
-      const imgs = $$('#pvScreen img.bc-eitem').length;
+      const imgs = $$('#pvScreen img.bc-eitem').length + $$('#pvScreen div.bc-eitem > img').length; // 그림 + 자른 그림
       const fitEl = $('#pvScreen .bc-etext[data-fit]');
       const font = fitEl ? fitEl.style.fontFamily : '';
       const row = !!$('#cueEditor [data-act=ppttextoff]');
@@ -207,8 +207,8 @@ app.whenReady().then(async () => {
       window.fetch = realFetch; window.confirm = realConfirm;
       return { btn, asked: asked && asked.screen, e0: e0 && { pptBg: !!e0.pptBg, ids: (e0.items || []).map(x => x.id) }, e1: !!e1, e2: !!(e2 && e2.pptBg), pv, txt, imgs, font, row, after, pv2 };`);
     await shot('ppt-text');
-    ok(pt.btn && pt.asked && pt.asked.w > 0 && pt.e0 && pt.e0.pptBg && pt.e0.ids.join() === 'p0i0,p0t1,mine1' && !pt.e1 && pt.e2 && pt.pv && pt.pv.join() === 'bg,orig,bg', 'PPT 요소 따로 고치기: 요소 꺼내기 → 요소를 숨긴 배경 + 그림·글상자 (덧붙인 것은 그대로, 쌓인 차례)', pt);
-    ok(pt.txt && pt.txt.includes('주일 예배') && pt.imgs === 1 && /맑은 고딕/.test(pt.font), 'PPT 요소 따로 고치기: 미리보기에 요소 그림 · 글상자 (PPT 글꼴)', pt);
+    ok(pt.btn && pt.asked && pt.asked.w > 0 && pt.e0 && pt.e0.pptBg && pt.e0.ids.join() === 'p0i0,p0t1,p0s2,p0i3,mine1' && !pt.e1 && pt.e2 && pt.pv && pt.pv.join() === 'bg,orig,bg', 'PPT 요소 따로 고치기: 요소 꺼내기 → 요소를 숨긴 배경 + 그림·글상자 (덧붙인 것은 그대로, 쌓인 차례)', pt);
+    ok(pt.txt && pt.txt.includes('주일 예배') && pt.imgs === 2 && /맑은 고딕/.test(pt.font), 'PPT 요소 따로 고치기: 미리보기에 요소 그림 · 자른 그림 · 글상자 (PPT 글꼴)', pt);
     ok(pt.row && pt.after && pt.after['0'] && pt.after['0'].items.map(x => x.id).join() === 'mine1' && !pt.after['0'].pptBg && !pt.after['2'] && pt.pv2.join() === 'orig,orig,orig', 'PPT 요소 따로 고치기: 원래대로 (덧붙인 것은 남김)', pt);
 
     // ---- 2-8d. 끌어서 슬라이드 차례 바꾸기: 격자(PPT 원래 슬라이드) · 되돌리기 · 목록(공지 글 덩어리) · 여러 장

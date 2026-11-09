@@ -3,12 +3,13 @@
 // - 폴더를 등록해 두면 번호·제목으로 찾아 큐시트에 넣는다
 // - 처음 쓸 때 파일에서 그림·글자를 꺼내 데이터 폴더의 hymn-cache 에 저장 (다음부터 바로)
 // - 폴더마다 읽는 방식: auto(악보·배경을 나눠 꺼냄) | slides(PowerPoint 로 슬라이드를 화면 그대로 그림으로)
+// - .pptx/.ppsx 는 PowerPoint 가 없어도 XML 을 직접 읽어(pptxbuild.js) 슬라이드를 SVG 그림으로 만들고, 요소(글상자·그림·도형)를 따로 꺼낼 수 있다
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { extractPps } = require('./ppt');
-const { hasPowerPoint, exportWithPowerPoint, exportLayers, extractPptx } = require('./pptrender');
+const { hasPowerPoint, exportWithPowerPoint, exportBgWithPowerPoint, extractPptx } = require('./pptrender');
 const { alignLyrics } = require('./hymnlyrics');
 
 const EXT = /\.(pps|ppt|ppsx|pptx)$/i;
@@ -101,40 +102,60 @@ class Hymns {
     const pp = await hasPowerPoint();
     const xml = /\.(pptx|ppsx)$/i.test(file);
     const mode = xml ? (pp ? 'slides' : 'pptx') : (folder && folder.render === 'slides' && pp ? 'slides' : 'auto');
-    const key = crypto.createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}|${mode}|v2`).digest('hex').slice(0, 16);
+    // 캐시 판: 'pptx'(PowerPoint 없이) 만 v3 — 글자 슬라이드 대신 SVG 슬라이드로 바뀜. PowerPoint 로 내보낸 것(slides)·.pps(auto)는
+    // 그대로 v2 라서 업데이트해도 찬송가 PPT 를 모두 다시 내보내지 않는다 (예전 캐시에는 layers 표시가 없어 아래에서 채움)
+    const key = crypto.createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}|${mode}|${mode === 'pptx' ? 'v3' : 'v2'}`).digest('hex').slice(0, 16);
     if (!this.loading.has(key)) this.loading.set(key, this.build(file, key, mode, pp).finally(() => this.loading.delete(key)));
-    const meta = await this.loading.get(key);
+    let meta = await this.loading.get(key);
+    if (meta.layers === undefined && meta.mode === 'slides') meta = { ...meta, layers: xml }; // 예전(v2) 캐시: .pptx 면 요소를 꺼낼 수 있다
     const out = this.withCaptions(meta, folder);
     const bgs = this.layerBgs(meta);
     return bgs ? { ...out, layerBgs: bgs } : out;
   }
 
-  /** PPT 요소 따로 고치기용 배경(요소를 숨긴 그림) 주소들 — 한 번 꺼낸 적이 있을 때만 */
+  /** 꺼낸 요소 정보 (layers.json) — 없으면 null */
+  readLayers(meta) {
+    if (!meta || !meta.layers || !meta.key) return null;
+    try { return JSON.parse(fs.readFileSync(path.join(this.cacheDir, meta.key, 'layers.json'), 'utf8').replace(/^\ufeff/, '')); } catch { return null; }
+  }
+
+  /** PPT 요소 따로 고치기용 배경(요소를 뺀 그림) 주소들 — 한 번 꺼낸 적이 있을 때만 */
   layerBgs(meta) {
-    if (!meta || meta.mode !== 'slides' || !meta.key) return null;
-    const dir = path.join(this.cacheDir, meta.key);
-    let n = 0;
-    try { const raw = JSON.parse(fs.readFileSync(path.join(dir, 'layers.json'), 'utf8').replace(/^\ufeff/, '')); n = Array.isArray(raw.slides) ? raw.slides.length : 0; } catch { return null; }
-    return meta.slides.map((_, k) => (k < n ? `/hymn/${meta.key}/slide-${String(k + 1).padStart(3, '0')}-bg.png` : ''));
+    const raw = this.readLayers(meta);
+    if (!raw || !Array.isArray(raw.bgs)) return null;
+    return meta.slides.map((_, k) => (raw.bgs[k] ? `/hymn/${meta.key}/${raw.bgs[k]}` : ''));
   }
 
   /**
-   * PPT 요소 따로 고치기: PowerPoint 로 요소를 숨긴 배경 그림 · 요소 그림 · 글상자 정보를 꺼낸다 (한 번 꺼내면 캐시에 남음)
-   * → { key, raw: { w, h, slides }, bgs: [주소…] }
+   * PPT 요소 따로 고치기: .pptx/.ppsx 의 XML 을 직접 읽어 요소(글상자·그림·도형)와 요소를 뺀 배경 그림을 꺼낸다 (한 번 꺼내면 캐시에 남음)
+   *   PowerPoint 가 있으면(mode 'slides') 배경은 PowerPoint 로 — 꺼낸 도형을 숨기고 슬라이드를 PNG 로 (픽셀 그대로). 안 되면 SVG 배경을 그대로 쓴다
+   * → { key, raw: { w, h, slides, bgs }, bgs: [주소…] }
    */
   async layers(file, { again = false } = {}) {
     const meta = await this.load(file);
-    if (meta.mode !== 'slides') throw new Error(await hasPowerPoint() ? "이 PPT 는 '화면 그대로' 방식으로 읽지 않아 요소를 꺼낼 수 없습니다. 찬송가 폴더의 읽는 방식을 '화면 그대로' 로 바꾸세요." : 'PowerPoint 가 설치된 윈도우 PC 에서만 PPT 요소를 꺼낼 수 있습니다.');
+    if (!meta.layers) throw new Error(/\.(pps|ppt)$/i.test(file) ? '옛 형식(.ppt/.pps)은 요소를 꺼낼 수 없습니다. PowerPoint 에서 .pptx 로 저장한 뒤 넣어 주세요.' : '이 파일에서는 요소를 꺼낼 수 없습니다.');
     const dir = path.join(this.cacheDir, meta.key);
     const lj = path.join(dir, 'layers.json');
     if (again) { try { fs.unlinkSync(lj); } catch { /* 없음 */ } }
     if (!fs.existsSync(lj)) {
       const lk = 'layers:' + meta.key;
-      if (!this.loading.has(lk)) this.loading.set(lk, exportLayers(file, dir).finally(() => this.loading.delete(lk)));
+      if (!this.loading.has(lk)) this.loading.set(lk, this.buildLayers(file, dir, meta).finally(() => this.loading.delete(lk)));
       await this.loading.get(lk);
     }
     const raw = JSON.parse(fs.readFileSync(lj, 'utf8').replace(/^\ufeff/, ''));
     return { key: meta.key, raw, bgs: this.layerBgs(meta) || [] };
+  }
+
+  async buildLayers(file, dir, meta) {
+    const { build } = require('./pptxbuild');
+    const r = build(file, dir, { full: false });
+    if (meta.mode === 'slides' && await hasPowerPoint()) {
+      try {
+        await exportBgWithPowerPoint(file, dir, r.raw.hide);
+        const bgs = r.raw.bgs.map(f => { const png = f.replace(/\.svg$/, '.png'); return fs.existsSync(path.join(dir, png)) ? png : f; });
+        fs.writeFileSync(path.join(dir, 'layers.json'), JSON.stringify({ ...r.raw, bgs, bgFrom: 'powerpoint' }));
+      } catch (e) { this.core.logger.warn('PowerPoint 배경 그림을 만들지 못해 직접 그린 배경을 씁니다: ' + e.message); }
+    }
   }
 
   /**
@@ -169,11 +190,23 @@ class Hymns {
     if (mode === 'slides') {
       const e = await exportWithPowerPoint(file, dir);
       if (!e.files.length) throw new Error('슬라이드가 없는 파일입니다.');
-      const meta = { key, ...parseName(file), file, mode, background: null, scores: [], texts: [], slides: e.files.map(url), slideTexts: e.texts || [], aspect: e.width / e.height };
+      const meta = { key, ...parseName(file), file, mode, background: null, scores: [], texts: [], slides: e.files.map(url), slideTexts: e.texts || [], aspect: e.width / e.height, layers: /\.(pptx|ppsx)$/i.test(file) };
       fs.writeFileSync(metaFile, JSON.stringify(meta));
       return meta;
     }
-    if (mode === 'pptx') r = extractPptx(file);
+    if (mode === 'pptx') {
+      // PowerPoint 없이: XML 을 직접 읽어 슬라이드마다 SVG 그림 (+ 요소 정보 layers.json). 못 그리면 글자·배경 그림만 (옛 방식)
+      try {
+        const { build } = require('./pptxbuild');
+        const b = build(file, dir, { full: true });
+        if (b.n) {
+          const meta = { key, ...parseName(file), file, mode, background: null, scores: [], texts: [], slides: b.slides.map(url), slideTexts: b.texts, aspect: b.w / b.h, layers: true };
+          fs.writeFileSync(metaFile, JSON.stringify(meta));
+          return meta;
+        }
+      } catch (e) { this.core.logger.warn('PPT 를 직접 읽지 못해 글자만 꺼냅니다: ' + e.message); }
+      r = extractPptx(file);
+    }
     if (!r) throw new Error('파일을 읽지 못했습니다.');
     fs.mkdirSync(dir, { recursive: true });
     const meta = { key, ...parseName(file), file, mode, background: null, scores: [], texts: r.texts };

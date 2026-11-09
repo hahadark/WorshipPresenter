@@ -389,7 +389,7 @@
         h += `<h4>${NAMES[x.type]}${mine ? '' : ' <span class="muted">(공통 — \'공통\' 에서 고치세요)</span>'}</h4><div class="form se-form ${mine ? '' : 'se-locked'}">`;
         if (x.type === 'text') {
           h += field('글', `<textarea data-p="item.text" rows="4">${esc(x.text)}</textarea>`)
-            + field('글자 크기', `${numIn('item.size', x.size, 8, 400)} px ${tog('item.fit', x.fit, '넘치면 줄이기', '글이 상자보다 길면 상자에 들어가게 글자를 줄입니다')}`)
+            + field('글자 크기', `${numIn('item.size', x.size, 8, 400)} px ${tog('item.shadow', x.shadow !== false, '그림자', '템플릿의 글자 그림자')}${tog('item.fit', x.fit, '넘치면 줄이기', '글이 상자보다 길면 상자에 들어가게 글자를 줄입니다')}`)
             + field('글꼴', `<input type="text" data-p="item.font" value="${esc(x.font || '')}" placeholder="템플릿 글꼴" style="width:180px" spellcheck="false"><span class="note">PC 에 설치된 글꼴 이름 (예: 맑은 고딕)</span>`)
             + field('글자', `${colIn('item.color', x.color)}${tog('item.bold', x.bold, '<b>굵게</b>')}${tog('item.italic', x.italic, '<i>기울임</i>')}`)
             + field('가로 정렬', seg('item.align', x.align, [['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']]))

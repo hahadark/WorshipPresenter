@@ -1120,8 +1120,8 @@ WorshipCueCore.prototype.commands = {
     const { toCueItem } = require('./sermonpoints');
     return { item: toCueItem((a && a.data) || {}, (a && a.opts) || {}) };
   },
-  // ---- PPT 요소 따로 고치기 (요소를 숨긴 PPT 배경 그림 + 글상자 · 요소 그림) ----
-  /** file 의 슬라이드마다 편집기 글상자·그림 (screen = 송출 화면 크기, 그림 자리에 맞춤) · 배경 그림 주소 */
+  // ---- PPT 요소 따로 고치기 (요소를 뺀 PPT 배경 그림 + 글상자 · 그림 · 도형 — .pptx 를 직접 읽어 PowerPoint 없이도, hymns.layers) ----
+  /** file 의 슬라이드마다 편집기 글상자·그림·도형 (screen = 송출 화면 크기, 그림 자리에 맞춤) · 배경 그림 주소 */
   async pptTextLayers(a) {
     const { allItems } = require('./pptlayers');
     const file = String((a && a.file) || '');
