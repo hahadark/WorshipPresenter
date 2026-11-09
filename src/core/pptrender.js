@@ -1,7 +1,7 @@
 'use strict';
 // PPT 슬라이드를 '그대로' 그림으로 만든다
 // - PowerPoint 가 설치돼 있으면 슬라이드마다 PNG 로 내보낸다 (.ppt .pps .pptx .ppsx 모두, 화면 그대로)
-// - 없으면 .pptx/.ppsx 는 pptxbuild.js 가 XML 을 직접 읽어 SVG 로 그린다 (그것도 안 되면 여기 extractPptx 로 글자·배경 그림만)
+// - 없으면 .pptx/.ppsx 는 pptxbuild.js 가 이음오피스 PPTX 엔진(또는 직접 쓴 파서)으로 읽어 SVG 로 그린다 (그것도 안 되면 여기 extractPptx 로 글자·배경 그림만)
 
 const fs = require('fs');
 const path = require('path');

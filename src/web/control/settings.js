@@ -768,7 +768,7 @@
       <h4 style="color:var(--hl)">프로그램 라이선스</h4>
       <div class="note">워십프리젠터 소스 코드는 GNU GPL v3 (또는 그 이후 판)로 공개합니다 — github.com/hahadark/WorshipPresenter. 누구나 쓰고 고치고 나눌 수 있고, 고친 것을 나눌 때는 소스도 함께 공개합니다. 라이선스 글은 설치 폴더의 resources/LICENSE.txt · THIRD_PARTY_NOTICES.md</div>
       <h4 style="color:var(--hl)">함께 쓰는 공개 라이브러리</h4>
-      <div class="note">dockview-core 8.4.0 (MIT) — 패널 배치 · qrcode-generator 2.0.4 (MIT) — 리모컨 QR 코드 · Lucide 아이콘 (ISC, lucide.dev) — 화면 아이콘 · Pretendard (OFL 1.1) — 조작 화면 글꼴</div>`;
+      <div class="note">dockview-core 8.4.0 (MIT) — 패널 배치 · qrcode-generator 2.0.4 (MIT) — 리모컨 QR 코드 · Lucide 아이콘 (ISC, lucide.dev) — 화면 아이콘 · Pretendard (OFL 1.1) — 조작 화면 글꼴 · 이음오피스 IeumOffice PPTX 엔진 (Apache-2.0, github.com/pblsketch/ieumoffice · jszip MIT · fast-xml-parser MIT · opentype.js MIT · bidi-js MIT 포함) — PPT 읽기·그리기</div>`;
     drawUpdate();
     cmd('updateStatus').then(r => { if (r.ok) { app.update = r.result; drawUpdate(); } });
   }

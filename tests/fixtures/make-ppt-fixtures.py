@@ -123,5 +123,67 @@ def main():
     print(out, os.path.getsize(out), 'bytes')
 
 
+def chart_table():
+    """둘째 파일 chart-table.pptx (이음오피스 엔진 점검): ① 막대·원 차트 + 자동 번호 목록 ② 표(기본 스타일) + 길어서 자동 줄바꿈되는 글 + 그라데이션 도형(글 포함) + 돌린 글상자"""
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+    from pptx.oxml.ns import qn
+    prs = Presentation()
+    prs.slide_width = Emu(12192000)
+    prs.slide_height = Emu(6858000)
+    s1 = prs.slides.add_slide(prs.slide_layouts[6])
+    cd = CategoryChartData()
+    cd.categories = ['1부', '2부', '청년']
+    cd.add_series('출석', (120, 85, 40))
+    gf = s1.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Pt(40), Pt(40), Pt(440), Pt(300), cd)
+    gf.chart.has_title = True
+    gf.chart.chart_title.text_frame.text = '○○교회 출석'
+    cd2 = CategoryChartData()
+    cd2.categories = ['헌금', '선교', '구제']
+    cd2.add_series('비율', (60, 25, 15))
+    gf2 = s1.shapes.add_chart(XL_CHART_TYPE.PIE, Pt(500), Pt(40), Pt(420), Pt(300), cd2)
+    gf2.chart.has_legend = True
+    gf2.chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+    tb = s1.shapes.add_textbox(Pt(40), Pt(360), Pt(880), Pt(160))
+    tf = tb.text_frame
+    tf.word_wrap = True
+    for i, t in enumerate(['예배로의 부름', '대표 기도 — 홍길동 사관', '설교 “선한 목자”']):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.text = t
+        pPr = p._p.get_or_add_pPr()
+        pPr.set('marL', '342900')
+        pPr.set('indent', '-342900')
+        pPr.append(pPr.makeelement(qn('a:buAutoNum'), {'type': 'arabicPeriod'}))
+        for r in p.runs:
+            r.font.size = Pt(24)
+    s2 = prs.slides.add_slide(prs.slide_layouts[6])
+    tbl = s2.shapes.add_table(3, 3, Pt(40), Pt(40), Pt(500), Pt(150)).table
+    for r, row in enumerate([['순서', '담당', '비고'], ['기도', '김철수', ''], ['찬양', '홍길동', '새찬송가 8장']]):
+        for c, v in enumerate(row):
+            tbl.cell(r, c).text = v
+    long = s2.shapes.add_textbox(Pt(560), Pt(40), Pt(360), Pt(300))
+    lf = long.text_frame
+    lf.word_wrap = True
+    lf.text = '하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라'
+    lf.paragraphs[0].runs[0].font.size = Pt(28)
+    lf.paragraphs[0].runs[0].font.name = '맑은 고딕'
+    gr = s2.shapes.add_shape(MSO_SHAPE.RECTANGLE, Pt(40), Pt(220), Pt(500), Pt(120))
+    gr.fill.gradient()
+    gr.fill.gradient_angle = 90
+    gr.fill.gradient_stops[0].color.rgb = RGBColor(0x1D, 0x35, 0x57)
+    gr.fill.gradient_stops[1].color.rgb = RGBColor(0xE9, 0xC4, 0x6A)
+    gr.text_frame.text = '광고'
+    gr.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+    gr.text_frame.paragraphs[0].runs[0].font.size = Pt(32)
+    gr.text_frame.paragraphs[0].runs[0].font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    rot = s2.shapes.add_textbox(Pt(600), Pt(380), Pt(300), Pt(60))
+    rot.rotation = 15
+    rot.text_frame.text = '돌린 글'
+    out = os.path.join(HERE, 'chart-table.pptx')
+    prs.save(out)
+    print(out, os.path.getsize(out), 'bytes')
+
+
 if __name__ == '__main__':
     main()
+    chart_table()

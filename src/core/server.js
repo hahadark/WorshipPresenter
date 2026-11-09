@@ -173,6 +173,9 @@ function startServer(core, { webDir, port, host = '127.0.0.1' }) {
         const [, , key, file] = p.split('/');
         const fp = core.hymns.cachePath(key, file);
         if (!fp) { res.writeHead(404); return res.end(); }
+        // PPT 를 직접 그린 SVG: 안의 그림(href="media-N.ext")을 data: 로 바꿔 보낸다 (<img> 로 보이는 SVG 는 바깥 파일을 못 읽는다)
+        const svg = core.hymns.svgToSend(fp);
+        if (svg) { res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-cache' }); return res.end(svg); }
         return serveFile(res, fp, core.hymns.cacheDir);
       }
       // 베들레헴 찬송가 악보 그림

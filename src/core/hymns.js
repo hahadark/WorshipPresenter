@@ -102,9 +102,9 @@ class Hymns {
     const pp = await hasPowerPoint();
     const xml = /\.(pptx|ppsx)$/i.test(file);
     const mode = xml ? (pp ? 'slides' : 'pptx') : (folder && folder.render === 'slides' && pp ? 'slides' : 'auto');
-    // 캐시 판: 'pptx'(PowerPoint 없이) 만 v3 — 글자 슬라이드 대신 SVG 슬라이드로 바뀜. PowerPoint 로 내보낸 것(slides)·.pps(auto)는
-    // 그대로 v2 라서 업데이트해도 찬송가 PPT 를 모두 다시 내보내지 않는다 (예전 캐시에는 layers 표시가 없어 아래에서 채움)
-    const key = crypto.createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}|${mode}|${mode === 'pptx' ? 'v3' : 'v2'}`).digest('hex').slice(0, 16);
+    // 캐시 판: 'pptx'(PowerPoint 없이) 만 v4 — v3 글자 슬라이드 → SVG 슬라이드, v4 이음오피스 엔진(글꼴 메트릭 줄바꿈 · 차트 · 표 스타일, 그림은 href 로).
+    // PowerPoint 로 내보낸 것(slides)·.pps(auto)는 그대로 v2 라서 업데이트해도 찬송가 PPT 를 모두 다시 내보내지 않는다 (예전 캐시에는 layers 표시가 없어 아래에서 채움)
+    const key = crypto.createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}|${mode}|${mode === 'pptx' ? 'v4' : 'v2'}`).digest('hex').slice(0, 16);
     if (!this.loading.has(key)) this.loading.set(key, this.build(file, key, mode, pp).finally(() => this.loading.delete(key)));
     let meta = await this.loading.get(key);
     if (meta.layers === undefined && meta.mode === 'slides') meta = { ...meta, layers: xml }; // 예전(v2) 캐시: .pptx 면 요소를 꺼낼 수 있다
@@ -148,7 +148,7 @@ class Hymns {
 
   async buildLayers(file, dir, meta) {
     const { build } = require('./pptxbuild');
-    const r = build(file, dir, { full: false });
+    const r = await build(file, dir, { full: false, log: m => this.core.logger.warn(m) });
     if (meta.mode === 'slides' && await hasPowerPoint()) {
       try {
         await exportBgWithPowerPoint(file, dir, r.raw.hide);
@@ -198,7 +198,7 @@ class Hymns {
       // PowerPoint 없이: XML 을 직접 읽어 슬라이드마다 SVG 그림 (+ 요소 정보 layers.json). 못 그리면 글자·배경 그림만 (옛 방식)
       try {
         const { build } = require('./pptxbuild');
-        const b = build(file, dir, { full: true });
+        const b = await build(file, dir, { full: true, log: m => this.core.logger.warn(m) });
         if (b.n) {
           const meta = { key, ...parseName(file), file, mode, background: null, scores: [], texts: [], slides: b.slides.map(url), slideTexts: b.texts, aspect: b.w / b.h, layers: true };
           fs.writeFileSync(metaFile, JSON.stringify(meta));
@@ -220,6 +220,25 @@ class Hymns {
   cachePath(key, file) {
     if (!/^[0-9a-f]{16}$/.test(key) || !/^[\w.-]+$/.test(file)) return null;
     return path.join(this.cacheDir, key, file);
+  }
+
+  /**
+   * 캐시의 SVG(슬라이드·배경·요소 그림)를 보낼 글: 안의 href="media-N.ext" 를 같은 폴더 그림의 data: 로 바꿔 넣는다
+   *   (<img> 로 보이는 SVG 는 바깥 파일을 못 읽는다. 파일에는 이름만 두어 같은 배경이 수백 장에 쓰여도 캐시가 커지지 않는다)
+   * → Buffer | null (SVG 가 아니거나 없음)
+   */
+  svgToSend(fp) {
+    if (!/\.svg$/i.test(fp)) return null;
+    let svg;
+    try { svg = fs.readFileSync(fp, 'utf8'); } catch { return null; }
+    if (!/href="media-\d{1,4}\./.test(svg)) return Buffer.from(svg, 'utf8');
+    const dir = path.dirname(fp);
+    if (!this._uriCache || this._uriCacheDir !== dir) { this._uriCache = new Map(); this._uriCacheDir = dir; this._uriBytes = 0; }
+    const before = this._uriCache.size;
+    const { inlineSvg } = require('./pptxbuild');
+    const out = inlineSvg(svg, dir, this._uriCache);
+    if (this._uriCache.size !== before) { this._uriBytes = [...this._uriCache.values()].reduce((a, u) => a + u.length, 0); if (this._uriBytes > 96 * 1024 * 1024) { this._uriCache.clear(); this._uriBytes = 0; } }
+    return Buffer.from(out, 'utf8');
   }
 }
 

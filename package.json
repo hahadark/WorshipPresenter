@@ -26,8 +26,13 @@
     "node": ">=22.13"
   },
   "devDependencies": {
+    "bidi-js": "^1.0.3",
     "electron": "44.7.2",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.12",
+    "fast-xml-parser": "^5.10.1",
+    "jszip": "^3.10.1",
+    "opentype.js": "^2.0.0"
   },
   "build": {
     "appId": "org.worshipcue.app",
