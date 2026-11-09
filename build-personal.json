@@ -7,6 +7,14 @@
   ],
   "extraResources": [
     {
+      "from": "LICENSE",
+      "to": "LICENSE.txt"
+    },
+    {
+      "from": "THIRD_PARTY_NOTICES.md",
+      "to": "THIRD_PARTY_NOTICES.md"
+    },
+    {
       "from": "data-personal/bible.db",
       "to": "bible.db"
     },

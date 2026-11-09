@@ -3,6 +3,7 @@
 > 2026-10-31 이름 변경: 화면·설치 파일·문서의 이름만 '워십프리젠터'(영어 Worship Presenter, 파일 WorshipPresenter-…)로 바꿨다. **저장소** 도 같은 날 hahadark/WorshipCue → **hahadark/WorshipPresenter** 로 바꿨다 (옛 주소는 GitHub 이 301 로 넘겨줌, package.json publish · updater.js REPO 도 새 이름). **바꾸지 않은 것**: appId org.worshipcue.app · 데이터 폴더 %APPDATA%\WorshipCue (main.js 에서 userData 도 여기로 고정) · 문서\WorshipCue 찬양 PPT · 동기화 파일 WorshipCue-sync.json · X-WorshipCue 머리글 · 코드 이름(WorshipCueCore, wc- 저장소 키, 패키지 name worshipcue).
 
 교회 예배 순서(큐시트) 통합 송출 프로그램. Electron 44 + node:sqlite, 조작 화면은 바닐라 JS. 저장소 `hahadark/WorshipPresenter`.
+**라이선스: GPL-3.0-or-later** (2026-11-09 사용자 결정 — 수익화 계획 없음, 소스 공개 괜찮음. 그 전에는 UNLICENSED). 그래서 FreeShow(GPL-3.0) 코드도 가져다 쓸 수 있다. 가져온 공개 코드·글꼴은 `THIRD_PARTY_NOTICES.md` 와 설정 → 정보의 목록에 적는다 (Apache-2.0 은 NOTICE 내용도). 설치판에는 resources/LICENSE.txt · THIRD_PARTY_NOTICES.md 로 들어간다.
 사용자(hahadark)는 한국어로 대화하고, 설명·커밋 메시지·주석도 한국어로 쓴다. 데모 데이터는 홍길동·○○교회처럼 가상으로.
 
 ## 지키는 규칙 (꼭)

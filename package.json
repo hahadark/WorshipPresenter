@@ -5,7 +5,7 @@
   "description": "워십프리젠터 — 교회 예배 순서(큐시트) 통합 송출 프로그램 · 성경·찬양 가사·공지·제목·이미지",
   "main": "src/main/main.js",
   "author": "WorshipPresenter",
-  "license": "UNLICENSED",
+  "license": "GPL-3.0-or-later",
   "private": true,
   "scripts": {
     "start": "electron .",
@@ -37,6 +37,14 @@
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
       {
         "from": "data/bible.db",
         "to": "bible.db"

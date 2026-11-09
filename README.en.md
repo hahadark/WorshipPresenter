@@ -138,6 +138,12 @@ All shortcuts can be changed in `Settings → Shortcuts`.
 - The Korean build includes the Korean Revised Version (out of copyright).
 - You can import other translations you have permission to use (`File → ⚙ Settings → Bible data`: JSON · CSV · Zefania XML). Copyrighted translations (NIV, ESV, …) require permission from the rights holder.
 
+## License
+
+Worship Presenter's source code is licensed under the **GNU GPL v3 or later** (GPL-3.0-or-later) — see [LICENSE](LICENSE).
+Anyone may use, modify and redistribute it; modified versions you distribute must also be released as source under the same license.
+Bundled third-party code, fonts, logos and Bible data keep their own terms — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Development
 
 ```bash
