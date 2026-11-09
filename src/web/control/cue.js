@@ -347,37 +347,133 @@
    */
   /** 슬라이드 범위 (한 PPT 를 여러 순서로 나눠 쓸 때 '5-9'): 이름표는 원래 번호 그대로 */
   function rangeOf(r) { const m = /^\s*(\d+)\s*(?:[-~]\s*(\d+))?\s*$/.exec(r || ''); if (!m) return null; const a = +m[1], b = +(m[2] || m[1]); return a >= 1 ? [Math.min(a, b), Math.max(a, b)] : null; }
-  /** 한 PPT 를 여러 순서로 나누기: 슬라이드를 보며 범위·이름을 정하면 그 순서 자리에 순서 여러 개로 */
-  async function openSplit(i) {
+  /** 슬라이드 수 (PPT 를 한 번 읽은 뒤에만 안다) */
+  function hymnCount(it) {
+    const m = st.hymnMeta.get(it.file);
+    if (!m) return 0;
+    return m.slides ? m.slides.length : m.scores.length || m.texts.length;
+  }
+  const SPLIT_BIG = 20; // 이보다 슬라이드가 많은 PPT 는 예배·행사 전체가 든 것으로 보고 나누기를 권한다
+  /** 끌어다 놓은 PPT 가 길면 '여러 순서로 나눌까요?' (한 번만 묻는다) */
+  async function offerSplit(id) {
+    const i = st.cue ? st.cue.items.findIndex(x => x.id === id) : -1;
+    const it = i >= 0 ? st.cue.items[i] : null;
+    if (!it || it.type !== 'hymn' || it.range) return;
+    try { await hymnMeta(it); } catch { return; }
+    const n = hymnCount(it);
+    if (n < SPLIT_BIG || !$('#modal').hidden) return;
+    const s = await cmd('aiSettings');
+    const hasKey = !!(s.ok && s.result.hasKey);
+    const ic = window.BCIcon;
+    app.openModal('여러 순서로 나눌까요?', `<div class="sp-offer">
+      <p>'${esc(it.title)}' 은(는) 슬라이드가 <b>${n}장</b>입니다. 예배·행사 전체가 든 PPT 라면 찬송 · 기도 · 설교 · 광고처럼 순서마다 나눠 두면 F6 으로 차례대로 넘기기 편합니다.</p>
+      <div class="row-flex"><button id="ofAI" class="primary">${ic('sparkles')}${hasKey ? 'AI 로 나누기…' : '자동으로 나누기…'}</button><button id="ofNo">그대로 한 순서로</button></div>
+      <div class="note">${hasKey ? '나눈 결과를 보고 이름·경계를 고친 뒤 넣습니다.' : 'AI 키가 없어 규칙으로 나눕니다. 나누기 창에서 채팅 AI(ChatGPT · Claude · Gemini)로도 할 수 있습니다.'}</div>
+    </div>`);
+    $('#ofNo').onclick = () => app.closeModal();
+    $('#ofAI').onclick = () => { app.closeModal(); const k = st.cue.items.findIndex(x => x.id === id); if (k >= 0) openSplit(k, { auto: hasKey ? 'ai' : 'rule' }); };
+  }
+
+  /**
+   * 한 PPT 를 여러 순서로 나누기: 슬라이드를 보며 범위·이름을 정하면 그 순서 자리에 순서 여러 개로
+   * - 자동으로: 규칙(AI 없이) · AI(오픈라우터 키) · 채팅 AI(프롬프트 복사 → 답 붙여 넣기) — 결과를 고쳐서 넣는다
+   * - 손으로: 누르면 시작 · Shift 끝 · 두 번 누르면 그 슬라이드에서 새 순서 (이미 시작이면 앞 순서와 합침)
+   * o.auto: 'ai' | 'rule' — 창을 열자마자 자동으로 나누기
+   */
+  async function openSplit(i, o = {}) {
     const it = st.cue.items[i];
     let meta;
     try { meta = await hymnMeta(it); } catch (e) { return app.showMsg(e.message, 'error'); }
     const all = buildSlides({ ...it, range: '' }, meta, { raw: true });
     if (all.length < 2) return app.showMsg('슬라이드가 하나뿐이라 나눌 수 없습니다.', 'warn', 2500);
-    const parts = [];
+    const PS = window.BCPptSplit;
+    const ic = window.BCIcon;
+    const texts = PS.texts(all, meta);
+    const noText = texts.filter(t => !String(t).trim()).length;
+    const hasImg = all.some(s => s.image && s.kind !== 'video');
+    const fileTitle = (it.file || '').split(/[\\/]/).pop() || it.title;
+    const CHATS = [['ChatGPT', 'https://chatgpt.com/'], ['Claude', 'https://claude.ai/new'], ['Gemini', 'https://gemini.google.com/app']];
+    let parts = [];
     let from = 0;
-    const thumb = (s, k) => `<button class="sp-th" data-k="${k}" title="${k + 1}번 슬라이드 — 누르면 시작, Shift+누르면 끝">${s.image ? `<img src="${esc(s.image)}" alt="">` : `<span class="sp-tx">${esc(window.BCGroup.stripFmt((s.parts && s.parts[0] && s.parts[0].text) || s.ref || '').slice(0, 40))}</span>`}<b>${k + 1}</b></button>`;
+    let sheetCache = null;
+    const thumb = (s, k) => `<button class="sp-th" data-k="${k}" title="${k + 1}번 슬라이드 — 누르면 시작, Shift+누르면 끝, 두 번 누르면 여기서 새 순서">${s.image && s.kind !== 'video' ? `<img src="${esc(s.image)}" alt="" loading="lazy">` : `<span class="sp-tx">${esc(String(texts[k] || s.ref || '').slice(0, 40))}</span>`}<b>${k + 1}</b><em class="sp-pn"></em></button>`;
     app.openModal(`'${it.title}' 여러 순서로 나누기`, `<div class="sp">
-      <div class="note">슬라이드를 누르면 시작, <b>Shift</b> 를 누른 채 누르면 끝으로 고릅니다. 이름을 쓰고 '범위 더하기' — 다 더했으면 '나누기'. 이 순서 자리에 순서 여러 개가 생기고, 각 순서는 그 범위의 슬라이드만 송출합니다.</div>
+      <div class="sp-ai">
+        <div class="row-flex"><b class="sp-ah">${ic('sparkles')}자동으로 나누기</b>
+          <button id="spAI" class="primary" title="오픈라우터 API 키로 (주보 AI 와 같은 키·모델)">${ic('sparkles')}AI 로 나누기</button>
+          <button id="spRule" title="AI 없이: 순서 이름(찬송·기도·성경봉독·설교·광고·축도 …) · 찬송가 장 번호 · 장절이 적힌 슬라이드에서 나눕니다">${ic('list-checks')}규칙으로 (AI 없이)</button>
+          <button id="spChat" title="API 키 없이 ChatGPT · Claude · Gemini 에서">${ic('clipboard-copy')}채팅 AI 프롬프트 복사</button>
+        </div>
+        <div class="row-flex"><input type="text" id="spExtra" style="flex:1" placeholder="AI 에게 추가 요청 (선택) — 예: 찬양 콘티는 곡마다 따로 · 1부와 2부 사이 영상은 한 순서로">
+          ${hasImg ? `<label class="tc-toggle" title="슬라이드를 16장씩 모은 작은 그림을 함께 보냅니다 — 글자가 그림으로 된 PPT 에 필요 (비용이 조금 늘어남)"><input type="checkbox" id="spImg" ${noText >= all.length * 0.3 ? 'checked' : ''}> 슬라이드 그림도 보내기</label>` : ''}</div>
+        <div class="note">슬라이드 ${all.length}장${noText ? ` · 글자가 없는 슬라이드 ${noText}장${hasImg ? ' (그림도 보내면 AI 가 그림을 보고 나눕니다)' : ''}` : ''} — 나온 결과는 아래에서 이름·경계를 고친 뒤 '나누기' 하세요.</div>
+        <div id="spChatBox" class="sp-chat" hidden>
+          <div class="row-flex"><span class="muted">프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고 답을 아래에 붙여 넣으세요.</span>${CHATS.map(([n, u]) => `<button data-chat="${esc(u)}">${esc(n)} 열기</button>`).join('')}${hasImg ? `<button id="spSheets" title="모아보기 그림을 파일로 저장하고 폴더를 엽니다 — 채팅 AI 에 끌어다 놓으세요">${ic('images')}모아보기 그림 저장</button>` : ''}</div>
+          <textarea id="spAnswer" rows="3" spellcheck="false" placeholder="AI 의 답을 통째로 붙여 넣으세요 (json 코드 블록이 섞여 있어도 됩니다)"></textarea>
+          <div class="row-flex"><button id="spImport" class="primary">${ic('check')}답 불러오기</button></div>
+        </div>
+        <div class="muted" id="spAiMsg"></div>
+      </div>
+      <div class="note">손으로: 슬라이드를 누르면 시작, <b>Shift</b> 를 누른 채 누르면 끝 — 이름을 쓰고 '범위 더하기'. <b>두 번 누르면</b> 그 슬라이드에서 새 순서가 시작됩니다 (이미 시작이면 앞 순서와 합침). '나누기' 하면 이 순서 자리에 순서 여러 개가 생기고, 각 순서는 그 범위의 슬라이드만 송출합니다.</div>
       <div class="sp-grid">${all.map(thumb).join('')}</div>
       <div class="row-flex"><span>범위</span><input type="text" id="spRange" style="width:90px" placeholder="1-4"><span>이름</span><input type="text" id="spName" style="flex:1" placeholder="예: 광고 · 설교 · 축도"><button id="spAdd">범위 더하기</button></div>
       <ol id="spList" class="sp-list"></ol>
-      <div class="row-flex"><button id="spGo" class="primary" disabled>나누기</button><span class="muted" id="spMsg"></span></div>
+      <div class="row-flex"><button id="spGo" class="primary" disabled>나누기</button><button id="spClear" class="ghost" disabled>${ic('eraser')}모두 비우기</button><span class="muted" id="spMsg"></span></div>
     </div>`);
+    const aiMsg = (t, err) => { const el = $('#spAiMsg'); if (el) el.innerHTML = err ? `<span class="err-text">${esc(t)}</span>` : esc(t); };
+    const nameAt = n => { const l = String(texts[n - 1] || '').split('\n').map(x => x.trim()).find(Boolean); return l ? l.slice(0, 30) : `${it.title} ${n}`; };
     const mark = () => {
+      if (!$('#spList')) return;
       const r = rangeOf($('#spRange').value);
-      const used = new Set(parts.flatMap(p => Array.from({ length: p.b - p.a + 1 }, (_, n) => p.a + n)));
-      document.querySelectorAll('.sp-th').forEach(b => { const n = +b.dataset.k + 1; b.classList.toggle('sel', !!r && n >= r[0] && n <= r[1]); b.classList.toggle('used', used.has(n)); });
-      $('#spList').innerHTML = parts.map((p, k) => `<li>${p.a === p.b ? p.a : `${p.a}-${p.b}`} · <b>${esc(p.name)}</b> <button class="icon-btn" data-rm="${k}" title="빼기">✕</button></li>`).join('');
+      const owner = new Map();
+      parts.forEach((p, k) => { for (let n = p.a; n <= p.b; n++) owner.set(n, k); });
+      document.querySelectorAll('.sp-th').forEach(b => {
+        const n = +b.dataset.k + 1, k = owner.get(n);
+        b.classList.toggle('sel', !!r && n >= r[0] && n <= r[1]);
+        b.classList.toggle('used', k !== undefined);
+        b.classList.toggle('pa', k !== undefined && k % 2 === 0);
+        b.classList.toggle('pb', k !== undefined && k % 2 === 1);
+        const start = k !== undefined && parts[k].a === n;
+        b.classList.toggle('start', start);
+        b.querySelector('.sp-pn').textContent = start ? `${k + 1}. ${parts[k].name}` : '';
+      });
+      $('#spList').innerHTML = parts.map((p, k) => `<li data-k="${k}"><span class="sp-r">${p.a === p.b ? p.a : `${p.a}-${p.b}`}</span>${p.kind ? `<span class="sp-kind" title="${esc(PS.kindName(p.kind))}">${ic(PS.kindIcon(p.kind))}</span>` : ''}<input type="text" class="sp-nm" data-nm="${k}" value="${esc(p.name)}" spellcheck="false">${k > 0 && parts[k - 1].b + 1 === p.a ? `<button class="icon-btn ghost" data-merge="${k}" title="앞 순서와 합치기">${ic('arrow-up')}</button>` : ''}<button class="icon-btn ghost" data-rm="${k}" title="빼기 (이 범위의 슬라이드는 넣지 않음)">${ic('x')}</button></li>`).join('');
       $('#spGo').disabled = !parts.length;
-      const left = all.length - used.size;
+      $('#spClear').disabled = !parts.length;
+      const left = all.length - owner.size;
       $('#spMsg').textContent = parts.length ? `순서 ${parts.length}개${left ? ` · 아직 안 넣은 슬라이드 ${left}장` : ''}` : '';
     };
-    document.querySelector('.sp-grid').addEventListener('click', e => {
+    /** 겹치는 범위를 비운다 (손으로 더한 범위가 자동으로 나눈 것보다 앞선다) */
+    const carve = (a, b) => {
+      const out = [];
+      for (const p of parts) {
+        if (p.b < a || p.a > b) { out.push(p); continue; }
+        if (p.a < a) out.push({ ...p, b: a - 1 });
+        if (p.b > b) out.push({ ...p, a: b + 1, name: p.a < a ? `${p.name} (이어서)` : p.name });
+      }
+      parts = out;
+    };
+    /** 두 번 누름: n 번 슬라이드에서 새 순서 (이미 시작이면 앞 순서와 합침) */
+    const toggleAt = n => {
+      if (!parts.length) { parts = n > 1 ? [{ a: 1, b: n - 1, name: nameAt(1), kind: '' }, { a: n, b: all.length, name: nameAt(n), kind: '' }] : [{ a: 1, b: all.length, name: nameAt(1), kind: '' }]; return; }
+      const k = parts.findIndex(p => n >= p.a && n <= p.b);
+      if (k < 0) { const next = parts.find(p => p.a > n); parts.push({ a: n, b: next ? next.a - 1 : all.length, name: nameAt(n), kind: '' }); parts.sort((x, y) => x.a - y.a); return; }
+      const p = parts[k];
+      if (p.a === n) { if (k > 0 && parts[k - 1].b + 1 === n) { parts[k - 1].b = p.b; parts.splice(k, 1); } return; }
+      parts.splice(k + 1, 0, { a: n, b: p.b, name: nameAt(n), kind: '' });
+      p.b = n - 1;
+    };
+    const grid = document.querySelector('.sp-grid');
+    grid.addEventListener('click', e => {
       const b = e.target.closest('.sp-th'); if (!b) return;
       const k = +b.dataset.k;
       if (e.shiftKey) $('#spRange').value = `${Math.min(from, k) + 1}-${Math.max(from, k) + 1}`;
       else { from = k; $('#spRange').value = String(k + 1); }
+      mark();
+    });
+    grid.addEventListener('dblclick', e => {
+      const b = e.target.closest('.sp-th'); if (!b) return;
+      toggleAt(+b.dataset.k + 1);
       mark();
     });
     $('#spRange').oninput = mark;
@@ -385,7 +481,8 @@
       const r = rangeOf($('#spRange').value);
       if (!r || r[1] > all.length) return app.showMsg(`범위를 1-${all.length} 안에서 쓰세요.`, 'warn', 2500);
       const name = $('#spName').value.trim() || `${it.title} ${r[0] === r[1] ? r[0] : `${r[0]}-${r[1]}`}`;
-      parts.push({ a: r[0], b: r[1], name });
+      carve(r[0], r[1]);
+      parts.push({ a: r[0], b: r[1], name, kind: '' });
       parts.sort((x, y) => x.a - y.a);
       const next = r[1] < all.length ? r[1] + 1 : 0;
       $('#spRange').value = next ? String(next) : ''; from = next ? next - 1 : 0; $('#spName').value = '';
@@ -394,10 +491,85 @@
     };
     $('#spAdd').onclick = add;
     $('#spName').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); add(); } };
-    $('#spList').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (b) { parts.splice(+b.dataset.rm, 1); mark(); } });
+    const list = $('#spList');
+    list.addEventListener('click', e => {
+      const rm = e.target.closest('[data-rm]');
+      if (rm) { parts.splice(+rm.dataset.rm, 1); mark(); return; }
+      const mg = e.target.closest('[data-merge]');
+      if (mg) { const k = +mg.dataset.merge; parts[k - 1].b = parts[k].b; parts.splice(k, 1); mark(); }
+    });
+    list.addEventListener('input', e => { const k = e.target.dataset.nm; if (k !== undefined && parts[+k]) { parts[+k].name = e.target.value; const th = document.querySelector(`.sp-th[data-k="${parts[+k].a - 1}"] .sp-pn`); if (th) th.textContent = `${+k + 1}. ${e.target.value}`; } });
+    $('#spClear').onclick = () => { parts = []; mark(); };
+
+    // ---- 자동으로 나누기 ----
+    const busy = on => ['#spAI', '#spRule', '#spChat', '#spImport'].forEach(q => { const b = $(q); if (b) b.disabled = on; });
+    const useImg = () => !!($('#spImg') && $('#spImg').checked);
+    const sheets = async () => {
+      if (sheetCache) return sheetCache;
+      aiMsg('모아보기 그림 만드는 중…');
+      sheetCache = await PS.sheets(all, texts, { onProgress: (k, n) => { if (k % 8 === 0 || k === n) aiMsg(`모아보기 그림 만드는 중… ${k}/${n}`); } });
+      return sheetCache;
+    };
+    const args = extra => ({ texts, title: fileTitle, extra: $('#spExtra') ? $('#spExtra').value.trim() : '', ...extra });
+    const setParts = (p, how) => {
+      parts = p.map(x => ({ a: x.a, b: x.b, name: x.name, kind: x.kind || '' }));
+      mark();
+      aiMsg(parts.length > 1 ? `${how}: 순서 ${parts.length}개 — 이름·경계를 고친 뒤 '나누기' 하세요` : `${how}: 나눌 곳을 찾지 못했습니다. 슬라이드를 두 번 눌러 직접 나누거나 다른 방법을 써 보세요.`);
+    };
+    const runRule = async () => {
+      const r = await cmd('pptSplitRule', args());
+      if (!r.ok) return aiMsg(r.error, true);
+      setParts(r.result.parts, '규칙으로 나눴습니다');
+    };
+    const runAI = async () => {
+      busy(true);
+      const t0 = Date.now();
+      let tick = null;
+      try {
+        let sh = [];
+        if (useImg()) { sh = await sheets(); if (sh.reduce((n, x) => n + x.url.length, 0) > 7.5e6) { sh = []; app.showMsg('슬라이드가 너무 많아 그림은 빼고 글자만 보냅니다.', 'warn', 4000); } }
+        if (!$('#spAiMsg')) return; // 창을 닫음
+        tick = setInterval(() => aiMsg(`AI 가 슬라이드 ${all.length}장을 보는 중… ${Math.round((Date.now() - t0) / 1000)}초`), 500);
+        aiMsg('AI 가 슬라이드를 보는 중…');
+        const r = await cmd('pptSplitAI', args({ sheets: sh }));
+        clearInterval(tick); tick = null;
+        if (!$('#spAiMsg')) return;
+        if (!r.ok) return aiMsg(r.error, true);
+        const u = r.result.usage;
+        setParts(r.result.parts, `AI 로 나눴습니다 (${Math.round((Date.now() - t0) / 1000)}초${u && u.cost ? ` · 약 $${Number(u.cost).toFixed(4)}` : ''}${r.result.model ? ` · ${r.result.model}` : ''})`);
+      } finally { if (tick) clearInterval(tick); busy(false); }
+    };
+    $('#spRule').onclick = runRule;
+    $('#spAI').onclick = runAI;
+    $('#spChat').onclick = async () => {
+      const r = await cmd('pptSplitPrompt', args({ sheets: useImg() ? Math.ceil(all.length / (all.length > 160 ? 25 : 16)) : 0 }));
+      if (!r.ok) return aiMsg(r.error, true);
+      try { await navigator.clipboard.writeText(r.result.prompt); } catch (e) { return aiMsg('복사하지 못했습니다: ' + e.message, true); }
+      $('#spChatBox').hidden = false;
+      aiMsg(`프롬프트(슬라이드 ${all.length}장 글자 포함)를 복사했습니다${useImg() ? " — '모아보기 그림 저장' 한 그림도 채팅 AI 에 함께 올리세요" : ''}`);
+      $('#spAnswer').focus();
+    };
+    document.querySelectorAll('.sp-chat [data-chat]').forEach(b => b.onclick = () => cmd('openLink', { url: b.dataset.chat }).then(r => { if (!r.ok) aiMsg(r.error, true); }));
+    if ($('#spSheets')) $('#spSheets').onclick = async () => {
+      busy(true);
+      try {
+        const sh = await sheets();
+        const r = await cmd('pptSplitSheets', { sheets: sh });
+        if (!r.ok) return aiMsg(r.error, true);
+        aiMsg(`모아보기 그림 ${r.result.files.length}장을 '${r.result.dir}' 에 저장했습니다 — 채팅 AI 창에 끌어다 놓으세요`);
+      } finally { busy(false); }
+    };
+    $('#spImport').onclick = async () => {
+      const text = $('#spAnswer').value;
+      if (!text.trim()) return aiMsg('AI 의 답을 붙여 넣으세요.', true);
+      const r = await cmd('pptSplitImport', args({ text }));
+      if (!r.ok) return aiMsg(r.error, true);
+      setParts(r.result.parts, 'AI 답을 읽었습니다');
+    };
+
     $('#spGo').onclick = () => {
       const { id, skip, edits, extra, ...base } = it; // 슬라이드 번호에 묶인 편집·건너뛰기는 새 순서에 옮기지 않는다
-      const made = parts.map(p => ({ ...base, id: newId(), title: p.name, range: `${p.a}-${p.b}` }));
+      const made = parts.map(p => ({ ...base, id: newId(), title: String(p.name || '').trim() || `${it.title} ${p.a}-${p.b}`, range: `${p.a}-${p.b}` }));
       st.cue.items.splice(i, 1, ...made);
       st.sel = i;
       save(); render(); renderEditor(true); previewItem(i);
@@ -405,6 +577,7 @@
       app.showMsg(`'${it.title}' 을(를) 순서 ${made.length}개로 나눴습니다.`, 'ok', 3000);
     };
     mark();
+    if (o.auto === 'ai') runAI(); else if (o.auto === 'rule') runRule();
   }
   function pptRange(it, slides) {
     const r = rangeOf(it.range);
@@ -737,7 +910,8 @@
     };
     const fields = {
       hymn: `<label>파일</label><div class="ce-row"><span class="muted ce-file">${esc((it.file || '').split(/[\\/]/).pop())}</span><button data-act="rehymn">다른 찬송가로 바꾸기</button></div>
-        <label>슬라이드 범위</label><div class="ce-row"><input type="text" data-k="range" value="${esc(it.range || '')}" placeholder="전체 (예: 5-9)" style="width:110px" spellcheck="false"><button data-act="pptsplit" title="광고·설교처럼 한 PPT 안의 여러 부분을 순서마다 나눠 씁니다">여러 순서로 나누기…</button><span class="note">비우면 전체 · 한 PPT 를 순서마다 나눠 쓸 때</span></div>
+        <label>슬라이드 범위</label><div class="ce-row"><input type="text" data-k="range" value="${esc(it.range || '')}" placeholder="전체 (예: 5-9)" style="width:110px" spellcheck="false"><button data-act="pptsplit" title="광고·설교처럼 한 PPT 안의 여러 부분을 순서마다 나눠 씁니다 (AI 로 자동으로도)">여러 순서로 나누기…</button><span class="note">비우면 전체 · 한 PPT 를 순서마다 나눠 쓸 때</span></div>
+        ${!it.range && hymnCount(it) >= SPLIT_BIG ? `<span></span><div class="ce-row note sp-hint">${window.BCIcon('sparkles')}슬라이드 ${hymnCount(it)}장 — 예배·행사 전체가 든 PPT 면 순서마다 나눠 두세요 <button data-act="pptsplitai" class="primary">AI 로 순서 나누기…</button></div>` : ''}
         <label>OBS 가사</label><div class="ce-col"><textarea data-k="obsLyrics" rows="3" placeholder="${esc(obsHint(it))}">${esc(it.obsLyrics || '')}</textarea>
           <div class="ce-row note">OBS 자막처럼 'PPT 슬라이드: 가사만'인 출력에 나옵니다. 슬라이드마다 빈 줄로 구분 · 비우면 자동 <button data-act="obsfill" title="자동 가사를 칸에 넣어 직접 고칠 수 있게">자동 가사 넣어 고치기</button></div></div>
         <label>배경</label><div class="ce-row">${(st.hymnMeta.get(it.file) || {}).mode === 'slides' ? '<span class="muted">PPT 화면 그대로 송출합니다 (배경 바꾸기 없음). 폴더 읽는 방식을 \'자동\'으로 바꾸면 악보·배경을 나눠 꺼낼 수 있습니다.</span>' : hymnBgSel()}</div>`,
@@ -902,6 +1076,7 @@
     switch (b.dataset.act) {
       case 'obsopen': if (window.BCObs) window.BCObs.open(); break;
       case 'pptsplit': openSplit(i); break;
+      case 'pptsplitai': { const s = await cmd('aiSettings'); openSplit(i, { auto: s.ok && s.result.hasKey ? 'ai' : 'rule' }); break; }
       case 'devopen': if (window.BCDevices) window.BCDevices.open(); break;
       case 'macrosave': if (window.BCMacro) window.BCMacro.saveFrom(it); break;
       case 'comptest': { const v = ($('#cueEditor [data-a=companion]') || {}).value || ''; cmd('companionPress', { loc: v }).then(r => app.showMsg(r.ok ? `Companion 단추를 눌렀습니다 (${r.result.pressed}개).` : 'Companion: ' + r.error, r.ok ? 'ok' : 'error', 4000)); break; }
@@ -1074,6 +1249,7 @@
         break;
       }
       case 'addAfter': st.sel = i; render(); { const b = $(`#cueAdd [data-add="${extra}"]`); if (b) b.click(); } break;
+      case 'pptsplit': if (it.type === 'hymn') openSplit(i); break; // 한 PPT 를 여러 순서로 (AI · 규칙 · 손으로)
     }
   }
 
@@ -1140,7 +1316,7 @@
       if (!it.file && window.BCLib) window.BCLib.pickAudio(f => { it.file = f.url; it.title = f.name; save(); forceEditor(); render(); previewItem(at); });
       previewItem(at); return;
     }
-    if (type === 'hymn') { previewItem(at).then(() => forceEditor()); return; }
+    if (type === 'hymn') { previewItem(at).then(() => { forceEditor(); offerSplit(it.id); }); return; } // 긴 PPT 면 여러 순서로 나눌지 묻는다
     focusTitle();
     previewItem(at);
   }

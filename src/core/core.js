@@ -27,6 +27,13 @@ function pointsMeta(a) {
   const s = (v, n) => String(v || '').trim().slice(0, n);
   return { title: s(m.title, 120), verse: s(m.verse, 80), speaker: s(m.speaker, 60) };
 }
+/** PPT 나누기: 조작 화면이 보낸 슬라이드마다 글자 (송출 슬라이드 번호와 같은 차례) · 파일 이름 · 추가 요청 */
+function splitArgs(a) {
+  const t = a && Array.isArray(a.texts) ? a.texts : [];
+  if (!t.length) throw new Error('슬라이드가 없습니다.');
+  if (t.length > 2000) throw new Error('슬라이드가 너무 많습니다.');
+  return { texts: t.map(x => String(Array.isArray(x) ? x.join('\n') : x ?? '').slice(0, 2000)), title: String((a && a.title) || '').trim().slice(0, 200), extra: String((a && a.extra) || '').trim().slice(0, 500) };
+}
 function unclearBg(core) { if (core.layers.bgByClear) { core.layers.hideBg = false; core.layers.bgByClear = false; } }
 const { Library } = require('./library');
 const { UsageLog } = require('./usagelog');
@@ -963,7 +970,7 @@ WorshipCueCore.prototype.commands = {
   /** 안내 페이지를 기본 브라우저로 (https 만) */
   openLink(a) {
     const url = String(a.url || '');
-    if (!/^https:\/\/(openrouter\.ai|github\.com|bethlehembible\.org)\//.test(url)) throw new Error('열 수 없는 주소입니다.');
+    if (!/^https:\/\/(openrouter\.ai|github\.com|bethlehembible\.org|chatgpt\.com|claude\.ai|gemini\.google\.com)\//.test(url)) throw new Error('열 수 없는 주소입니다.'); // 채팅 AI 바로 가기 포함
     if (!this.desktop || !this.desktop.openUrl) throw new Error('브라우저 열기는 데스크톱 프로그램에서만 됩니다.');
     this.desktop.openUrl(url);
     return {};
@@ -1112,6 +1119,52 @@ WorshipCueCore.prototype.commands = {
   sermonPointsItem(a) {
     const { toCueItem } = require('./sermonpoints');
     return { item: toCueItem((a && a.data) || {}, (a && a.opts) || {}) };
+  },
+  // ---- 한 PPT 를 여러 순서로 나누기 (예배·행사 전체를 담은 PPT → 순서 범위들) ----
+  /** 규칙으로 (AI 없이): 순서 제목 슬라이드 · 찬송가 장 번호 · 성경 장절 */
+  pptSplitRule(a) {
+    const { ruleSplit } = require('./pptsplit');
+    const { texts, title } = splitArgs(a);
+    return { parts: ruleSplit(texts, { title }) };
+  },
+  /** 오픈라우터 API 로 (주보 AI 와 같은 키·모델). sheets = 모아보기 그림 (글자가 없는 PPT) */
+  async pptSplitAI(a) {
+    const { askSplit } = require('./pptsplit');
+    const { texts, title, extra } = splitArgs(a);
+    const ai = this.settings.get().ai || {};
+    return askSplit({ apiKey: this.aiKey(), model: ai.model || undefined, endpoint: ai.endpoint || undefined, texts, title, extra, sheets: Array.isArray(a.sheets) ? a.sheets : [], fetchImpl: this.aiFetch || fetch });
+  },
+  /** 채팅 AI 에 붙여 넣을 프롬프트 (슬라이드 글자 포함) */
+  pptSplitPrompt(a) {
+    const { chatPrompt } = require('./pptsplit');
+    const { texts, title, extra } = splitArgs(a);
+    return { prompt: chatPrompt(texts, { title, extra, sheets: Math.max(0, Math.min(40, Math.round(Number(a.sheets) || 0))) }) };
+  },
+  /** 채팅 AI 답 → 순서 범위들 */
+  pptSplitImport(a) {
+    const { parseAnswer } = require('./pptsplit');
+    const { texts, title } = splitArgs(a);
+    return { parts: parseAnswer(String((a && a.text) || '').slice(0, 300000), texts.length, { title }) };
+  },
+  /** 모아보기 그림을 파일로 (채팅 AI 에 올리려고): 다운로드 폴더(없으면 데이터 폴더)의 'WorshipPresenter 모아보기' 에 쓰고 연다 */
+  pptSplitSheets(a) {
+    const list = (a && Array.isArray(a.sheets) ? a.sheets : []).slice(0, 40);
+    if (!list.length) throw new Error('모아보기 그림이 없습니다.');
+    const base = (this.desktop && this.desktop.downloadsDir) || this.dataDir;
+    const dir = path.join(base, 'WorshipPresenter 모아보기');
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of fs.readdirSync(dir)) if (/^슬라이드 \d+-\d+\.jpg$/.test(f)) fs.unlinkSync(path.join(dir, f)); // 지난번 그림
+    const files = [];
+    for (const s of list) {
+      const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String((s && s.url) || ''));
+      if (!m) continue;
+      const name = `슬라이드 ${String(Math.max(1, Math.round(Number(s.from) || 1))).padStart(3, '0')}-${String(Math.max(1, Math.round(Number(s.to) || 1))).padStart(3, '0')}.jpg`;
+      fs.writeFileSync(path.join(dir, name), Buffer.from(m[1], 'base64'));
+      files.push(name);
+    }
+    if (!files.length) throw new Error('모아보기 그림이 없습니다.');
+    if (this.desktop && this.desktop.openPath) this.desktop.openPath(dir);
+    return { dir, files };
   },
   // ---- 사용 기록 (저작권 보고) ----
   usageLog(a) { const o = { from: String((a && a.from) || ''), to: String((a && a.to) || ''), kinds: a && Array.isArray(a.kinds) ? a.kinds : null, q: String((a && a.q) || '') }; return { rows: this.usage.list(o), summary: this.usage.summary(o) }; },

@@ -1707,6 +1707,89 @@ test('PPT 슬라이드 범위: 한 PPT 를 여러 순서로 (범위 정리 · �
   assert.equal(h('0'), undefined);
   assert.equal(normalizeItem({ type: 'song', title: 'x', lyrics: '가', range: '1-2' }).range, undefined, 'PPT 순서에만');
 });
+test('PPT 여러 순서로 나누기 (AI): 규칙 · 결과 정리 · 채팅 AI 답 · 오픈라우터(그림 포함) · 모아보기 저장', async () => {
+  const ps = require('../src/core/pptsplit');
+  // 행사 전체가 든 PPT (가상): 표지 · 1부 · 예배로의 부름 · 찬송(같은 곡 다음 장) · 대표기도 · 성경봉독(본문 장) · 설교(본문·가사 같은 낱말에 속지 않게) · 광고 · 축도
+  const deck = [
+    '2026 ○○지방 가을 사관회\n2026. 11. 3 (화)\n○○교회', '',
+    '1부 예배',
+    '예배로의 부름\n인도자',
+    '새찬송가 8장\n거룩 거룩 거룩',
+    '거룩 거룩 거룩 전능하신 주님\n이른 아침 우리 주를 찬송합니다',
+    '8장 거룩 거룩 거룩 (2절)\n거룩 거룩 거룩 주의 보좌 앞에',
+    '대표기도\n홍길동 사관',
+    '성경봉독\n요한복음 3:16-18',
+    '요한복음 3장 16절\n하나님이 세상을 이처럼 사랑하사',
+    '찬양하세 찬양하세\n우리 주님을',
+    '설교\n“선한 목자” 홍길동 사관',
+    '선한 목자는 양을 위하여 목숨을 버립니다\n첫째, 목자는 양을 압니다',
+    '말씀 앞에 엎드려\n주님만 바라봅니다',
+    '광고', '다음 사관회 안내\n2027년 3월',
+    '축도\n김철수 사관', '',
+  ];
+  const r = ps.ruleSplit(deck, { title: '사관회' });
+  assert.deepEqual(r.map(p => `${p.a}-${p.b}:${p.kind}`), ['1-2:title', '3-3:title', '4-4:title', '5-7:hymn', '8-8:prayer', '9-11:bible', '12-14:sermon', '15-16:notice', '17-18:title']);
+  assert.match(r[3].name, /새찬송가 8장/);
+  assert.equal(r[4].name, '대표기도 · 홍길동 사관');
+  assert.equal(ps.ruleSplit(['가', '나', '다']).length, 1, '나눌 표시가 없으면 한 덩어리');
+  // 결과 정리: 겹침은 뒤를 밀고 · 틈은 앞에 붙이고 · 맨 앞 틈은 '처음' · 범위 밖은 자르고 · 이름 없으면 번호
+  const c = ps.cleanParts([{ from: 3, to: 5, title: '찬송' }, { from: 5, to: 7, title: '기도', kind: 'prayer' }, { from: 9, to: 99, title: '' }, { from: 0, to: 0 }, { from: 'x' }], 12, { title: 'PPT' });
+  assert.deepEqual(c.map(p => `${p.a}-${p.b}:${p.name}`), ['1-2:처음', '3-5:찬송', '6-8:기도', '9-12:PPT 9-12']);
+  assert.equal(c[2].kind, 'prayer');
+  assert.deepEqual(ps.cleanParts([], 5).map(p => `${p.a}-${p.b}`), ['1-5']);
+  // 채팅 AI 답: 설명 + json 코드 블록 · 배열만 · range 글
+  const ans = '나눴습니다.\n```json\n{"parts":[{"from":1,"to":2,"title":"표지","kind":"title"},{"from":3,"to":8,"title":"개회 찬송","kind":"hymn"},{"from":9,"to":18,"title":"설교","kind":"sermon"}]}\n```';
+  assert.deepEqual(ps.parseAnswer(ans, 18).map(p => p.name), ['표지', '개회 찬송', '설교']);
+  assert.deepEqual(ps.parseAnswer('[{"range":"1-3","name":"가"},{"range":"4","name":"나"}]', 5).map(p => `${p.a}-${p.b}`), ['1-3', '4-5']);
+  assert.throws(() => ps.parseAnswer('JSON 이 없는 답', 5), /찾지 못했습니다/);
+  // 프롬프트: 원칙 · 슬라이드 번호와 글 · 글자 없는 장 · 모아보기 그림 안내
+  const pr = ps.chatPrompt(deck, { title: '사관회.pptx', extra: '찬양은 곡마다', sheets: 2 });
+  assert.match(pr, /빠짐없이, 겹치지 않게/);
+  assert.match(pr, /\[5\] 새찬송가 8장 \/ 거룩 거룩 거룩/);
+  assert.match(pr, /\[2\] \(글자 없음\)/);
+  assert.match(pr, /모아보기 그림 2장/);
+  assert.match(pr, /추가 요청: 찬양은 곡마다/);
+  // 슬라이드가 많아도 프롬프트가 너무 길어지지 않게 (장마다 줄임)
+  assert.ok(ps.chatPrompt(Array.from({ length: 600 }, (_, k) => `${k + 1}번 슬라이드 `.repeat(40)), {}).length < 90000);
+  // 코어 명령
+  const core = newCore('pptsplit');
+  const rr = core.command('pptSplitRule', { texts: deck, title: '사관회.pptx' });
+  assert.equal(rr.ok, true, rr.error);
+  assert.equal(rr.result.parts.length, 9);
+  assert.equal(core.command('pptSplitRule', { texts: [] }).ok, false);
+  assert.match(core.command('pptSplitPrompt', { texts: deck, sheets: 1 }).result.prompt, /모아보기 그림 1장/);
+  assert.equal(core.command('pptSplitImport', { texts: deck, text: ans }).result.parts.length, 3);
+  // 오픈라우터 (가짜 응답): 키가 없으면 알림 · 그림은 image_url 로 · 답 정리
+  assert.match((await core.command('pptSplitAI', { texts: deck })).error, /API 키/);
+  core.command('setAi', { apiKey: 'sk-test' });
+  let sent = null;
+  core.aiFetch = async (url, opt) => { sent = JSON.parse(opt.body); return { ok: true, json: async () => ({ model: 'test/m', usage: { cost: 0.001 }, choices: [{ message: { content: JSON.stringify({ parts: [{ from: 1, to: 4, title: '여는 순서' }, { from: 5, to: 18, title: '예배', kind: 'hymn' }] }) } }] }) }; };
+  const jpg = 'data:image/jpeg;base64,' + Buffer.from('가짜그림').toString('base64');
+  const ai = await core.command('pptSplitAI', { texts: deck, title: '사관회.pptx', sheets: [{ from: 1, to: 16, url: jpg }, { from: 17, to: 18, url: 'javascript:alert(1)' }] });
+  assert.equal(ai.ok, true, ai.error);
+  assert.deepEqual(ai.result.parts.map(p => `${p.a}-${p.b}:${p.name}`), ['1-4:여는 순서', '5-18:예배']);
+  assert.equal(ai.result.model, 'test/m');
+  const content = sent.messages[1].content;
+  assert.ok(Array.isArray(content), '그림이 있으면 여러 조각');
+  assert.equal(content.filter(x => x.type === 'image_url').length, 1, '그림 주소가 아닌 것은 버림');
+  assert.match(content[0].text, /\[슬라이드 글자\]/);
+  const ai2 = await core.command('pptSplitAI', { texts: deck });
+  assert.equal(typeof sent.messages[1].content, 'string', '그림이 없으면 글 하나');
+  assert.equal(ai2.ok, true);
+  // 모아보기 그림 저장 (데스크톱이 없으면 데이터 폴더에)
+  const sv = core.command('pptSplitSheets', { sheets: [{ from: 1, to: 16, url: jpg }, { from: 17, to: 18, url: 'data:image/png;base64,AAAA' }] });
+  assert.equal(sv.ok, true, sv.error);
+  assert.deepEqual(sv.result.files, ['슬라이드 001-016.jpg']);
+  assert.equal(fs.readFileSync(path.join(sv.result.dir, sv.result.files[0]), 'utf8'), '가짜그림');
+  assert.equal(core.command('pptSplitSheets', { sheets: [] }).ok, false);
+  // 채팅 AI 바로 가기 (ChatGPT · Claude · Gemini) 는 열리고, 다른 주소는 안 열림
+  const opened = [];
+  core.desktop = { openUrl: u => opened.push(u) };
+  for (const u of ['https://claude.ai/new', 'https://chatgpt.com/', 'https://gemini.google.com/app']) assert.equal(core.command('openLink', { url: u }).ok, true, u);
+  assert.equal(core.command('openLink', { url: 'https://example.com/' }).ok, false);
+  assert.equal(opened.length, 3);
+  core.store.close();
+});
 test('무대 화면 모니터: 데스크톱에서만 · 켜기/끄기를 데스크톱에 넘기고 출력 상태에 포함', () => {
   const core = newCore('stagemon');
   assert.equal(core.command('setStageWindow', { enabled: true, displayId: 2 }).ok, false, '웹(코어만)에서는 안 됨');

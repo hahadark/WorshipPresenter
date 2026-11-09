@@ -139,6 +139,46 @@ app.whenReady().then(async () => {
     ok(ps.row && ps.thumbs === 6 && ps.r1 === '1-4' && ps.r2 === '5', 'PPT 나누기 창 (슬라이드 · Shift 범위 · 다음 시작 번호)', ps);
     ok(ps.items && ps.items.join('|') === '광고:1-4|설교:5-6' && ps.pv === 2, 'PPT 나누기 → 순서 2개 · 범위만 송출', ps);
 
+    // ---- 2-8b. PPT 자동으로 나누기: 규칙(AI 없이) · AI(가짜 응답) · 두 번 눌러 경계 · 모아보기 그림 · 이름 고치기
+    const pa = await ev(`const realFetch = window.fetch;
+      const svg = n => 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#353"/><text x="70" y="55" fill="#fff" font-size="30">' + n + '</text></svg>');
+      const T = ['사관회', '새찬송가 8장\\n거룩 거룩 거룩', '거룩 거룩 거룩 전능하신 주님', '대표기도\\n홍길동 사관', '설교\\n선한 목자', '선한 목자는 양을 위하여', '광고', '축도\\n김철수 사관'];
+      let aiArgs = null;
+      window.fetch = async (u, o) => {
+        if (String(u).includes('/api/command') && o && /"cmd":"loadHymn"/.test(o.body)) return new Response(JSON.stringify({ ok: true, result: { mode: 'slides', slides: T.map((_, k) => svg(k + 1)), slideTexts: T, scores: [], texts: [] } }));
+        if (String(u).includes('/api/command') && o && /"cmd":"pptSplitAI"/.test(o.body)) { aiArgs = JSON.parse(o.body).args; return new Response(JSON.stringify({ ok: true, result: { model: 'test/m', parts: [{ a: 1, b: 3, name: '여는 찬송', kind: 'hymn' }, { a: 4, b: 4, name: '대표기도', kind: 'prayer' }, { a: 5, b: 8, name: '설교', kind: 'sermon' }] } })); }
+        return realFetch(u, o);
+      };
+      const c = (await window.BC.cmd('saveCue', { cue: { name: 'PPT 자동 나누기 점검', items: [{ type: 'hymn', title: '사관회 전체', file: 'C:\\\\가짜\\\\사관회.pptx' }] } })).result;
+      window.BCCue.openCue(c.id); await wait(800); $$('#cueList .cue-item')[0].click(); await wait(1000);
+      const hint = !!$('#cueEditor [data-act=pptsplitai]'); // 8장이라 '길면 권하기' 는 안 나옴
+      $('#cueEditor [data-act=pptsplit]').click(); await wait(800);
+      $('#spRule').click(); await wait(600);
+      const rule = $$('#spList li').map(li => li.querySelector('.sp-r').textContent + ':' + li.querySelector('.sp-nm').value);
+      const starts = $$('.sp-th.start').length;
+      // 두 번 누르기: 3번에서 새 순서 → 다시 두 번 누르면 합침
+      const before = $$('#spList li').length;
+      $$('.sp-th')[2].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await wait(100);
+      const split = $$('#spList li').length;
+      $$('.sp-th')[2].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await wait(100);
+      const merged = $$('#spList li').length;
+      // AI (그림도 보내기)
+      const img = $('#spImg'); if (img) img.checked = true;
+      $('#spAI').click();
+      for (let k = 0; k < 40 && !/AI 로 나눴습니다/.test($('#spAiMsg').textContent); k++) await wait(250);
+      const ai = $$('#spList li').map(li => li.querySelector('.sp-r').textContent + ':' + li.querySelector('.sp-nm').value);
+      const sheets = aiArgs ? aiArgs.sheets.map(x => x.from + '-' + x.to + ':' + x.url.slice(0, 23)) : [];
+      const sent = aiArgs ? aiArgs.texts.length : 0;
+      const nm = $$('#spList .sp-nm')[0]; nm.value = '개회 찬송 (8장)'; nm.dispatchEvent(new Event('input', { bubbles: true }));
+      $('#spGo').click(); await wait(1500);
+      const items = [0, 1, 2, 3].map(k => window.BCCue.item(k)).filter(Boolean).map(x => x.title + ':' + (x.range || ''));
+      window.fetch = realFetch; return { hint, rule, starts, before, split, merged, ai, sheets, sent, items };`);
+    await shot('ppt-split-ai');
+    ok(pa.rule && pa.rule.join('|') === '1:사관회|2-3:새찬송가 8장 거룩 거룩 거룩|4:대표기도 · 홍길동 사관|5-6:설교 · 선한 목자|7:광고|8:축도 · 김철수 사관' && pa.starts === 6 && !pa.hint, 'PPT 자동으로 나누기 (규칙: 표지·찬송·기도·설교·광고·축도)', pa);
+    ok(pa.split === pa.before + 1 && pa.merged === pa.before, 'PPT 나누기: 두 번 눌러 새 순서 · 다시 두 번 눌러 합치기', pa);
+    ok(pa.sent === 8 && pa.sheets.length === 1 && pa.sheets[0] === '1-8:data:image/jpeg;base64,' && pa.ai.join('|') === '1-3:여는 찬송|4:대표기도|5-8:설교', 'PPT AI 로 나누기 (글자 + 모아보기 그림 → 결과 목록)', pa);
+    ok(pa.items && pa.items.join('|') === '개회 찬송 (8장):1-3|대표기도:4-4|설교:5-8', 'PPT AI 나누기 → 고친 이름으로 순서 3개', pa);
+
     // ---- 2-9. 무대 화면 모니터: 패널에 모니터 목록 · 잘못된 모니터는 거절 (실제 모니터에 창은 띄우지 않음)
     const sm = await ev(`window.BCDock && window.BCDock.show('stage'); await wait(800);
       const sel = $('#stMon'); if (sel) { sel.dispatchEvent(new Event('focus')); await wait(600); }

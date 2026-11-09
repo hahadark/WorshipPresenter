@@ -81,6 +81,7 @@
 | 무대 화면 고정 (순서표·고정 글·프리셋) | `core.js` stage.pin · stagePinSet | `stagepanel.js` · `output/stage.js` | `stagePresets` |
 | 무대 화면 모니터 (전체 화면 두 번째 창) | `setStageWindow` | `stagepanel.js` | `stageOut` (main.js stageWin) |
 | PPT 여러 순서로 (슬라이드 범위) | `cues.js` hymn range | `cue.js` pptRange · openSplit | item range |
+| PPT 자동으로 나누기 (AI · 규칙 · 채팅 AI, 2026-11-09) | `pptsplit.js` ruleSplit · askSplit · cleanParts, 명령 pptSplitRule/AI/Prompt/Import/Sheets | `cue.js` openSplit · offerSplit(20장 넘으면 물음) · `control/pptsplit.js`(슬라이드 글자 · 모아보기 그림) | — (ai 키·모델은 주보 AI 와 같음) |
 | 한글 입력 자동 전환 (윈도우) | `imeKorean` | control.js focusin | `imeAuto` (main/ime.js PowerShell 도우미) |
 | Companion 단추 누르기 | `companion.js` | 외부 단추 창 · 순서 자동 동작 | `companion` {host,port} |
 | 장비 직접 (X32 OSC · PTZ VISCA) | `devices.js` | `devicepanel.js` | `devices` |

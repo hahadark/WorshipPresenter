@@ -60,15 +60,20 @@ try {
 function exportWithPowerPoint(file, outDir) {
   fs.mkdirSync(outDir, { recursive: true });
   const enc = Buffer.from(PS, 'utf16le').toString('base64');
+  // 예배 전체가 든 큰 PPT (100MB 넘음 · 슬라이드 수백 장) 는 내보내는 데 오래 걸린다: 1MB 마다 4초 더 (2분 ~ 30분)
+  let size = 0;
+  try { size = fs.statSync(file).size; } catch { /* 없으면 PowerPoint 가 알린다 */ }
+  const timeout = Math.max(120000, Math.min(1800000, 60000 + Math.round(size / 1048576) * 4000));
   return new Promise((resolve, reject) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', enc], {
-      windowsHide: true, timeout: 120000,
+      windowsHide: true, timeout,
       env: { ...process.env, WC_PPT_FILE: path.resolve(file), WC_PPT_OUT: path.resolve(outDir) },
     }, (err, stdout, stderr) => {
       const m = String(stdout).match(/OK (\d+) (\d+) (\d+)/);
       if (err || !m) {
         const msg = String(stderr || (err && err.message) || '');
         if (/password|암호/i.test(msg)) return reject(new Error('암호가 걸린 파일이라 열 수 없습니다. PowerPoint 에서 암호를 풀고 저장해 주세요.'));
+        if (err && err.killed) return reject(new Error(`PowerPoint 로 슬라이드를 만드는 데 ${Math.round(timeout / 60000)}분을 넘겼습니다. 파일이 너무 크면 PowerPoint 에서 '미디어 압축'으로 줄이거나 나눠 저장해 보세요.`));
         return reject(new Error('PowerPoint 로 슬라이드를 만들지 못했습니다. ' + (msg.split('\n').find(l => l.trim()) || '')));
       }
       const files = fs.readdirSync(outDir).filter(f => /^slide-\d{3}\.png$/.test(f)).sort();

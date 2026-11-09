@@ -51,6 +51,7 @@ The Korean build (`WorshipPresenter-…-Portable.exe`) includes the Korean Revis
 | 🌐 LAN output | When presentation and streaming run on different PCs, the streaming PC's OBS opens only the output screens (key required). |
 | 🎛 OBS dock | A control panel inside OBS: current/next slide, prev · next · hide, send cue items (fixed button positions), 🖼 image/score slides top-right, 🖥 full slide. |
 | 🎬 Media panel | Play videos/audio from the library straight to the screen without adding them to the cue sheet, with one playback bar: play/pause · restart · stop · position · time remaining · volume · loop · fade-out. |
+| ✂ Split a PPT | A PPT that holds a whole service or event becomes several cue items (hymn · prayer · reading · sermon · announcements · benediction) — **with AI** (OpenRouter key; slide text plus contact-sheet images when the text is part of the picture), with a chat AI (no key: copy prompt → paste answer) or by rules (no AI). Review names and boundaries before splitting; PPTs over 20 slides ask when added. |
 | 📷 Camera | Resolution (720p–4K), frame rate, brightness/contrast/saturation, mirror, live quality readout. |
 | Stage display | Current/next slide, clock, sermon timer, messages, item notes for the preacher and worship team. |
 | Phone remote | Next · previous · hide, jump to verses, send cue items, stage messages — from any phone on the same Wi-Fi (PIN). |

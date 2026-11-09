@@ -1478,8 +1478,32 @@ footer.bottom .quick-btn.on { border-color: var(--accent); color: var(--accent);
 .sp-th b { position: absolute; left: 4px; top: 2px; font-size: 12px; background: rgba(0,0,0,.65); color: #fff; padding: 0 5px; border-radius: 4px; }
 .sp-th.used { opacity: .45; }
 .sp-th.sel { border-color: var(--accent); opacity: 1; box-shadow: 0 0 0 2px var(--accent); }
-.sp-list { margin: 0 0 0 18px; padding: 0; }
-.sp-list li { margin: 2px 0; }
+.sp-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 4px 10px; max-height: 26vh; overflow-y: auto; counter-reset: sp; }
+.sp-list li { display: flex; align-items: center; gap: 6px; margin: 0; counter-increment: sp; }
+.sp-list li::before { content: counter(sp) '.'; min-width: 2.2em; text-align: right; color: var(--muted); font-size: 12px; }
+.sp-list .sp-r { min-width: 4.6em; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sp-list .sp-kind { display: inline-flex; color: var(--muted); }
+.sp-list .sp-nm { flex: 1; min-width: 0; height: 28px; }
+.sp-list .icon-btn { width: 26px; height: 26px; }
+/* 자동으로 나누기 (AI · 규칙 · 채팅 AI) */
+.modal-box:has(.sp) { height: auto; max-height: 94vh; width: min(1100px, 96vw); }
+.sp-ai { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel2); }
+.sp-ai .sp-ah { display: inline-flex; align-items: center; margin-right: 4px; }
+.sp-ai .sp-ah .ic { color: var(--accent); margin-right: .35em; }
+.sp-chat { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px dashed var(--line2); border-radius: var(--radius, 8px); }
+.sp-chat textarea { font-family: Consolas, 'Malgun Gothic', monospace; font-size: 12px; resize: vertical; }
+/* 나눈 순서: 번갈아 아래 띠 색 · 순서 첫 슬라이드에 이름 */
+.sp-th.used { opacity: 1; }
+.sp-th.pa { border-bottom: 5px solid var(--accent); }
+.sp-th.pb { border-bottom: 5px solid var(--pv); }
+.sp-th.start { border-left: 4px solid var(--gold); }
+.sp-th .sp-pn { position: absolute; left: 0; right: 0; bottom: 0; font-style: normal; font-size: 11px; line-height: 1.35; padding: 1px 5px; background: rgba(0,0,0,.72); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.sp-th .sp-pn:empty { display: none; }
+.modal-box:has(.sp-offer) { height: auto; width: min(560px, 92vw); }
+.sp-offer { display: flex; flex-direction: column; gap: 12px; }
+.sp-offer p { margin: 0; line-height: 1.6; }
+.sp-hint { gap: 6px; }
+.sp-hint .ic { color: var(--accent); }
 /* ---- 장비 직접 제어 (devicepanel.js) ---- */
 .dv { display: flex; flex-direction: column; gap: 8px; min-width: min(680px, 84vw); }
 .dv-list { display: flex; flex-direction: column; gap: 6px; }
