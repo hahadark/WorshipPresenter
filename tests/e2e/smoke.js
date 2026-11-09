@@ -257,6 +257,43 @@ app.whenReady().then(async () => {
     ok(sdr.undone === null, '끌어서 차례 바꾸기: Ctrl+Z 로 되돌리기', sdr);
     ok(sdr.m2 && sdr.body2 === '넷\n---\n하나\n---\n둘\n---\n셋' && sdr.m3 && sdr.body3 === '둘\n---\n셋\n---\n넷\n---\n하나', '끌어서 차례 바꾸기: 목록에서 공지 글 덩어리 · 여러 장 함께', sdr);
 
+    // ---- 2-8e. 여기서 새 순서로 나누기 (파워포인트 '구역'): 오른쪽 클릭 · PPT(범위·꾸밈·덧붙임) · 공지 · 제목 · 되돌리기
+    const sec = await ev(`const realFetch = window.fetch; const realAsk = window.BC.ask; window.BC.ask = async (q, d) => '설교';
+      const svg = n => 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#335"/><text x="70" y="55" fill="#fff" font-size="30">' + n + '</text></svg>');
+      window.fetch = async (u, o) => { if (String(u).includes('/api/command') && o && /"cmd":"loadHymn"/.test(o.body)) return new Response(JSON.stringify({ ok: true, result: { mode: 'slides', slides: [1, 2, 3, 4, 5].map(svg), slideTexts: ['표지', '찬송', '기도', '설교\\n홍길동 사관', '축도'], scores: [], texts: [] } })); return realFetch(u, o); };
+      const c = (await window.BC.cmd('saveCue', { cue: { name: '구역 점검', items: [
+        { type: 'hymn', title: '사관회 전체', file: 'C:\\\\가짜\\\\구역.pptx', edits: { 3: { items: [{ id: 'mine1', type: 'text', text: '메모', x: 1, y: 1, w: 10, h: 10 }] } }, extra: [{ id: 'ex1', at: 3, text: '덧붙임' }] },
+        { type: 'text', title: '광고', body: '하나\\n---\\n둘\\n---\\n셋' },
+        { type: 'title', title: '제목1', subtitle: '부', more: '제목2\\n---\\n제목3' }] } })).result;
+      window.BCCue.openCue(c.id); await wait(800);
+      $('#slideView [data-sv="list"]').click(); await wait(300);
+      $$('#cueList .cue-item')[0].click(); await wait(1200);
+      const why0 = window.BCSlideEdit.splitWhy(0);
+      const row = $$('#results .srow')[3];
+      const r = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 })); await wait(300);
+      const mi = $$('.ctx .ctx-item').find(x => /여기서 새 순서로 나누기/.test(x.textContent));
+      const menu = !!mi && !mi.disabled;
+      if (mi) mi.click();
+      await wait(1600);
+      const it = k => window.BCCue.item(k);
+      const ppt = [0, 1].map(k => it(k) && { t: it(k).title, r: it(k).range || '', e: it(k).edits ? Object.keys(it(k).edits).join() : '', ex: it(k).extra ? it(k).extra.map(e => e.at).join() : '' });
+      const pv = window.BC.preview ? window.BC.preview.slides.map(x => x.label).join(',') : '';
+      $$('#cueList .cue-item')[2].click(); await wait(1000);
+      await window.BCSlideEdit.splitAt(1); await wait(1300);
+      const texts = [2, 3].map(k => it(k).title + ':' + it(k).body);
+      $$('#cueList .cue-item')[4].click(); await wait(1000);
+      await window.BCSlideEdit.splitAt(2); await wait(1300);
+      const titles = [4, 5].map(k => [it(k).title, it(k).subtitle || '', it(k).more || ''].join('|'));
+      const n1 = window.BCCue.cueInfo().items.length;
+      window.BCCue.undo(); await wait(1300);
+      const n2 = window.BCCue.cueInfo().items.length;
+      window.fetch = realFetch; window.BC.ask = realAsk;
+      return { why0, menu, ppt, pv, texts, titles, n1, n2 };`);
+    await shot('ppt-section');
+    ok(sec.why0 && sec.menu && sec.ppt && JSON.stringify(sec.ppt) === JSON.stringify([{ t: '사관회 전체', r: '1-3', e: '', ex: '' }, { t: '설교', r: '4-5', e: '0', ex: '0' }]) && sec.pv === '4,덧붙임,5', '구역 나누기: PPT 슬라이드 오른쪽 클릭 → 새 순서 (범위 · 꾸민 것 · 덧붙인 슬라이드도 함께)', sec);
+    ok(sec.texts && sec.texts.join('/') === '광고:하나/설교:둘\n---\n셋' && sec.titles.join('/') === '제목1|부|제목2/제목3||' && sec.n1 === 6 && sec.n2 === 5, '구역 나누기: 공지 글 덩어리 · 제목 장 · Ctrl+Z 되돌리기', sec);
+
     // ---- 2-9. 무대 화면 모니터: 패널에 모니터 목록 · 잘못된 모니터는 거절 (실제 모니터에 창은 띄우지 않음)
     const sm = await ev(`window.BCDock && window.BCDock.show('stage'); await wait(800);
       const sel = $('#stMon'); if (sel) { sel.dispatchEvent(new Event('focus')); await wait(600); }

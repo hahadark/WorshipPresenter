@@ -125,6 +125,7 @@
         { label: '⧉ 이 슬라이드 복제', run: () => window.BCSlideEdit.quickOp(k, 'dup'), disabled: !['song', 'text', 'title'].includes(it.type) && !(s && s.xid) },
         { label: ['song', 'text', 'title'].includes(it.type) || (s && s.xid) ? '✕ 이 슬라이드 지우기' : '⊘ 이 슬라이드 건너뛰기', run: () => window.BCSlideEdit.quickOp(k, 'del'), danger: true }] : []),
       ...(it ? [{ ic: 'pencil', label: '이 순서 편집칸', key: 'F2', run: () => Cue().itemAction(p.cue.index, 'edit') }] : []),
+      ...(it && window.BCSlideEdit && window.BCSlideEdit.splitAt ? [{ ic: 'columns-2', label: '여기서 새 순서로 나누기 (구역)', run: () => window.BCSlideEdit.splitAt(k), disabled: !!window.BCSlideEdit.splitWhy(k) }] : []),
       ...(it && app.bgInfo && (app.bgInfo(p.cue.index).itemBg || app.bgInfo(p.cue.index).tpl) ? ['-', ...app.bgMenuItems(p.cue.index).filter(x => x !== '-' && !x.head && !/잠깐|다시 켜기|송출 배경/.test(x.label))] : []),
       '-', ...[['list', '목록'], ['grid', '격자'], ['all', '전체 격자 (모든 순서)'], ['alllist', '전체 목록 (모든 순서)']].filter(([v]) => !window.BCGrid || window.BCGrid.mode() !== v).map(([v, l]) => ({ label: l + ' 로 보기', run: click(`#slideView [data-sv="${v}"]`) })),
     ];
@@ -224,7 +225,7 @@
     if (cg) { // 전체 보기: 그 순서의 그 슬라이드
       const i = +cg.dataset.i, k = +cg.dataset.k;
       const go = async () => window.BCCue.previewAt(i, k);
-      return [{ head: `${i + 1}번 순서 · 슬라이드 ${k + 1}` }, { label: '미리보기', key: '클릭', run: go }, { label: '▶ 바로 송출', key: '더블클릭', run: async () => { if (await go()) app.sendPreview(); } }, '-', { label: '✎ 이 슬라이드 편집', key: 'Ctrl+E', run: async () => { if (await go()) window.BCSlideEdit.openPreviewSlide(k); } }, { label: '＋ 이 다음에 새 슬라이드', run: async () => { if (await go()) window.BCSlideEdit.quickOp(k, 'add'); } }, '-', ...[['list', '목록'], ['grid', '격자'], ['all', '전체 격자 (모든 순서)'], ['alllist', '전체 목록 (모든 순서)']].filter(([v]) => window.BCGrid.mode() !== v).map(([v, l]) => ({ label: l + ' 로 보기', run: click(`#slideView [data-sv="${v}"]`) }))];
+      return [{ head: `${i + 1}번 순서 · 슬라이드 ${k + 1}` }, { label: '미리보기', key: '클릭', run: go }, { label: '▶ 바로 송출', key: '더블클릭', run: async () => { if (await go()) app.sendPreview(); } }, '-', { label: '✎ 이 슬라이드 편집', key: 'Ctrl+E', run: async () => { if (await go()) window.BCSlideEdit.openPreviewSlide(k); } }, { label: '＋ 이 다음에 새 슬라이드', run: async () => { if (await go()) window.BCSlideEdit.quickOp(k, 'add'); } }, { ic: 'columns-2', label: '여기서 새 순서로 나누기 (구역)', run: async () => { if (await go()) window.BCSlideEdit.splitAt(k); } }, '-', ...[['list', '목록'], ['grid', '격자'], ['all', '전체 격자 (모든 순서)'], ['alllist', '전체 목록 (모든 순서)']].filter(([v]) => window.BCGrid.mode() !== v).map(([v, l]) => ({ label: l + ' 로 보기', run: click(`#slideView [data-sv="${v}"]`) }))];
     }
     const cell = t.closest('#slideGrid .sg-cell, #results .srow');
     if (cell) return slideMenu(+cell.dataset.k);

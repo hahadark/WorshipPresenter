@@ -1871,6 +1871,22 @@ test('PPT 여러 순서로 나누기 (AI): 규칙 · 결과 정리 · 채팅 AI 
   assert.equal(opened.length, 3);
   core.store.close();
 });
+test('구역 나누기 (여기서 새 순서로): 글 덩어리 둘로 · 꾸민 것 번호도 0 부터', () => {
+  global.window = global;
+  require('../src/web/shared/groups.js');
+  require('../src/web/shared/slides.js');
+  const SL = global.BCSlides;
+  assert.deepEqual(SL.splitChunks('text', '하나\n---\n둘\n---\n셋', 1), ['하나', '둘\n---\n셋']);
+  assert.deepEqual(SL.splitChunks('song', '[1절]\n가\n나\n\n[후렴]\n다\n\n라', 1), ['[1절]\n가\n나', '[후렴]\n다\n\n라'], '이름표는 덩어리와 함께');
+  assert.equal(SL.splitChunks('text', '하나\n---\n둘', 0), null, '첫 덩어리에서는 나누지 않음');
+  assert.equal(SL.splitChunks('text', '하나\n---\n둘', 2), null);
+  const [a, b] = SL.splitEdits({ '*': { s: 1 }, 0: { a: 0 }, 1: { a: 1 }, 2: { a: 2 }, x9: { c: 1 } }, 1);
+  assert.deepEqual(a, { '*': { s: 1 }, 0: { a: 0 } });
+  assert.deepEqual(b, { '*': { s: 1 }, 0: { a: 1 }, 1: { a: 2 } }, '뒤 순서는 번호를 0 부터 · 공통(*)은 둘 다');
+  assert.notEqual(a['*'], b['*'], '공통은 따로 복사');
+  assert.deepEqual(SL.splitEdits(undefined, 1), [undefined, undefined]);
+});
+
 test('무대 화면 모니터: 데스크톱에서만 · 켜기/끄기를 데스크톱에 넘기고 출력 상태에 포함', () => {
   const core = newCore('stagemon');
   assert.equal(core.command('setStageWindow', { enabled: true, displayId: 2 }).ok, false, '웹(코어만)에서는 안 됨');

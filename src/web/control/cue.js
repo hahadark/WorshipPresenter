@@ -1640,6 +1640,16 @@
     pickCam: done => pickCam(done),
     /** 고른 순서만 바꾼다 (미리보기 없이) — 끌어다 놓은 파일을 그 다음 자리에 넣을 때 */
     selectQuiet: i => { if (st.cue && i >= 0 && i < st.cue.items.length) { st.sel = i; render(); } },
+    /** i 번째 순서를 items 로 바꾼다 (구역 나누기 등 — id 가 없으면 새로, pick 번째를 고르고 미리보기). 실행 취소 Ctrl+Z */
+    replaceItem: (i, items, pick = 0) => {
+      if (!st.cue || !st.cue.items[i] || !items.length) return false;
+      const made = items.map(x => ({ ...x, id: x.id || newId() }));
+      st.cue.items.splice(i, 1, ...made);
+      st.sel = i + Math.max(0, Math.min(made.length - 1, pick));
+      save(); render(); renderEditor(true);
+      previewItem(st.sel);
+      return true;
+    },
     item: i => (st.cue ? st.cue.items[i] : null),
     tplOf: i => (st.cue && st.cue.items[i] ? itemTpl(st.cue.items[i]) : null),
     editorBase: i => editorBase(i),

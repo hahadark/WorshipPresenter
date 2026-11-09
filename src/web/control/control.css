@@ -359,6 +359,7 @@ table.list th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .ce-head button { padding: 2px 9px; font-size: 12px; }
 .ce-ico { font-size: 18px; }
 .ce-form { grid-template-columns: 52px 1fr; gap: 6px 10px; }
+.ce-form > label { word-break: keep-all; } /* 이름표는 낱말 사이에서만 줄바꿈 (요소 / 고치기) */
 .ce-form textarea { width: 100%; font-family: inherit; line-height: 1.55; resize: vertical; }
 .ce-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .ce-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }

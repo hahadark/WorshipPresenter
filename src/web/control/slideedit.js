@@ -718,6 +718,104 @@
     setTimeout(() => { M.drag = null; }, 0); // 끌기가 끝난 뒤 따라오는 click 은 무시
     if (d.to >= 0) moveSlides(d.ks, d.to, d.after).catch(e => app.showMsg(e.message, 'error'));
   });
+  // ---------------- 여기서 새 순서로 나누기 (파워포인트 '구역' 처럼) ----------------
+  const SPLITTABLE = ['hymn', 'text', 'title', 'song'];
+  /** 미리보기 k 번째 슬라이드에서 나눌 수 있나 → '' (됨) 또는 안 되는 까닭 */
+  function splitWhy(k) {
+    const p = app.preview;
+    const it = p && p.cue && Cue() && Cue().item(p.cue.index);
+    if (!it) return '큐시트 순서의 슬라이드에서만 나눌 수 있습니다.';
+    if (!SPLITTABLE.includes(it.type)) return '찬송가·PPT · 찬양 · 공지 · 제목 순서만 나눌 수 있습니다.';
+    if (it.type === 'song' && String(Cue().songOrderOf(it) || '').trim()) return "부를 순서가 정해진 찬양은 나눌 수 없습니다 (편집칸의 '부를 순서' 를 비우면 됩니다).";
+    const s = p.slides[k];
+    if (!s || k <= 0 || keyOf(s) === keyOf(p.slides[0])) return '첫 슬라이드에서는 나눌 수 없습니다.';
+    return '';
+  }
+  /**
+   * 미리보기 k 번째 슬라이드부터 뒤를 새 순서로 (이 순서 바로 다음에). 꾸민 것·건너뛰기·덧붙인 슬라이드·차례도 함께 나뉜다
+   * 찬송가·PPT = 슬라이드 범위로 (차례를 바꿨으면 범위 + 건너뛰기 + 차례), 공지·찬양 = 글 덩어리, 제목 = 장
+   */
+  async function splitAt(k) {
+    const why = splitWhy(k);
+    if (why) { app.showMsg(why, 'info', 3500); return false; }
+    const p = app.preview;
+    const i = p.cue.index;
+    const it = Cue().item(i);
+    const key = keyOf(p.slides[k]);
+    const first = String((p.slides[k].caption || (p.slides[k].parts && p.slides[k].parts[0] && p.slides[k].parts[0].text) || p.slides[k].ref || '')).split('\n').map(x => window.BCGroup ? window.BCGroup.stripFmt(x).trim() : x.trim()).find(Boolean) || '';
+    let a, b;
+    if (it.type === 'title') {
+      const pages = SL.titlePages(it);
+      const c = Number(key);
+      if (!(c > 0 && c < pages.length)) return false;
+      const [ea, eb] = SL.splitEdits(it.edits, c);
+      a = { ...structuredClone(it), ...SL.fromTitlePages(pages.slice(0, c)) };
+      b = { ...structuredClone(it), ...SL.fromTitlePages(pages.slice(c)), id: '' };
+      if (ea) a.edits = ea; else delete a.edits;
+      if (eb) b.edits = eb; else delete b.edits;
+    } else if (it.type === 'text' || it.type === 'song') {
+      const f = it.type === 'song' ? 'lyrics' : 'body';
+      const c = Number(key);
+      const two = SL.splitChunks(it.type, it[f], c);
+      if (!two) return false;
+      const name = await app.ask(`'${it.title}' 을(를) ${k + 1}번 슬라이드부터 새 순서로 나눕니다. 새 순서 이름`, it.title + ' (이어서)');
+      if (!name || !name.trim()) return false;
+      const [ea, eb] = SL.splitEdits(it.edits, c);
+      a = { ...structuredClone(it), [f]: two[0] };
+      b = { ...structuredClone(it), [f]: two[1], id: '', title: name.trim() };
+      if (ea) a.edits = ea; else delete a.edits;
+      if (eb) b.edits = eb; else delete b.edits;
+      if (it.type === 'song') { for (const x of [a, b]) { delete x.songId; delete x.order; } } // 가사 일부만 가지므로 라이브러리 찬양과 연결을 끊는다
+    } else { // 찬송가·PPT
+      if (!$('#se').hidden) close();
+      const base = await Cue().editorBase(i);
+      if (!base.length) return false;
+      S.i = i; S.base = base;
+      const seq = sources(); // 원래 슬라이드(건너뛴 것 포함)와 덧붙인 슬라이드, 보이는 차례대로
+      const pos = seq.findIndex(x => x.key === key);
+      const parts = [seq.slice(0, pos), seq.slice(pos)];
+      if (pos <= 0 || parts.some(x => !x.some(y => !y.xid))) { app.showMsg('나누면 원래 슬라이드가 없는 순서가 생겨 나눌 수 없습니다.', 'info', 3500); return false; }
+      const name = await app.ask(`'${it.title}' 을(를) ${k + 1}번 슬라이드부터 새 순서로 나눕니다. 새 순서 이름`, first.slice(0, 40) || `${it.title} (${k + 1}~)`);
+      if (!name || !name.trim()) return false;
+      const m = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(it.range || '');
+      const r0 = m ? Number(m[1]) - 1 : 0;
+      const make = part => {
+        const bases = part.filter(x => !x.xid).map(x => x.base);
+        const lo = Math.min(...bases), hi = Math.max(...bases);
+        const x = structuredClone(it);
+        x.range = `${r0 + lo + 1}-${r0 + hi + 1}`;
+        const mine = new Set(bases);
+        const skip = [];
+        for (let j = lo; j <= hi; j++) if (!mine.has(j) || part.some(y => !y.xid && y.base === j && y.skipped)) skip.push(j - lo);
+        if (skip.length) x.skip = skip; else delete x.skip;
+        const ord = bases.map(j => j - lo);
+        if (ord.some((v, n) => v !== n)) x.slideOrder = ord; else delete x.slideOrder;
+        const ex = [];
+        let at = -1;
+        for (const y of part) {
+          if (!y.xid) { at = y.base - lo; continue; }
+          const e = (it.extra || []).find(z => z.id === y.xid);
+          if (e) ex.push({ ...e, at });
+        }
+        if (ex.length) x.extra = ex; else delete x.extra;
+        if (it.edits) {
+          const e = {};
+          if (it.edits['*']) e['*'] = structuredClone(it.edits['*']);
+          for (const j of bases) if (it.edits[String(j)]) e[String(j - lo)] = structuredClone(it.edits[String(j)]);
+          for (const y of part) if (y.xid && it.edits['x' + y.xid]) e['x' + y.xid] = structuredClone(it.edits['x' + y.xid]);
+          if (Object.keys(e).length) x.edits = e; else delete x.edits;
+        }
+        return x;
+      };
+      a = make(parts[0]);
+      b = { ...make(parts[1]), id: '', title: name.trim() };
+      delete b.obsLyrics; // 슬라이드마다 적은 OBS 가사는 앞 순서에만 (번호가 달라지므로)
+    }
+    Cue().replaceItem(i, [a, b], 1);
+    app.showMsg(`${k + 1}번 슬라이드부터 새 순서 '${b.title}' 로 나눴습니다 (되돌리기 Ctrl+Z).`, 'ok', 3000);
+    return true;
+  }
+
   /**
    * 미리보기 슬라이드 ks 를 to 번 슬라이드 앞(after=false)·뒤(after=true) 로 옮긴다 (실행 취소: 큐시트 Ctrl+Z)
    * 글 순서(찬양·공지·제목) = 글 덩어리 차례, 그 밖(찬송가·PPT·그림·슬라이드쇼…) = 원래 슬라이드 차례(slideOrder) · 덧붙인 슬라이드 자리
@@ -1043,6 +1141,6 @@
   }
   // 가운데 목록(순서의 슬라이드 줄)에서도 끌기·키
   { const res = document.getElementById('results'); if (res) { attachSel(res, '.srow'); res.addEventListener('keydown', e => { if (app.results && app.results.type === 'none' && selKey(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true); } }
-  window.BCSlideEdit = { init, open, openPreviewSlide, close, dropImage, menuFor, quickOp, moveSlides, isOpen: () => !$('#se').hidden,
+  window.BCSlideEdit = { init, open, openPreviewSlide, close, dropImage, menuFor, quickOp, moveSlides, splitAt, splitWhy, isOpen: () => !$('#se').hidden,
     selClick, selClickAll, paintSel, attachSel, selKey, selAction, selMany, selCount: () => (selMany() ? M.ks.size : 0) };
 })();
