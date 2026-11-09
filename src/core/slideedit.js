@@ -8,8 +8,9 @@
 //     hideMain: 본문 숨기기, allOutputs: 투명(OBS 자막) 출력에도 위치·꾸미기 적용
 //     bg: 이 슬라이드 배경 (그림·영상 주소 또는 #색)
 //     pptBg: PPT 요소 따로 고치기 — 이 슬라이드는 요소를 숨긴 PPT 배경 그림을 쓰고, 글·그림은 글상자·그림(items)으로 (pptlayers.js)
-//     items: [{ id, type: text|image|shape, x, y, w, h, text, src, fit, fill, color, size, bold, italic, align, valign,
+//     items: [{ id, type: text|image|shape, x, y, w, h, text, src, fit, crop, fill, color, size, bold, italic, align, valign,
 //               radius, opacity, padding, below, font, fit, lineHeight }]   below = 본문 글자 뒤 · font = 글꼴 이름 · fit = 넘치면 글자를 줄임
+//               crop = 그림 자르기 { l, t, r, b } (각 변에서 잘라 낼 비율 0~0.95 — PPT 에서 자른 그림)
 //   }
 
 const num = (v, a, b, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(a, Math.min(b, n)) : d; };
@@ -64,6 +65,11 @@ function item(x, i) {
     if (x.lineHeight != null && x.lineHeight !== '') o.lineHeight = num(x.lineHeight, 0.8, 3, 1.3);
   } else if (x.type === 'image') {
     Object.assign(o, { src: str(x.src, 1500), fit: x.fit === 'contain' ? 'contain' : 'cover' });
+    const c = x.crop;
+    if (c && typeof c === 'object') {
+      const cr = { l: num(c.l, 0, 0.95, 0), t: num(c.t, 0, 0.95, 0), r: num(c.r, 0, 0.95, 0), b: num(c.b, 0, 0.95, 0) };
+      if ((cr.l || cr.t || cr.r || cr.b) && cr.l + cr.r < 0.96 && cr.t + cr.b < 0.96) o.crop = cr;
+    }
   } else if (x.type === 'camera') {
     Object.assign(o, { deviceId: str(x.deviceId, 200), label: str(x.label, 100), fit: x.fit === 'contain' ? 'contain' : 'cover' });
   } else {

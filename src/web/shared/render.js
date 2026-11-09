@@ -164,7 +164,16 @@
     const k = t.height / 1080;
     return (items || []).filter(x => !!x.below === below).map(x => {
       const pos = `position:absolute;left:${x.x * t.width / 100 - rect.left}px;top:${x.y * t.height / 100 - rect.top}px;width:${x.w * t.width / 100}px;height:${x.h * t.height / 100}px;opacity:${x.opacity ?? 1};border-radius:${x.type === 'shape' && x.ellipse ? '50%' : (x.radius || 0) + 'px'};overflow:hidden;box-sizing:border-box;`;
-      if (x.type === 'image') return x.src ? (isVideo(x.src) ? videoTag(x.src, 'bc-eitem', pos, x.fit || 'cover') : `<img class="bc-eitem" alt="" src="${safeUrl(x.src)}" style="${pos}object-fit:${x.fit || 'cover'}">`) : '';
+      if (x.type === 'image') {
+        if (!x.src) return '';
+        if (isVideo(x.src)) return videoTag(x.src, 'bc-eitem', pos, x.fit || 'cover');
+        const c = x.crop;
+        if (c && (c.l || c.t || c.r || c.b)) { // 자른 그림 (PPT srcRect): 그림을 키워 놓고 상자 밖은 잘라 낸다
+          const cw = Math.max(0.01, 1 - (c.l || 0) - (c.r || 0)), ch = Math.max(0.01, 1 - (c.t || 0) - (c.b || 0));
+          return `<div class="bc-eitem" style="${pos}"><img alt="" src="${safeUrl(x.src)}" style="position:absolute;left:${-(c.l || 0) / cw * 100}%;top:${-(c.t || 0) / ch * 100}%;width:${100 / cw}%;height:${100 / ch}%;max-width:none;display:block"></div>`;
+        }
+        return `<img class="bc-eitem" alt="" src="${safeUrl(x.src)}" style="${pos}object-fit:${x.fit || 'cover'}">`;
+      }
       if (x.type === 'shape') return `<div class="bc-eitem" style="${pos}background:${esc(x.fill || '#1d3557')}"></div>`;
       if (x.type === 'camera') return camTag(x.deviceId, x.fit, pos + 'background:#000', 'bc-eitem');
       const just = { top: 'flex-start', middle: 'center', bottom: 'flex-end' }[x.valign] || 'center';

@@ -1,18 +1,22 @@
 'use strict';
-// PPT 요소 따로 고치기: PowerPoint 가 꺼낸 요소 정보(pptrender.js exportLayers → layers.json) → 슬라이드 편집기의 글상자·그림
+// PPT 요소 따로 고치기: 꺼낸 요소 정보(pptxbuild.js → layers.json) → 슬라이드 편집기의 글상자·그림·도형
 //   raw = { v, w, h (슬라이드 크기, 포인트), slides: [[요소…]] } — 요소는 슬라이드의 쌓인 차례대로 (뒤 → 앞)
-//     글   { kind:'text', l, t, w, h, text, size, bold, italic, color(BGR 정수), font, fontEa,
+//     글   { kind:'text', l, t, w, h, text, size, bold, italic, color('#rrggbb' 또는 BGR 정수), font, fontEa,
 //            align(1 왼 2 가운데 3 오른), anchor(1·2 위 3 가운데 4·5 아래), ml, mr, mt, mb, lh, wrap }
-//     그림 { kind:'image', l, t, w, h, file: 'slide-001-e01.png' }   (그림·도형·표·차트를 투명 배경 PNG 로)
+//     그림 { kind:'image', l, t, w, h, file: 'media-3.png' | 'slide-001-e01.svg', fit, crop:{l,t,r,b}?, opacity }   (PPT 안의 그림 · 요소 하나짜리 그림)
+//     도형 { kind:'shape', l, t, w, h, fill:'#rrggbb', ellipse, radius(포인트), opacity }   (단색 사각형·둥근 사각형·타원)
 //   편집기 글상자 = { id:'p{k}t{n}', type:'text', x, y, w, h (화면 %), text, size (1080 줄 화면 px), color, bold, italic, align, valign, padding, font, fit, lineHeight }
-//   편집기 그림   = { id:'p{k}i{n}', type:'image', x, y, w, h, src, fit:'contain' }
-// 슬라이드 그림은 화면에 맞춰 가운데에 놓인다 (object-fit: contain) — 화면 비율이 달라도 글상자가 그림 위 같은 자리에 오게 맞춘다
+//   편집기 그림   = { id:'p{k}i{n}', type:'image', x, y, w, h, src, fit, crop }
+//   편집기 도형   = { id:'p{k}s{n}', type:'shape', x, y, w, h, fill, ellipse, radius }
+// 슬라이드 그림은 화면에 맞춰 가운데에 놓인다 (object-fit: contain) — 화면 비율이 달라도 요소가 그림 위 같은 자리에 오게 맞춘다
 
 const HANGUL = /[ㄱ-ㆎ가-힣]/;
 const r2 = n => Math.round(n * 100) / 100;
+const FILE_RE = /^(slide-\d{3,4}-e\d{2,3}\.(png|svg)|media-\d{1,4}\.(png|jpe?g|gif|bmp|webp|svg))$/;
 
-/** BGR 정수(PowerPoint RGB) → #rrggbb */
+/** BGR 정수(PowerPoint RGB) 또는 '#rrggbb' → #rrggbb */
 function bgrHex(c) {
+  if (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
   const n = Number(c);
   if (!Number.isFinite(n) || n < 0 || n > 0xffffff) return '#ffffff';
   const r = n & 255, g = (n >> 8) & 255, b = (n >> 16) & 255;
@@ -34,9 +38,12 @@ function fitRect(slideW, slideH, screenW, screenH) {
   return { x: (100 - w) / 2, y: 0, w, h: 100 };
 }
 
+const onOff = v => v === true || Number(v) === -1;
+const op = v => (v == null || !Number.isFinite(Number(v)) ? 1 : Math.max(0.05, Math.min(1, Number(v))));
+
 /**
- * 슬라이드 하나의 글상자들 → 편집기 글상자 목록
- * k = 슬라이드 번호 (0부터, id 에 씀) · screen = { w, h } 송출 화면 크기
+ * 슬라이드 하나의 요소들 → 편집기 글상자·그림·도형 목록
+ * k = 슬라이드 번호 (0부터, id 에 씀) · screen = { w, h } 송출 화면 크기 · urlBase = 그림 주소 앞부분 (예: '/hymn/<key>/')
  */
 function toItems(raw, k, screen = { w: 1920, h: 1080 }, urlBase = '') {
   const W = Number(raw && raw.w) || 960, H = Number(raw && raw.h) || 540;
@@ -50,9 +57,16 @@ function toItems(raw, k, screen = { w: 1920, h: 1080 }, urlBase = '') {
   });
   list.forEach((b, n) => {
     if (!b || typeof b !== 'object') return;
-    if (b.kind === 'image') { // 그림·도형·표·차트 (요소 그림)
-      if (!/^slide-\d{3,4}-e\d{2,3}\.png$/.test(String(b.file || '')) || !urlBase) return;
-      out.push({ id: `p${k}i${n}`, type: 'image', ...rect(b), src: urlBase + b.file, fit: 'contain', opacity: 1, radius: 0, below: false });
+    if (b.kind === 'image') { // PPT 안의 그림 · 요소 하나짜리 그림
+      if (!FILE_RE.test(String(b.file || '')) || !urlBase) return;
+      const it = { id: `p${k}i${n}`, type: 'image', ...rect(b), src: urlBase + b.file, fit: b.fit === 'cover' ? 'cover' : 'contain', opacity: op(b.opacity), radius: 0, below: false };
+      const c = b.crop;
+      if (c && typeof c === 'object' && [c.l, c.t, c.r, c.b].some(v => Number(v) > 0)) it.crop = { l: cropV(c.l), t: cropV(c.t), r: cropV(c.r), b: cropV(c.b) };
+      out.push(it);
+      return;
+    }
+    if (b.kind === 'shape') { // 단색 도형
+      out.push({ id: `p${k}s${n}`, type: 'shape', ...rect(b), fill: bgrHex(b.fill), ellipse: !!b.ellipse, radius: Math.max(0, Math.min(1000, Math.round((Number(b.radius) || 0) * pt))), opacity: op(b.opacity), below: false });
       return;
     }
     const text = String(b.text ?? '').replace(/\r\n?|\u000b/g, '\n').replace(/\s+$/, '');
@@ -63,7 +77,7 @@ function toItems(raw, k, screen = { w: 1920, h: 1080 }, urlBase = '') {
       id: `p${k}t${n}`, type: 'text', ...rect(b),
       text: text.slice(0, 2000),
       size: Math.max(8, Math.min(400, Math.round((Number(b.size) || 18) * pt * 10) / 10)),
-      color: bgrHex(b.color), bold: Number(b.bold) === -1 || b.bold === true, italic: Number(b.italic) === -1 || b.italic === true,
+      color: bgrHex(b.color), bold: onOff(b.bold), italic: onOff(b.italic),
       align: { 1: 'left', 2: 'center', 3: 'right' }[b.align] || 'left',
       valign: { 1: 'top', 2: 'top', 3: 'middle', 4: 'bottom', 5: 'bottom' }[b.anchor] || 'top',
       padding: Math.max(0, Math.min(300, Math.round((b.ml != null && Number.isFinite(Number(b.ml)) ? Number(b.ml) : 7.2) * pt))), // 여백 0 도 그대로
@@ -72,14 +86,15 @@ function toItems(raw, k, screen = { w: 1920, h: 1080 }, urlBase = '') {
   });
   return out;
 }
+const cropV = v => Math.max(0, Math.min(0.95, r2(Number(v) || 0)));
 
-/** 모든 슬라이드 → [[글상자·그림…]] (urlBase = 요소 그림 주소 앞부분, 예: '/hymn/<key>/') */
+/** 모든 슬라이드 → [[글상자·그림·도형…]] (urlBase = 그림 주소 앞부분, 예: '/hymn/<key>/') */
 function allItems(raw, screen, urlBase = '') {
   const n = raw && Array.isArray(raw.slides) ? raw.slides.length : 0;
   return Array.from({ length: n }, (_, k) => toItems(raw, k, screen, urlBase));
 }
 
-/** 편집기 글상자·그림 id 가 PPT 에서 꺼낸 것인가 (p{슬라이드}t{번호} 글 · p{슬라이드}i{번호} 그림) */
-const isPptItem = id => /^p\d+[ti]\d+$/.test(String(id || ''));
+/** 편집기 요소 id 가 PPT 에서 꺼낸 것인가 (p{슬라이드}t{번호} 글 · p{슬라이드}i{번호} 그림 · p{슬라이드}s{번호} 도형) */
+const isPptItem = id => /^p\d+[tis]\d+$/.test(String(id || ''));
 
 module.exports = { toItems, allItems, bgrHex, fontName, fitRect, isPptItem };

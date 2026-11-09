@@ -1707,7 +1707,7 @@ test('PPT 슬라이드 범위: 한 PPT 를 여러 순서로 (범위 정리 · �
   assert.equal(h('0'), undefined);
   assert.equal(normalizeItem({ type: 'song', title: 'x', lyrics: '가', range: '1-2' }).range, undefined, 'PPT 순서에만');
 });
-test('PPT 요소 따로 고치기: PowerPoint 글상자·요소 그림 → 편집기 글상자·그림 (화면 비율 · 색 · 글꼴 · 정렬) · 저장 정리 · 가짜 PowerPoint 로 스크립트 점검', async () => {
+test('PPT 요소 따로 고치기: 꺼낸 요소 → 편집기 글상자·그림·도형 (화면 비율 · 색 · 글꼴 · 정렬 · 자르기) · 저장 정리 · 가짜 PowerPoint 로 배경 스크립트 점검', async () => {
   const L = require('../src/core/pptlayers');
   const { normalizeEdit, normalizeEdits } = require('../src/core/slideedit');
   // 16:9 슬라이드(960×540pt)를 16:9 화면에: 그대로 · 44pt → 88px · BGR 65535 → 노랑 · 한글이면 동아시아 글꼴
@@ -1729,44 +1729,131 @@ test('PPT 요소 따로 고치기: PowerPoint 글상자·요소 그림 → 편�
   const c = L.toItems({ w: 720, h: 540, slides: [[{ l: 0, t: 0, w: 720, h: 540, text: '가', size: 30, align: 1, anchor: 1 }]] }, 0, { w: 1920, h: 1080 });
   assert.deepEqual([c[0].x, c[0].y, c[0].w, c[0].h, c[0].size, c[0].align, c[0].valign], [12.5, 0, 75, 100, 60, 'left', 'top']);
   assert.equal(L.bgrHex(-1), '#ffffff');
+  assert.equal(L.bgrHex('#FF3300'), '#ff3300', "'#rrggbb' 도 받는다 (파서가 꺼낸 색)");
   assert.equal(L.fontName('Arial; color:red'), '', '글꼴 이름에 CSS 를 넣지 못하게');
-  assert.ok(L.isPptItem('p12t3') && L.isPptItem('p0i1') && !L.isPptItem('e1abc'));
+  assert.ok(L.isPptItem('p12t3') && L.isPptItem('p0i1') && L.isPptItem('p3s2') && !L.isPptItem('e1abc'));
   assert.deepEqual(L.allItems(raw, { w: 1920, h: 1080 }).map(x => x.length), [2, 0]);
-  // 요소 그림: 주소 앞부분을 붙이고 · 쌓인 차례 그대로 · 이상한 파일 이름이나 주소 앞부분이 없으면 뺀다
-  const raw2 = { v: 2, w: 960, h: 540, slides: [[{ kind: 'image', l: 600, t: 300, w: 300, h: 200, file: 'slide-001-e01.png' }, { kind: 'text', l: 600, t: 300, w: 300, h: 200, text: '버튼', size: 24 }, { kind: 'image', l: 0, t: 0, w: 10, h: 10, file: '../../secret.png' }]] };
+  // 그림·도형 요소: 주소 앞부분을 붙이고 · 쌓인 차례 그대로 · 자르기 · 단색 도형 · 이상한 파일 이름이나 주소 앞부분이 없으면 뺀다
+  const raw2 = { v: 3, w: 960, h: 540, slides: [[{ kind: 'image', l: 600, t: 300, w: 300, h: 200, file: 'slide-001-e01.svg' }, { kind: 'text', l: 600, t: 300, w: 300, h: 200, text: '버튼', size: 24, color: '#ffffff', bold: true },
+    { kind: 'image', l: 0, t: 0, w: 480, h: 270, file: 'media-3.jpg', fit: 'cover', crop: { l: 0.25, t: 0.1, r: 0, b: 0 }, opacity: 0.5 }, { kind: 'shape', l: 0, t: 270, w: 96, h: 54, fill: '#1d3557', ellipse: false, radius: 10, opacity: 1 },
+    { kind: 'image', l: 0, t: 0, w: 10, h: 10, file: '../../secret.png' }]] };
   const im = L.toItems(raw2, 0, { w: 1920, h: 1080 }, '/hymn/abc/');
-  assert.deepEqual(im.map(x => `${x.id}:${x.type}:${x.src || x.text}`), ['p0i0:image:/hymn/abc/slide-001-e01.png', 'p0t1:text:버튼']);
+  assert.deepEqual(im.map(x => `${x.id}:${x.type}:${x.src || x.text || x.fill}`), ['p0i0:image:/hymn/abc/slide-001-e01.svg', 'p0t1:text:버튼', 'p0i2:image:/hymn/abc/media-3.jpg', 'p0s3:shape:#1d3557']);
   assert.deepEqual([im[0].x, im[0].y, im[0].w, im[0].h, im[0].fit], [62.5, 55.56, 31.25, 37.04, 'contain']);
-  assert.equal(L.toItems(raw2, 0, { w: 1920, h: 1080 }).length, 1, '주소 앞부분이 없으면 그림은 뺀다');
-  // 저장 정리: 글꼴 · 넘치면 줄이기 · 줄 간격 · 이 슬라이드는 글을 숨긴 그림(pptBg) · 글상자 60개 · 슬라이드 1000장까지
-  const e = normalizeEdit({ pptBg: true, items: [...a, { type: 'text', text: 'x', font: "Bad'};" }] });
+  assert.deepEqual([im[1].color, im[1].bold], ['#ffffff', true]);
+  assert.deepEqual([im[2].fit, im[2].crop, im[2].opacity], ['cover', { l: 0.25, t: 0.1, r: 0, b: 0 }, 0.5], '자른 그림');
+  assert.deepEqual([im[3].ellipse, im[3].radius, im[3].w, im[3].h], [false, 20, 10, 10], '둥근 모서리 10pt → 20px');
+  assert.equal(L.toItems(raw2, 0, { w: 1920, h: 1080 }).length, 2, '주소 앞부분이 없으면 그림은 뺀다 (글·도형만)');
+  // 저장 정리: 글꼴 · 넘치면 줄이기 · 줄 간격 · 자르기 · 이 슬라이드는 요소를 뺀 그림(pptBg) · 요소 60개 · 슬라이드 900장
+  const e = normalizeEdit({ pptBg: true, items: [...a, ...im, { type: 'text', text: 'x', font: "Bad'};" }, { type: 'image', src: '/x.png', crop: { l: 0.6, r: 0.5 } }] });
   assert.equal(e.pptBg, true);
   assert.deepEqual([e.items[0].font, e.items[0].fit, e.items[0].lineHeight], ['맑은 고딕', true, 1.2]);
-  assert.equal(e.items[2].font, undefined, '이상한 글꼴 이름은 버림');
+  assert.deepEqual(e.items[4].crop, { l: 0.25, t: 0.1, r: 0, b: 0 });
+  assert.equal(e.items[6].font, undefined, '이상한 글꼴 이름은 버림');
+  assert.equal(e.items[7].crop, undefined, '다 잘라 내는 자르기는 버림');
   assert.equal(normalizeEdit({ items: Array.from({ length: 70 }, () => ({ type: 'text', text: 'x' })) }).items.length, 60);
   assert.equal(Object.keys(normalizeEdits(Object.fromEntries(Array.from({ length: 900 }, (_, k) => [String(k), { pptBg: true }])))).length, 900);
   // 코어 명령: 등록하지 않은 파일은 거절
   const core = newCore('ppttext');
   assert.equal((await core.command('pptTextLayers', { file: path.join(tmp, '없는.pptx') })).ok, false);
   core.store.close();
-  // 가짜 PowerPoint 로 스크립트 돌려 보기 (pwsh · Windows PowerShell 이 있을 때만)
+  // 가짜 PowerPoint 로 배경 스크립트 돌려 보기 (pwsh · Windows PowerShell 이 있을 때만): 꺼낸 도형 id 만 숨기고 슬라이드마다 PNG
   const { execFileSync } = require('child_process');
   const shell = ['pwsh', 'powershell'].find(x => { try { execFileSync(x, ['-NoProfile', '-Command', '1'], { stdio: 'ignore', timeout: 60000 }); return true; } catch { return false; } });
   if (!shell) return;
-  const dir = fs.mkdtempSync(path.join(tmp, 'pslayers-'));
-  const script = path.join(dir, 'layers.ps1');
-  fs.writeFileSync(script, '\ufeff' + require('../src/core/pptrender').PS_LAYERS);
-  const out = execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'ppt-layers-mock.ps1')], { env: { ...process.env, WC_PPT_SCRIPT: script, WC_PPT_OUT: dir }, encoding: 'utf8', timeout: 120000 });
+  const dir = fs.mkdtempSync(path.join(tmp, 'psbg-'));
+  const script = path.join(dir, 'bg.ps1');
+  fs.writeFileSync(script, '﻿' + require('../src/core/pptrender').PS_BG);
+  const hide = path.join(dir, 'hide.json');
+  fs.writeFileSync(hide, JSON.stringify({ 1: ['2', '5'], 2: ['9'] }));
+  const out = execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'ppt-bg-mock.ps1')], { env: { ...process.env, WC_PPT_SCRIPT: script, WC_PPT_OUT: dir, WC_PPT_HIDE: hide }, encoding: 'utf8', timeout: 120000 });
   assert.match(out, /OK 2 1920 1080/, '숨긴 슬라이드는 빼고 2장 · ' + out);
-  // 요소: 제목 본문 바닥글 돌린글 그림 글든도형 못꺼낸도형 빈도형 — 꺼낸 것만 숨기고(0) 나머지는 배경에 그대로(-1)
-  assert.match(out, /VISIBLE 0 0 -1 -1 0 0 -1 -1/, out);
-  assert.match(out, /TEXTFILL 0 0 -1/, '도형 안 글은 숨기고 (그림으로 못 꺼낸 도형도 글만), 바닥글은 그대로');
+  assert.match(out, /VISIBLE 0 -1 0 -1 0/, '글상자 2 · 그룹 안 5 · 도형 9 만 숨긴다 (그림 3 · 숨긴 슬라이드의 7 은 그대로) · ' + out);
   assert.match(out, /SAVED -1 CLOSED True/, '저장하지 않고 닫는다');
-  for (const f of ['slide-001-bg.png', 'slide-002-bg.png', 'slide-001-e01.png', 'slide-001-e02.png']) assert.ok(fs.existsSync(path.join(dir, f)), f);
-  const lj = JSON.parse(fs.readFileSync(path.join(dir, 'layers.json'), 'utf8'));
-  assert.equal(lj.v, 2);
-  assert.deepEqual(lj.slides[0].map(x => `${x.kind}:${x.file || x.text}`), ['text:주일 예배', 'text:• 첫째 줄\n• 둘째 줄', 'image:slide-001-e01.png', 'image:slide-001-e02.png', 'text:버튼', 'text:안내'], '쌓인 차례대로 · 도형 그림 위에 그 글 · 그림으로 못 꺼낸 도형은 글만');
-  assert.deepEqual(L.toItems(lj, 1).map(x => [x.text, x.align, x.color]), [['광고', 'right', '#ff0000']]);
+  for (const f of ['slide-001-bg.png', 'slide-002-bg.png']) assert.ok(fs.existsSync(path.join(dir, f)), f);
+});
+
+test('PPT 요소 따로 고치기 (PowerPoint 없이): .pptx 직접 읽기 — 개체 틀 상속 · 테마 색 · 그림 자르기 · 도형 · 그룹 · 표는 배경에 · 숨긴 슬라이드 · SVG 그림 · hymns 캐시 · 코어 명령', async () => {
+  const P = require('../src/core/pptxparse');
+  const S = require('../src/core/pptxsvg');
+  const { build, classify } = require('../src/core/pptxbuild');
+  const L = require('../src/core/pptlayers');
+  const file = path.join(__dirname, 'fixtures', 'elements.pptx'); // tests/fixtures/make-ppt-fixtures.py 로 만든 것 (python-pptx)
+  // XML 파서
+  const x = P.parseXml('<?xml version="1.0"?><a:r xmlns:a="x"><a:rPr sz="2400" b="1"/><a:t>가 &amp; &lt;나&gt; &#44032;</a:t><!-- c --></a:r>');
+  assert.equal(P.attr(P.kid(x, 'rPr'), 'sz'), '2400');
+  assert.equal(P.textOf(P.kid(x, 't')), '가 & <나> 가');
+  assert.deepEqual(P.resolveColor(P.parseXml('<a:schemeClr val="accent1"><a:lumMod val="50000"/><a:alpha val="50000"/></a:schemeClr>'), { theme: { colors: { accent1: '4472C4' } }, clrMap: {} }), { hex: '#203864', alpha: 0.5 }, '테마 색 + 어둡게 50% + 투명 (PowerPoint 의 "강조 1, 50% 더 어둡게" 와 같은 값)');
+  assert.equal(P.resolveColor(P.parseXml('<a:schemeClr val="bg1"/>'), { theme: { colors: { lt1: 'FFFFFF' } }, clrMap: { bg1: 'lt1' } }).hex, '#ffffff', '색표(clrMap) 를 거친다');
+  assert.equal(P.numberLabel('arabicPeriod', 3), '3.'); assert.equal(P.numberLabel('alphaLcParenR', 2), 'b)'); assert.equal(P.numberLabel('romanUcPeriod', 4), 'IV.');
+  // 문서: 숨긴 슬라이드(3번) 는 빼고 4장 · 16:9 960×540pt
+  const doc = P.openPptx(file);
+  assert.deepEqual([doc.w, doc.h, doc.slides.length], [960, 540, 4]);
+  const s1 = P.parseSlide(doc, 0);
+  const title = s1.shapes.find(s => s.ph && s.ph.type === 'ctrTitle');
+  assert.ok(title && title.text.hasText && Math.round(title.w) === 612, '제목 개체 틀 위치는 레이아웃에서');
+  assert.deepEqual([title.text.paras[0].runs[0].sz, title.text.paras[0].algn, title.text.bodyPr.anchor, title.text.paras[0].runs[0].ea], [44, 'ctr', 'ctr', '맑은 고딕'], '글자 크기 44 · 가운데는 마스터 titleStyle 에서, 동아시아 글꼴은 테마에서');
+  const s2 = P.parseSlide(doc, 1);
+  const kinds = s2.shapes.map(s => `${s.kind}:${s.geom ? s.geom.prst : ''}`);
+  assert.deepEqual(kinds, ['sp:rect', 'pic:rect', 'sp:roundRect', 'sp:ellipse', 'cxnSp:line', 'table:', 'sp:rightArrow']);
+  assert.equal(s2.shapes[3].fill.color, '#4f81bd', '테마 accent1');
+  assert.deepEqual([s2.shapes[4].line.color, s2.shapes[4].line.w], ['#888888', 3]);
+  assert.equal(P.slideText(s2), '사회 홍길동 사관\n둘째 줄\n광고\n순서 | 담당\n기도 | 김철수', '슬라이드 글 (표 포함, 위 → 아래)');
+  // 그룹: 자식 좌표를 슬라이드 좌표로 · 배경 단색
+  const s3 = P.parseSlide(doc, 2);
+  assert.deepEqual([s3.bg.color, s3.shapes.length, Math.round(s3.shapes[0].x), Math.round(s3.shapes[0].y), Math.round(s3.shapes[1].x)], ['#102030', 3, 100, 100, 400]);
+  assert.equal(P.textLines(s3.shapes[2].text).join('|'), '• 첫째 기도 제목|• 둘째 기도 제목', '글머리표');
+  // SVG: 미리 정의된 모양 · 글 HTML
+  assert.match(S.presetPath('roundRect', 100, 50, {}).d, /^M8.33 0H91.67A/);
+  assert.equal(S.presetPath('ellipse', 100, 50, {}).open, undefined);
+  assert.ok(S.presetPath('line', 100, 0, {}).open && S.presetPath('없는모양', 1, 1, {}) === null);
+  assert.match(S.textHtml(title.text, { w: 612, h: 116 }), /justify-content:center.*text-align:center.*font-size:44px/s);
+  // 캐시 폴더로: 슬라이드 SVG · 요소를 뺀 배경 SVG · 요소 그림 · 그림 파일 · layers.json
+  const dir = path.join(tmp, 'pptx-build');
+  const r = build(file, dir, { full: true });
+  assert.deepEqual([r.n, r.w, r.h, r.slides], [4, 960, 540, ['slide-001.svg', 'slide-002.svg', 'slide-003.svg', 'slide-004.svg']]);
+  for (const f of ['slide-001.svg', 'slide-001-bg.svg', 'slide-002-e01.svg', 'slide-002-e02.svg', 'media-1.png', 'media-2.png', 'layers.json']) assert.ok(fs.existsSync(path.join(dir, f)), f);
+  const raw = r.raw;
+  assert.deepEqual([raw.v, raw.bgs.length, raw.hide['2'], raw.texts[0]], [3, 4, ['2', '3', '4', '5', '6', '8'], '주일 예배\n○○교회 · 2026년 11월']);
+  const k1 = raw.slides[0];
+  assert.deepEqual(k1.map(z => `${z.kind}:${z.text}`), ['text:주일 예배', 'text:○○교회 · 2026년 11월']);
+  assert.deepEqual([k1[0].size, k1[0].align, k1[0].anchor, k1[0].fontEa, k1[1].size], [44, 2, 3, '맑은 고딕', 32], '개체 틀: 마스터 글 스타일에서 크기·정렬');
+  const k2 = raw.slides[1];
+  assert.deepEqual(k2.map(z => `${z.kind}:${z.id}`), ['text:2', 'image:3', 'shape:4', 'text:4', 'shape:5', 'image:6', 'image:8'], '표(7) 는 배경에 · 도형 안 글은 도형 위 글 요소');
+  assert.deepEqual([k2[0].bold, k2[0].italic, k2[0].color, k2[0].align, k2[0].lh, k2[0].font, k2[0].text], [true, true, '#ff3300', 3, 1.5, '맑은 고딕', '사회 홍길동 사관\n둘째 줄']);
+  assert.deepEqual([k2[1].file, k2[1].fit, k2[1].crop], ['media-1.png', 'cover', { l: 0.25, t: 0.1, r: 0, b: 0 }], 'PPT 안의 그림 + 자르기');
+  assert.deepEqual([k2[2].fill, k2[2].radius, k2[2].ellipse, k2[3].text, k2[3].color, k2[4].fill, k2[4].ellipse], ['#1d3557', 13.33, false, '광고', '#ffffff', '#4f81bd', true]);
+  assert.deepEqual([k2[5].file, k2[5].h, k2[6].file], ['slide-002-e01.svg', 6, 'slide-002-e02.svg'], '선 · 화살표는 요소 그림 (선 두께만큼 넓힘)');
+  assert.match(fs.readFileSync(path.join(dir, 'slide-002-e02.svg'), 'utf8'), /fill="#e9c46a"/);
+  const full2 = fs.readFileSync(path.join(dir, 'slide-002.svg'), 'utf8'), bg2 = fs.readFileSync(path.join(dir, 'slide-002-bg.svg'), 'utf8');
+  assert.ok(full2.includes('사회 홍길동 사관') && full2.includes('<table') && full2.includes('data:image/png;base64,'), '슬라이드 그림: 글 · 표 · 그림(data:)');
+  assert.ok(!bg2.includes('사회 홍길동') && !bg2.includes('data:image') && bg2.includes('<table') && bg2.includes('김철수'), '배경 그림: 꺼낸 요소는 빼고 표만');
+  assert.match(fs.readFileSync(path.join(dir, 'slide-003-bg.svg'), 'utf8'), /fill="#102030"/, '단색 배경');
+  const k4 = raw.slides[3];
+  assert.deepEqual([k4[0].kind, k4[0].file, k4[0].l, k4[0].w, k4[1].size], ['image', 'media-2.png', 0, 960, 54], '슬라이드 가득한 그림도 요소로');
+  assert.equal(classify({ origin: 'layout' }, {}), 'bg'); assert.equal(classify({ origin: 'slide', rot: 15, kind: 'sp' }, {}), 'bg', '돌린 것은 배경에');
+  assert.equal(classify({ origin: 'slide', rot: 0, gt: [], kind: 'sp', text: { hasText: true, bodyPr: { vert: 'eaVert' } } }, {}), 'bg', '세로 글은 배경에');
+  // 편집기 요소로
+  const items = L.toItems(raw, 1, { w: 1920, h: 1080 }, '/hymn/k/');
+  assert.deepEqual(items.map(z => z.id), ['p1t0', 'p1i1', 'p1s2', 'p1t3', 'p1s4', 'p1i5', 'p1i6']);
+  assert.deepEqual([items[0].size, items[0].font, items[1].crop.l, items[2].radius, items[4].ellipse], [64, '맑은 고딕', 0.25, 27, true]);
+  // hymns 캐시 (PowerPoint 없는 PC = 이 테스트 환경): mode 'pptx' 에 SVG 슬라이드 · 요소 꺼내기 가능(layers) · 배경 주소 · 코어 명령 pptTextLayers · 다시 꺼내기
+  const core = newCore('pptxhymn');
+  core.settings.update(d => { d.droppedFiles = [file]; });
+  const hp = await require('../src/core/pptrender').hasPowerPoint();
+  const m = (await core.command('loadHymn', { file })).result;
+  if (!hp) {
+    assert.deepEqual([m.mode, m.layers, m.slides.length, m.slideTexts[1].split('\n')[0]], ['pptx', true, 4, '사회 홍길동 사관']);
+    assert.match(m.slides[0], /^\/hymn\/[0-9a-f]{16}\/slide-001\.svg$/);
+    assert.deepEqual(m.layerBgs.map(u => u.split('/').pop()), ['slide-001-bg.svg', 'slide-002-bg.svg', 'slide-003-bg.svg', 'slide-004-bg.svg']);
+    assert.ok(fs.existsSync(core.hymns.cachePath(m.key, 'media-1.png')) && core.hymns.cachePath(m.key, '../x') === null);
+    const t = (await core.command('pptTextLayers', { file, screen: { w: 1920, h: 1080 } })).result;
+    assert.deepEqual([t.bgs.length, t.slides[1].map(z => z.id).join(), t.slides[1][1].src], [4, 'p1t0,p1i1,p1s2,p1t3,p1s4,p1i5,p1i6', `/hymn/${m.key}/media-1.png`]);
+    const t2 = (await core.command('pptTextLayers', { file, again: true })).result;
+    assert.equal(t2.slides[0][0].text, '주일 예배', '다시 꺼내기');
+  }
+  assert.equal((await core.command('pptTextLayers', { file: path.join(__dirname, 'fixtures', '없는.ppt') })).ok, false);
+  core.store.close();
 });
 
 test('슬라이드 차례 바꾸기: 원래 슬라이드 순서(slideOrder) 저장 정리 · 글 덩어리 옮기기와 편집 번호', () => {
