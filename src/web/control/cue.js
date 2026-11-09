@@ -301,7 +301,7 @@
       const bg = hymnBg(it, meta);
       const cap = hymnCaptions(it, meta);
       if (meta.slides && meta.slides.length) { // PowerPoint 로 만든 '화면 그대로' 슬라이드
-        slides = meta.slides.map((img, k) => ({ kind: 'image', image: img, ref: it.title, label: String(k + 1), parts: [], caption: cap[k] || '' }));
+        slides = meta.slides.map((img, k) => ({ kind: 'image', image: img, ref: it.title, label: String(k + 1), parts: [], caption: cap[k] || '', layerBg: (meta.layerBgs || [])[k] || '' }));
       } else if (meta.scores.length) {
         slides = meta.scores.map((img, k) => ({ kind: 'score', image: img, bg, ref: it.title, label: String(k + 1), parts: [], caption: cap[k] || '' }));
       } else if (meta.texts.some(t => t.length)) { // 교독문 등 글자 슬라이드
@@ -309,6 +309,12 @@
         slides.forEach(s => { s.bg = bg; });
       }
       slides = pptRange(it, slides);
+      // PPT 요소 따로 고치기: 그 슬라이드는 요소를 숨긴 배경 그림 + 글상자·그림 (배경이 없으면 원래 그림, 꺼낸 요소는 decorate 에서 뺀다)
+      slides.forEach((s, j) => {
+        const e = it.edits && it.edits[String(j)];
+        if (e && e.pptBg) { if (s.layerBg) s.image = s.layerBg; else s.pptBgMissing = true; }
+        delete s.layerBg;
+      });
     }
     else if (it.type === 'song') slides = SL.buildText({ title: it.title, showTitle: it.showTitle, chunks: SL.arrange(SL.lyricsChunks(it.lyrics), songOrder(it)).chunks }, opts);
     else if (it.type === 'text') slides = SL.buildText({ title: it.title, showTitle: true, chunks: SL.textChunks(it.body, { roles: it.roleLabels ? 'labels' : true }) }, opts);
@@ -347,6 +353,79 @@
    */
   /** 슬라이드 범위 (한 PPT 를 여러 순서로 나눠 쓸 때 '5-9'): 이름표는 원래 번호 그대로 */
   function rangeOf(r) { const m = /^\s*(\d+)\s*(?:[-~]\s*(\d+))?\s*$/.exec(r || ''); if (!m) return null; const a = +m[1], b = +(m[2] || m[1]); return a >= 1 ? [Math.min(a, b), Math.max(a, b)] : null; }
+  // ---------------- PPT 요소 따로 고치기 (요소를 숨긴 PPT 배경 그림 + 글상자 · 요소 그림) ----------------
+  const isPptItem = id => /^p\d+[ti]\d+$/.test(String(id || '')); // PPT 에서 꺼낸 글상자(t)·그림(i)
+  /** 이 순서에서 요소로 꺼낸 슬라이드 수 */
+  const pptTextCount = it => Object.values(it.edits || {}).filter(e => e && e.pptBg).length;
+  /**
+   * PowerPoint 로 슬라이드의 글상자·그림·도형을 하나씩 꺼내, 슬라이드마다 슬라이드 편집기의 글상자·그림으로 넣는다
+   * (배경 = 꺼낸 요소를 모두 숨긴 PPT 그림)
+   * mode: 'on' (처음 · 다시 꺼내기 — 꺼낸 요소를 새로) | 'bg' (그림만 다시 만들기 — 고친 것은 그대로)
+   */
+  async function pptTextOn(i, mode = 'on') {
+    const it = st.cue && st.cue.items[i];
+    if (!it || it.type !== 'hymn') return;
+    let meta;
+    try { meta = await hymnMeta(it); } catch (e) { return app.showMsg(e.message, 'error'); }
+    if (meta.mode !== 'slides') return app.showMsg("PowerPoint 로 '화면 그대로' 읽은 PPT 에서만 요소를 꺼낼 수 있습니다 (PowerPoint 가 설치된 윈도우 PC).", 'warn', 5000);
+    const again = mode === 'on' && pptTextCount(it) > 0;
+    if (again && !confirm('PPT 의 요소를 다시 꺼낼까요? 이 순서에서 고친 PPT 글·그림은 원래 PPT 대로 돌아갑니다 (덧붙인 글상자·그림은 그대로).')) return;
+    const tpl = app.tplFor('main', itemTpl(it));
+    app.showMsg(`PowerPoint 로 '${it.title}' 의 글상자·그림을 하나씩 꺼내는 중… (슬라이드가 많으면 몇 분 걸립니다)`, 'info', 0);
+    const r = await cmd('pptTextLayers', { file: it.file, screen: { w: tpl.width, h: tpl.height } });
+    if (!r.ok) return app.showMsg(r.error, 'error', 8000);
+    st.hymnMeta.set(it.file, { ...meta, layerBgs: r.result.bgs });
+    if (mode === 'bg') { save(); forceEditor(); previewItem(i, { keepIndex: true }); return app.showMsg('요소를 숨긴 PPT 배경 그림을 다시 만들었습니다.', 'ok', 2500); }
+    const rg = rangeOf(it.range);
+    const a0 = rg ? rg[0] - 1 : 0;
+    const n = rg ? Math.min(rg[1], meta.slides.length) - a0 : meta.slides.length;
+    const edits = structuredClone(it.edits || {});
+    let texts = 0, pics = 0, slides = 0, skipped = 0;
+    for (let k = 0; k < n; k++) {
+      const items = r.result.slides[a0 + k] || [];
+      const e = edits[String(k)] || {};
+      const keep = (e.items || []).filter(x => !isPptItem(x.id)); // 사용자가 덧붙인 것은 그대로 (꺼낸 요소 위에)
+      if (!items.length) { if (e.pptBg) { delete e.pptBg; e.items = keep; } }
+      else if (items.length + keep.length > 60) { skipped++; continue; } // 요소가 너무 많은 슬라이드는 그림 그대로
+      else {
+        e.items = [...items, ...keep]; e.pptBg = true; slides++;
+        for (const x of items) { if (x.type === 'image') pics++; else texts++; }
+      }
+      if (!e.items || !e.items.length) delete e.items;
+      if (Object.keys(e).length) edits[String(k)] = e; else delete edits[String(k)];
+    }
+    if (Object.keys(edits).length) it.edits = edits; else delete it.edits;
+    save(); forceEditor(); previewItem(i, { keepIndex: true });
+    const got = texts + pics;
+    app.showMsg(got ? `슬라이드 ${slides}장에서 글상자 ${texts}개 · 그림 ${pics}개를 꺼냈습니다 — 슬라이드 편집(Ctrl+E)에서 옮기고 고치세요 (글은 두 번 눌러 고치기).${skipped ? ` (요소가 너무 많은 ${skipped}장은 그림 그대로)` : ''}` : '이 PPT 에서 따로 꺼낼 요소를 찾지 못했습니다 (글이 그림으로 되어 있거나 돌린 요소).', got ? 'ok' : 'warn', 6000);
+  }
+  /** 원래 PPT 그림으로 (꺼낸 요소를 빼고 그림을 되돌림. 덧붙인 것은 그대로) */
+  function pptTextOff(i) {
+    const it = st.cue && st.cue.items[i];
+    if (!it || !it.edits) return;
+    if (!confirm('원래 PPT 그림으로 되돌릴까요? 꺼내서 고친 PPT 글·그림은 사라지고, 덧붙인 글상자·그림은 그대로 둡니다.')) return;
+    for (const k of Object.keys(it.edits)) {
+      const e = it.edits[k];
+      if (!e) continue;
+      delete e.pptBg;
+      if (e.items) { e.items = e.items.filter(x => !isPptItem(x.id)); if (!e.items.length) delete e.items; }
+      if (!Object.keys(e).length) delete it.edits[k];
+    }
+    if (!Object.keys(it.edits).length) delete it.edits;
+    save(); forceEditor(); previewItem(i, { keepIndex: true });
+    app.showMsg('원래 PPT 그림으로 되돌렸습니다.', 'ok', 2000);
+  }
+  /** 편집칸 줄: PPT 요소 따로 고치기 (PowerPoint 로 읽은 PPT 만) */
+  function pptTextRow(it) {
+    const m = st.hymnMeta.get(it.file);
+    if (!m || m.mode !== 'slides') return '';
+    const on = pptTextCount(it);
+    const ic = window.BCIcon;
+    if (!on) return `<label>요소 고치기</label><div class="ce-row"><button data-act="ppttexton" title="PowerPoint 로 슬라이드의 글상자·그림·도형을 하나씩 꺼내, 슬라이드 편집기에서 옮기고 크기·글·색을 고칠 수 있게 합니다 (배경은 그대로)">${ic('pencil')}글·그림 따로 고치기…</button><span class="note">오타 고치기 · 그림 옮기기·빼기 — 요소를 하나씩 꺼내고 배경은 그대로</span></div>`;
+    const missing = !m.layerBgs || !m.layerBgs.some(Boolean);
+    return `<label>요소 고치기</label><div class="ce-row"><span class="muted">${missing ? '<span class="warn-text">요소를 숨긴 배경 그림이 없습니다 (다른 PC · 캐시 지움)</span>' : `${on}장을 요소로`}</span>${missing ? `<button data-act="ppttextbg" class="primary">배경 다시 만들기</button>` : `<button data-act="slideedit" title="슬라이드 편집 (Ctrl+E) — 끌어서 옮기기 · 글상자는 두 번 눌러 글 고치기">${ic('square-pen')}고치기</button>`}<button data-act="ppttexton" class="ghost" title="PPT 에서 요소를 다시 꺼냄 (고친 PPT 글·그림은 원래대로)">다시 꺼내기</button><button data-act="ppttextoff" class="ghost" title="꺼낸 요소를 빼고 원래 PPT 그림으로">원래대로</button></div>`;
+  }
+
   /** 슬라이드 수 (PPT 를 한 번 읽은 뒤에만 안다) */
   function hymnCount(it) {
     const m = st.hymnMeta.get(it.file);
@@ -568,7 +647,7 @@
     };
 
     $('#spGo').onclick = () => {
-      const { id, skip, edits, extra, ...base } = it; // 슬라이드 번호에 묶인 편집·건너뛰기는 새 순서에 옮기지 않는다
+      const { id, skip, edits, extra, slideOrder, ...base } = it; // 슬라이드 번호에 묶인 편집·건너뛰기·차례는 새 순서에 옮기지 않는다
       const made = parts.map(p => ({ ...base, id: newId(), title: String(p.name || '').trim() || `${it.title} ${p.a}-${p.b}`, range: `${p.a}-${p.b}` }));
       st.cue.items.splice(i, 1, ...made);
       st.sel = i;
@@ -583,6 +662,14 @@
     const r = rangeOf(it.range);
     return r ? slides.slice(r[0] - 1, r[1]) : slides;
   }
+  /** 원래 슬라이드를 보일 차례 [번호…] — slideOrder 에 없는 번호는 뒤에 원래 차례대로 (슬라이드 수가 바뀌어도 안전) */
+  function orderOf(it, n) {
+    const seen = new Set();
+    const out = [];
+    for (const k of Array.isArray(it.slideOrder) ? it.slideOrder : []) if (Number.isInteger(k) && k >= 0 && k < n && !seen.has(k)) { seen.add(k); out.push(k); }
+    for (let k = 0; k < n; k++) if (!seen.has(k)) out.push(k);
+    return out;
+  }
   function decorate(it, slides, { withSkipped = false, noEdits = false } = {}) {
     const chunk = ['song', 'text', 'title'].includes(it.type);
     let out = slides;
@@ -593,7 +680,8 @@
       out = [];
       const extraAt = at => (it.extra || []).filter(e => e.at === at).map(e => SL.titleSlide(e.text, 1, { label: '덧붙임', ekey: 'x' + e.id, xid: e.id, src: undefined }));
       out.push(...extraAt(-1));
-      slides.forEach((s, k) => {
+      orderOf(it, slides.length).forEach(k => { // 원래 슬라이드 차례 (목록·격자에서 끌어서 바꾼 순서)
+        const s = slides[k];
         if (skip.has(k)) { if (withSkipped) out.push(Object.assign(s, { skipped: true })); } else out.push(s);
         out.push(...extraAt(k));
       });
@@ -606,6 +694,7 @@
       if (!e) return;
       if (e.bg) s.bg = e.bg;
       delete e.bg;
+      if (s.pptBgMissing && e.items) e.items = e.items.filter(x => !isPptItem(x.id)); // 요소를 숨긴 배경이 없으면 원래 그림만 (두 번 보이지 않게)
       s.edit = e;
     });
     return out;
@@ -849,7 +938,7 @@
   $('#results').addEventListener('click', e => {
     const r = e.target.closest('.srow');
     if (!r || !app.preview) return;
-    if (window.BCSlideEdit && window.BCSlideEdit.selClick(+r.dataset.k, e)) return; // Shift·Ctrl·끌기: 여러 장 고르기
+    if (window.BCSlideEdit && window.BCSlideEdit.selClick(+r.dataset.k, e)) return; // Shift·Ctrl: 여러 장 고르기 (끌기가 끝난 click 은 무시)
     app.setPreviewIndex(+r.dataset.k);
     document.querySelectorAll('#results .srow').forEach(x => x.classList.toggle('in-pv', x === r));
   });
@@ -912,6 +1001,7 @@
       hymn: `<label>파일</label><div class="ce-row"><span class="muted ce-file">${esc((it.file || '').split(/[\\/]/).pop())}</span><button data-act="rehymn">다른 찬송가로 바꾸기</button></div>
         <label>슬라이드 범위</label><div class="ce-row"><input type="text" data-k="range" value="${esc(it.range || '')}" placeholder="전체 (예: 5-9)" style="width:110px" spellcheck="false"><button data-act="pptsplit" title="광고·설교처럼 한 PPT 안의 여러 부분을 순서마다 나눠 씁니다 (AI 로 자동으로도)">여러 순서로 나누기…</button><span class="note">비우면 전체 · 한 PPT 를 순서마다 나눠 쓸 때</span></div>
         ${!it.range && hymnCount(it) >= SPLIT_BIG ? `<span></span><div class="ce-row note sp-hint">${window.BCIcon('sparkles')}슬라이드 ${hymnCount(it)}장 — 예배·행사 전체가 든 PPT 면 순서마다 나눠 두세요 <button data-act="pptsplitai" class="primary">AI 로 순서 나누기…</button></div>` : ''}
+        ${pptTextRow(it)}
         <label>OBS 가사</label><div class="ce-col"><textarea data-k="obsLyrics" rows="3" placeholder="${esc(obsHint(it))}">${esc(it.obsLyrics || '')}</textarea>
           <div class="ce-row note">OBS 자막처럼 'PPT 슬라이드: 가사만'인 출력에 나옵니다. 슬라이드마다 빈 줄로 구분 · 비우면 자동 <button data-act="obsfill" title="자동 가사를 칸에 넣어 직접 고칠 수 있게">자동 가사 넣어 고치기</button></div></div>
         <label>배경</label><div class="ce-row">${(st.hymnMeta.get(it.file) || {}).mode === 'slides' ? '<span class="muted">PPT 화면 그대로 송출합니다 (배경 바꾸기 없음). 폴더 읽는 방식을 \'자동\'으로 바꾸면 악보·배경을 나눠 꺼낼 수 있습니다.</span>' : hymnBgSel()}</div>`,
@@ -1076,6 +1166,9 @@
     switch (b.dataset.act) {
       case 'obsopen': if (window.BCObs) window.BCObs.open(); break;
       case 'pptsplit': openSplit(i); break;
+      case 'ppttexton': pptTextOn(i, 'on'); break;
+      case 'ppttextbg': pptTextOn(i, 'bg'); break;
+      case 'ppttextoff': pptTextOff(i); break;
       case 'pptsplitai': { const s = await cmd('aiSettings'); openSplit(i, { auto: s.ok && s.result.hasKey ? 'ai' : 'rule' }); break; }
       case 'devopen': if (window.BCDevices) window.BCDevices.open(); break;
       case 'macrosave': if (window.BCMacro) window.BCMacro.saveFrom(it); break;
@@ -1581,16 +1674,18 @@
     },
     decorate: (it, slides, o) => decorate(it, slides, o),
     /** 슬라이드 편집기: 항목을 고치고 저장·미리보기 갱신 (가사를 고쳤으면 라이브러리 찬양에도) */
-    updateItem: (i, fn, { lyrics = false } = {}) => {
+    updateItem: (i, fn, { lyrics = false, wait = false } = {}) => {
       const it = st.cue && st.cue.items[i];
       if (!it) return false;
       fn(it); save();
       if (lyrics && it.type === 'song' && it.songId) saveLinkedSong(it);
       if (i === st.sel) forceEditor();
       app.holdDirect = (app.holdDirect || 0) + 1;
-      previewItem(i, { keepIndex: true }).finally(() => { app.holdDirect--; });
-      return true;
+      const done = previewItem(i, { keepIndex: true }).finally(() => { app.holdDirect--; });
+      return wait ? done.then(() => true) : true; // wait: 미리보기가 새로 그려질 때까지
     },
+    /** 찬양의 부를 순서 (이 순서에 적은 것 → 라이브러리 기본) — 있으면 슬라이드 차례는 부를 순서가 정한다 */
+    songOrderOf: it => songOrder(it),
     /** 고른 순서를 바꾸고 저장·미리보기 갱신 */
     updateSelected: fn => { const it = st.cue && st.sel >= 0 ? st.cue.items[st.sel] : null; if (!it) return false; fn(it); save(); forceEditor(); previewItem(st.sel, { keepIndex: true }); return true; },
     onSongs: d => { if (d && d.id) st.songs.delete(d.id); },

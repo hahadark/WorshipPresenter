@@ -7,8 +7,9 @@
 //                                    size 는 1080 줄 화면 기준 px (화면 해상도에 맞춰 늘고 줄어든다)
 //     hideMain: 본문 숨기기, allOutputs: 투명(OBS 자막) 출력에도 위치·꾸미기 적용
 //     bg: 이 슬라이드 배경 (그림·영상 주소 또는 #색)
+//     pptBg: PPT 요소 따로 고치기 — 이 슬라이드는 요소를 숨긴 PPT 배경 그림을 쓰고, 글·그림은 글상자·그림(items)으로 (pptlayers.js)
 //     items: [{ id, type: text|image|shape, x, y, w, h, text, src, fit, fill, color, size, bold, italic, align, valign,
-//               radius, opacity, padding, below }]   below = 본문 글자 뒤
+//               radius, opacity, padding, below, font, fit, lineHeight }]   below = 본문 글자 뒤 · font = 글꼴 이름 · fit = 넘치면 글자를 줄임
 //   }
 
 const num = (v, a, b, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(a, Math.min(b, n)) : d; };
@@ -57,6 +58,10 @@ function item(x, i) {
       bold: !!x.bold, italic: !!x.italic, align: pick(x.align, ['left', 'center', 'right']) || 'center',
       valign: pick(x.valign, ['top', 'middle', 'bottom']) || 'middle', padding: num(x.padding, 0, 300, 12),
     });
+    const font = String(x.font || '').trim();
+    if (/^[\w가-힣\u3131-\u318e .+\-()]{1,60}$/.test(font)) o.font = font; // 화면 CSS 에 그대로 쓰니 안전한 글자만
+    if (x.fit) o.fit = true;
+    if (x.lineHeight != null && x.lineHeight !== '') o.lineHeight = num(x.lineHeight, 0.8, 3, 1.3);
   } else if (x.type === 'image') {
     Object.assign(o, { src: str(x.src, 1500), fit: x.fit === 'contain' ? 'contain' : 'cover' });
   } else if (x.type === 'camera') {
@@ -78,7 +83,8 @@ function normalizeEdit(e) {
   if (e.hideMain) o.hideMain = true;
   if (e.allOutputs) o.allOutputs = true;
   if (e.bg) o.bg = str(e.bg, 1500);
-  const items = (Array.isArray(e.items) ? e.items : []).slice(0, 30).map(item).filter(Boolean);
+  if (e.pptBg) o.pptBg = true;
+  const items = (Array.isArray(e.items) ? e.items : []).slice(0, 60).map(item).filter(Boolean);
   if (items.length) o.items = items;
   return Object.keys(o).length ? o : null;
 }
@@ -87,7 +93,7 @@ function normalizeEdit(e) {
 function normalizeEdits(edits) {
   if (!edits || typeof edits !== 'object' || Array.isArray(edits)) return undefined;
   const out = {};
-  for (const k of Object.keys(edits).slice(0, 300)) {
+  for (const k of Object.keys(edits).slice(0, 1200)) { // 예배 전체가 든 PPT 는 수백 장
     if (k !== '*' && !/^\d{1,4}$/.test(k) && !/^x[a-z0-9]{1,16}$/i.test(k)) continue; // 숫자 = 슬라이드 번호, x… = 덧붙인 슬라이드
     const e = normalizeEdit(edits[k]);
     if (e) out[k] = e;

@@ -78,14 +78,14 @@
   }
 
   // ---------------- 실행 취소 · 저장 ----------------
-  function snapshot() { const it = item(); return JSON.stringify({ edits: it.edits || null, lyrics: it.lyrics, body: it.body, title: it.title, subtitle: it.subtitle, more: it.more, extra: it.extra || null, skip: it.skip || null }); }
+  function snapshot() { const it = item(); return JSON.stringify({ edits: it.edits || null, lyrics: it.lyrics, body: it.body, title: it.title, subtitle: it.subtitle, more: it.more, extra: it.extra || null, skip: it.skip || null, slideOrder: it.slideOrder || null }); }
   function begin() { S.undo.push(snapshot()); if (S.undo.length > 100) S.undo.shift(); S.redo = []; }
   function restore(snap) {
     const it = item();
     const o = JSON.parse(snap);
     if (o.edits) it.edits = o.edits; else delete it.edits;
     for (const k of ['lyrics', 'body', 'title', 'subtitle', 'more']) if (o[k] !== undefined) it[k] = o[k];
-    for (const k of ['extra', 'skip']) { if (o[k]) it[k] = o[k]; else delete it[k]; }
+    for (const k of ['extra', 'skip', 'slideOrder']) { if (o[k]) it[k] = o[k]; else delete it[k]; }
     commit({ lyrics: true, list: true });
   }
   function undo() { if (!S.undo.length) return; S.redo.push(snapshot()); restore(S.undo.pop()); }
@@ -202,7 +202,8 @@
   /** 목록 단추: 글 순서 = 모두, 그 밖 = 원래 슬라이드는 건너뛰기만, 덧붙인 슬라이드는 모두 */
   function opsHtml(x) {
     if (chunky() || x.xid) return `<span class="se-ops"><button data-op="up" title="위로">▲</button><button data-op="down" title="아래로">▼</button><button data-op="dup" title="복제 (꾸민 것도)">⧉</button><button data-op="del" title="지우기">✕</button></span>`;
-    return `<span class="se-ops"><button data-op="del" title="${x.skipped ? '되살리기 (다시 보이기)' : '건너뛰기 (송출에서 빼기, 원래 내용은 그대로)'}">${x.skipped ? '↺' : '⊘'}</button></span>`;
+    const mv = item().type !== 'bible' ? '<button data-op="up" title="위로 (차례 바꾸기)">▲</button><button data-op="down" title="아래로 (차례 바꾸기)">▼</button>' : '';
+    return `<span class="se-ops">${mv}<button data-op="del" title="${x.skipped ? '되살리기 (다시 보이기)' : '건너뛰기 (송출에서 빼기, 원래 내용은 그대로)'}">${x.skipped ? '↺' : '⊘'}</button></span>`;
   }
   /** 성경·찬송가·그림 등: 사이에 덧붙인 제목 카드(extra) 넣기·복제·지우기·옮기기, 원래 슬라이드 건너뛰기 */
   function extraOp(op, key) {
@@ -220,7 +221,7 @@
       if (sk.size) it.skip = [...sk].sort((a, b) => a - b); else delete it.skip;
       return commit({ lyrics: true });
     }
-    if ((op === 'up' || op === 'down') && !cur.xid) return app.showMsg('원래 슬라이드(성경·찬송가·그림…)의 순서는 바꿀 수 없습니다. 덧붙인 슬라이드만 옮길 수 있습니다.', 'info', 3000);
+    if ((op === 'up' || op === 'down') && !cur.xid && it.type === 'bible') return app.showMsg('성경 본문의 차례는 바꿀 수 없습니다. 덧붙인 슬라이드만 옮길 수 있습니다.', 'info', 3000);
     if (op === 'dup' && !cur.xid) return app.showMsg('원래 슬라이드는 복제할 수 없습니다. ＋ 슬라이드로 사이에 새 슬라이드를 넣으세요.', 'info', 3000);
     begin();
     const mkId = () => Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 6);
@@ -247,14 +248,22 @@
       [seq[pos], seq[to]] = [seq[to], seq[pos]];
       pick = cur.key;
     }
-    let at = -1;
-    const order = [];
-    for (const z of seq) { if (z.xid) { const e = ex.find(y => y.id === z.xid); if (e) { e.at = at; order.push(e); } } else at = z.base; }
-    if (order.length) it.extra = order; else delete it.extra;
+    applySeq(it, seq, ex);
     S.key = pick || '*';
     S.sel = '';
     commit({ lyrics: true });
     if (op === 'add' && !S.quick) setTimeout(() => inlineEdit('main'), 80);
+  }
+  /**
+   * 차례(seq: 원래 슬라이드 {base} · 덧붙인 슬라이드 {xid})를 순서에 적는다
+   * 덧붙인 것은 바로 앞 원래 슬라이드 번호(at) 로, 원래 슬라이드 차례는 slideOrder 로 (원래 차례면 지움)
+   */
+  function applySeq(it, seq, ex) {
+    let at = -1;
+    const order = [], bases = [];
+    for (const z of seq) { if (z.xid) { const e = ex.find(y => y.id === z.xid); if (e) { e.at = at; order.push(e); } } else { at = z.base; bases.push(z.base); } }
+    if (order.length) it.extra = order; else delete it.extra;
+    if (bases.some((b, k) => b !== k)) it.slideOrder = bases; else delete it.slideOrder;
   }
   function slideOp(op, key) {
     const it = item();
@@ -380,7 +389,8 @@
         h += `<h4>${NAMES[x.type]}${mine ? '' : ' <span class="muted">(공통 — \'공통\' 에서 고치세요)</span>'}</h4><div class="form se-form ${mine ? '' : 'se-locked'}">`;
         if (x.type === 'text') {
           h += field('글', `<textarea data-p="item.text" rows="4">${esc(x.text)}</textarea>`)
-            + field('글자 크기', `${numIn('item.size', x.size, 8, 400)} px`)
+            + field('글자 크기', `${numIn('item.size', x.size, 8, 400)} px ${tog('item.fit', x.fit, '넘치면 줄이기', '글이 상자보다 길면 상자에 들어가게 글자를 줄입니다')}`)
+            + field('글꼴', `<input type="text" data-p="item.font" value="${esc(x.font || '')}" placeholder="템플릿 글꼴" style="width:180px" spellcheck="false"><span class="note">PC 에 설치된 글꼴 이름 (예: 맑은 고딕)</span>`)
             + field('글자', `${colIn('item.color', x.color)}${tog('item.bold', x.bold, '<b>굵게</b>')}${tog('item.italic', x.italic, '<i>기울임</i>')}`)
             + field('가로 정렬', seg('item.align', x.align, [['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']]))
             + field('세로 정렬', seg('item.valign', x.valign, [['top', '위'], ['middle', '가운데'], ['bottom', '아래']]))
@@ -609,8 +619,8 @@
     open(p.cue.index, keyOf(s), keys);
   }
 
-  // ---------------- 본문·편집 창(목록·격자)에서 여러 장 고르기 ----------------
-  // 클릭 = 그 슬라이드 미리보기 (한 장) · Shift+클릭 = 범위 · Ctrl+클릭 = 더하기/빼기 · 끌기 = 영역
+  // ---------------- 본문·편집 창(목록·격자)에서 여러 장 고르기 · 끌어서 차례 바꾸기 ----------------
+  // 클릭 = 그 슬라이드 미리보기 (한 장) · Shift+클릭 = 범위 · Ctrl+클릭 = 더하기/빼기 · 끌기 = 차례 바꾸기
   const M = { i: -1, cue: '', ks: new Set(), anchor: -1, drag: null };
   const selValid = () => { const p = app.preview; return !!(p && p.cue && p.cue.index === M.i && p.cue.id === M.cue); };
   function selReset(k) { const p = app.preview; M.i = p && p.cue ? p.cue.index : -1; M.cue = p && p.cue ? p.cue.id : ''; M.ks = new Set(k == null ? [] : [k]); M.anchor = k == null ? -1 : k; }
@@ -639,7 +649,7 @@
     const it = Cue() && Cue().item(M.i);
     const del = it && CHUNK.includes(it.type) ? '✕ 지우기' : '⊘ 건너뛰기';
     bar.hidden = false;
-    bar.innerHTML = `<b>고른 슬라이드 ${M.ks.size}장</b><button data-ms="edit" class="primary" title="고른 슬라이드를 함께 꾸미기 (Ctrl+E)">✎ 고른 ${M.ks.size}장 편집</button><button data-ms="del" title="${del} (Delete)">${del}</button><button data-ms="clear" title="한 장만 (Esc)">해제</button><span class="muted">Shift+클릭 범위 · Ctrl+클릭 더하기/빼기 · 끌어서 고르기</span>`;
+    bar.innerHTML = `<b>고른 슬라이드 ${M.ks.size}장</b><button data-ms="edit" class="primary" title="고른 슬라이드를 함께 꾸미기 (Ctrl+E)">✎ 고른 ${M.ks.size}장 편집</button><button data-ms="del" title="${del} (Delete)">${del}</button><button data-ms="clear" title="한 장만 (Esc)">해제</button><span class="muted">Shift+클릭 범위 · Ctrl+클릭 더하기/빼기 · 끌어서 차례 바꾸기</span>`;
   }
   async function selAction(a) {
     if (!selMany()) return;
@@ -665,29 +675,98 @@
       app.showMsg(chunk ? `슬라이드 ${keys.length}장을 지웠습니다.` : `슬라이드 ${keys.length}장을 건너뛰기 (송출에서 빠짐) 했습니다.`, 'ok', 2500);
     }
   }
-  /** 끌어서 영역 고르기 (목록·격자) */
+  /**
+   * 끌어서 차례 바꾸기 (목록·격자·전체 격자): 슬라이드를 끌어 다른 슬라이드의 앞·뒤에 놓는다
+   * 여러 장을 고른 채 그중 하나를 끌면 고른 것을 모두 옮긴다 (고르기는 Shift·Ctrl+클릭)
+   */
   function attachSel(box, sel) {
     box.addEventListener('dragstart', ev => { if (ev.target.closest(sel)) ev.preventDefault(); }); // 썸네일 그림이 끌려가지 않게
+    const sameItem = x => x.dataset.i == null || (app.preview && app.preview.cue && +x.dataset.i === app.preview.cue.index);
     box.addEventListener('pointerdown', ev => {
-      if (ev.button !== 0 || ev.target.closest('button, input, .sg-ops, .sg-edit')) { M.drag = null; return; }
+      if (ev.button !== 0 || ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.target.closest('button, input, .sg-ops, .sg-edit')) { M.drag = null; return; }
       const c = ev.target.closest(sel);
-      const sameItem = x => x.dataset.i == null || (app.preview && app.preview.cue && +x.dataset.i === app.preview.cue.index);
-      M.drag = c && app.preview && app.preview.cue && sameItem(c) ? { from: +c.dataset.k, moved: false } : null;
+      M.drag = c && app.preview && app.preview.cue && sameItem(c) ? { box, sel, from: +c.dataset.k, x0: ev.clientX, y0: ev.clientY, moved: false, to: -1, after: false } : null;
     });
     box.addEventListener('pointermove', ev => {
-      if (!M.drag || !(ev.buttons & 1)) return;
+      const d = M.drag;
+      if (!d || d.box !== box || !(ev.buttons & 1)) return;
+      if (!d.moved) {
+        if (Math.abs(ev.clientX - d.x0) + Math.abs(ev.clientY - d.y0) < 8) return; // 조금 움직인 것은 클릭
+        d.moved = true;
+        d.ks = selMany() && M.ks.has(d.from) ? [...M.ks].sort((x, y) => x - y) : [d.from];
+        document.body.classList.add('slide-dragging');
+        box.querySelectorAll(sel).forEach(c => { if (sameItem(c) && d.ks.includes(+c.dataset.k)) c.classList.add('drag-src'); });
+      }
       // 가장자리로 끌면 저절로 넘김
       const br = box.getBoundingClientRect();
       if (ev.clientY > br.bottom - 30) box.scrollTop += 18; else if (ev.clientY < br.top + 30) box.scrollTop -= 18;
+      box.querySelectorAll('.drop-before, .drop-after').forEach(x => x.classList.remove('drop-before', 'drop-after'));
       const c = document.elementFromPoint(ev.clientX, ev.clientY)?.closest(sel);
-      if (!c || (c.dataset.i != null && !(app.preview && app.preview.cue && +c.dataset.i === app.preview.cue.index)) || (!M.drag.moved && +c.dataset.k === M.drag.from)) return;
-      if (!M.drag.moved) { selReset(M.drag.from); M.drag.moved = true; }
-      const a = Math.min(M.drag.from, +c.dataset.k), b = Math.max(M.drag.from, +c.dataset.k);
-      M.ks = new Set(Array.from({ length: b - a + 1 }, (_, n) => a + n));
-      paintSel();
+      if (!c || !box.contains(c) || !sameItem(c) || d.ks.includes(+c.dataset.k)) { d.to = -1; return; }
+      const r = c.getBoundingClientRect();
+      d.after = c.classList.contains('sg-cell') ? ev.clientX > r.left + r.width / 2 : ev.clientY > r.top + r.height / 2; // 격자는 좌우, 목록은 위아래
+      d.to = +c.dataset.k;
+      c.classList.add(d.after ? 'drop-after' : 'drop-before');
     });
   }
-  document.addEventListener('pointerup', () => { if (!M.drag) return; if (!M.drag.moved) M.drag = null; else setTimeout(() => { M.drag = null; }, 0); });
+  document.addEventListener('pointerup', () => {
+    const d = M.drag;
+    if (!d) return;
+    document.body.classList.remove('slide-dragging');
+    document.querySelectorAll('.drop-before, .drop-after, .drag-src').forEach(x => x.classList.remove('drop-before', 'drop-after', 'drag-src'));
+    if (!d.moved) { M.drag = null; return; }
+    setTimeout(() => { M.drag = null; }, 0); // 끌기가 끝난 뒤 따라오는 click 은 무시
+    if (d.to >= 0) moveSlides(d.ks, d.to, d.after).catch(e => app.showMsg(e.message, 'error'));
+  });
+  /**
+   * 미리보기 슬라이드 ks 를 to 번 슬라이드 앞(after=false)·뒤(after=true) 로 옮긴다 (실행 취소: 큐시트 Ctrl+Z)
+   * 글 순서(찬양·공지·제목) = 글 덩어리 차례, 그 밖(찬송가·PPT·그림·슬라이드쇼…) = 원래 슬라이드 차례(slideOrder) · 덧붙인 슬라이드 자리
+   */
+  async function moveSlides(ks, to, after) {
+    const p = app.preview;
+    if (!p || !p.cue) return false;
+    const i = p.cue.index;
+    const it = Cue().item(i);
+    if (!it || !EDITABLE.includes(it.type)) return false;
+    if (it.type === 'bible') { app.showMsg('성경 본문의 차례는 바꿀 수 없습니다.', 'info', 2500); return false; }
+    if (it.type === 'song' && String(Cue().songOrderOf(it) || '').trim()) { app.showMsg("부를 순서가 정해진 찬양입니다. 편집칸의 '부를 순서' 에서 차례를 바꾸세요.", 'info', 3500); return false; }
+    const moved = [...new Set([...ks].sort((a, b) => a - b).map(k => keyOf(p.slides[k])).filter(k => k != null))];
+    const target = keyOf(p.slides[to]);
+    if (!moved.length || target == null || moved.includes(target)) return false;
+    if (!$('#se').hidden) close();
+    S.i = i; S.undo = []; S.redo = []; S.sel = ''; S.base = null;
+    if (!CHUNK.includes(it.type)) { S.base = await Cue().editorBase(i); if (!S.base.length) return false; }
+    const list = sources();
+    const keys = list.map(x => x.key);
+    const rest = keys.filter(k => !moved.includes(k));
+    let pos = rest.indexOf(target);
+    if (pos < 0) return false;
+    if (after) pos++;
+    const next = [...rest.slice(0, pos), ...moved, ...rest.slice(pos)];
+    if (next.every((k, n) => k === keys[n])) return false;
+    if (CHUNK.includes(it.type)) {
+      const perm = next.map(Number);
+      if (it.type === 'title') { const pages = SL.titlePages(it); Object.assign(it, SL.fromTitlePages(perm.map(k => pages[k]))); }
+      else { const f = it.type === 'song' ? 'lyrics' : 'body'; it[f] = SL.reorderChunks(it.type, it[f], perm); }
+      const e = SL.reorderEdits(it.edits, perm);
+      if (e) it.edits = e; else delete it.edits;
+    } else {
+      const byKey = new Map(list.map(x => [x.key, x]));
+      applySeq(it, next.map(k => { const x = byKey.get(k); return x.xid ? { xid: x.xid } : { base: x.base }; }), (it.extra || []).map(e => ({ ...e })));
+    }
+    clean();
+    clearTimeout(S.timer);
+    S.lyricsDirty = false;
+    await Cue().updateItem(i, () => {}, { lyrics: true, wait: true });
+    // 옮긴 슬라이드를 새 자리에서 고른 채로
+    const q = app.preview;
+    if (q && q.cue && q.cue.index === i) {
+      const idx = q.slides.map((s, k) => (moved.includes(keyOf(s)) ? k : -1)).filter(k => k >= 0);
+      if (idx.length) { app.setPreviewIndex(idx[0]); selReset(idx[0]); if (idx.length > 1) M.ks = new Set(idx); paintSel(); }
+    }
+    app.showMsg(`슬라이드 ${moved.length}장의 차례를 바꿨습니다 (되돌리기 Ctrl+Z).`, 'ok', 1800);
+    return true;
+  }
   /** 전체 격자·전체 목록 클릭: 미리보기 중인 순서의 칸에서 Shift·Ctrl·끌기면 고르기 (true = 썼음) */
   function selClickAll(i, k, ev) {
     if (M.drag && M.drag.moved) return true;
@@ -964,6 +1043,6 @@
   }
   // 가운데 목록(순서의 슬라이드 줄)에서도 끌기·키
   { const res = document.getElementById('results'); if (res) { attachSel(res, '.srow'); res.addEventListener('keydown', e => { if (app.results && app.results.type === 'none' && selKey(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true); } }
-  window.BCSlideEdit = { init, open, openPreviewSlide, close, dropImage, menuFor, quickOp, isOpen: () => !$('#se').hidden,
+  window.BCSlideEdit = { init, open, openPreviewSlide, close, dropImage, menuFor, quickOp, moveSlides, isOpen: () => !$('#se').hidden,
     selClick, selClickAll, paintSel, attachSel, selKey, selAction, selMany, selCount: () => (selMany() ? M.ks.size : 0) };
 })();

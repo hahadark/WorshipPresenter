@@ -57,6 +57,11 @@ function normalizeItem(x) {
     if (extra.length) it.extra = extra;
     const skip = [...new Set((Array.isArray(x.skip) ? x.skip : []).map(n => Math.round(Number(n))).filter(n => n >= 0 && n < 1000))].sort((a, b) => a - b);
     if (skip.length) it.skip = skip;
+    // 원래 슬라이드 순서 바꾸기 (목록·격자에서 끌어서): 원래 슬라이드 번호를 보일 차례대로. 성경은 순서를 바꾸지 않는다
+    if (x.type !== 'bible' && Array.isArray(x.slideOrder)) {
+      const ord = [...new Set(x.slideOrder.slice(0, 1000).map(n => Math.round(Number(n))).filter(n => n >= 0 && n < 1000))];
+      if (ord.some((n, k) => n !== k)) it.slideOrder = ord;
+    }
   }
   it.duration = Math.max(0, Math.min(600, Number(x.duration) || 0)); // 예정 시간(분), 0 = 정하지 않음
   // 송출할 때 자동으로 (배경 음악 · 타이머 · 무대 메시지 · 로고 화면 · 배경 · 오버레이 · 음악 멈춤)

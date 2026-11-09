@@ -1553,3 +1553,14 @@ footer.bottom .quick-btn.on { border-color: var(--accent); color: var(--accent);
 .dock-actions .dock-fold[hidden] { display: none; }
 .wc-dock .dv-groupview.dock-folded .dv-content-container { visibility: hidden; }
 .wc-dock .dv-groupview.dock-folded .dock-fold { color: var(--accent); }
+
+/* ---------------- 목록·격자에서 끌어서 슬라이드 차례 바꾸기 (slideedit.js attachSel) ---------------- */
+body.slide-dragging, body.slide-dragging * { cursor: grabbing !important; user-select: none; }
+.sg-cell.drag-src, .results .srow.drag-src { opacity: .4; }
+.results .srow { position: relative; }
+.sg-cell.drop-before::before, .sg-cell.drop-after::before { content: ''; position: absolute; top: -3px; bottom: -3px; width: 4px; border-radius: 2px; background: var(--accent); z-index: 3; }
+.sg-cell.drop-before::before { left: -8px; }
+.sg-cell.drop-after::before { right: -8px; }
+.results .srow.drop-before::after, .results .srow.drop-after::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--accent); z-index: 3; }
+.results .srow.drop-before::after { top: -2px; }
+.results .srow.drop-after::after { bottom: -2px; }

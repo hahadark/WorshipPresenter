@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { extractPps } = require('./ppt');
-const { hasPowerPoint, exportWithPowerPoint, extractPptx } = require('./pptrender');
+const { hasPowerPoint, exportWithPowerPoint, exportLayers, extractPptx } = require('./pptrender');
 const { alignLyrics } = require('./hymnlyrics');
 
 const EXT = /\.(pps|ppt|ppsx|pptx)$/i;
@@ -104,7 +104,37 @@ class Hymns {
     const key = crypto.createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}|${mode}|v2`).digest('hex').slice(0, 16);
     if (!this.loading.has(key)) this.loading.set(key, this.build(file, key, mode, pp).finally(() => this.loading.delete(key)));
     const meta = await this.loading.get(key);
-    return this.withCaptions(meta, folder);
+    const out = this.withCaptions(meta, folder);
+    const bgs = this.layerBgs(meta);
+    return bgs ? { ...out, layerBgs: bgs } : out;
+  }
+
+  /** PPT 요소 따로 고치기용 배경(요소를 숨긴 그림) 주소들 — 한 번 꺼낸 적이 있을 때만 */
+  layerBgs(meta) {
+    if (!meta || meta.mode !== 'slides' || !meta.key) return null;
+    const dir = path.join(this.cacheDir, meta.key);
+    let n = 0;
+    try { const raw = JSON.parse(fs.readFileSync(path.join(dir, 'layers.json'), 'utf8').replace(/^\ufeff/, '')); n = Array.isArray(raw.slides) ? raw.slides.length : 0; } catch { return null; }
+    return meta.slides.map((_, k) => (k < n ? `/hymn/${meta.key}/slide-${String(k + 1).padStart(3, '0')}-bg.png` : ''));
+  }
+
+  /**
+   * PPT 요소 따로 고치기: PowerPoint 로 요소를 숨긴 배경 그림 · 요소 그림 · 글상자 정보를 꺼낸다 (한 번 꺼내면 캐시에 남음)
+   * → { key, raw: { w, h, slides }, bgs: [주소…] }
+   */
+  async layers(file, { again = false } = {}) {
+    const meta = await this.load(file);
+    if (meta.mode !== 'slides') throw new Error(await hasPowerPoint() ? "이 PPT 는 '화면 그대로' 방식으로 읽지 않아 요소를 꺼낼 수 없습니다. 찬송가 폴더의 읽는 방식을 '화면 그대로' 로 바꾸세요." : 'PowerPoint 가 설치된 윈도우 PC 에서만 PPT 요소를 꺼낼 수 있습니다.');
+    const dir = path.join(this.cacheDir, meta.key);
+    const lj = path.join(dir, 'layers.json');
+    if (again) { try { fs.unlinkSync(lj); } catch { /* 없음 */ } }
+    if (!fs.existsSync(lj)) {
+      const lk = 'layers:' + meta.key;
+      if (!this.loading.has(lk)) this.loading.set(lk, exportLayers(file, dir).finally(() => this.loading.delete(lk)));
+      await this.loading.get(lk);
+    }
+    const raw = JSON.parse(fs.readFileSync(lj, 'utf8').replace(/^\ufeff/, ''));
+    return { key: meta.key, raw, bgs: this.layerBgs(meta) || [] };
   }
 
   /**

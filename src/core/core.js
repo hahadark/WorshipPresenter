@@ -1120,6 +1120,17 @@ WorshipCueCore.prototype.commands = {
     const { toCueItem } = require('./sermonpoints');
     return { item: toCueItem((a && a.data) || {}, (a && a.opts) || {}) };
   },
+  // ---- PPT 요소 따로 고치기 (요소를 숨긴 PPT 배경 그림 + 글상자 · 요소 그림) ----
+  /** file 의 슬라이드마다 편집기 글상자·그림 (screen = 송출 화면 크기, 그림 자리에 맞춤) · 배경 그림 주소 */
+  async pptTextLayers(a) {
+    const { allItems } = require('./pptlayers');
+    const file = String((a && a.file) || '');
+    if (!file) throw new Error('PPT 파일이 없습니다.');
+    const scr = (a && a.screen) || {};
+    const screen = { w: Math.max(100, Math.min(8000, Number(scr.w) || 1920)), h: Math.max(100, Math.min(8000, Number(scr.h) || 1080)) };
+    const r = await this.hymns.layers(file, { again: !!(a && a.again) });
+    return { bgs: r.bgs, slides: allItems(r.raw, screen, `/hymn/${r.key}/`) };
+  },
   // ---- 한 PPT 를 여러 순서로 나누기 (예배·행사 전체를 담은 PPT → 순서 범위들) ----
   /** 규칙으로 (AI 없이): 순서 제목 슬라이드 · 찬송가 장 번호 · 성경 장절 */
   pptSplitRule(a) {

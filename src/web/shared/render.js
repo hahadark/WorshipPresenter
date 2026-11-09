@@ -169,7 +169,9 @@
       if (x.type === 'camera') return camTag(x.deviceId, x.fit, pos + 'background:#000', 'bc-eitem');
       const just = { top: 'flex-start', middle: 'center', bottom: 'flex-end' }[x.valign] || 'center';
       const shadow = t.shadow && t.shadow.enabled && !x.fill ? `text-shadow:${t.shadow.x}px ${t.shadow.y}px ${t.shadow.blur}px ${t.shadow.color};` : '';
-      return `<div class="bc-eitem bc-etext" style="${pos}display:flex;flex-direction:column;justify-content:${just};padding:${(x.padding ?? 12) * k}px;${x.fill ? `background:${esc(x.fill)};` : ''}font-family:${t.font.family};font-size:${(x.size || 60) * k}px;color:${esc(x.color || '#fff')};font-weight:${x.bold ? 700 : 400};${x.italic ? 'font-style:italic;' : ''}line-height:1.3;text-align:${x.align || 'center'};white-space:pre-wrap;${shadow}">${esc(x.text || '')}</div>`;
+      // font: 글상자 글꼴 (PPT 에서 꺼낸 글 등, 없으면 템플릿 글꼴) · fit: 넘치면 글자를 줄임 (fitItems)
+      const family = x.font && /^[\w가-힣\u3131-\u318e .+\-()]{1,60}$/.test(x.font) ? `'${x.font}',${t.font.family}` : t.font.family;
+      return `<div class="bc-eitem bc-etext"${x.fit ? ' data-fit="1"' : ''} style="${pos}display:flex;flex-direction:column;justify-content:${just};padding:${(x.padding ?? 12) * k}px;${x.fill ? `background:${esc(x.fill)};` : ''}font-family:${esc(family)};font-size:${(x.size || 60) * k}px;color:${esc(x.color || '#fff')};font-weight:${x.bold ? 700 : 400};${x.italic ? 'font-style:italic;' : ''}line-height:${Number(x.lineHeight) || 1.3};text-align:${x.align || 'center'};white-space:pre-wrap;${shadow}">${esc(x.text || '')}</div>`;
     }).join('');
   }
 
@@ -297,7 +299,20 @@
    * 글꼴 크기 맞춤. area 는 문서에 붙어 있어야 한다.
    * autoFit 이면 설정 크기에서 최소 크기까지 줄여 가며 들어가는 가장 큰 크기를 찾는다.
    */
+  /** 덧붙인 글상자 중 '넘치면 줄이기'(PPT 에서 꺼낸 글 등): 상자에 들어갈 때까지 글자를 줄인다 (키우지는 않음) */
+  function fitItems(root) {
+    root.querySelectorAll('.bc-etext[data-fit]').forEach(el => {
+      let s = parseFloat(el.style.fontSize) || 0;
+      const min = s * 0.35;
+      for (let n = 0; n < 40 && s > min && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1); n++) {
+        s = Math.max(min, s * 0.93);
+        el.style.fontSize = s + 'px';
+      }
+    });
+  }
+
   function fit(area, t, fixedSize) {
+    fitItems(area);
     if (area.bcT) { t = area.bcT; fixedSize = 0; } // 슬라이드 편집 꾸미기
     const text = area.querySelector('.bc-text');
     if (!text) return { size: 0, fits: true }; // 이미지·빈 화면

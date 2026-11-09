@@ -1707,6 +1707,87 @@ test('PPT 슬라이드 범위: 한 PPT 를 여러 순서로 (범위 정리 · �
   assert.equal(h('0'), undefined);
   assert.equal(normalizeItem({ type: 'song', title: 'x', lyrics: '가', range: '1-2' }).range, undefined, 'PPT 순서에만');
 });
+test('PPT 요소 따로 고치기: PowerPoint 글상자·요소 그림 → 편집기 글상자·그림 (화면 비율 · 색 · 글꼴 · 정렬) · 저장 정리 · 가짜 PowerPoint 로 스크립트 점검', async () => {
+  const L = require('../src/core/pptlayers');
+  const { normalizeEdit, normalizeEdits } = require('../src/core/slideedit');
+  // 16:9 슬라이드(960×540pt)를 16:9 화면에: 그대로 · 44pt → 88px · BGR 65535 → 노랑 · 한글이면 동아시아 글꼴
+  const raw = { w: 960, h: 540, slides: [
+    [{ l: 48, t: 30, w: 864, h: 80, text: '주일 예배', size: 44, bold: -1, italic: 0, color: 65535, font: 'Arial', fontEa: '맑은 고딕', align: 2, anchor: 3, ml: 7.2, lh: 1 },
+      { l: 60, t: 150, w: 840, h: 300, text: 'Welcome\u000bto church', size: 28, bold: 0, italic: -1, color: 255, font: 'Arial', fontEa: '+mn-ea', align: 3, anchor: 4, ml: 0, lh: 1.5 },
+      { l: 0, t: 0, w: 10, h: 10, text: '   ', size: 20 }],
+    [],
+  ] };
+  const a = L.toItems(raw, 0, { w: 1920, h: 1080 });
+  assert.equal(a.length, 2, '빈 글상자는 뺀다');
+  assert.deepEqual([a[0].id, a[0].x, a[0].y, a[0].w, a[0].h, a[0].size], ['p0t0', 5, 5.56, 90, 14.81, 88]);
+  assert.deepEqual([a[0].color, a[0].bold, a[0].align, a[0].valign, a[0].font, a[0].fit, a[0].padding], ['#ffff00', true, 'center', 'middle', '맑은 고딕', true, 14]);
+  assert.deepEqual([a[1].text, a[1].color, a[1].italic, a[1].align, a[1].valign, a[1].font, a[1].lineHeight, a[1].padding], ['Welcome\nto church', '#ff0000', true, 'right', 'bottom', 'Arial', 1.8, 0], "영문이면 라틴 글꼴 · '+mn-ea' 같은 테마 이름은 버림");
+  // 4:3 화면(1440×1080)이면 16:9 그림은 위아래 띠 — 글상자도 그 안으로 (세로 75% · 위 12.5%)
+  const b = L.toItems(raw, 0, { w: 1440, h: 1080 });
+  assert.deepEqual([b[0].x, b[0].y, b[0].h, b[0].size], [5, 16.67, 11.11, 66]);
+  // 4:3 슬라이드(720×540)를 16:9 화면에: 좌우 띠 (가로 75% · 왼쪽 12.5%)
+  const c = L.toItems({ w: 720, h: 540, slides: [[{ l: 0, t: 0, w: 720, h: 540, text: '가', size: 30, align: 1, anchor: 1 }]] }, 0, { w: 1920, h: 1080 });
+  assert.deepEqual([c[0].x, c[0].y, c[0].w, c[0].h, c[0].size, c[0].align, c[0].valign], [12.5, 0, 75, 100, 60, 'left', 'top']);
+  assert.equal(L.bgrHex(-1), '#ffffff');
+  assert.equal(L.fontName('Arial; color:red'), '', '글꼴 이름에 CSS 를 넣지 못하게');
+  assert.ok(L.isPptItem('p12t3') && L.isPptItem('p0i1') && !L.isPptItem('e1abc'));
+  assert.deepEqual(L.allItems(raw, { w: 1920, h: 1080 }).map(x => x.length), [2, 0]);
+  // 요소 그림: 주소 앞부분을 붙이고 · 쌓인 차례 그대로 · 이상한 파일 이름이나 주소 앞부분이 없으면 뺀다
+  const raw2 = { v: 2, w: 960, h: 540, slides: [[{ kind: 'image', l: 600, t: 300, w: 300, h: 200, file: 'slide-001-e01.png' }, { kind: 'text', l: 600, t: 300, w: 300, h: 200, text: '버튼', size: 24 }, { kind: 'image', l: 0, t: 0, w: 10, h: 10, file: '../../secret.png' }]] };
+  const im = L.toItems(raw2, 0, { w: 1920, h: 1080 }, '/hymn/abc/');
+  assert.deepEqual(im.map(x => `${x.id}:${x.type}:${x.src || x.text}`), ['p0i0:image:/hymn/abc/slide-001-e01.png', 'p0t1:text:버튼']);
+  assert.deepEqual([im[0].x, im[0].y, im[0].w, im[0].h, im[0].fit], [62.5, 55.56, 31.25, 37.04, 'contain']);
+  assert.equal(L.toItems(raw2, 0, { w: 1920, h: 1080 }).length, 1, '주소 앞부분이 없으면 그림은 뺀다');
+  // 저장 정리: 글꼴 · 넘치면 줄이기 · 줄 간격 · 이 슬라이드는 글을 숨긴 그림(pptBg) · 글상자 60개 · 슬라이드 1000장까지
+  const e = normalizeEdit({ pptBg: true, items: [...a, { type: 'text', text: 'x', font: "Bad'};" }] });
+  assert.equal(e.pptBg, true);
+  assert.deepEqual([e.items[0].font, e.items[0].fit, e.items[0].lineHeight], ['맑은 고딕', true, 1.2]);
+  assert.equal(e.items[2].font, undefined, '이상한 글꼴 이름은 버림');
+  assert.equal(normalizeEdit({ items: Array.from({ length: 70 }, () => ({ type: 'text', text: 'x' })) }).items.length, 60);
+  assert.equal(Object.keys(normalizeEdits(Object.fromEntries(Array.from({ length: 900 }, (_, k) => [String(k), { pptBg: true }])))).length, 900);
+  // 코어 명령: 등록하지 않은 파일은 거절
+  const core = newCore('ppttext');
+  assert.equal((await core.command('pptTextLayers', { file: path.join(tmp, '없는.pptx') })).ok, false);
+  core.store.close();
+  // 가짜 PowerPoint 로 스크립트 돌려 보기 (pwsh · Windows PowerShell 이 있을 때만)
+  const { execFileSync } = require('child_process');
+  const shell = ['pwsh', 'powershell'].find(x => { try { execFileSync(x, ['-NoProfile', '-Command', '1'], { stdio: 'ignore', timeout: 60000 }); return true; } catch { return false; } });
+  if (!shell) return;
+  const dir = fs.mkdtempSync(path.join(tmp, 'pslayers-'));
+  const script = path.join(dir, 'layers.ps1');
+  fs.writeFileSync(script, '\ufeff' + require('../src/core/pptrender').PS_LAYERS);
+  const out = execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'ppt-layers-mock.ps1')], { env: { ...process.env, WC_PPT_SCRIPT: script, WC_PPT_OUT: dir }, encoding: 'utf8', timeout: 120000 });
+  assert.match(out, /OK 2 1920 1080/, '숨긴 슬라이드는 빼고 2장 · ' + out);
+  // 요소: 제목 본문 바닥글 돌린글 그림 글든도형 못꺼낸도형 빈도형 — 꺼낸 것만 숨기고(0) 나머지는 배경에 그대로(-1)
+  assert.match(out, /VISIBLE 0 0 -1 -1 0 0 -1 -1/, out);
+  assert.match(out, /TEXTFILL 0 0 -1/, '도형 안 글은 숨기고 (그림으로 못 꺼낸 도형도 글만), 바닥글은 그대로');
+  assert.match(out, /SAVED -1 CLOSED True/, '저장하지 않고 닫는다');
+  for (const f of ['slide-001-bg.png', 'slide-002-bg.png', 'slide-001-e01.png', 'slide-001-e02.png']) assert.ok(fs.existsSync(path.join(dir, f)), f);
+  const lj = JSON.parse(fs.readFileSync(path.join(dir, 'layers.json'), 'utf8'));
+  assert.equal(lj.v, 2);
+  assert.deepEqual(lj.slides[0].map(x => `${x.kind}:${x.file || x.text}`), ['text:주일 예배', 'text:• 첫째 줄\n• 둘째 줄', 'image:slide-001-e01.png', 'image:slide-001-e02.png', 'text:버튼', 'text:안내'], '쌓인 차례대로 · 도형 그림 위에 그 글 · 그림으로 못 꺼낸 도형은 글만');
+  assert.deepEqual(L.toItems(lj, 1).map(x => [x.text, x.align, x.color]), [['광고', 'right', '#ff0000']]);
+});
+
+test('슬라이드 차례 바꾸기: 원래 슬라이드 순서(slideOrder) 저장 정리 · 글 덩어리 옮기기와 편집 번호', () => {
+  const { normalizeItem } = require('../src/core/cues');
+  const h = o => normalizeItem({ type: 'hymn', title: 'PPT', file: 'C:\\가짜\\a.pptx', ...o }).slideOrder;
+  assert.deepEqual(h({ slideOrder: [2, 0, 1] }), [2, 0, 1]);
+  assert.equal(h({ slideOrder: [0, 1, 2] }), undefined, '원래 차례면 저장하지 않음');
+  assert.deepEqual(h({ slideOrder: [1, 1, '0', -3, 'x', 2000] }), [1, 0], '중복·잘못된 번호는 버림');
+  assert.equal(normalizeItem({ type: 'bible', title: '성경', ref: '요 3:16', slideOrder: [1, 0] }).slideOrder, undefined, '성경은 차례를 바꾸지 않음');
+  assert.deepEqual(normalizeItem({ type: 'slideshow', title: '광고', images: ['/a.png', '/b.png'], slideOrder: [1, 0] }).slideOrder, [1, 0]);
+  // 글 덩어리 옮기기 (조작 화면 slides.js): 공지 '---' · 찬양 빈 줄 (이름표는 덩어리와 함께) · 편집 번호도 따라감
+  global.window = global;
+  require('../src/web/shared/groups.js');
+  require('../src/web/shared/slides.js');
+  const SL = global.BCSlides;
+  assert.equal(SL.reorderChunks('text', '하나\n---\n둘\n---\n셋', [2, 0, 1]), '셋\n---\n하나\n---\n둘');
+  assert.equal(SL.reorderChunks('song', '[1절]\n가\n나\n\n[후렴]\n다\n\n라', [1, 0, 2]), '[후렴]\n다\n\n[1절]\n가\n나\n\n라');
+  assert.equal(SL.reorderChunks('text', '하나\n---\n둘', [0, 0]), '하나\n---\n둘', '잘못된 차례는 그대로');
+  assert.deepEqual(SL.reorderEdits({ '*': { a: 1 }, 0: { b: 0 }, 2: { b: 2 }, x1: { c: 1 } }, [2, 0, 1]), { '*': { a: 1 }, x1: { c: 1 }, 0: { b: 2 }, 1: { b: 0 } });
+});
+
 test('PPT 여러 순서로 나누기 (AI): 규칙 · 결과 정리 · 채팅 AI 답 · 오픈라우터(그림 포함) · 모아보기 저장', async () => {
   const ps = require('../src/core/pptsplit');
   // 행사 전체가 든 PPT (가상): 표지 · 1부 · 예배로의 부름 · 찬송(같은 곡 다음 장) · 대표기도 · 성경봉독(본문 장) · 설교(본문·가사 같은 낱말에 속지 않게) · 광고 · 축도

@@ -179,6 +179,84 @@ app.whenReady().then(async () => {
     ok(pa.sent === 8 && pa.sheets.length === 1 && pa.sheets[0] === '1-8:data:image/jpeg;base64,' && pa.ai.join('|') === '1-3:여는 찬송|4:대표기도|5-8:설교', 'PPT AI 로 나누기 (글자 + 모아보기 그림 → 결과 목록)', pa);
     ok(pa.items && pa.items.join('|') === '개회 찬송 (8장):1-3|대표기도:4-4|설교:5-8', 'PPT AI 나누기 → 고친 이름으로 순서 3개', pa);
 
+    // ---- 2-8c. PPT 요소 따로 고치기: 요소 꺼내기(가짜 PowerPoint 응답) → 요소를 숨긴 배경 + 그림·글상자 · 원래대로
+    const pt = await ev(`const realFetch = window.fetch; const realConfirm = window.confirm; window.confirm = () => true;
+      const svg = (n, c) => 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="' + c + '"/><text x="70" y="55" fill="#fff" font-size="30">' + n + '</text></svg>');
+      const S = [1, 2, 3].map(n => svg(n, '#335')), B = [1, 2, 3].map(n => svg(n, '#533'));
+      let asked = null;
+      window.fetch = async (u, o) => {
+        if (String(u).includes('/api/command') && o && /"cmd":"loadHymn"/.test(o.body)) return new Response(JSON.stringify({ ok: true, result: { mode: 'slides', key: 'abc', slides: S, slideTexts: ['주일 예배', '', '광고'], scores: [], texts: [] } }));
+        if (String(u).includes('/api/command') && o && /"cmd":"pptTextLayers"/.test(o.body)) { asked = JSON.parse(o.body).args; return new Response(JSON.stringify({ ok: true, result: { bgs: B, slides: [[{ id: 'p0i0', type: 'image', x: 60, y: 50, w: 30, h: 30, src: svg(9, '#e9c46a'), fit: 'contain' }, { id: 'p0t1', type: 'text', x: 5, y: 5, w: 90, h: 20, text: '주일 예배', size: 88, color: '#ffff00', bold: true, align: 'center', valign: 'middle', padding: 14, font: '맑은 고딕', fit: true, lineHeight: 1.2 }], [], [{ id: 'p2t0', type: 'text', x: 10, y: 40, w: 80, h: 20, text: '광고', size: 81, color: '#ff0000', align: 'right', valign: 'middle', fit: true }]] } })); }
+        return realFetch(u, o);
+      };
+      const c = (await window.BC.cmd('saveCue', { cue: { name: 'PPT 글자 점검', items: [{ type: 'hymn', title: '주보 PPT', file: 'C:\\\\가짜\\\\글자.pptx', edits: { 0: { items: [{ id: 'mine1', type: 'text', text: '덧붙임', x: 1, y: 80, w: 30, h: 10 }] } } }] } })).result;
+      window.BCCue.openCue(c.id); await wait(800); $$('#cueList .cue-item')[0].click(); await wait(1000);
+      const btn = !!$('#cueEditor [data-act=ppttexton]');
+      $('#cueEditor [data-act=ppttexton]').click(); await wait(1500);
+      const it = JSON.parse(JSON.stringify(window.BCCue.item(0))); // 지금 모습 (뒤에서 '원래 그림으로' 가 바꾸기 전)
+      const e0 = it.edits && it.edits['0'], e1 = it.edits && it.edits['1'], e2 = it.edits && it.edits['2'];
+      const pv = window.BC.preview.slides.map(s => (B.includes(s.image) ? 'bg' : S.includes(s.image) ? 'orig' : '?'));
+      const txt = $$('#pvScreen .bc-etext').map(x => x.textContent);
+      const imgs = $$('#pvScreen img.bc-eitem').length;
+      const fitEl = $('#pvScreen .bc-etext[data-fit]');
+      const font = fitEl ? fitEl.style.fontFamily : '';
+      const row = !!$('#cueEditor [data-act=ppttextoff]');
+      $('#cueEditor [data-act=ppttextoff]').click(); await wait(1200);
+      const after = window.BCCue.item(0).edits || null;
+      const pv2 = window.BC.preview.slides.map(s => (S.includes(s.image) ? 'orig' : '?'));
+      window.fetch = realFetch; window.confirm = realConfirm;
+      return { btn, asked: asked && asked.screen, e0: e0 && { pptBg: !!e0.pptBg, ids: (e0.items || []).map(x => x.id) }, e1: !!e1, e2: !!(e2 && e2.pptBg), pv, txt, imgs, font, row, after, pv2 };`);
+    await shot('ppt-text');
+    ok(pt.btn && pt.asked && pt.asked.w > 0 && pt.e0 && pt.e0.pptBg && pt.e0.ids.join() === 'p0i0,p0t1,mine1' && !pt.e1 && pt.e2 && pt.pv && pt.pv.join() === 'bg,orig,bg', 'PPT 요소 따로 고치기: 요소 꺼내기 → 요소를 숨긴 배경 + 그림·글상자 (덧붙인 것은 그대로, 쌓인 차례)', pt);
+    ok(pt.txt && pt.txt.includes('주일 예배') && pt.imgs === 1 && /맑은 고딕/.test(pt.font), 'PPT 요소 따로 고치기: 미리보기에 요소 그림 · 글상자 (PPT 글꼴)', pt);
+    ok(pt.row && pt.after && pt.after['0'] && pt.after['0'].items.map(x => x.id).join() === 'mine1' && !pt.after['0'].pptBg && !pt.after['2'] && pt.pv2.join() === 'orig,orig,orig', 'PPT 요소 따로 고치기: 원래대로 (덧붙인 것은 남김)', pt);
+
+    // ---- 2-8d. 끌어서 슬라이드 차례 바꾸기: 격자(PPT 원래 슬라이드) · 되돌리기 · 목록(공지 글 덩어리) · 여러 장
+    const sdr = await ev(`const realFetch = window.fetch;
+      const svg = n => 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#353"/><text x="70" y="55" fill="#fff" font-size="30">' + n + '</text></svg>');
+      window.fetch = async (u, o) => { if (String(u).includes('/api/command') && o && /"cmd":"loadHymn"/.test(o.body)) return new Response(JSON.stringify({ ok: true, result: { mode: 'slides', slides: [1, 2, 3, 4].map(svg), slideTexts: [], scores: [], texts: [] } })); return realFetch(u, o); };
+      const c = (await window.BC.cmd('saveCue', { cue: { name: '끌기 점검', items: [{ type: 'hymn', title: 'PPT', file: 'C:\\\\가짜\\\\끌기.pptx' }, { type: 'text', title: '광고', body: '하나\\n---\\n둘\\n---\\n셋\\n---\\n넷' }] } })).result;
+      window.BCCue.openCue(c.id); await wait(800); $$('#cueList .cue-item')[0].click(); await wait(1000);
+      $('#slideView [data-sv="grid"]').click(); await wait(800);
+      const pe = (type, x, y, el, extra) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 1, isPrimary: true, ...(extra || {}) }));
+      const drag = async (from, to, after) => {
+        to.scrollIntoView({ block: 'nearest' }); await wait(100); // 놓을 자리가 보이게 (실제로는 가장자리로 끌면 저절로 넘어감)
+        const r1 = from.getBoundingClientRect(), r2 = to.getBoundingClientRect();
+        pe('pointerdown', r1.left + r1.width / 2, r1.top + r1.height / 2, from);
+        pe('pointermove', r1.left + r1.width / 2 + 15, r1.top + r1.height / 2 + 15, from);
+        const grid = to.classList.contains('sg-cell');
+        const x = grid ? (after ? r2.right - 6 : r2.left + 6) : r2.left + r2.width / 2;
+        const y = grid ? r2.top + r2.height / 2 : (after ? r2.bottom - 4 : r2.top + 4);
+        pe('pointermove', x, y, to);
+        const mark = to.classList.contains(after ? 'drop-after' : 'drop-before') && from.classList.contains('drag-src');
+        pe('pointerup', x, y, to);
+        await wait(1500);
+        return mark;
+      };
+      const cells = () => $$('#slideGrid .sg-cell');
+      const m1 = await drag(cells()[0], cells()[2], true);
+      const order1 = window.BCCue.item(0).slideOrder || null;
+      const labels1 = window.BC.preview.slides.map(s => s.label).join(',');
+      const pv1 = window.BC.preview.index;
+      const grid1 = cells().map(x => x.querySelector('.sg-label').textContent.trim()).join('|');
+      window.BCCue.undo(); await wait(1500);
+      const undone = window.BCCue.item(0).slideOrder || null;
+      // 목록: 공지의 '넷' 을 맨 위로 · Shift 로 두 장 골라 끌기
+      $('#slideView [data-sv="list"]').click(); await wait(500);
+      $$('#cueList .cue-item')[1].click(); await wait(1200);
+      const rows = () => $$('#results .srow');
+      const m2 = await drag(rows()[3], rows()[0], false);
+      const body2 = window.BCCue.item(1).body;
+      rows()[2].click(); await wait(300); rows()[3].dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })); await wait(300);
+      const m3 = await drag(rows()[3], rows()[0], false);
+      const body3 = window.BCCue.item(1).body;
+      window.fetch = realFetch;
+      return { m1, order1, labels1, pv1, grid1, undone, m2, body2, m3, body3 };`);
+    await shot('slide-drag');
+    ok(sdr.m1 && JSON.stringify(sdr.order1) === '[1,2,0,3]' && sdr.labels1 === '2,3,1,4' && sdr.pv1 === 2, '끌어서 차례 바꾸기: 격자에서 PPT 1번을 3번 뒤로 (옮긴 슬라이드 고른 채로)', sdr);
+    ok(sdr.undone === null, '끌어서 차례 바꾸기: Ctrl+Z 로 되돌리기', sdr);
+    ok(sdr.m2 && sdr.body2 === '넷\n---\n하나\n---\n둘\n---\n셋' && sdr.m3 && sdr.body3 === '둘\n---\n셋\n---\n넷\n---\n하나', '끌어서 차례 바꾸기: 목록에서 공지 글 덩어리 · 여러 장 함께', sdr);
+
     // ---- 2-9. 무대 화면 모니터: 패널에 모니터 목록 · 잘못된 모니터는 거절 (실제 모니터에 창은 띄우지 않음)
     const sm = await ev(`window.BCDock && window.BCDock.show('stage'); await wait(800);
       const sel = $('#stMon'); if (sel) { sel.dispatchEvent(new Event('focus')); await wait(600); }

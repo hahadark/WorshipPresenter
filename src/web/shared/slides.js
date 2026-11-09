@@ -192,6 +192,29 @@
     }
     return parts.map(p => p.trim()).filter(p => p !== '').join(song ? '\n\n' : '\n---\n');
   }
+  /**
+   * 슬라이드(글 덩어리) 차례 바꾸기: perm[i] = 새 i 번째 자리에 올 원래 슬라이드 번호 (목록·격자에서 끌어서)
+   * kind: 'song' | 'text' — 이름표만 있는 덩어리 등 내용 없는 덩어리는 제자리에 둔다
+   */
+  function reorderChunks(kind, text, perm) {
+    const song = kind === 'song';
+    const parts = String(text || '').replace(/\r/g, '').split(song ? /\n\s*\n/ : /\n\s*-{3,}\s*\n/);
+    const isLabel = l => song && /^\[(.{1,20})\]$/.test(l.trim()) && !(global.BCGroup && global.BCGroup.isChordOnly(l));
+    const content = b => b.split('\n').some(l => l.trim() && !isLabel(l));
+    const idx = parts.map((b, i) => (content(b) ? i : -1)).filter(i => i >= 0);
+    if (!Array.isArray(perm) || perm.length !== idx.length || [...perm].sort((x, y) => x - y).some((v, i) => v !== i)) return text;
+    const out = parts.slice();
+    idx.forEach((pos, i) => { out[pos] = parts[idx[perm[i]]]; });
+    return out.map(p => p.trim()).filter(p => p !== '').join(song ? '\n\n' : '\n---\n');
+  }
+  /** 차례를 바꾼 슬라이드의 편집(edits) 번호도 같이 ('*' 공통 · 덧붙인 x… 는 그대로) */
+  function reorderEdits(edits, perm) {
+    if (!edits) return edits;
+    const out = {};
+    for (const [key, v] of Object.entries(edits)) if (!/^\d+$/.test(key)) out[key] = v;
+    perm.forEach((old, i) => { if (edits[old] !== undefined) out[i] = edits[old]; });
+    return Object.keys(out).length ? out : undefined;
+  }
   /** 슬라이드 편집(edits) 의 번호를 같이 옮긴다 ('*' 공통은 그대로) */
   function slideOpEdits(edits, op, k) {
     if (!edits) return edits;
@@ -323,5 +346,5 @@
     return String(body || '').replace(/\r/g, '').split(/\n\s*-{3,}\s*\n/).map(t => ({ label: '', text: (roles ? roleText(t, roles === 'labels') : t).trim() })).filter(c => c.text).map((c, k) => ({ ...c, src: k }));
   }
 
-  global.BCSlides = { build, refLabel, indexOfVerse, buildText, lyricsChunks, textChunks, roleText, hasRoles, lyricGroups, arrange, setLyricsChunk, setTextChunk, mergeEdit, slideOp, slideOpEdits, titlePages, fromTitlePages, titleSlide };
+  global.BCSlides = { build, refLabel, indexOfVerse, buildText, lyricsChunks, textChunks, roleText, hasRoles, lyricGroups, arrange, setLyricsChunk, setTextChunk, mergeEdit, slideOp, slideOpEdits, reorderChunks, reorderEdits, titlePages, fromTitlePages, titleSlide };
 })(window);

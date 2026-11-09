@@ -33,7 +33,7 @@
       if (e.target.closest('.sg-edit')) { if (window.BCSlideEdit) window.BCSlideEdit.openPreviewSlide(+c.dataset.k); return; }
       if (e.target.closest('.sg-add')) { if (window.BCSlideEdit) window.BCSlideEdit.quickOp(+c.dataset.k, 'add'); return; }
       if (e.target.closest('.sg-del')) { if (window.BCSlideEdit) window.BCSlideEdit.quickOp(+c.dataset.k, 'del'); return; }
-      if (window.BCSlideEdit && window.BCSlideEdit.selClick(+c.dataset.k, e)) return; // Shift·Ctrl·끌기: 여러 장 고르기
+      if (window.BCSlideEdit && window.BCSlideEdit.selClick(+c.dataset.k, e)) return; // Shift·Ctrl: 여러 장 고르기 (끌기가 끝난 click 은 무시)
       app.setPreviewIndex(+c.dataset.k);
     });
     grid.addEventListener('dblclick', e => { const c = e.target.closest('.sg-cell'); if (c && !e.target.closest('.sg-edit, .sg-ops')) { app.setPreviewIndex(+c.dataset.k); app.sendPreview(); } });
@@ -117,7 +117,7 @@
       const x = at(e);
       if (!x) return;
       const op = e.target.closest('.sg-edit') ? 'edit' : e.target.closest('.sg-add') ? 'add' : e.target.closest('.sg-del') ? 'del' : '';
-      if (!op && window.BCSlideEdit && window.BCSlideEdit.selClickAll(x.i, x.k, e)) return; // Shift·Ctrl·끌기: 여러 장 고르기
+      if (!op && window.BCSlideEdit && window.BCSlideEdit.selClickAll(x.i, x.k, e)) return; // Shift·Ctrl: 여러 장 고르기 (끌기가 끝난 click 은 무시)
       if (!(await window.BCCue.previewAt(x.i, x.k))) return;
       if (!op && window.BCSlideEdit) window.BCSlideEdit.selClick(x.k, {}); // 다른 순서를 누르면 거기서 새로 고르기
       if (op === 'edit') window.BCSlideEdit.openPreviewSlide(x.k);
