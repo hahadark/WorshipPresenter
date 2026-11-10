@@ -27,6 +27,7 @@
 | 공개 릴리스 | `npm version X.Y.Z --no-git-tag-version` → 커밋 "X.Y.Z" → `git push` → `gh workflow run release.yml -f tag=vX.Y.Z -f ref=main` → `gh run watch <id>` → 초안 확인 → `gh release edit vX.Y.Z --draft=false --latest --notes-file <노트>` |
 | 개인용 빌드 | `npx electron-builder --win --config build-personal.json --publish never` → `dist-personal/` → 원드라이브 첨부 파일 폴더로 복사 |
 | 스크린샷 (디자인 점검) | `tests/e2e/run.js` 와 같은 방식: 임시 데이터 폴더로 앱을 띄우고 두 번째 Electron 에서 `offscreen` 창에 `/control/` 을 열어 `capturePage()` |
+| 실제 PowerPoint 로 확인 (윈도우 · PowerPoint 가 깔린 PC) | `node tools/ppt-check.js` (클립보드의 슬라이드 ①1~4 · 도형 id · PS_BG 배경 — 코드의 PS_CLIP_DUMP · PS_CLIP_PASTE · PS_BG 를 그대로 돌림) → `… app`(임시 데이터 폴더 · 포트 37620 으로 띄우기) → `… clip`(손으로 복사한 클립보드로 다시) → `… log`(프로그램 기록 모으기). 결과 `%TEMP%\wc-ppt-check\out\result*.txt` · `compare.html`. 클립보드가 바뀐다. 이 도구 자체는 가짜 PowerShell 로 흐름만 돌려 봤다 (2026-11-10) |
 
 릴리스 워크플로(`.github/workflows/release.yml`)는 windows job 에서 `npm test` → `npm run test:e2e` → 한국어·영어 빌드, mac job 에서 dmg 를 만들어 **초안** 릴리스에 올린다. `gh release view` 에는 `isLatest` 가 없으니 `gh release list` 로 확인.
 
