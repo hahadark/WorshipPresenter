@@ -2335,8 +2335,8 @@ test('클립보드 붙여 넣기 → 새 순서: 글 종류 고르기(장절·�
   } }), /PowerPoint 슬라이드를 가져오지 못했습니다/);
   assert.equal(fs.readdirSync(dir).length, before);
   await assert.rejects(C.grabSlides(core, { win: true, hasPowerPoint: async () => false, ps: async () => 'NONE' }), /가져오지 못했습니다/);
-  const cmdFail = await core.command('pasteSlides', {});
-  if (process.platform !== 'win32') assert.equal(cmdFail.ok, false, '윈도우가 아니면 묶음을 못 읽을 때 바로 오류');
+  // 코어 명령: 윈도우가 아니면 묶음을 못 읽을 때 바로 오류 (윈도우에서는 실제 PowerShell·PowerPoint·클립보드를 건드리게 되어 돌리지 않는다)
+  if (process.platform !== 'win32') assert.equal((await core.command('pasteSlides', {})).ok, false);
   core.desktop = null;
 
   // 붙여 넣은 그림: /api/media 에 clip- 으로 저장 (배경 그림은 그대로 bg-)
