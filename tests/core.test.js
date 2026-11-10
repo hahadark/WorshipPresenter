@@ -2235,3 +2235,146 @@ test('OBS 자막: 찬송가·찬양은 따로 정한 템플릿 · 리모컨 끄�
   core.desktop = null;
   core.store.close();
 });
+
+test('클립보드 붙여 넣기 → 새 순서: 글 종류 고르기(장절·가사·공지·제목) · 슬라이드 묶음 → PPT 파일 · 붙여 넣은 폴더의 PPT 만 열림 · PowerPoint 에 붙여 넣기(가짜) · 그림 올리기', async () => {
+  const C = require('../src/core/clippaste');
+  const isRef = l => /^(요|롬|시)\s*\d+(:\d+(-\d+)?)?$/.test(l);
+  const plan = (t, o) => C.planText(t, { isRef, ...o });
+  // 글: 장절 한 줄 → 성경 · 줄마다 장절 → 순서 여러 개
+  assert.deepEqual(plan('요 3:16\r\n'), { kind: 'bible', items: [{ type: 'bible', extra: { title: '성경 봉독', ref: '요 3:16' } }] });
+  assert.deepEqual(plan('요 3:16\n\n롬 8:28').items.map(x => x.extra.ref), ['요 3:16', '롬 8:28']);
+  assert.equal(plan('요 3:16 하나님이 세상을 이처럼 사랑하사').kind, 'text', '장절 뒤에 글이 붙으면 공지');
+  // 가사: 절 이름표가 있거나 · 짧은 줄 여러 개 (마침표·숫자 없음). 첫 줄이 혼자 한 덩어리면 제목
+  const song = plan('주 은혜임을\n\n1절\n주 은혜임을 내가 믿네\n\n후렴\n은혜 은혜');
+  assert.deepEqual(song, { kind: 'song', items: [{ type: 'song', extra: { title: '주 은혜임을', lyrics: '1절\n주 은혜임을 내가 믿네\n\n후렴\n은혜 은혜' } }] });
+  const song2 = plan('나 같은 죄인 살리신\n주 은혜 놀라워\n잃었던 생명 찾았고\n광명을 얻었네');
+  assert.equal(song2.kind, 'song');
+  assert.equal(song2.items[0].extra.title, '나 같은 죄인 살리신');
+  assert.match(song2.items[0].extra.lyrics, /^나 같은 죄인 살리신\n/, '첫 가사 줄은 가사에도 남는다');
+  // 공지: 짧은 첫 줄 + 내용 → 첫 줄이 제목 · 한 줄 → 제목만 · 긴 글 한 덩어리 → 제목 없이 · 교독문(역할) · 숫자 많은 일정
+  assert.deepEqual(plan('이번 주 일정\n수요예배 저녁 7시 30분\n금요기도회 저녁 9시\n청년부 모임 오후 2시').items[0], { type: 'text', extra: { title: '이번 주 일정', body: '수요예배 저녁 7시 30분\n금요기도회 저녁 9시\n청년부 모임 오후 2시' } });
+  assert.deepEqual(plan('환영합니다').items[0], { type: 'text', extra: { title: '환영합니다', body: '' } });
+  const long = '오늘 예배에 처음 오신 분들을 주님의 이름으로 환영합니다. 예배 후 1층 새가족실에서 간단한 다과가 준비되어 있습니다.';
+  assert.deepEqual(plan(long).items[0], { type: 'text', extra: { body: long } });
+  const reading = plan('인도자: 여호와는 나의 목자시니\n회중: 내게 부족함이 없으리로다\n다같이: 아멘\n인도자: 할렐루야');
+  assert.equal(reading.kind, 'text');
+  assert.equal(reading.items[0].extra.title, undefined, '역할 줄은 제목으로 쓰지 않는다');
+  // 종류를 정해서 · 빈 글
+  assert.deepEqual(plan('선한 목자\n요한복음 10장', { as: 'title' }).items[0], { type: 'title', extra: { title: '선한 목자', subtitle: '요한복음 10장' } });
+  assert.equal(plan('환영합니다', { as: 'song' }).items[0].type, 'song');
+  assert.equal(plan('환영합니다', { as: 'bible' }).kind, 'text', '찾아지는 장절이 없으면 공지로');
+  assert.equal(plan(' \n\t '), null);
+  assert.equal(C.cleanText('가 나 \r\n\r\n').length, 3);
+  assert.equal(plan('가'.repeat(30000)).items[0].extra.body.length, 20000, '2만 자까지');
+
+  // 코어 명령: 실제 성경에서 찾아지는 장절만 성경으로
+  const core = newCore('clippaste');
+  const t1 = core.command('pasteTextPlan', { text: '요 3:16' });
+  assert.equal(t1.ok, true, t1.error);
+  assert.equal(t1.result.kind, 'bible');
+  assert.equal(core.command('pasteTextPlan', { text: '요 99:1' }).result.kind, 'text', '없는 장은 공지');
+  assert.equal(core.command('pasteTextPlan', { text: '   ' }).ok, false);
+  assert.deepEqual(core.command('clipboardInfo', {}).result, { desktop: false, slides: false, canPaste: false, win: process.platform === 'win32' });
+  assert.equal(core.command('pasteNow', {}).ok, false, '데스크톱 프로그램이 아니면 Ctrl+V 로');
+
+  // PowerPoint 슬라이드: ① 클립보드의 묶음(.pptx 와 같은 zip) 그대로
+  const fx = fs.readFileSync(path.join(__dirname, 'fixtures', 'elements.pptx'));
+  assert.equal(C.looksLikePptx(fx), true);
+  assert.equal(C.looksLikePptx(Buffer.from('PK' + 'x'.repeat(400))), false);
+  assert.equal(C.looksLikePptx(fs.readFileSync(fixtureFile)), false);
+  let pasted = 0;
+  core.desktop = { clipboardHas: f => f === C.SLIDE_FORMATS[0], clipboardBuffer: f => (f === C.SLIDE_FORMATS[0] ? fx : null), pasteIntoControl: () => { pasted++; } };
+  assert.equal(core.command('clipboardInfo', {}).result.slides, true);
+  assert.equal(core.command('pasteNow', {}).ok, true);
+  assert.equal(pasted, 1);
+  const noPp = { win: false, hasPowerPoint: async () => false };
+  const s1 = await C.grabSlides(core, noPp);
+  assert.equal(s1.how, 'package');
+  assert.equal(s1.count, 4, '숨긴 슬라이드는 빼고 4장');
+  assert.equal(s1.title, '주일 예배', '첫 슬라이드의 첫 줄이 제목');
+  const dir = C.pastedDir(core.dataDir);
+  assert.equal(path.dirname(s1.file), dir);
+  assert.match(path.basename(s1.file), /^clip-\d{8}-\d{6}(-\d+)?\.pptx$/);
+  assert.ok(fs.readFileSync(s1.file).equals(fx));
+  const s1b = await C.grabSlides(core, noPp);
+  assert.notEqual(s1b.file, s1.file, '같은 초에 다시 붙여도 다른 파일');
+  // 붙여 넣은 폴더 안의 PPT 만 열린다 (다른 폴더 · 폴더 밖으로 나가는 경로 · PPT 가 아닌 파일은 안 됨)
+  assert.equal(core.hymns.isAllowed(s1.file), true);
+  assert.equal(core.hymns.isAllowed(path.join(dir, '..', 'x.pptx')), false);
+  assert.equal(core.hymns.isAllowed(path.join(dir, 'x.txt')), false);
+  assert.equal(core.hymns.isAllowed(path.join(tmp, 'other', 'x.pptx')), false);
+  assert.equal((await core.command('loadHymn', { file: s1.file })).ok, true);
+
+  // ② 윈도우: 묶음이 Electron 으로 안 읽히면 .NET 으로 다시 ③ 그것도 없으면 PowerPoint 에 붙여 넣어 저장
+  core.desktop.clipboardBuffer = () => Buffer.from('zip 이 아닌 것 '.repeat(40));
+  const calls = [];
+  const s2 = await C.grabSlides(core, { win: true, hasPowerPoint: async () => true, ps: async (script, env) => {
+    calls.push(script === C.PS_CLIP_DUMP ? 'dump' : 'paste');
+    if (script !== C.PS_CLIP_DUMP) throw new Error('여기까지 오면 안 된다');
+    fs.writeFileSync(env.WC_CLIP_OUT, fx);
+    return 'OK ' + fx.length;
+  } });
+  assert.equal(s2.how, 'package');
+  assert.deepEqual(calls, ['dump']);
+  calls.length = 0;
+  const s3 = await C.grabSlides(core, { win: true, hasPowerPoint: async () => true, ps: async (script, env) => {
+    calls.push(script === C.PS_CLIP_DUMP ? 'dump' : 'paste');
+    if (script === C.PS_CLIP_DUMP) { fs.writeFileSync(env.WC_CLIP_OUT, 'PK 깨진 묶음'); return 'OK 12'; }
+    fs.writeFileSync(env.WC_PPT_FILE, fx);
+    return 'OK 4 plain';
+  } });
+  assert.equal(s3.how, 'plain', '그냥 붙여 넣기(테마 빠짐)는 조작 화면이 알려 준다');
+  assert.equal(s3.count, 4);
+  assert.deepEqual(calls, ['dump', 'paste']);
+  // 아무 방법도 안 되면 알기 쉬운 오류 · 만들다 만 파일은 남기지 않는다
+  const before = fs.readdirSync(dir).length;
+  await assert.rejects(C.grabSlides(core, { win: true, hasPowerPoint: async () => true, ps: async (script, env) => {
+    if (script === C.PS_CLIP_DUMP) return 'NONE';
+    fs.writeFileSync(env.WC_PPT_FILE, 'PPTX 가 아닌 것');
+    return 'OK 2 keep';
+  } }), /PowerPoint 슬라이드를 가져오지 못했습니다/);
+  assert.equal(fs.readdirSync(dir).length, before);
+  await assert.rejects(C.grabSlides(core, { win: true, hasPowerPoint: async () => false, ps: async () => 'NONE' }), /가져오지 못했습니다/);
+  const cmdFail = await core.command('pasteSlides', {});
+  if (process.platform !== 'win32') assert.equal(cmdFail.ok, false, '윈도우가 아니면 묶음을 못 읽을 때 바로 오류');
+  core.desktop = null;
+
+  // 붙여 넣은 그림: /api/media 에 clip- 으로 저장 (배경 그림은 그대로 bg-)
+  const port = 38000 + Math.floor(Math.random() * 1000);
+  const srv = await startServer(core, { webDir: path.join(__dirname, '..', 'src', 'web'), port });
+  try {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+    const post = headers => new Promise((res, rej) => {
+      const req = http.request({ host: '127.0.0.1', port, path: '/api/media', method: 'POST', headers: { 'X-WorshipCue': '1', ...headers } }, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => res(JSON.parse(d))); });
+      req.on('error', rej); req.end(png);
+    });
+    const up = await post({ 'X-Filename': 'clip.png', 'X-Kind': 'clip' });
+    assert.equal(up.ok, true, up.error);
+    assert.match(up.url, /^\/media\/clip-[a-z0-9]+\.png$/);
+    assert.ok(fs.readFileSync(path.join(core.mediaDir, path.basename(up.url))).equals(png));
+    assert.match((await post({ 'X-Filename': 'a.png' })).url, /^\/media\/bg-[a-z0-9]+\.png$/);
+    assert.equal((await post({ 'X-Filename': 'a.exe', 'X-Kind': 'clip' })).ok, false);
+  } finally { await srv.close(); }
+  core.store.close();
+
+  // 가짜 PowerPoint 로 붙여 넣기 스크립트 돌려 보기 (pwsh · Windows PowerShell 이 있을 때만)
+  const { execFileSync } = require('child_process');
+  const shell = ['pwsh', 'powershell'].find(x => { try { execFileSync(x, ['-NoProfile', '-Command', '1'], { stdio: 'ignore', timeout: 60000 }); return true; } catch { return false; } });
+  if (!shell) return;
+  const pdir = fs.mkdtempSync(path.join(tmp, 'pspaste-'));
+  const script = path.join(pdir, 'paste.ps1');
+  fs.writeFileSync(script, '﻿' + C.PS_CLIP_PASTE);
+  const run = mode => execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'clip-paste-mock.ps1')], { env: { ...process.env, WC_PPT_SCRIPT: script, WC_PPT_FILE: path.join(pdir, mode + '.pptx'), WC_MOCK_MODE: mode }, encoding: 'utf8', timeout: 120000 });
+  const keep = run('keep');
+  assert.match(keep, /OK 3 keep/, '원본 서식 유지: 창 있는 새 프레젠테이션 · 여러 슬라이드 보기 · 리본 명령 · ' + keep);
+  assert.match(keep, /LOG Add-1 Activate Mso:PasteSourceFormatting SaveAs24/, keep);
+  assert.match(keep, /VIEW 7 SAVED -1 CLOSED True QUIT False/, '우리가 만든 것만 닫고, 사용자가 열어 둔 것이 있으면 PowerPoint 를 끄지 않는다 · ' + keep);
+  assert.ok(fs.existsSync(path.join(pdir, 'keep.pptx')));
+  const plain = run('plain');
+  assert.match(plain, /OK 2 plain/, '그 명령이 안 되면 그냥 붙여 넣기 · ' + plain);
+  assert.match(plain, /Mso:PasteSourceFormatting Paste SaveAs24/, plain);
+  assert.match(run('nowindow'), /OK 2 plain[\s\S]*LOG Add0 Paste SaveAs24/, '창을 못 만들면 창 없이');
+  const none = run('none');
+  assert.match(none, /ERR [\s\S]*CLOSED True/, '슬라이드가 없으면 오류 · 만든 프레젠테이션은 닫는다 · ' + none);
+  assert.equal(fs.existsSync(path.join(pdir, 'none.pptx')), false);
+});

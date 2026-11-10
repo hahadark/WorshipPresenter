@@ -273,7 +273,7 @@ function startServer(core, { webDir, port, host = '127.0.0.1' }) {
         const ext = path.extname(name).toLowerCase();
         if (!IMAGE_EXT.has(ext)) return json(res, 400, { ok: false, error: '이미지 파일(png, jpg, webp, gif)만 사용할 수 있습니다.' });
         return readBody(req, 25 * 1024 * 1024, buf => {
-          const file = `bg-${Date.now().toString(36)}${ext}`;
+          const file = `${req.headers['x-kind'] === 'clip' ? 'clip' : 'bg'}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}${ext}`; // clip = 클립보드에서 붙여 넣은 그림
           try {
             fs.writeFileSync(path.join(core.mediaDir, file), buf);
             json(res, 200, { ok: true, url: `/media/${file}` });

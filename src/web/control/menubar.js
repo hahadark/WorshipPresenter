@@ -25,6 +25,7 @@
   /** 고른 순서(또는 미리보기 슬라이드)의 슬라이드 편집 */
   const slideEdit = () => { const p = app.preview; if (!window.BCSlideEdit) return; if (p && p.cue) window.BCSlideEdit.openPreviewSlide(p.index); else if (window.BCCue && window.BCCue.selIndex() >= 0) window.BCSlideEdit.open(window.BCCue.selIndex()); else app.showMsg('큐시트에서 찬양·공지·제목 순서를 고르세요.', 'info', 2000); };
   const undo = redo => () => { if (!window.BCCue || window.BCCue.undo(redo) === false) app.showMsg(redo ? '다시 실행할 것이 없습니다.' : '되돌릴 것이 없습니다.', 'info', 1200); };
+  const paste = mode => () => window.BCPaste && window.BCPaste.run(mode); // 클립보드 → 새 순서
   const on = (cond, label) => (cond ? '✓ ' : '　') + label;
   const H = head => ({ head }); // 작은 제목
   const txt = (sel, dflt) => { const el = $(sel); return el ? el.textContent : dflt; };
@@ -62,6 +63,8 @@
         { ic: 'presentation', label: '설교 포인트 슬라이드 (원고에서 대지 뽑기)…', run: () => window.BCPoints && window.BCPoints.open() },
         { ic: 'images', label: '예배 전 화면 자동 만들기 (말씀카드 · QT 본문)…', run: () => window.BCPreService && window.BCPreService.open() },
       ] },
+      { ic: 'clipboard-paste', label: '클립보드에서 붙여 넣기 (글 · 그림 · 슬라이드 → 새 순서)', key: 'Ctrl+V', run: paste('auto') },
+      { ic: 'clipboard-paste', label: '종류를 골라 붙여 넣기…', key: 'Ctrl+Shift+V', run: paste('pick') },
       H('고른 순서'),
       { ic: 'pencil', label: '편집칸에서 고치기', key: 'F2', run: act('cueEdit') },
       { ic: 'square-pen', label: '슬라이드 편집 (글상자·그림·도형)', key: 'Ctrl+E', run: slideEdit },

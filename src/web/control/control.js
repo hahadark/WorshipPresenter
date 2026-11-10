@@ -251,6 +251,7 @@
     if (window.BCUiTheme) window.BCUiTheme.init();
     if (window.BCSlideEdit) window.BCSlideEdit.init();
     if (window.BCDrop) window.BCDrop.init();
+    if (window.BCPaste) window.BCPaste.init(); // 클립보드 붙여 넣기 → 새 순서 (Ctrl+V)
     if (window.BCCtx) window.BCCtx.init();
     if (window.BCDraw) window.BCDraw.init();
     // 로딩 화면 닫기: 배치가 자리 잡은 뒤 (숨긴 창에서는 화면 그리기 신호가 없으므로 시간으로)

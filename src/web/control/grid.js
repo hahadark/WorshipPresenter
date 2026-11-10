@@ -19,12 +19,23 @@
   function init() {
     const head = $('.center-head');
     head.insertAdjacentHTML('beforeend', `<span class="view-tabs" id="slideView" title="슬라이드 보기 방식"><button data-sv="list">목록</button><button data-sv="grid">격자</button><button data-sv="all" title="큐시트의 모든 순서 슬라이드를 한 화면에 썸네일로 (ProPresenter 방식)">전체 격자</button><button data-sv="alllist" title="큐시트의 모든 순서 슬라이드를 한 화면에 글 목록으로">전체 목록</button></span>
-      <label class="tc-toggle sg-size" title="썸네일 크기"><input type="range" id="sgSize" min="150" max="420" step="10" value="${size()}"></label>`);
+      <label class="tc-toggle sg-size" title="썸네일 크기 (격자 위에서 Ctrl + 휠로도)"><input type="range" id="sgSize" min="${SIZE_MIN}" max="${SIZE_MAX}" step="10" value="${size()}"></label>`);
     $('#results').insertAdjacentHTML('afterend', '<div id="slideGrid" class="slide-grid" tabindex="0" hidden></div><div id="cueGrid" class="cue-grid" tabindex="0" hidden></div>');
     $('#slideView').onclick = e => { const b = e.target.closest('[data-sv]'); if (b) set(b.dataset.sv); };
-    $('#sgSize').oninput = e => { $('#slideGrid').style.setProperty('--sg', e.target.value + 'px'); $('#cueGrid').style.setProperty('--sg', e.target.value + 'px'); try { localStorage.setItem('wc-slide-grid-size', e.target.value); } catch { /* 무시 */ } };
+    $('#sgSize').oninput = e => setSize(e.target.value);
     $('#slideGrid').style.setProperty('--sg', size() + 'px');
     $('#cueGrid').style.setProperty('--sg', size() + 'px');
+    // Ctrl + 휠 (맥은 ⌘ + 휠 · 트랙패드 벌리기): 썸네일 크기 — 위로 = 크게. 마우스가 있던 줄이 그대로 보이게 스크롤을 맞춘다
+    for (const g of [$('#slideGrid'), $('#cueGrid')]) {
+      g.addEventListener('wheel', e => {
+        if (!(e.ctrlKey || e.metaKey) || !e.deltaY) return;
+        e.preventDefault(); // 화면 전체가 커지지 않게
+        const before = size();
+        const y = e.clientY - g.getBoundingClientRect().top; // 마우스 아래의 내용이 같은 자리에 남게
+        const ratio = (g.scrollTop + y) / Math.max(1, g.scrollHeight);
+        if (setSize(before + (e.deltaY < 0 ? WHEEL_STEP : -WHEEL_STEP)) !== before) g.scrollTop = ratio * g.scrollHeight - y;
+      }, { passive: false });
+    }
     initAll();
     const grid = $('#slideGrid');
     grid.addEventListener('click', e => {
@@ -48,7 +59,19 @@
     });
     set(mode);
   }
-  function size() { try { return +(localStorage.getItem('wc-slide-grid-size') || 240); } catch { return 240; } }
+  const SIZE_MIN = 150, SIZE_MAX = 420, WHEEL_STEP = 20;
+  let sizeNow = 0; // 저장이 안 되는 곳(개인 정보 보호 창 등)에서도 크기가 바뀌게
+  function size() { if (sizeNow) return sizeNow; try { return sizeNow = Math.max(SIZE_MIN, Math.min(SIZE_MAX, +(localStorage.getItem('wc-slide-grid-size') || 240) || 240)); } catch { return sizeNow = 240; } }
+  /** 썸네일 크기 (px) — 막대·Ctrl+휠이 같이 쓴다. 정한 크기를 돌려준다 */
+  function setSize(v) {
+    const n = Math.max(SIZE_MIN, Math.min(SIZE_MAX, Math.round(Number(v) / 10) * 10 || 240));
+    sizeNow = n;
+    $('#slideGrid').style.setProperty('--sg', n + 'px');
+    $('#cueGrid').style.setProperty('--sg', n + 'px');
+    if ($('#sgSize') && +$('#sgSize').value !== n) $('#sgSize').value = n;
+    try { localStorage.setItem('wc-slide-grid-size', String(n)); } catch { /* 무시 */ }
+    return n;
+  }
 
   function set(v) {
     mode = v === true ? 'grid' : v === false ? 'list' : ['list', 'grid', 'all', 'alllist'].includes(v) ? v : 'list';

@@ -90,12 +90,14 @@
       { label: '지우기', key: 'Delete', run: A('del'), danger: true },
       '-',
       { head: '이 다음에 넣기' },
+      { ic: 'clipboard-paste', label: '클립보드에서 붙여 넣기', key: 'Ctrl+V', run: () => { Cue().selectQuiet(i); if (window.BCPaste) window.BCPaste.run('auto'); } },
       ...TYPES.map(([t, l]) => ({ label: l, ic: TIC(t), run: () => Cue().itemAction(i, 'addAfter', t) })),
     ];
   }
   function cueEmptyMenu() {
     return [
       { head: '순서 넣기' },
+      { ic: 'clipboard-paste', label: '클립보드에서 붙여 넣기', key: 'Ctrl+V', run: () => window.BCPaste && window.BCPaste.run('auto') },
       ...TYPES.map(([t, l]) => ({ label: l, ic: TIC(t), run: click(`#cueAdd [data-add="${t}"]`) })),
       '-',
       { label: '🤖 주보로 큐시트 만들기…', run: () => window.BCAI && window.BCAI.open() },

@@ -294,6 +294,70 @@ app.whenReady().then(async () => {
     ok(sec.why0 && sec.menu && sec.ppt && JSON.stringify(sec.ppt) === JSON.stringify([{ t: '사관회 전체', r: '1-3', e: '', ex: '' }, { t: '설교', r: '4-5', e: '0', ex: '0' }]) && sec.pv === '4,덧붙임,5', '구역 나누기: PPT 슬라이드 오른쪽 클릭 → 새 순서 (범위 · 꾸민 것 · 덧붙인 슬라이드도 함께)', sec);
     ok(sec.texts && sec.texts.join('/') === '광고:하나/설교:둘\n---\n셋' && sec.titles.join('/') === '제목1|부|제목2/제목3||' && sec.n1 === 6 && sec.n2 === 5, '구역 나누기: 공지 글 덩어리 · 제목 장 · Ctrl+Z 되돌리기', sec);
 
+    // ---- 2-8f. 클립보드 붙여 넣기 → 새 순서 (글: 성경·찬양·공지 · 그림 · 글+그림은 묻기 · 글 입력칸은 그대로 · 편집기에서는 그 슬라이드에) · Ctrl+휠 썸네일 크기
+    //   실제 클립보드는 건드리지 않는다: 붙여 넣기 이벤트를 만들어 보낸다 (PowerPoint 슬라이드는 단위 테스트에서 가짜 클립보드·가짜 PowerPoint 로)
+    const pst = await ev(`
+      const paste = (o, target) => { const dt = new DataTransfer(); if (o.text) dt.setData('text/plain', o.text); (o.files || []).forEach(f => dt.items.add(f)); const e = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }); (target || document.body).dispatchEvent(e); return e.defaultPrevented; };
+      const png = async () => { const c = document.createElement('canvas'); c.width = 160; c.height = 90; const g = c.getContext('2d'); g.fillStyle = '#2a6'; g.fillRect(0, 0, 160, 90); const b = await new Promise(r => c.toBlob(r, 'image/png')); return new File([b], 'image.png', { type: 'image/png' }); };
+      const items = () => window.BCCue.cueInfo().items;
+      const blur = () => { const a = document.activeElement; if (a && a.blur) a.blur(); };
+      const c = (await window.BC.cmd('saveCue', { cue: { name: '붙여 넣기 점검', items: [{ type: 'title', title: '예배 시작' }] } })).result;
+      window.BCCue.openCue(c.id); await wait(800); $$('#cueList .cue-item')[0].click(); await wait(500); blur();
+      const p1 = paste({ text: '요 3:16' }); await wait(900);
+      paste({ text: '나 같은 죄인 살리신\\n주 은혜 놀라워\\n잃었던 생명 찾았고\\n광명을 얻었네' }); await wait(900);
+      paste({ text: '이번 주 일정\\n수요예배 저녁 7시 30분\\n금요기도회 저녁 9시' }); await wait(900);
+      paste({ files: [await png()] }); await wait(1500);
+      const made = items().map(x => [x.type, x.title, x.ref || x.body || (x.lyrics ? x.lyrics.split('\\n').length : '')].join(':'));
+      const img = items()[4] && items()[4].image || '';
+      const served = img ? (await fetch(img)).status : 0;
+      const msg = $('#msg').textContent;
+      // 글 입력칸에 붙이면 그대로 (새 순서를 만들지 않는다)
+      const q = $('#q'); q.focus(); const pIn = paste({ text: '요 3:16' }, q); await wait(400); q.blur();
+      const nIn = items().length;
+      // 글 + 그림 (PowerPoint 도형 · 엑셀 칸): 묻는다 → '글로'
+      paste({ text: '환영합니다', files: [await png()] }); await wait(600);
+      const ask = $$('.ctx:not([hidden]) .ctx-item').map(x => x.textContent.trim().slice(0, 4));
+      const nAsk = items().length;
+      const asText = $$('.ctx:not([hidden]) .ctx-item').find(x => /^글로/.test(x.textContent.trim())); if (asText) asText.click(); await wait(900);
+      const picked = items()[5] && items()[5].type + ':' + items()[5].title;
+      // 실행 취소: 방금 붙인 것만 빠진다
+      window.BCCue.undo(); await wait(600);
+      const nUndo = items().length;
+      // 슬라이드 편집기 안: 새 순서가 아니라 그 슬라이드의 글상자·그림으로
+      const ti = items().findIndex(x => x.type === 'text');
+      window.BCSlideEdit.open(ti, '0'); await wait(1200);
+      paste({ text: '붙여 넣은 글상자' }); await wait(500); paste({ files: [await png()] }); await wait(1500);
+      const ed = Object.values(items()[ti].edits || {}).flatMap(x => x.items || []).map(x => x.type + ':' + (x.text || (x.src || '').slice(0, 12)));
+      const nEd = items().length;
+      window.BCSlideEdit.close(); await wait(500);
+      return { p1, made, served, msg, pIn, nIn, ask, nAsk, picked, nUndo, ed, nEd };`);
+    await shot('paste-clipboard');
+    ok(pst.p1 === true && pst.made && pst.made.join('|') === 'title:예배 시작:|bible:성경 봉독:요 3:16|song:나 같은 죄인 살리신:4|text:이번 주 일정:수요예배 저녁 7시 30분\n금요기도회 저녁 9시|image:붙여 넣은 그림:' && pst.served === 200 && /이미지 순서로/.test(pst.msg),
+      '붙여 넣기: 장절 → 성경 · 가사 → 찬양 · 글 → 공지(첫 줄이 제목) · 그림 → 이미지 (고른 순서 다음에 차례로)', pst);
+    ok(pst.pIn === false && pst.nIn === 5 && pst.ask && pst.ask.join() === '글로 —,그림으로' && pst.nAsk === 5 && pst.picked === 'text:환영합니다' && pst.nUndo === 5,
+      '붙여 넣기: 글 입력칸은 그대로 · 글과 그림이 같이 있으면 묻기 · Ctrl+Z 되돌리기', pst);
+    ok(pst.ed && pst.ed.length === 2 && pst.ed[0] === 'text:붙여 넣은 글상자' && /^image:\/media\/clip-/.test(pst.ed[1]) && pst.nEd === 5, '붙여 넣기: 슬라이드 편집기에서는 그 슬라이드의 글상자·그림으로', pst);
+    const whl = await ev(`
+      $('#slideView [data-sv="grid"]').click(); await wait(300);
+      $$('#cueList .cue-item')[3].click(); await wait(1000);
+      const g = $('#slideGrid');
+      const size = () => getComputedStyle(g).getPropertyValue('--sg').trim() + '/' + $('#sgSize').value;
+      const wheel = (dy, ctrl) => { const e = new WheelEvent('wheel', { deltaY: dy, ctrlKey: ctrl, bubbles: true, cancelable: true }); g.dispatchEvent(e); return e.defaultPrevented; };
+      $('#sgSize').value = 240; $('#sgSize').oninput({ target: $('#sgSize') });
+      const s0 = size();
+      const up = wheel(-100, true); wheel(-100, true);
+      const s1 = size();
+      for (let k = 0; k < 12; k++) wheel(100, true);
+      const s2 = size();
+      const plain = wheel(100, false);
+      const s3 = size();
+      const saved = localStorage.getItem('wc-slide-grid-size');
+      $('#sgSize').value = 240; $('#sgSize').oninput({ target: $('#sgSize') });
+      $('#slideView [data-sv="list"]').click(); await wait(200);
+      return { hidden: g.hidden, s0, up, s1, s2, plain, s3, saved };`);
+    ok(whl.s0 === '240px/240' && whl.up === true && whl.s1 === '280px/280' && whl.s2 === '150px/150' && whl.plain === false && whl.s3 === whl.s2 && whl.saved === '150',
+      'Ctrl+휠: 썸네일 크기 (위로 = 크게 · 가장 작게에서 멈춤 · 막대도 같이 · 그냥 휠은 스크롤)', whl);
+
     // ---- 2-9. 무대 화면 모니터: 패널에 모니터 목록 · 잘못된 모니터는 거절 (실제 모니터에 창은 띄우지 않음)
     const sm = await ev(`window.BCDock && window.BCDock.show('stage'); await wait(800);
       const sel = $('#stMon'); if (sel) { sel.dispatchEvent(new Event('focus')); await wait(600); }

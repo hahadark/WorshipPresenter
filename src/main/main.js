@@ -4,7 +4,7 @@
 const path = require('path');
 // 창·작업 표시줄 아이콘 (소스에서 바로 실행할 때도 Electron 기본 아이콘 대신 워십프리젠터 아이콘)
 const APP_ICON = path.join(__dirname, 'icon.png');
-const { app, BrowserWindow, screen, globalShortcut, dialog, Menu, powerSaveBlocker, session, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, screen, globalShortcut, dialog, Menu, powerSaveBlocker, session, shell, safeStorage, clipboard } = require('electron');
 const { WorshipCueCore } = require('../core/core');
 const { startServer } = require('../core/server');
 const i18n = require('../core/i18n');
@@ -371,6 +371,10 @@ if (!app.requestSingleInstanceLock()) {
       encrypt: s => safeStorage.encryptString(String(s)).toString('base64'),
       decrypt: b64 => safeStorage.decryptString(Buffer.from(String(b64), 'base64')),
       documentsDir: app.getPath('documents'),
+      // 클립보드 붙여 넣기 → 새 순서: PowerPoint 슬라이드 형식이 있는지 · 그 내용 · 조작 화면에 붙여 넣기 시키기 (core/clippaste.js)
+      clipboardHas: fmt => { try { return clipboard.has(String(fmt)); } catch { return false; } },
+      clipboardBuffer: fmt => { try { const b = clipboard.readBuffer(String(fmt)); return b && b.length ? b : null; } catch { return null; } },
+      pasteIntoControl: () => { if (controlWin && !controlWin.isDestroyed()) { controlWin.webContents.focus(); controlWin.webContents.paste(); } },
       // 찬양 PPT 온라인 검색: 기본 브라우저로 연다 (http/https 만)
       openUrl: url => {
         if (!/^https?:\/\//i.test(url)) throw new Error('열 수 없는 주소입니다.');

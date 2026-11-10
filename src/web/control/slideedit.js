@@ -1141,6 +1141,13 @@
   }
   // 가운데 목록(순서의 슬라이드 줄)에서도 끌기·키
   { const res = document.getElementById('results'); if (res) { attachSel(res, '.srow'); res.addEventListener('keydown', e => { if (app.results && app.results.type === 'none' && selKey(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true); } }
-  window.BCSlideEdit = { init, open, openPreviewSlide, close, dropImage, menuFor, quickOp, moveSlides, splitAt, splitWhy, isOpen: () => !$('#se').hidden,
+  /** 클립보드에서 붙여 넣은 글 → 이 슬라이드의 새 글상자 (paste.js) */
+  function pasteText(text) {
+    const t = String(text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
+    if (!t) return null;
+    const lines = t.split('\n');
+    return addItem('text', { text: t, x: 10, y: 30, w: 80, h: Math.max(16, Math.min(60, lines.length * 9 + 6)), size: lines.length > 3 ? 48 : 60, fit: true });
+  }
+  window.BCSlideEdit = { init, open, openPreviewSlide, close, dropImage, pasteText, menuFor, quickOp, moveSlides, splitAt, splitWhy, isOpen: () => !$('#se').hidden,
     selClick, selClickAll, paintSel, attachSel, selKey, selAction, selMany, selCount: () => (selMany() ? M.ks.size : 0) };
 })();

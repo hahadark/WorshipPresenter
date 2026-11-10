@@ -87,11 +87,14 @@
 | 끌어서 슬라이드 차례 바꾸기 (2026-11-09) | `cues.js` slideOrder (성경 빼고) | `slideedit.js` attachSel(끌기 = 옮기기, 예전 '끌어서 영역 고르기' 대신) · moveSlides · applySeq(원래 차례 slideOrder + 덧붙임 at) · 편집기 ▲▼ 도 원래 슬라이드에 · `cue.js` decorate 의 orderOf · `slides.js` reorderChunks/reorderEdits | item slideOrder |
 | PPT 자동으로 나누기 (AI · 규칙 · 채팅 AI, 2026-11-09) | `pptsplit.js` ruleSplit · askSplit · cleanParts, 명령 pptSplitRule/AI/Prompt/Import/Sheets | `cue.js` openSplit · offerSplit(20장 넘으면 물음) · `control/pptsplit.js`(슬라이드 글자 · 모아보기 그림) | — (ai 키·모델은 주보 AI 와 같음) |
 | 여기서 새 순서로 나누기 = 구역 (2026-11-09) | — | 슬라이드 오른쪽 클릭(`ctxmenu.js` slideMenu · 전체 격자) → `slideedit.js` splitAt/splitWhy: PPT 는 sources() 차례로 앞·뒤 → 범위 + skip + slideOrder + extra at + edits 번호 다시, 공지·찬양 `slides.js` splitChunks/splitEdits (찬양은 songId·order 끊음), 제목은 장 · `cue.js` BCCue.replaceItem (실행 취소) | — |
+| 클립보드 붙여 넣기 → 새 순서 (2026-11-10, Ctrl+V · Ctrl+Shift+V 골라서) | `clippaste.js` planText(글 → 장절이면 성경(줄마다) · 가사 모양이면 찬양 · 그 밖 공지, as 로 종류 지정) · grabSlides(PowerPoint 슬라이드 → `<데이터>/pasted/clip-날짜-시각.pptx`: ① 클립보드의 'PowerPoint 12.0 Internal Slides' 묶음(zip)을 Electron `clipboard.readBuffer` 로 ② 윈도우 .NET 으로 다시(PS_CLIP_DUMP) ③ PowerPoint 에 새 프레젠테이션 → `ExecuteMso('PasteSourceFormatting')` → 안 되면 `Slides.Paste` → SaveAs(PS_CLIP_PASTE). 방법마다 `hymns.load` 로 정말 열리는지 보고 안 되면 다음으로) · 명령 clipboardInfo · pasteNow · pasteTextPlan · pasteSlides · `hymns.isAllowed` 가 pasted 폴더의 PPT 를 열어 줌 · 그림은 `/api/media` (머리글 X-Kind: clip → media/clip-*.png) · `main.js` desktop.clipboardHas · clipboardBuffer · pasteIntoControl(webContents.paste) | `control/paste.js` (document 의 paste 이벤트 — 글 입력칸·열린 창은 그대로 두고, 탐색기 파일은 `dropfiles.js` addPaths 로, 글+그림이 같이 오면 묻기, 슬라이드 편집기가 열려 있으면 `slideedit.js` pasteText · dropImage. 메뉴·오른쪽 클릭은 BCPaste.run → 코어 pasteNow 가 화면에 붙여 넣기를 시켜 같은 이벤트로) | — |
+| Ctrl+휠 썸네일 크기 (2026-11-10) | — | `grid.js` setSize (막대와 같이, 150~420px) | localStorage `wc-slide-grid-size` |
 | 한글 입력 자동 전환 (윈도우) | `imeKorean` | control.js focusin | `imeAuto` (main/ime.js PowerShell 도우미) |
 | Companion 단추 누르기 | `companion.js` | 외부 단추 창 · 순서 자동 동작 | `companion` {host,port} |
 | 장비 직접 (X32 OSC · PTZ VISCA) | `devices.js` | `devicepanel.js` | `devices` |
 
 순서마다 '⚡ 송출할 때 자동으로'(item.actions)에 obsScene/obsStream/obsRecord · stagePin · companion · dev[] 가 더해졌다 (실행은 `cue.js` runActions, 정리는 `cues.js`).
+클립보드의 PowerPoint 슬라이드는 실제 PowerPoint 로 확인하지 못했다 (묶음 형식 이름 · 그 안이 .pptx 인지 · 원본 서식 유지 명령) — 가짜 클립보드 묶음(픽스처)과 `tests/clip-paste-mock.ps1` 가짜 COM 으로 흐름만. 글·그림·탐색기 파일 붙여 넣기와 Ctrl+휠은 브라우저로 확인.
 실제 장비(OBS·Companion·X32·PTZ)로는 확인하지 못했다 — 가짜 서버/UDP 로 프로토콜 바이트만 단위 테스트. 테스트: 단위 61개 · e2e 40개.
 
 ### 같은 날 ProPresenter 7.15 참고로 더한 것 (기능 아이디어만)

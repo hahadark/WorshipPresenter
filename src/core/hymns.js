@@ -91,6 +91,7 @@ class Hymns {
     const f = path.resolve(file);
     const s = this.core.settings.get();
     if ((s.droppedFiles || []).some(x => path.resolve(x) === f) && EXT.test(f)) return true; // 끌어다 놓은 PPT
+    if (f.startsWith(path.resolve(require('./clippaste').pastedDir(this.core.dataDir)) + path.sep) && EXT.test(f)) return true; // 클립보드에서 붙여 넣은 슬라이드
     return (s.hymnFolders || []).some(x => f.startsWith(path.resolve(x.path) + path.sep));
   }
 

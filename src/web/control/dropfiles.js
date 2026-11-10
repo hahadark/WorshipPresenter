@@ -46,16 +46,23 @@
     // AI 주보 창: 파일 자체를 넘긴다 (경로 필요 없음)
     if (!$('#modal').hidden && $('#modal .ai-form') && window.BCAI && window.BCAI.setFile) { window.BCAI.setFile(files[0]); return; }
     if (!paths.length) return app.showMsg('끌어다 놓기는 워십프리젠터 데스크톱 프로그램에서 됩니다.', 'info', 3000);
+    return addPaths(paths, e.target, e.clientX, e.clientY);
+  }
+
+  /**
+   * 파일·폴더 경로들을 놓은 곳(t)에 맞게 넣는다 — 끌어다 놓기와 클립보드 붙여 넣기(탐색기에서 복사한 파일, paste.js)가 같이 쓴다
+   * t = 놓은 곳의 요소 (붙여 넣기는 document.body → 늘 큐시트의 새 순서) · cx, cy = 놓은 자리 (슬라이드 편집기)
+   */
+  async function addPaths(paths, t, cx = -1, cy = -1) {
     const r = await app.cmd('addDroppedFiles', { paths });
     if (!r.ok) return app.showMsg(r.error, 'error');
     const list = r.result;
-    const t = e.target;
 
     // 슬라이드 편집기: 그림·영상 덧붙이기
     if (window.BCSlideEdit && window.BCSlideEdit.isOpen()) {
       const media = list.filter(x => x.kind === 'image' || x.kind === 'video');
       if (!media.length) return app.showMsg('슬라이드 편집기에는 그림·영상을 놓을 수 있습니다.', 'info', 2500);
-      media.forEach((m, k) => window.BCSlideEdit.dropImage(m.url, e.clientX + k * 20, e.clientY + k * 20));
+      media.forEach((m, k) => window.BCSlideEdit.dropImage(m.url, cx + k * 20, cy + k * 20));
       return;
     }
     // 라이브러리 '찬양' 탭: 찬양 파일·폴더 가져오기 (OpenLP · ChordPro · ProPresenter · PPT · txt)
@@ -122,5 +129,5 @@
     });
   }
 
-  window.BCDrop = { init };
+  window.BCDrop = { init, addPaths };
 })();

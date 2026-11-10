@@ -58,14 +58,14 @@ The Korean build (`WorshipPresenter-…-Portable.exe`) includes the Korean Revis
 | 📷 Camera | Resolution (720p–4K), frame rate, brightness/contrast/saturation, mirror, live quality readout. |
 | Stage display | Current/next slide, clock, sermon timer, messages, item notes for the preacher and worship team. |
 | Phone remote | Next · previous · hide, jump to verses, send cue items, stage messages — from any phone on the same Wi-Fi (PIN). |
-| More | ⬆ **Update notifications** (new versions are announced in the app) · 🌐 Korean / English UI · 🍎 Mac (Apple Silicon) · Stream Deck / Companion buttons (HTTP), workspaces (saved panel layouts), 5 control-screen themes, drag-and-drop files (including PPT), cue sheet manager (pin · templates · duplicate for next week · trash). |
+| More | ⬆ **Update notifications** (new versions are announced in the app) · 🌐 Korean / English UI · 🍎 Mac (Apple Silicon) · Stream Deck / Companion buttons (HTTP), workspaces (saved panel layouts), 5 control-screen themes, drag-and-drop files (including PPT), 📋 **paste from the clipboard (Ctrl+V)** — copied text (a reference → Bible, lyrics → Song, anything else → Announcement), a screenshot or picture, slides copied in PowerPoint (Windows) or files copied in Explorer become new cue items; Ctrl+Shift+V lets you choose the item type, Ctrl+wheel resizes slide thumbnails, cue sheet manager (pin · templates · duplicate for next week · trash). |
 
 ## Menus
 
 | Menu | Contents |
 |---|---|
 | File | Manage cue sheets · cue sheet from bulletin (AI) · **Import ▸** (songs · Bible translations) · live history · **⚙ Settings (Ctrl+,)** |
-| Cue sheet | **＋ Add item ▸** · selected item (edit F2 · slide editor Ctrl+E · move · duplicate · delete) · show editor · ⏰ service clock |
+| Cue sheet | **＋ Add item ▸** · **Paste from clipboard Ctrl+V** (text · picture · slides → new item) · Paste as… Ctrl+Shift+V · selected item (edit F2 · slide editor Ctrl+E · move · duplicate · delete) · show editor · ⏰ service clock |
 | Go live | Go live F9 · next/previous slide · next/previous item · **Clear screen ▸** · **Live background ▸** · draw · preview off · second screen |
 | View | **Panels ▸** · slides as grid · **Workspaces ▸** · stage display window · control theme · **🌐 Language** |
 | Tools | **Library ▸** · stage/sermon timer · Stream Deck · **📱 Phone remote ▸** |
@@ -127,6 +127,8 @@ It only works on this PC, so no PIN is needed. Turning off the second screen als
 | 1–9 · C · B · E (song live) | Jump to verse · chorus · bridge · ending |
 | Ctrl+K | Search (Bible · songs · hymns · media) |
 | F2 · Ctrl+E | Edit item · slide editor |
+| Ctrl+V · Ctrl+Shift+V | Paste from the clipboard as a new item · choose the item type (outside text fields) |
+| Ctrl+wheel | Thumbnail size in the slide grid |
 | Ctrl+B (in a lyrics/announcement box) | Bold |
 | Ctrl+Shift+F | Second screen on/off |
 

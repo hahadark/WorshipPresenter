@@ -963,6 +963,33 @@ WorshipCueCore.prototype.commands = {
     }
     return out;
   },
+  // ---- 클립보드 붙여 넣기 → 새 순서 (조작 화면 control/paste.js · 코어 clippaste.js) ----
+  /** 클립보드에 PowerPoint 슬라이드가 있는가 · 메뉴에서 붙여 넣기를 시킬 수 있는가 (둘 다 데스크톱 프로그램에서만) */
+  clipboardInfo() {
+    const d = this.desktop;
+    return { desktop: !!d, slides: require('./clippaste').hasSlides(d), canPaste: !!(d && d.pasteIntoControl), win: process.platform === 'win32' };
+  },
+  /** 메뉴·오른쪽 클릭의 '붙여 넣기': 조작 화면에 붙여 넣기를 시킨다 → 화면의 paste 이벤트가 클립보드 내용(파일·그림·글)을 받는다 */
+  pasteNow() {
+    if (!this.desktop || !this.desktop.pasteIntoControl) throw new Error('메뉴에서 붙여 넣기는 데스크톱 프로그램에서 됩니다. Ctrl+V 를 누르세요.');
+    this.desktop.pasteIntoControl();
+    return {};
+  },
+  /** 붙여 넣은 글 → 넣을 순서들 { kind: bible|song|text|title, items: [{ type, extra }] } (as 로 종류를 정할 수 있다) */
+  pasteTextPlan(a) {
+    const { planText } = require('./clippaste');
+    const { looksLikeReference } = require('./parser');
+    const vid = this.versionId(a || {});
+    const isRef = l => {
+      if (!looksLikeReference(l)) return false;
+      try { const r = this.store.resolveReference(vid, l); return !!(r && r.ok && r.passage && r.passage.verses && r.passage.verses.length); } catch { return false; }
+    };
+    const plan = planText(a && a.text, { as: String((a && a.as) || ''), isRef });
+    if (!plan) throw new Error('붙여 넣을 글이 없습니다.');
+    return plan;
+  },
+  /** 클립보드의 PowerPoint 슬라이드 → PPT 파일 { file, count, title, how } (조작 화면이 찬송가·PPT 순서로 넣는다) */
+  pasteSlides() { return require('./clippaste').grabSlides(this); },
   /** 조작 화면 준비 끝 (로딩 화면을 닫는 신호) */
   uiReady() { this.emit('ui-ready'); return {}; },
   logClientError(a) { this.logger.error('조작 화면: ' + String(a.message || '').slice(0, 2000)); return {}; },
