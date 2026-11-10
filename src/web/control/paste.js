@@ -78,10 +78,11 @@
     const what = kind === 'bible' ? items.map(it => it.extra.ref).join(' · ') : short(items[0].extra.title || text);
     app.showMsg(`${TYPE_NAME[kind]} 순서로 붙여 넣었습니다: ${what}${as ? '' : ' — 다른 종류로 넣으려면 Ctrl+Shift+V'}`, 'ok', 3500);
   }
-  async function addSlides() {
-    app.showMsg('PowerPoint 슬라이드를 가져오는 중…', 'info', 60000);
-    const r = await cmd('pasteSlides', {});
-    if (!r.ok) { app.showMsg(r.error, 'error', 6000); return false; }
+  /** quiet = 슬라이드가 있는지 확실하지 않아 해 보는 것 (안 되면 조용히 그림·글로) · force = 사용자가 'PowerPoint 슬라이드'를 직접 골랐다 */
+  async function addSlides({ quiet = false, force = false } = {}) {
+    if (!quiet) app.showMsg('PowerPoint 슬라이드를 가져오는 중…', 'info', 60000);
+    const r = await cmd('pasteSlides', { force });
+    if (!r.ok) { if (!quiet) app.showMsg(r.error, 'error', 6000); return false; }
     const s = r.result;
     window.BCCue.addItem('hymn', { title: s.title || T('붙여 넣은 슬라이드'), file: s.file, number: null, background: 'default' });
     afterAdd();
@@ -118,8 +119,9 @@
     if (!Cue || !Cue.cueInfo()) return app.showMsg('큐시트를 먼저 열거나 만드세요.', 'info', 2500);
     if (paths.length) return window.BCDrop.addPaths(paths, document.body);
 
-    const info = await cmd('clipboardInfo', {});
-    const ci = info.ok ? info.result : {};
+    // 클립보드에 PowerPoint 슬라이드가 있는지 (데스크톱 프로그램). 답이 늦으면 기다리지 않고 글·그림으로
+    const info = await Promise.race([cmd('clipboardInfo', {}), new Promise(res => setTimeout(() => res(null), 2500))]);
+    const ci = info && info.ok ? info.result : {};
     if (pick) {
       const plan = hasText ? await cmd('pasteTextPlan', { text }) : null;
       const kind = plan && plan.ok ? plan.result.kind : '';
@@ -132,15 +134,15 @@
         list.push({ ic: 'tag', label: '제목 — 제목 카드', run: () => handle2(() => addText(text, 'title')) });
       }
       if (blobs.length) list.push({ ic: 'image', label: blobs.length > 1 ? `이미지 — 그림 ${blobs.length}장` : '이미지 — 그림 한 장', run: () => handle2(() => addImages(blobs)) });
-      if (ci.slides || (ci.desktop && ci.win && blobs.length)) list.push({ ic: 'music-2', label: 'PowerPoint 슬라이드 — 찬송가·PPT' + (ci.slides ? ' (알아서 고른 것)' : ''), run: () => handle2(addSlides) });
+      if (ci.slides || (ci.desktop && ci.win && blobs.length)) list.push({ ic: 'music-2', label: 'PowerPoint 슬라이드 — 찬송가·PPT' + (ci.slides === true ? ' (알아서 고른 것)' : ''), run: () => handle2(() => addSlides({ force: true })) });
       if (!list.length) return app.showMsg('클립보드에 붙여 넣을 글·그림·슬라이드가 없습니다.', 'info', 2500);
       return choose('어떤 순서로 붙여 넣을까요?', list);
     }
-    // PowerPoint 에서 복사한 슬라이드. 못 가져오면 클립보드의 그림(첫 장)이라도
-    if (ci.slides) {
-      if (await addSlides()) return;
-      if (blobs.length) return addImages(blobs);
-      return;
+    // PowerPoint 에서 복사한 슬라이드: 읽히는 슬라이드 묶음이 있으면 바로. 형식 이름만 보이면('maybe') 글이 없을 때만 조용히 해 본다
+    //   (글·그림을 붙일 때 슬라이드 쪽으로 새지 않게 — 형식 이름 확인은 환경에 따라 믿을 수 없다)
+    if (ci.slides === true || (ci.slides === 'maybe' && !hasText)) {
+      if (await addSlides({ quiet: ci.slides !== true })) return;
+      if (ci.slides === true) { if (blobs.length) return addImages(blobs); return; } // 오류는 알렸다 → 클립보드의 그림(첫 장)이라도
     }
     if (blobs.length && hasText) { // PowerPoint 도형 · 엑셀 칸: 글과 그림이 같이 온다
       return choose('글과 그림이 같이 있습니다', [
@@ -162,7 +164,7 @@
   /** 메뉴·오른쪽 클릭·Ctrl+Shift+V: mode 'auto' (알아서) | 'pick' (골라서) */
   async function run(mode = 'auto') {
     if (blocked()) return;
-    const info = await cmd('clipboardInfo', {});
+    const info = await cmd('clipboardInfo', { quick: true }); // 붙여 넣기를 시킬 수 있는지만 (슬라이드는 paste 이벤트에서 본다)
     if (info.ok && info.result.canPaste) {
       // 데스크톱 프로그램: 조작 화면에 붙여 넣기를 시키면 paste 이벤트로 들어온다
       const a = document.activeElement;

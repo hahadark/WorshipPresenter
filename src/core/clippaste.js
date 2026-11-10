@@ -80,7 +80,7 @@ function looksLikePptx(buf) {
   } catch { return false; }
 }
 
-// ② 윈도우 .NET: 클립보드의 슬라이드 묶음을 파일로 ($env:WC_CLIP_OUT). 'OK <바이트>' | 'NONE'
+// ② 윈도우 .NET: 클립보드의 슬라이드 묶음을 파일로 ($env:WC_CLIP_OUT). 'OK <바이트>' | 'HAVE'(형식은 있는데 내용을 못 읽음) | 'NONE'(슬라이드가 없음)
 const PS_CLIP_DUMP = `
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
@@ -91,7 +91,7 @@ if (-not $f) { Write-Output 'NONE'; exit }
 $s = $d.GetData($f, $false)
 if ($s -is [System.IO.MemoryStream]) { $bytes = $s.ToArray() }
 elseif ($s -is [byte[]]) { $bytes = $s }
-else { Write-Output 'NONE'; exit }
+else { Write-Output 'HAVE'; exit }
 [System.IO.File]::WriteAllBytes($env:WC_CLIP_OUT, $bytes)
 Write-Output ('OK ' + $bytes.Length)
 `;
@@ -148,15 +148,37 @@ const stamp = (d = new Date()) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${p
 /** 붙여 넣은 슬라이드를 두는 폴더 (hymns.isAllowed 가 이 안의 PPT 를 열게 해 준다) */
 const pastedDir = dataDir => path.join(dataDir, 'pasted');
 
-/** 클립보드에 PowerPoint 슬라이드가 있는가 (Electron 에서만 빨리 알 수 있다) */
-function hasSlides(desktop) {
-  if (!desktop || !desktop.clipboardHas) return false;
-  return SLIDE_FORMATS.some(f => { try { return !!desktop.clipboardHas(f); } catch { return false; } });
+// 있을 수 없는 형식 이름: 이것까지 '있다'고 하면 형식 이름 확인(clipboard.has)을 믿을 수 없는 환경이다
+const NO_SUCH_FORMAT = 'WorshipPresenter No Such Format 7f3a91';
+let lastProbe = null; // { at, buf } — 방금 probeSlides 가 읽은 묶음 (바로 이어지는 grabSlides 가 큰 묶음을 다시 읽지 않게)
+
+/**
+ * 클립보드에 PowerPoint 슬라이드가 있는가 (Electron 에서만 빨리 알 수 있다)
+ * → { slides: true(읽히는 .pptx 묶음이 있다) | 'maybe'(형식 이름만 보이고 내용은 못 읽음) | false, formatCheck: 형식 이름 확인을 믿을 수 있는가 }
+ *   글·그림을 붙일 때마다 부르므로: 'maybe' 는 글이 없는 붙여 넣기에만 쓰고(paste.js), 형식 이름 확인이 믿을 만하지 않으면 아예 내지 않는다
+ */
+function probeSlides(desktop) {
+  lastProbe = null;
+  if (!desktop || !desktop.clipboardBuffer) return { slides: false, formatCheck: false };
+  const has = f => { try { return !!(desktop.clipboardHas && desktop.clipboardHas(f)); } catch { return false; } };
+  const formatCheck = !!desktop.clipboardHas && !has(NO_SUCH_FORMAT);
+  let seen = false;
+  for (const f of SLIDE_FORMATS) {
+    if (formatCheck && !has(f)) continue; // 믿을 수 있으면 없는 형식은 읽지 않는다
+    let buf = null;
+    try { buf = desktop.clipboardBuffer(f); } catch { buf = null; }
+    if (buf && buf.length && looksLikePptx(buf)) { lastProbe = { at: Date.now(), buf }; return { slides: true, formatCheck }; }
+    if (formatCheck) seen = true;
+  }
+  return { slides: seen ? 'maybe' : false, formatCheck };
 }
+const hasSlides = desktop => probeSlides(desktop).slides;
 
 /**
  * 클립보드의 PowerPoint 슬라이드 → <데이터 폴더>/pasted/clip-<날짜>-<시각>.pptx
  *   core: 코어 (desktop.clipboardBuffer · hymns.load · logger)
+ *   opt.force: 슬라이드 형식이 안 보여도 PowerPoint 에 붙여 넣어 본다 (사용자가 'PowerPoint 슬라이드'를 직접 골랐을 때만 —
+ *     그렇지 않으면 그림·글만 있는 클립보드를 PowerPoint 에 붙여 넣게 된다)
  *   opt.win · opt.ps(script, env) · opt.hasPowerPoint() 는 테스트에서 바꿔 넣는다
  * → { file, count, title, how: 'package' | 'keep' | 'plain' } · 슬라이드가 없거나 못 가져오면 Error
  */
@@ -187,13 +209,17 @@ async function grabSlides(core, opt = {}) {
       return null;
     }
   };
-  // ① 클립보드의 슬라이드 묶음 그대로
+  let confirmed = !!opt.force; // 클립보드에 슬라이드가 정말 있는가 (③ 은 확인됐을 때만)
+  // ① 클립보드의 슬라이드 묶음 그대로 (방금 probeSlides 가 읽어 둔 것이 있으면 그것)
   const d = core.desktop;
+  const fresh = lastProbe && Date.now() - lastProbe.at < 10000 ? lastProbe.buf : null;
+  lastProbe = null;
   if (d && d.clipboardBuffer) {
-    for (const f of SLIDE_FORMATS) {
-      let buf = null;
-      try { buf = d.clipboardBuffer(f); } catch { buf = null; }
+    for (const f of fresh ? [''] : SLIDE_FORMATS) {
+      let buf = fresh;
+      if (!buf) { try { buf = d.clipboardBuffer(f); } catch { buf = null; } }
       if (!buf || !buf.length) continue;
+      confirmed = true;
       if (!looksLikePptx(buf)) { log(`'${f}' 은 있지만 .pptx 모양이 아닙니다 (${buf.length}바이트)`); continue; }
       const file = next();
       fs.writeFileSync(file, buf);
@@ -202,15 +228,17 @@ async function grabSlides(core, opt = {}) {
     }
   }
   if (win) {
-    // ② 같은 것을 .NET 으로 (스트림으로만 내주는 형식도 읽는다)
+    // ② 같은 것을 .NET 으로 (스트림으로만 내주는 형식도 읽는다 · 형식이 있는지도 여기서 확실히 안다)
     try {
       const file = next();
       const out = await ps(PS_CLIP_DUMP, { WC_CLIP_OUT: file }, 30000);
+      if (/^(OK \d+|HAVE)/m.test(out)) confirmed = true;
       if (/^OK \d+/m.test(out) && fs.existsSync(file)) {
         if (looksLikePptx(fs.readFileSync(file))) { const r = await usable(file, 'package'); if (r) return r; }
         else { log('.NET 으로 읽은 묶음이 .pptx 모양이 아닙니다'); try { fs.unlinkSync(file); } catch { /* 그만 */ } }
       }
     } catch (e) { log('.NET 으로 읽지 못했습니다: ' + e.message); }
+    if (!confirmed) throw new Error('클립보드에 PowerPoint 슬라이드가 없습니다. PowerPoint 의 슬라이드 목록에서 슬라이드를 골라 복사한 뒤 다시 붙여 넣으세요.');
     // ③ PowerPoint 에 붙여 넣어 저장
     if (await hasPp()) {
       const file = next();
@@ -223,4 +251,4 @@ async function grabSlides(core, opt = {}) {
   throw new Error('클립보드에서 PowerPoint 슬라이드를 가져오지 못했습니다. PowerPoint 에서 슬라이드를 다시 복사하거나, PPT 파일을 큐시트에 끌어다 놓으세요.');
 }
 
-module.exports = { planText, cleanText, looksLikeLyrics, looksLikePptx, grabSlides, hasSlides, pastedDir, SLIDE_FORMATS, PS_CLIP_DUMP, PS_CLIP_PASTE };
+module.exports = { planText, cleanText, looksLikeLyrics, looksLikePptx, grabSlides, hasSlides, probeSlides, pastedDir, SLIDE_FORMATS, PS_CLIP_DUMP, PS_CLIP_PASTE };

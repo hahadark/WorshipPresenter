@@ -964,10 +964,14 @@ WorshipCueCore.prototype.commands = {
     return out;
   },
   // ---- 클립보드 붙여 넣기 → 새 순서 (조작 화면 control/paste.js · 코어 clippaste.js) ----
-  /** 클립보드에 PowerPoint 슬라이드가 있는가 · 메뉴에서 붙여 넣기를 시킬 수 있는가 (둘 다 데스크톱 프로그램에서만) */
-  clipboardInfo() {
+  /**
+   * 클립보드에 PowerPoint 슬라이드가 있는가 · 메뉴에서 붙여 넣기를 시킬 수 있는가 (둘 다 데스크톱 프로그램에서만)
+   * slides: true(읽히는 묶음이 있다) | 'maybe'(형식 이름만 보임) | false · formatCheck: 형식 이름 확인을 믿을 수 있는가
+   */
+  clipboardInfo(a) {
     const d = this.desktop;
-    return { desktop: !!d, slides: require('./clippaste').hasSlides(d), canPaste: !!(d && d.pasteIntoControl), win: process.platform === 'win32' };
+    const probe = a && a.quick ? { slides: false, formatCheck: false } : require('./clippaste').probeSlides(d); // quick: 클립보드는 읽지 않는다
+    return { desktop: !!d, ...probe, canPaste: !!(d && d.pasteIntoControl), win: process.platform === 'win32' };
   },
   /** 메뉴·오른쪽 클릭의 '붙여 넣기': 조작 화면에 붙여 넣기를 시킨다 → 화면의 paste 이벤트가 클립보드 내용(파일·그림·글)을 받는다 */
   pasteNow() {
@@ -988,8 +992,8 @@ WorshipCueCore.prototype.commands = {
     if (!plan) throw new Error('붙여 넣을 글이 없습니다.');
     return plan;
   },
-  /** 클립보드의 PowerPoint 슬라이드 → PPT 파일 { file, count, title, how } (조작 화면이 찬송가·PPT 순서로 넣는다) */
-  pasteSlides() { return require('./clippaste').grabSlides(this); },
+  /** 클립보드의 PowerPoint 슬라이드 → PPT 파일 { file, count, title, how } (조작 화면이 찬송가·PPT 순서로 넣는다). force = 사용자가 슬라이드라고 직접 골랐다 */
+  pasteSlides(a) { return require('./clippaste').grabSlides(this, { force: !!(a && a.force) }); },
   /** 조작 화면 준비 끝 (로딩 화면을 닫는 신호) */
   uiReady() { this.emit('ui-ready'); return {}; },
   logClientError(a) { this.logger.error('조작 화면: ' + String(a.message || '').slice(0, 2000)); return {}; },

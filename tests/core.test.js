@@ -2274,7 +2274,7 @@ test('클립보드 붙여 넣기 → 새 순서: 글 종류 고르기(장절·�
   assert.equal(t1.result.kind, 'bible');
   assert.equal(core.command('pasteTextPlan', { text: '요 99:1' }).result.kind, 'text', '없는 장은 공지');
   assert.equal(core.command('pasteTextPlan', { text: '   ' }).ok, false);
-  assert.deepEqual(core.command('clipboardInfo', {}).result, { desktop: false, slides: false, canPaste: false, win: process.platform === 'win32' });
+  assert.deepEqual(core.command('clipboardInfo', {}).result, { desktop: false, slides: false, formatCheck: false, canPaste: false, win: process.platform === 'win32' });
   assert.equal(core.command('pasteNow', {}).ok, false, '데스크톱 프로그램이 아니면 Ctrl+V 로');
 
   // PowerPoint 슬라이드: ① 클립보드의 묶음(.pptx 와 같은 zip) 그대로
@@ -2285,7 +2285,25 @@ test('클립보드 붙여 넣기 → 새 순서: 글 종류 고르기(장절·�
   let pasted = 0;
   core.desktop = { clipboardHas: f => f === C.SLIDE_FORMATS[0], clipboardBuffer: f => (f === C.SLIDE_FORMATS[0] ? fx : null), pasteIntoControl: () => { pasted++; } };
   assert.equal(core.command('clipboardInfo', {}).result.slides, true);
+  assert.equal(core.command('clipboardInfo', { quick: true }).result.slides, false, 'quick: 클립보드는 읽지 않는다');
   assert.equal(core.command('pasteNow', {}).ok, true);
+  // 슬라이드가 있는지: 읽히는 묶음이 있어야 true · 형식 이름만 보이면 'maybe' · 형식 이름 확인이 늘 참인 환경이면 믿지 않는다
+  const junk = Buffer.from('x'.repeat(300));
+  assert.deepEqual(C.probeSlides(null), { slides: false, formatCheck: false });
+  assert.deepEqual(C.probeSlides({ clipboardHas: f => f === C.SLIDE_FORMATS[0], clipboardBuffer: () => junk }), { slides: 'maybe', formatCheck: true });
+  assert.deepEqual(C.probeSlides({ clipboardHas: () => false, clipboardBuffer: () => fx }), { slides: false, formatCheck: true }, '형식이 없다고 하면 읽지 않는다');
+  assert.deepEqual(C.probeSlides({ clipboardHas: () => true, clipboardBuffer: () => null }), { slides: false, formatCheck: false }, '없는 형식까지 있다고 하면 형식 확인을 믿지 않는다');
+  assert.deepEqual(C.probeSlides({ clipboardHas: () => true, clipboardBuffer: f => (f === C.SLIDE_FORMATS[0] ? fx : junk) }), { slides: true, formatCheck: false });
+  // 방금 읽은 묶음은 바로 이어지는 붙여 넣기가 다시 읽지 않는다 (큰 슬라이드 묶음)
+  let reads = 0;
+  const realBuffer = core.desktop.clipboardBuffer;
+  core.desktop.clipboardBuffer = f => { reads++; return realBuffer(f); };
+  assert.equal(core.command('clipboardInfo', {}).result.slides, true);
+  assert.equal(reads, 1);
+  assert.equal((await C.grabSlides(core, { win: false, hasPowerPoint: async () => false })).count, 4);
+  assert.equal(reads, 1);
+  core.desktop.clipboardBuffer = realBuffer;
+  assert.equal(core.command('clipboardInfo', {}).result.slides, true);
   assert.equal(pasted, 1);
   const noPp = { win: false, hasPowerPoint: async () => false };
   const s1 = await C.grabSlides(core, noPp);
@@ -2335,6 +2353,30 @@ test('클립보드 붙여 넣기 → 새 순서: 글 종류 고르기(장절·�
   } }), /PowerPoint 슬라이드를 가져오지 못했습니다/);
   assert.equal(fs.readdirSync(dir).length, before);
   await assert.rejects(C.grabSlides(core, { win: true, hasPowerPoint: async () => false, ps: async () => 'NONE' }), /가져오지 못했습니다/);
+  // 슬라이드가 있다고 확인되지 않으면 PowerPoint 에 붙여 넣지 않는다 (그림·글만 있는 클립보드를 PowerPoint 에 붙이게 된다) — 사용자가 직접 고르면(force) 해 본다
+  core.desktop.clipboardBuffer = () => null;
+  const psNone = async (script, env) => {
+    calls.push(script === C.PS_CLIP_DUMP ? 'dump' : 'paste');
+    if (script === C.PS_CLIP_DUMP) return 'NONE';
+    fs.writeFileSync(env.WC_PPT_FILE, fx);
+    return 'OK 4 keep';
+  };
+  calls.length = 0;
+  await assert.rejects(C.grabSlides(core, { win: true, hasPowerPoint: async () => true, ps: psNone }), /PowerPoint 슬라이드가 없습니다/);
+  assert.deepEqual(calls, ['dump']);
+  calls.length = 0;
+  assert.equal((await C.grabSlides(core, { win: true, hasPowerPoint: async () => true, ps: psNone, force: true })).how, 'keep');
+  assert.deepEqual(calls, ['dump', 'paste']);
+  // .NET 이 '형식은 있는데 못 읽었다'(HAVE)고 하면 확인된 것 → PowerPoint 에 붙여 넣기
+  calls.length = 0;
+  assert.equal((await C.grabSlides(core, { win: true, hasPowerPoint: async () => true, ps: async (script, env) => {
+    calls.push(script === C.PS_CLIP_DUMP ? 'dump' : 'paste');
+    if (script === C.PS_CLIP_DUMP) return 'HAVE';
+    fs.writeFileSync(env.WC_PPT_FILE, fx);
+    return 'OK 4 keep';
+  } })).how, 'keep');
+  assert.deepEqual(calls, ['dump', 'paste']);
+  core.desktop.clipboardBuffer = () => junk;
   // 코어 명령: 윈도우가 아니면 묶음을 못 읽을 때 바로 오류 (윈도우에서는 실제 PowerShell·PowerPoint·클립보드를 건드리게 되어 돌리지 않는다)
   if (process.platform !== 'win32') assert.equal((await core.command('pasteSlides', {})).ok, false);
   core.desktop = null;
