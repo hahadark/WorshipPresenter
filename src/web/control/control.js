@@ -1398,6 +1398,12 @@
   }
   $('#bOutput').onclick = toggleOutputWindow;
 
+  // 나중에 읽힌 글꼴(PPT 에서 꺼낸 글상자의 구세군체 등 local() 별칭) → 미리보기·LIVE 를 다시 그려 크기 맞춤을 정확하게
+  if (document.fonts && document.fonts.addEventListener) {
+    let fontTimer = null;
+    document.fonts.addEventListener('loadingdone', () => { clearTimeout(fontTimer); fontTimer = setTimeout(() => { if (!app.state) return; renderPreview(); renderLive(); }, 50); });
+  }
+
   // 미리보기·LIVE 아래 슬라이드(절) 번호 단추 줄 접기 (기억: localStorage wc-thumbs-fold { pv, lv })
   const THUMBS = { pv: '#pvSlides', lv: '#lvSlides' };
   const thumbsFold = (() => { try { return JSON.parse(localStorage.getItem('wc-thumbs-fold') || '{}') || {}; } catch { return {}; } })();

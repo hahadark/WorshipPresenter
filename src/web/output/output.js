@@ -294,6 +294,8 @@
   // 글꼴 로딩 후 크기 맞춤이 정확해지도록 다시 그림
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(() => { if (lastPayload) { lastKey = ''; tplKey = ''; render(lastPayload); } });
+    // 나중에 쓰이기 시작한 글꼴(예: PPT 에서 꺼낸 글상자의 구세군체 — local() 별칭)이 다 읽히면 한 번 더
+    if (document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { if (lastPayload) { lastKey = ''; tplKey = ''; render(lastPayload); } });
   }
   connect();
 })();

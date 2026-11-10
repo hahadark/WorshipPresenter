@@ -5,6 +5,37 @@
 (function (global) {
   'use strict';
 
+  /**
+   * 글꼴 이름 → 그 글꼴 파일을 직접 가리키는 별칭 (@font-face src: local(이름))
+   * 윈도우의 DirectWrite(크롬·Electron)는 글꼴을 스타일별 가족으로 묶어, '구세군체 Bold' 처럼 이름은 Bold 인데 파일 안의 굵기가 400 인
+   * 글꼴을 Regular 와 겹친다고 보고 숨긴다 — PowerPoint(GDI)에서는 보이는데 화면에서는 기본 글꼴로 나왔다 (2026-11-10).
+   * local() 은 글꼴의 전체 이름·PostScript 이름으로 파일을 찾아 이 문제가 없다. 못 찾으면 뒤의 보통 이름으로 넘어간다.
+   */
+  const localFonts = new Map();
+  function localFontAlias(name) {
+    const n = String(name || '').trim();
+    if (!n || typeof document === 'undefined') return `'${n}'`;
+    let alias = localFonts.get(n);
+    if (!alias) {
+      alias = 'wpf-' + (localFonts.size + 1);
+      localFonts.set(n, alias);
+      const q = s => '"' + s.replace(/["\\]/g, '') + '"';
+      const names = [n, n.replace(/\s+/g, '')].filter((v, i, a) => a.indexOf(v) === i);
+      let st = document.getElementById('wp-local-fonts');
+      if (!st) { st = document.createElement('style'); st.id = 'wp-local-fonts'; (document.head || document.documentElement).appendChild(st); }
+      st.appendChild(document.createTextNode(`@font-face{font-family:${q(alias)};src:${names.map(x => `local(${q(x)})`).join(',')};}\n`));
+    }
+    return `'${alias}'`;
+  }
+
+  /** 템플릿 글꼴 목록('구세군체 Bold', 'Malgun Gothic', …)의 첫 글꼴에 local() 별칭을 앞에 (일반 글꼴 이름이면 그대로 작동) */
+  function withLocalFont(family) {
+    const s = String(family || '');
+    const m = /^\s*['"]([^'"]{1,60})['"]/.exec(s);
+    if (!m || /^(sans-serif|serif|monospace|system-ui)$/i.test(m[1])) return s;
+    return `${localFontAlias(m[1])},${s}`;
+  }
+
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -27,7 +58,7 @@
   function textStyle(t) {
     const f = t.font;
     const css = [
-      `font-family:${f.family}`, `font-weight:${f.weight}`, `color:${f.color}`,
+      `font-family:${withLocalFont(f.family)}`, `font-weight:${f.weight}`, `color:${f.color}`,
       `line-height:${f.lineHeight}`, `letter-spacing:${f.letterSpacing || 0}px`,
     ];
     if (f.style) css.push(`font-style:${f.style}`);
@@ -179,7 +210,7 @@
       const just = { top: 'flex-start', middle: 'center', bottom: 'flex-end' }[x.valign] || 'center';
       const shadow = t.shadow && t.shadow.enabled && !x.fill && x.shadow !== false ? `text-shadow:${t.shadow.x}px ${t.shadow.y}px ${t.shadow.blur}px ${t.shadow.color};` : '';
       // font: 글상자 글꼴 (PPT 에서 꺼낸 글 등, 없으면 템플릿 글꼴) · fit: 넘치면 글자를 줄임 (fitItems)
-      const family = x.font && /^[\w가-힣\u3131-\u318e .+\-()]{1,60}$/.test(x.font) ? `'${x.font}',${t.font.family}` : t.font.family;
+      const family = x.font && /^[\w가-힣\u3131-\u318e .+\-()]{1,60}$/.test(x.font) ? `${localFontAlias(x.font)},'${x.font}',${t.font.family}` : t.font.family;
       return `<div class="bc-eitem bc-etext"${x.fit ? ' data-fit="1"' : ''} style="${pos}display:flex;flex-direction:column;justify-content:${just};padding:${(x.padding ?? 12) * k}px;${x.fill ? `background:${esc(x.fill)};` : ''}font-family:${esc(family)};font-size:${(x.size || 60) * k}px;color:${esc(x.color || '#fff')};font-weight:${x.bold ? 700 : 400};${x.italic ? 'font-style:italic;' : ''}line-height:${Number(x.lineHeight) || 1.3};text-align:${x.align || 'center'};white-space:pre-wrap;${shadow}">${esc(x.text || '')}</div>`;
     }).join('');
   }

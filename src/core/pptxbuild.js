@@ -134,7 +134,7 @@ function ownSlide(doc, k, media, tag, outDir, full) {
       if (el) {
         m++;
         const f = `slide-${tag}-e${String(m).padStart(2, '0')}.svg`;
-        fs.writeFileSync(path.join(outDir, f), el.svg);
+        fs.writeFileSync(path.join(outDir, f), localFontSvg(el.svg));
         body = { kind: 'image', id: sh.id, l: r2(el.l), t: r2(el.t), w: r2(el.w), h: r2(el.h), file: f, fit: 'contain', opacity: 1 };
       }
     }
@@ -148,11 +148,30 @@ function ownSlide(doc, k, media, tag, outDir, full) {
   return { recs, ids, bg: slideSvg(slide, { skip, embed }), full: full ? slideSvg(slide, { embed }) : null, text: slideText(slide) };
 }
 
+/**
+ * SVG 의 글꼴 이름 → local() 별칭을 앞에 (화면 쪽 render.js localFontAlias 와 같은 이유)
+ *   윈도우 DirectWrite 는 '구세군체 Bold' 처럼 이름은 Bold 인데 파일 안의 굵기가 400 인 글꼴을 Regular 와 겹친다고 보고 숨긴다.
+ *   local() 은 전체 이름·PostScript 이름으로 파일을 찾으니 이 문제가 없다. 못 찾으면 원래 이름으로 (2026-11-10)
+ */
+function localFontSvg(svg) {
+  if (typeof svg !== 'string' || !svg.includes('font-family="')) return svg;
+  const alias = new Map();
+  const out = svg.replace(/font-family="([^"',]{1,60})"/g, (m, name) => {
+    const n = name.trim();
+    if (!n || /^(sans-serif|serif|monospace)$/i.test(n)) return m;
+    if (!alias.has(n)) alias.set(n, 'wpf' + (alias.size + 1));
+    return `font-family="${alias.get(n)}, '${n}'"`;
+  });
+  if (!alias.size) return svg;
+  const q = x => '"' + x.replace(/["\\<>&]/g, '') + '"';
+  const css = [...alias].map(([n, a]) => `@font-face{font-family:${q(a)};src:${[...new Set([n, n.replace(/\s+/g, '')])].map(x => `local(${q(x)})`).join(',')};}`).join('');
+  return out.replace(/(<svg\b[^>]*>)/, `$1<style>${css}</style>`);
+}
 // ---------------- 이음오피스 엔진 경로 ----------------
 /** 엔진으로 슬라이드 하나 → ownSlide 와 같은 모양 */
 function engineSlide(eng, ctx, k, media, tag, outDir, full) {
   let m = 0;
-  const writeElement = svg => { m++; const f = `slide-${tag}-e${String(m).padStart(2, '0')}.svg`; fs.writeFileSync(path.join(outDir, f), svg); return f; };
+  const writeElement = svg => { m++; const f = `slide-${tag}-e${String(m).padStart(2, '0')}.svg`; fs.writeFileSync(path.join(outDir, f), localFontSvg(svg)); return f; };
   const r = eng.slideRecords(ctx, k, media, writeElement);
   const D = require('./pptxdraw');
   const imageSize = media.size.bind(media);
@@ -202,8 +221,8 @@ async function build(file, outDir, opts = {}) {
       if (ctx) fell++;
     }
     const bgName = `slide-${tag}-bg.svg`;
-    fs.writeFileSync(path.join(outDir, bgName), s.bg);
-    if (opts.full) { const name = `slide-${tag}.svg`; fs.writeFileSync(path.join(outDir, name), s.full); files.push(name); }
+    fs.writeFileSync(path.join(outDir, bgName), localFontSvg(s.bg));
+    if (opts.full) { const name = `slide-${tag}.svg`; fs.writeFileSync(path.join(outDir, name), localFontSvg(s.full)); files.push(name); }
     raw.bgs.push(bgName);
     raw.slides.push(s.recs);
     raw.hide[String(k + 1)] = s.ids;
@@ -226,4 +245,4 @@ function inlineSvg(svg, dir, cache) {
   });
 }
 
-module.exports = { build, classify, textRecord, Media, inlineSvg, MIME };
+module.exports = { build, classify, textRecord, Media, inlineSvg, localFontSvg, MIME };
