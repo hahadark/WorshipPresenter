@@ -1565,3 +1565,9 @@ body.slide-dragging, body.slide-dragging * { cursor: grabbing !important; user-s
 .results .srow.drop-before::after, .results .srow.drop-after::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--accent); z-index: 3; }
 .results .srow.drop-before::after { top: -2px; }
 .results .srow.drop-after::after { bottom: -2px; }
+
+/* 미리보기·LIVE 슬라이드(절) 번호 단추 줄 접기 */
+.pane-tools .thumbs-fold { margin-left: auto; width: 28px; height: 28px; padding: 0; flex: none; color: var(--muted); }
+.pane-tools .thumbs-fold .ic { width: 16px; height: 16px; margin: 0; }
+.pane-tools .thumbs-fold.on { color: var(--accent); }
+.thumbs.folded { display: none; }

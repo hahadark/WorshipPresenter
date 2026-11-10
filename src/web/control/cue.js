@@ -312,7 +312,7 @@
       // PPT 요소 따로 고치기: 그 슬라이드는 요소를 숨긴 배경 그림 + 글상자·그림 (배경이 없으면 원래 그림, 꺼낸 요소는 decorate 에서 뺀다)
       slides.forEach((s, j) => {
         const e = it.edits && it.edits[String(j)];
-        if (e && e.pptBg) { if (s.layerBg) s.image = s.layerBg; else s.pptBgMissing = true; }
+        if (e && e.pptBg) { if (s.layerBg) { s.thumb = s.image; s.image = s.layerBg; } else s.pptBgMissing = true; } // thumb: 목록 썸네일은 원래 슬라이드 그림 (배경만이면 빈 칸처럼 보인다)
         delete s.layerBg;
       });
     }
@@ -928,7 +928,7 @@
     $('#resultTitle').textContent = `${i + 1}. ${it.title}`;
     $('#resultInfo').textContent = `${TYPE[it.type]} · 슬라이드 ${app.preview.slides.length}장`;
     $('#results').innerHTML = app.preview.slides.map((s, k) => {
-      const body = s.kind === 'score' || (s.kind === 'image' && it.type === 'hymn') ? `<span class="sboth"><img class="sthumb" src="${esc(s.image)}" alt=""><span class="scap">${s.caption ? esc(s.caption) : '<span class="muted">(가사 없음 — 편집칸의 OBS 가사에 입력)</span>'}</span></span>`
+      const body = s.kind === 'score' || (s.kind === 'image' && it.type === 'hymn') ? `<span class="sboth"><img class="sthumb" src="${esc(s.thumb || s.image)}" alt=""><span class="scap">${s.caption ? esc(s.caption) : '<span class="muted">(가사 없음 — 편집칸의 OBS 가사에 입력)</span>'}</span></span>`
         : esc(s.kind === 'text' ? window.BCGroup.stripFmt(s.parts[0].text) : s.kind === 'title' ? [s.ref, s.subtitle].filter(Boolean).join('\n') : s.kind === 'image' ? '🖼 이미지' : s.kind === 'video' ? '🎬 영상' : '⬛ ' + (s.mode === 'background' ? '배경·로고만' : '검은 화면'));
       const gc = s.kind !== 'bible' && window.BCGroup ? window.BCGroup.color(s.label) : '';
       return `<div class="srow ${k === app.preview.index ? 'in-pv' : ''}" data-k="${k}"${gc ? ` style="--gc:${gc}"` : ''}><span class="vn">${esc(s.label || String(k + 1))}</span><span class="stext">${body}</span></div>`;
@@ -1619,6 +1619,13 @@
   }
 
   window.BCCue = {
+    /** PPT 요소 따로 고치기: 꺼낸 슬라이드 수 · 꺼내기 (슬라이드 편집기가 처음 열 때 묻는다) */
+    pptElements: {
+      count: i => (st.cue && st.cue.items[i] ? pptTextCount(st.cue.items[i]) : 0),
+      on: (i, mode) => pptTextOn(i, mode || 'on'),
+      /** 요소를 꺼낼 수 있는 파일인가 (.pptx · 읽힌 적 있는 것) */
+      can: async i => { const it = st.cue && st.cue.items[i]; if (!it || it.type !== 'hymn') return false; try { return !!(await hymnMeta(it)).layers; } catch { return false; } },
+    },
     webLyrics: () => webLyrics(st.sel),
     init, render, onCueNext, move, showSide, onSongDownloaded, onSongInbox: showInbox,
     currentId: () => (st.cue ? st.cue.id : ''),

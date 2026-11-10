@@ -119,3 +119,10 @@
 - **리모컨 ■ 끄기**: `remote.js act('off')` = clearAll + (보조 화면이 켜져 있으면) outputOff.
 - **보조 화면 모니터**: `main.js syncOutputWindow` 가 저장한 displayId 가 없으면 조작 화면과 다른 모니터로 바꿔 저장. 그래도 없으면 조작 화면 `checkOutputSetup` 이 설정 → 출력 을 연다(같은 상태에선 한 번). 사용자 PC 에서 실제로 저장된 displayId(1102995331)가 지금 모니터와 달랐다.
 - **패널 접기**: `dock.js` collapse/expand (setConstraints 로 탭 줄 높이에 고정), 머리 단추 ▾/▴ · 탭 누르면 펴짐 · localStorage `wc-dock-folded` [{ids,h}] · 빠른 설정 '접기' 는 `BCDock.toggleFold('quick')`.
+
+## 2026-11-10 사용자 피드백 (아직 릴리스 전)
+
+- **절 번호 단추 줄 접기**: 미리보기·LIVE 의 `pane-tools` 오른쪽 `.thumbs-fold` (▴/▾) → `#pvSlides` · `#lvSlides` 에 `.folded`. 기억 localStorage `wc-thumbs-fold` {pv, lv} (control.js syncThumbsFold).
+- **붙여 넣은 슬라이드 고치기**: 기능은 이미 있었다(편집칸 '요소 고치기'). 찾기 쉽게: 슬라이드 편집기(Ctrl+E)를 .pptx 순서에서 처음 열 때 꺼낼 수 있으면(`BCCue.pptElements.can` = hymnMeta.layers) 한 번 묻고 꺼낸다 (slideedit.js open, 실행 중 순서마다 한 번).
+- **꺼낸 글 줄 간격**: 이음오피스 경로 `pptxengine.js textRecord` 가 첫 줄 높이만 써서 문단 앞 간격(spcBef)이 빠져 빽빽했다 → 여러 줄이면 줄 top 의 평균 간격 사용. 직접 쓴 파서 경로(`pptxbuild.js textRecord`)도 짧은 문단이 대부분이면 평균 spcBef·spcAft 를 더함.
+- **꺼낸 뒤 목록 썸네일이 빈 칸**: 슬라이드 그림이 '요소를 숨긴 배경' 으로 바뀌어서 → `s.thumb` 에 원래 그림을 두고 목록은 그것으로.

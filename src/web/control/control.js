@@ -1398,6 +1398,28 @@
   }
   $('#bOutput').onclick = toggleOutputWindow;
 
+  // 미리보기·LIVE 아래 슬라이드(절) 번호 단추 줄 접기 (기억: localStorage wc-thumbs-fold { pv, lv })
+  const THUMBS = { pv: '#pvSlides', lv: '#lvSlides' };
+  const thumbsFold = (() => { try { return JSON.parse(localStorage.getItem('wc-thumbs-fold') || '{}') || {}; } catch { return {}; } })();
+  function syncThumbsFold() {
+    for (const [k, sel] of Object.entries(THUMBS)) {
+      const box = $(sel), b = document.querySelector(`.thumbs-fold[data-fold="${k}"]`);
+      if (!box || !b) continue;
+      const off = !!thumbsFold[k];
+      box.classList.toggle('folded', off);
+      b.innerHTML = window.BCIcon ? window.BCIcon(off ? 'chevron-down' : 'chevron-up') : (off ? '▾' : '▴');
+      b.title = off ? '슬라이드(절) 번호 단추 펼치기' : '슬라이드(절) 번호 단추 접기 (화면 자리 넓히기)';
+      b.classList.toggle('on', off);
+    }
+    if (window.BCDock) requestAnimationFrame(() => window.BCDock.fitScreens());
+  }
+  document.querySelectorAll('.thumbs-fold').forEach(b => b.onclick = () => {
+    thumbsFold[b.dataset.fold] = !thumbsFold[b.dataset.fold];
+    try { localStorage.setItem('wc-thumbs-fold', JSON.stringify(thumbsFold)); } catch { /* 무시 */ }
+    syncThumbsFold();
+  });
+  syncThumbsFold();
+
   /**
    * 보조 화면을 켰는데 띄울 모니터가 없으면(처음 실행 · 모니터가 하나뿐 · 고른 모니터가 빠짐)
    * 설정 → 출력 을 열어 모니터를 고르게 한다. 같은 상태에서는 한 번만 (다른 창이 열려 있으면 닫힌 뒤에)

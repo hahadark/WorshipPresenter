@@ -106,7 +106,15 @@ function textRecord(n, box, id) {
   // 줄 간격: 엔진의 줄 높이(간격을 포함) ÷ 글자 크기 → CSS line-height 배수. pptlayers 는 lh × 1.2 를 쓰므로 1.2 로 나눠 둔다
   const first = t.lines.find(l => l.runs.some(r => r.text && r.text.trim())) || t.lines[0];
   const fs0 = Math.max(1, ...first.runs.map(r => r.fontSizePx || 0), main.fontSizePx);
-  const lhCss = first.height > 0 ? first.height / fs0 : 1.2;
+  let lhCss = first.height > 0 ? first.height / fs0 : 1.2;
+  // 줄이 여럿이면 줄과 줄의 평균 간격(문단 앞뒤 간격 포함)을 쓴다 — 편집기 글상자는 줄 간격이 하나뿐이라, 글 덩어리 전체 높이가 원래 PPT 와 같게
+  //   (첫 줄 높이만 쓰면 PowerPoint 기본 본문 — 문단 앞 10pt — 이 뽑아 낸 뒤 빽빽해져 줄이 겹쳐 보였다)
+  const textLinesG = t.lines.filter(l => l.runs.some(r => r.text && r.text.trim()) && Number.isFinite(l.top));
+  if (textLinesG.length > 1) {
+    const span = textLinesG[textLinesG.length - 1].top - textLinesG[0].top;
+    const pitch = span / (textLinesG.length - 1);
+    if (pitch > 0 && pitch / fs0 > lhCss) lhCss = Math.min(lhCss * 2.5, pitch / fs0);
+  }
   return {
     kind: 'text', id, ...box, text,
     size: pt(main.fontSizePx), bold: !!main.bold, italic: !!main.italic, color: hex6(main.color),

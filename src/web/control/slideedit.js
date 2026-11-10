@@ -587,10 +587,19 @@
   }
 
   // ---------------- 열기·닫기 ----------------
+  const pptAsked = new Set(); // 이번 실행에서 요소 꺼내기를 이미 물어본 순서
   async function open(i, key, keys) {
     const it = Cue() && Cue().item(i);
     if (!it) return app.showMsg('큐시트에서 순서를 먼저 고르세요.', 'info', 2000);
     if (!EDITABLE.includes(it.type)) return app.showMsg('음악 순서는 슬라이드가 없어 편집할 수 없습니다.', 'info', 3000);
+    // PowerPoint 슬라이드(.pptx · 붙여 넣은 슬라이드)를 처음 편집할 때: 글·그림을 꺼내 바로 고칠지 한 번 묻는다
+    const PE = Cue().pptElements;
+    if (it.type === 'hymn' && /\.(pptx|ppsx)$/i.test(String(it.file || '')) && PE && !PE.count(i) && !pptAsked.has(it.id || it.file) && (await PE.can(i))) {
+      pptAsked.add(it.id || it.file);
+      if (confirm('이 PowerPoint 슬라이드의 글·그림을 하나씩 꺼내 바로 고칠 수 있게 할까요?\n\n[확인] 꺼내서 고치기 — 글은 두 번 눌러 고치고, 옮기고, 크기·색을 바꿉니다 (배경은 그대로)\n[취소] 지금처럼 슬라이드 위에 글상자를 덧붙이기\n\n(나중에 편집칸의 ‘요소 고치기’ 에서도 할 수 있습니다)')) {
+        await PE.on(i, 'on');
+      }
+    }
     S.base = null;
     if (!CHUNK.includes(it.type)) {
       S.base = await Cue().editorBase(i);

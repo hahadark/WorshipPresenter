@@ -66,6 +66,16 @@ function textRecord(sh) {
   const firstP = t.paras.find(p => p.runs.some(r => r.text.trim())) || t.paras[0];
   let lh = 0;
   if (firstP.lnSpc) lh = firstP.lnSpc.pct ? firstP.lnSpc.pct : main.sz ? firstP.lnSpc.pts / main.sz / 1.2 : 0;
+  // 문단 사이 간격(spcBef · spcAft): 편집기 글상자는 줄 간격 하나뿐이라, 짧은 문단(가사·목록 한 줄)이 대부분일 때만 평균 간격을 줄 간격에 더한다
+  //   (더하지 않으면 PowerPoint 기본 본문 — 줄 90% · 문단 앞 10pt — 이 뽑아 낸 뒤 빽빽하게 보인다)
+  const textParas = t.paras.filter(p => p.runs.some(r => !r.br && r.text.trim()));
+  if (textParas.length > 1 && main.sz) {
+    const gapPts = v => (!v ? 0 : v.pts != null ? Number(v.pts) || 0 : v.pct != null ? (Number(v.pct) || 0) * main.sz * 1.2 : 0);
+    const gaps = textParas.slice(1).map((p, i) => gapPts(p.spcBef) + gapPts(textParas[i].spcAft));
+    const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    const shortParas = textParas.filter(p => p.runs.map(r => r.text).join('').trim().length <= 40).length / textParas.length;
+    if (avg > 0 && shortParas >= 0.6) lh = (lh || 1) + Math.min(1.5, avg / main.sz / 1.2);
+  }
   const text = textLines(t).join('\n').replace(/\s+$/, '');
   return {
     kind: 'text', id: sh.id, l: r2(sh.x), t: r2(sh.y), w: r2(sh.w), h: r2(sh.h), text,
