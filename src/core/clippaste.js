@@ -10,9 +10,12 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const zlib = require('zlib');
 
-// PowerPoint 가 슬라이드를 복사할 때 클립보드에 올리는 형식 이름 (2007 부터 '12.0' — 파일 형식 번호라 새 판에서도 같다)
-const SLIDE_FORMATS = ['PowerPoint 12.0 Internal Slides', 'PowerPoint 14.0 Internal Slides', 'PowerPoint 15.0 Internal Slides', 'PowerPoint 16.0 Internal Slides'];
+// PowerPoint 가 슬라이드를 복사할 때 클립보드에 올리는 형식 이름
+//  2026-11-10 실제 PowerPoint(Microsoft 365, 16.0)로 확인: 'PowerPoint 14.0 Slides Package' 가 슬라이드 묶음(zip, 뿌리 폴더가 ppt/ 대신 clipboard/)이고,
+//  'PowerPoint 12.0 Internal Slides' 는 8바이트짜리 핸들일 뿐이다. 묶음은 clipToPptx 로 보통 .pptx 로 바꾼다
+const SLIDE_FORMATS = ['PowerPoint 14.0 Slides Package', 'PowerPoint 12.0 Internal Slides', 'PowerPoint 14.0 Internal Slides', 'PowerPoint 15.0 Internal Slides', 'PowerPoint 16.0 Internal Slides'];
 
 // ---------------- 글 ----------------
 const MARK = /^\s*[[(（<]?\s*(\d+\s*절|후렴|브릿지|브리지|간주|전주|엔딩|verse\s*\d*|chorus\s*\d*|bridge|pre-?chorus|intro|outro|ending|tag)\s*[\])）>]?\s*[:.]?\s*$/i;
@@ -70,6 +73,69 @@ function planText(raw, { as = '', isRef = () => false } = {}) {
 }
 
 // ---------------- PowerPoint 슬라이드 ----------------
+// ---------------- 클립보드 슬라이드 묶음 → .pptx ----------------
+let CRC_TABLE = null;
+function crc32(buf) {
+  if (typeof zlib.crc32 === 'function') return zlib.crc32(buf) >>> 0;
+  if (!CRC_TABLE) { CRC_TABLE = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; CRC_TABLE[n] = c >>> 0; } }
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+/** 간단한 zip 만들기: files = [{ name, data(Buffer) }] (deflate) */
+function writeZip(files) {
+  const locals = [];
+  const centrals = [];
+  let off = 0;
+  for (const f of files) {
+    const name = Buffer.from(f.name, 'utf8');
+    const raw = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data);
+    const comp = zlib.deflateRawSync(raw);
+    const crc = crc32(raw);
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6); lh.writeUInt16LE(8, 8);
+    lh.writeUInt32LE(0, 10); lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(comp.length, 18); lh.writeUInt32LE(raw.length, 22);
+    lh.writeUInt16LE(name.length, 26); lh.writeUInt16LE(0, 28);
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0x0800, 8); ch.writeUInt16LE(8, 10);
+    ch.writeUInt32LE(0, 12); ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(comp.length, 20); ch.writeUInt32LE(raw.length, 24);
+    ch.writeUInt16LE(name.length, 28); ch.writeUInt32LE(off, 42);
+    locals.push(lh, name, comp);
+    centrals.push(ch, name);
+    off += 30 + name.length + comp.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+/**
+ * 클립보드에서 읽은 묶음 → 보통 .pptx 버퍼 (이미 .pptx 면 그대로, 슬라이드 묶음이 아니면 null)
+ * PowerPoint 의 'Slides Package' 는 뿌리가 clipboard/ 이고 프레젠테이션 종류가 매크로용(macroEnabled)이다 → ppt/ · 보통 종류로
+ */
+function clipToPptx(buf) {
+  if (looksLikePptx(buf)) return buf;
+  if (!Buffer.isBuffer(buf) || buf.length < 200 || buf[0] !== 0x50 || buf[1] !== 0x4b) return null;
+  try {
+    const { readZip } = require('./pptrender');
+    const z = readZip(buf);
+    if (!z.names.includes('clipboard/presentation.xml') || !z.names.some(n => /^clipboard\/slides\/slide\d+\.xml$/.test(n))) return null;
+    const files = z.names.filter(n => !n.endsWith('/')).map(n => {
+      let data = z.get(n);
+      if (n === '[Content_Types].xml' || n === '_rels/.rels') {
+        data = Buffer.from(data.toString('utf8')
+          .replace(/PartName="\/clipboard\//g, 'PartName="/ppt/')
+          .replace(/Target="(\/?)clipboard\//g, 'Target="$1ppt/')
+          .replace(/presentationml\.presentation\.macroEnabled\.main\+xml|vnd\.ms-powerpoint\.presentation\.macroEnabled\.main\+xml/g, 'vnd.openxmlformats-officedocument.presentationml.presentation.main+xml'), 'utf8');
+      }
+      return { name: n.startsWith('clipboard/') ? 'ppt/' + n.slice(10) : n, data };
+    });
+    const out = writeZip(files);
+    return looksLikePptx(out) ? out : null;
+  } catch { return null; }
+}
+
 /** zip(.pptx) 모양인가: PK 로 시작하고 프레젠테이션·슬라이드가 들어 있다 */
 function looksLikePptx(buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 200 || buf[0] !== 0x50 || buf[1] !== 0x4b) return false;
@@ -86,7 +152,8 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 $d = [System.Windows.Forms.Clipboard]::GetDataObject()
 if (-not $d) { Write-Output 'NONE'; exit }
-$f = @($d.GetFormats($false)) | Where-Object { $_ -match '^PowerPoint [0-9.]+ Internal Slides$' } | Select-Object -First 1
+$all = @($d.GetFormats($false))
+$f = @($all | Where-Object { $_ -match '^PowerPoint [0-9.]+ Slides Package$' }) + @($all | Where-Object { $_ -match '^PowerPoint [0-9.]+ Internal Slides$' }) | Select-Object -First 1
 if (-not $f) { Write-Output 'NONE'; exit }
 $s = $d.GetData($f, $false)
 if ($s -is [System.IO.MemoryStream]) { $bytes = $s.ToArray() }
@@ -157,22 +224,24 @@ let lastProbe = null; // { at, buf } — 방금 probeSlides 가 읽은 묶음 (�
  * → { slides: true(읽히는 .pptx 묶음이 있다) | 'maybe'(형식 이름만 보이고 내용은 못 읽음) | false, formatCheck: 형식 이름 확인을 믿을 수 있는가 }
  *   글·그림을 붙일 때마다 부르므로: 'maybe' 는 글이 없는 붙여 넣기에만 쓰고(paste.js), 형식 이름 확인이 믿을 만하지 않으면 아예 내지 않는다
  */
-function probeSlides(desktop) {
+async function probeSlides(desktop) {
   lastProbe = null;
   if (!desktop || !desktop.clipboardBuffer) return { slides: false, formatCheck: false };
-  const has = f => { try { return !!(desktop.clipboardHas && desktop.clipboardHas(f)); } catch { return false; } };
-  const formatCheck = !!desktop.clipboardHas && !has(NO_SUCH_FORMAT);
+  // 데스크톱의 클립보드 함수는 비동기 (Electron 44) — 동기 함수(시험용)도 그대로 된다
+  const has = async f => { try { return !!(desktop.clipboardHas && (await desktop.clipboardHas(f)) === true); } catch { return false; } };
+  const formatCheck = !!desktop.clipboardHas && !(await has(NO_SUCH_FORMAT));
   let seen = false;
   for (const f of SLIDE_FORMATS) {
-    if (formatCheck && !has(f)) continue; // 믿을 수 있으면 없는 형식은 읽지 않는다
+    if (formatCheck && !(await has(f))) continue; // 믿을 수 있으면 없는 형식은 읽지 않는다
     let buf = null;
-    try { buf = desktop.clipboardBuffer(f); } catch { buf = null; }
-    if (buf && buf.length && looksLikePptx(buf)) { lastProbe = { at: Date.now(), buf }; return { slides: true, formatCheck }; }
+    try { buf = await desktop.clipboardBuffer(f); } catch { buf = null; }
+    const pptx = buf && buf.length ? clipToPptx(buf) : null;
+    if (pptx) { lastProbe = { at: Date.now(), buf: pptx }; return { slides: true, formatCheck }; }
     if (formatCheck) seen = true;
   }
   return { slides: seen ? 'maybe' : false, formatCheck };
 }
-const hasSlides = desktop => probeSlides(desktop).slides;
+const hasSlides = async desktop => (await probeSlides(desktop)).slides;
 
 /**
  * 클립보드의 PowerPoint 슬라이드 → <데이터 폴더>/pasted/clip-<날짜>-<시각>.pptx
@@ -217,12 +286,13 @@ async function grabSlides(core, opt = {}) {
   if (d && d.clipboardBuffer) {
     for (const f of fresh ? [''] : SLIDE_FORMATS) {
       let buf = fresh;
-      if (!buf) { try { buf = d.clipboardBuffer(f); } catch { buf = null; } }
+      if (!buf) { try { buf = await d.clipboardBuffer(f); } catch { buf = null; } }
       if (!buf || !buf.length) continue;
       confirmed = true;
-      if (!looksLikePptx(buf)) { log(`'${f}' 은 있지만 .pptx 모양이 아닙니다 (${buf.length}바이트)`); continue; }
+      const pptx = clipToPptx(buf);
+      if (!pptx) { log(`'${f}' 은 있지만 .pptx 모양이 아닙니다 (${buf.length}바이트)`); continue; }
       const file = next();
-      fs.writeFileSync(file, buf);
+      fs.writeFileSync(file, pptx);
       const r = await usable(file, 'package');
       if (r) return r;
     }
@@ -234,7 +304,8 @@ async function grabSlides(core, opt = {}) {
       const out = await ps(PS_CLIP_DUMP, { WC_CLIP_OUT: file }, 30000);
       if (/^(OK \d+|HAVE)/m.test(out)) confirmed = true;
       if (/^OK \d+/m.test(out) && fs.existsSync(file)) {
-        if (looksLikePptx(fs.readFileSync(file))) { const r = await usable(file, 'package'); if (r) return r; }
+        const pptx = clipToPptx(fs.readFileSync(file));
+        if (pptx) { fs.writeFileSync(file, pptx); const r = await usable(file, 'package'); if (r) return r; }
         else { log('.NET 으로 읽은 묶음이 .pptx 모양이 아닙니다'); try { fs.unlinkSync(file); } catch { /* 그만 */ } }
       }
     } catch (e) { log('.NET 으로 읽지 못했습니다: ' + e.message); }
@@ -251,4 +322,4 @@ async function grabSlides(core, opt = {}) {
   throw new Error('클립보드에서 PowerPoint 슬라이드를 가져오지 못했습니다. PowerPoint 에서 슬라이드를 다시 복사하거나, PPT 파일을 큐시트에 끌어다 놓으세요.');
 }
 
-module.exports = { planText, cleanText, looksLikeLyrics, looksLikePptx, grabSlides, hasSlides, probeSlides, pastedDir, SLIDE_FORMATS, PS_CLIP_DUMP, PS_CLIP_PASTE };
+module.exports = { planText, cleanText, looksLikeLyrics, looksLikePptx, clipToPptx, writeZip, grabSlides, hasSlides, probeSlides, pastedDir, SLIDE_FORMATS, PS_CLIP_DUMP, PS_CLIP_PASTE };

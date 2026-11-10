@@ -95,6 +95,8 @@
 
 순서마다 '⚡ 송출할 때 자동으로'(item.actions)에 obsScene/obsStream/obsRecord · stagePin · companion · dev[] 가 더해졌다 (실행은 `cue.js` runActions, 정리는 `cues.js`).
 클립보드의 PowerPoint 슬라이드는 실제 PowerPoint 로 확인하지 못했다 (묶음 형식 이름 · 그 안이 .pptx 인지 · 원본 서식 유지 명령) — 가짜 클립보드 묶음(픽스처)과 `tests/clip-paste-mock.ps1` 가짜 COM 으로 흐름만. 글·그림·탐색기 파일 붙여 넣기와 Ctrl+휠은 브라우저로 확인.
+- **2026-11-10 실제 PowerPoint(Microsoft 365)로 확인·고침**: 슬라이드를 복사하면 `PowerPoint 14.0 Slides Package` 가 .pptx 묶음(뿌리 `clipboard/`, 종류 macroEnabled)이고 `PowerPoint 12.0 Internal Slides` 는 8바이트 핸들뿐 → `clippaste.js clipToPptx` 가 `ppt/` · 보통 종류로 바꾼다(작은 `writeZip`). **Electron 44 는 main 프로세스 `clipboard.has()` 가 Promise · `readBuffer()` 가 없다** → `main.js clipType` 이 `clipboard.read()` 의 ClipboardItem 에서 `electron application/osclipboard;format="<이름>"` 타입을 `getType` 으로 읽는다. 그래서 `probeSlides` · `clipboardInfo` 는 비동기. 결과: 빠른 확인 0.03초 · 붙여 넣기는 첫 방법(package)으로 2~4초(전에는 늘 '슬라이드 없음' → 그림으로 들어가거나, 슬라이드로 골라도 PowerPoint 를 띄워 9초). 실제 묶음은 `tests/fixtures/pp-clipboard-slides-package.bin`.
+
 실제 장비(OBS·Companion·X32·PTZ)로는 확인하지 못했다 — 가짜 서버/UDP 로 프로토콜 바이트만 단위 테스트. 테스트: 단위 61개 · e2e 40개.
 
 ### 같은 날 ProPresenter 7.15 참고로 더한 것 (기능 아이디어만)

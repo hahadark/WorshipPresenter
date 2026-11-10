@@ -968,9 +968,9 @@ WorshipCueCore.prototype.commands = {
    * 클립보드에 PowerPoint 슬라이드가 있는가 · 메뉴에서 붙여 넣기를 시킬 수 있는가 (둘 다 데스크톱 프로그램에서만)
    * slides: true(읽히는 묶음이 있다) | 'maybe'(형식 이름만 보임) | false · formatCheck: 형식 이름 확인을 믿을 수 있는가
    */
-  clipboardInfo(a) {
+  async clipboardInfo(a) {
     const d = this.desktop;
-    const probe = a && a.quick ? { slides: false, formatCheck: false } : require('./clippaste').probeSlides(d); // quick: 클립보드는 읽지 않는다
+    const probe = a && a.quick ? { slides: false, formatCheck: false } : await require('./clippaste').probeSlides(d); // quick: 클립보드는 읽지 않는다
     return { desktop: !!d, ...probe, canPaste: !!(d && d.pasteIntoControl), win: process.platform === 'win32' };
   },
   /** 메뉴·오른쪽 클릭의 '붙여 넣기': 조작 화면에 붙여 넣기를 시킨다 → 화면의 paste 이벤트가 클립보드 내용(파일·그림·글)을 받는다 */

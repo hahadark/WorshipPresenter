@@ -40,7 +40,21 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   // ---------- 모니터 ----------
-  function displayLabel(d, i) {
+  /** 클립보드에서 윈도우 형식 이름 → { item, type } | null (Electron 44 의 read() · 예전 has() 도) */
+async function clipType(fmt) {
+  if (typeof clipboard.read === 'function') {
+    let items = [];
+    try { items = (await clipboard.read()) || []; } catch { items = []; }
+    const want = [`electron application/osclipboard;format="${fmt}"`, fmt];
+    for (const item of Array.isArray(items) ? items : []) {
+      const type = (item.types || []).find(t => want.includes(t));
+      if (type) return { item, type };
+    }
+    return null;
+  }
+  try { return clipboard.has(fmt) === true ? { item: null, type: fmt } : null; } catch { return null; }
+}
+function displayLabel(d, i) {
     const primary = d.id === screen.getPrimaryDisplay().id;
     const en = uiLang === 'en';
     return `${en ? 'Display' : '디스플레이'} ${i + 1} — ${d.size.width}×${d.size.height}${d.scaleFactor !== 1 ? ` (${en ? 'scale' : '배율'} ${Math.round(d.scaleFactor * 100)}%)` : ''}${primary ? (en ? ' · primary' : ' · 주 모니터') : ''}${d.label ? ' · ' + d.label : ''}`;
@@ -372,8 +386,16 @@ if (!app.requestSingleInstanceLock()) {
       decrypt: b64 => safeStorage.decryptString(Buffer.from(String(b64), 'base64')),
       documentsDir: app.getPath('documents'),
       // 클립보드 붙여 넣기 → 새 순서: PowerPoint 슬라이드 형식이 있는지 · 그 내용 · 조작 화면에 붙여 넣기 시키기 (core/clippaste.js)
-      clipboardHas: fmt => { try { return clipboard.has(String(fmt)); } catch { return false; } },
-      clipboardBuffer: fmt => { try { const b = clipboard.readBuffer(String(fmt)); return b && b.length ? b : null; } catch { return null; } },
+      // 클립보드 형식 · 내용 (비동기). Electron 44 는 has() 가 Promise · readBuffer() 가 없고, read() 가 ClipboardItem 목록을 준다:
+      //   윈도우 고유 형식은 'electron application/osclipboard;format="<이름>"' 타입으로 (2026-11-10 실제 PowerPoint 로 확인)
+      clipboardHas: async fmt => { const r = await clipType(String(fmt)); return !!r; },
+      clipboardBuffer: async fmt => {
+        const f = String(fmt);
+        if (typeof clipboard.readBuffer === 'function') { try { const b = clipboard.readBuffer(f); return b && b.length ? b : null; } catch { return null; } } // 예전 Electron
+        const r = await clipType(f);
+        if (!r) return null;
+        try { const b = Buffer.from(await (await r.item.getType(r.type)).arrayBuffer()); return b.length ? b : null; } catch { return null; }
+      },
       pasteIntoControl: () => { if (controlWin && !controlWin.isDestroyed()) { controlWin.webContents.focus(); controlWin.webContents.paste(); } },
       // 찬양 PPT 온라인 검색: 기본 브라우저로 연다 (http/https 만)
       openUrl: url => {
