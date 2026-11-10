@@ -17,6 +17,30 @@
 - 사용자에게 보내는 파일(SendUserFile)은 30MB 미만.
 - 줄 끝: 저장소 파일은 LF(일부 CRLF). 편집은 Edit 도구나 `\r\n` 을 보존하는 스크립트로. `sed` 로 `\n` 이스케이프가 든 JS 를 고치면 망가진다.
 
+## ▶ 이어서 할 일 (2026-11-10 넘김): 1.14.0 의 PowerPoint 연동을 실제 PowerPoint 로 확인 — 아직 하나도 못 함
+
+사용자가 맡긴 확인이다. 맡은 세션이 PowerPoint 없는 리눅스 클라우드 컨테이너여서 **확인은 하나도 못 했고**, PC 에서 돌릴 도구 `tools/ppt-check.js` 만 만들었다 (브랜치 `claude/wizardly-franklin-b51ueh` = main + 이 도구). 끝내면 이 절은 지운다.
+
+- **할 곳**: PowerPoint 가 깔린 윈도우 PC (`reg query HKCR\PowerPoint.Application\CurVer`). 없으면 그 사실만 알리고 끝낸다.
+- **지킬 것**: 사용자가 열어 둔 프레젠테이션은 닫거나 저장하지 않는다(확인용으로 연 것만 닫음) · 띄워 둔 워십프리젠터를 끄지 않는다(다른 포트·임시 데이터 폴더) · 시작 전에 "클립보드 내용이 바뀐다"고 한 줄 알린다 · 코드를 고치면 main 에서 새 브랜치에 커밋만, 푸시·빌드·릴리스는 시킬 때만.
+- **결과는** 항목마다 '확인됨 / 다름(어떻게) / 확인 못 함(왜)' 으로 짧게.
+
+| 알아낼 것 | 도구의 어느 줄 |
+|---|---|
+| ①-1 PowerPoint 에서 슬라이드를 복사하면 클립보드에 올라오는 형식 이름 (코드가 기대: `PowerPoint 12.0 Internal Slides` — `clippaste.js` SLIDE_FORMATS) | `result.txt` 의 `①-1` 목록 |
+| ①-2 그 형식의 내용이 .pptx 와 같은 zip 인가 (`looksLikePptx`) · `PS_CLIP_DUMP` 가 `OK` / `HAVE` / `NONE` 중 무엇을 내나 · 저장된 파일이 PowerPoint 에서 열리나 | `①-2` 의 출력 · looksLikePptx · `PowerPoint 로 열기: OPEN …` |
+| ①-3 Electron `clipboard.readBuffer(형식 이름)` 으로 같은 내용이 읽히나 (윈도우의 `clipboard.has` 는 없는 형식에도 true 를 준다 — 그래서 `probeSlides` 가 slides true 여야 Ctrl+V 가 바로 슬라이드로 넣는다) | `①-3` 의 has · readBuffer · sha1 견주기 · `probeSlides → …` |
+| ①-4 `PS_CLIP_PASTE` 가 `OK <장수> keep` 을 내나 · 저장된 파일의 테마·모양이 원본과 같은가 · 4:3 원본을 붙였을 때는 | `①-4` 의 출력 · 테마 줄 · `견주기` 의 다른 픽셀 % · 4:3 쪽의 슬라이드 비율 · `compare.html` |
+| ①-5 실제 프로그램에서 PowerPoint 에서 복사한 슬라이드를 Ctrl+V → 찬송가·PPT 순서로 들어가나, 그림 한 장으로 들어가나 · Ctrl+Shift+V → 'PowerPoint 슬라이드' 는 | 눈으로 + `result-log.txt` 의 `슬라이드 붙여 넣기: package / keep / plain → …` 줄 · pasted 폴더 |
+| ②-1 XML 의 `cNvPr id` 가 COM 의 `Shape.Id` 와 같은가 (그룹 안 도형 포함 · 그룹 안 도형에 `Visible = 0` 이 되는가) | `②-1` 의 같음/다름 · `그룹 안 도형: …(숨기기 ok)` |
+| ②-2 `글·그림 따로 고치기…` 를 눌렀을 때 꺼낸 요소가 배경 그림(`slide-NNN-bg.png`)에서 빠져 있나 · 글상자·그림 위치가 원래 슬라이드와 겹쳐 보이지 않나 · `원래대로` 가 되나 (`elements.pptx` · `chart-table.pptx`) | `②-2` (요소 자리 밖에서 달라진 픽셀은 0 근처, 자리 안은 0 보다 커야 함) · 눈으로 + `result-log.txt` 의 `bgFrom powerpoint` |
+
+차례: `node tools/ppt-check.js` (①1~4 · ② 자동, 2~3분) → `node tools/ppt-check.js app` (임시 데이터 폴더 · 포트 37620 으로 프로그램) → PowerPoint 에서 `tests\fixtures\elements.pptx` 의 1·2장을 손으로 복사 → `node tools/ppt-check.js clip` → 뜬 프로그램의 큐시트에 Ctrl+V · Ctrl+Shift+V → 두 픽스처를 큐시트에 넣고 `글·그림 따로 고치기…` · `원래대로` → `node tools/ppt-check.js log`. 결과는 `%TEMP%\wc-ppt-check\out\` 의 `result.txt` · `result-clip.txt` · `result-log.txt` · `compare.html`.
+
+- 도구는 코드의 `PS_CLIP_DUMP` · `PS_CLIP_PASTE` · `PS_BG` 를 고치지 않고 그대로 돌린다. 도구가 따로 쓰는 PowerShell 조각(`PS_HOLD` 원본 열어 복사해 두기 · `PS_FORMATS` · `PS_OPEN` · `PS_SHAPES`)은 **실제 윈도우에서 돌려 보지 못했다** — 리눅스에서 가짜 `powershell.exe` 로 흐름만 봤다. 오류가 나면 도구부터 고친다. 윈도우에서 직접 PowerShell 을 돌릴 수 있는 에이전트라면 도구 없이 위 표를 하나씩 해도 된다.
+- 볼 만한 곳 (추측, 확인 안 됨): PowerPoint 가 떠 있지 않을 때 COM 으로 새로 뜬 PowerPoint 는 창이 안 보여서 `PS_CLIP_PASTE` 의 `Activate` · `ExecuteMso('PasteSourceFormatting')` 가 안 되고 `plain` 으로 떨어질 수 있다 · `-EncodedCommand` 로 돌린 PowerShell 의 오류는 `#< CLIXML` 로 시작해 `runPs` 가 기록에 남기는 첫 줄이 쓸모없을 수 있다.
+- **끝낸 뒤**: 다른 점은 고치고 `npm test` 를 맞춘다 → 이 문서의 '실제 PowerPoint 로 확인하지 못했다' 메모(아래 표의 'PPT 요소 따로 고치기' · '클립보드 붙여 넣기' 줄, 표 아래 문단, '최근 흐름' v1.14.0 줄)와 `src/core/clippaste.js` 머리말의 같은 주석을 확인한 사실로 바꾼다 → 이 절을 지운다.
+
 ## 자주 쓰는 명령
 
 | 할 일 | 명령 |
