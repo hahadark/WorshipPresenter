@@ -66,6 +66,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
     let running = app.out.running();
     let mon = app.out.monitors.iter().find(|m| m.index == app.monitor).map(|m| json!({ "index": m.index, "name": m.name, "width": m.size.0, "height": m.size.1, "primary": m.primary }));
     wp_core::trackd::set_desktop_status(json!({ "running": running, "monitor": mon }));
+    wp_core::i18n::set_lang(app.core.lock().settings.get()["uiLang"].as_str().unwrap_or("ko"));
     ime_on_focus(app, ctx);
     // 점검용: --open-d bulletin|output|obs
     static ARGS: std::sync::Once = std::sync::Once::new();
@@ -94,7 +95,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
             Win::Obs => "OBS 원격 조작",
             Win::Update => "새 버전",
         };
-        egui::Window::new(title).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
+        egui::Window::new(wp_core::i18n::tr(title)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),

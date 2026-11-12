@@ -62,7 +62,7 @@ async fn send_file(base: &Path, rel: &str) -> Response {
     }
     let file = base.join(rel);
     match tokio::fs::read(&file).await {
-        Ok(buf) => ([(header::CONTENT_TYPE, mime(&file)), (header::CACHE_CONTROL, "no-cache")], buf).into_response(),
+        Ok(buf) => { let buf = if rel.ends_with(".html") { crate::i18n::with_lang(buf) } else { buf }; ([(header::CONTENT_TYPE, mime(&file)), (header::CACHE_CONTROL, "no-cache")], buf).into_response() } // [트랙 D] 영어 화면
         Err(_) => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }

@@ -75,13 +75,13 @@ pub fn show(ui: &mut egui::Ui, menus: &[Menu]) -> Option<&'static str> {
             if m.items.is_empty() {
                 continue;
             }
-            ui.menu_button(m.label, |ui| {
+            ui.menu_button(wp_core::i18n::tr(m.label), |ui| { // [트랙 D] 영어 화면
                 for i in &m.items {
                     if i.id == "-" {
                         ui.separator();
                         continue;
                     }
-                    let text = if i.key.is_empty() { i.label.to_string() } else { format!("{}      {}", i.label, i.key) };
+                    let text = if i.key.is_empty() { wp_core::i18n::tr(i.label) } else { format!("{}      {}", wp_core::i18n::tr(i.label), i.key) }; // [트랙 D] 영어 화면
                     if ui.button(RichText::new(text)).clicked() {
                         picked = Some(i.id);
                         ui.close();
