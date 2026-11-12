@@ -39,9 +39,9 @@ impl log::Log for FileLog {
         if !self.enabled(r.metadata()) {
             return;
         }
-        // 다른 크레이트의 자잘한 로그는 경고 이상만
+        // 다른 크레이트(그래픽 드라이버 등)의 로그는 오류만
         let ours = r.target().starts_with("wp_") || r.target() == "live";
-        if !ours && r.level() > log::Level::Warn {
+        if !ours && r.level() > log::Level::Error {
             return;
         }
         let level = if r.target() == "live" {

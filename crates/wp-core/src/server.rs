@@ -85,7 +85,8 @@ fn allowed_lib_file(core: &crate::core::Core, p: &str) -> Option<PathBuf> {
         }
     }
     let dropped = s["droppedFiles"].as_array().into_iter().flatten().any(|d| d.as_str().map(norm).as_deref() == Some(fp.as_str()) || d["path"].as_str().map(norm).as_deref() == Some(fp.as_str()));
-    let in_data = fp.starts_with(&norm(&core.data_dir.to_string_lossy()));
+    let dd = std::path::absolute(&core.data_dir).unwrap_or_else(|_| core.data_dir.clone()); // [트랙 B] --data 가 상대 경로여도
+    let in_data = fp.starts_with(&norm(&dd.to_string_lossy()));
     if dropped || in_data { Some(f) } else { None }
 }
 
