@@ -536,13 +536,9 @@ impl App {
     }
 }
 
-/// (요일 0=일, "HH:MM", 날짜 키) — 지역 시각 (윈도우: 표준 라이브러리에 시간대가 없어 KST 를 기본으로)
+/// (요일 0=일, "HH:MM", 날짜 키) — 시스템 시간대
 fn chrono_now() -> (u32, String, String) {
-    let ms = wp_core::util::now_ms() + 9 * 3600 * 1000;
-    let mins = ms / 60000;
-    let days = mins / 1440;
-    let wd = ((days + 4) % 7) as u32; // 1970-01-01 은 목요일
-    (wd, format!("{:02}:{:02}", (mins / 60) % 24, mins % 60), days.to_string())
+    wp_core::localtime::local_now()
 }
 
 #[cfg(test)]
