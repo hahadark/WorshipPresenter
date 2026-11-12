@@ -72,7 +72,6 @@ pub fn send_cue_item(core: &mut Core, index: i64) -> Result<Value, String> {
 
 /// 동작 실행. 아직 Rust 판에 없는 기능(타이머·무대 메시지·그리기·매크로·오버레이)은 알림
 pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result<Value, String> {
-    let _ = q;
     match action {
         "next" => core.step(1),
         "prev" => core.step(-1),
@@ -88,7 +87,23 @@ pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result
             }
             return send_cue_item(core, ci + if action == "cue-next" { 1 } else { -1 });
         }
-        "overlays" | "timer" | "timer-pause" | "timer-reset" | "message" | "draw-clear" | "macro" => {
+        // [트랙 B] 오버레이 · 타이머 · 무대 메시지 · 매크로
+        "overlays" => core.toggle_overlays_off(),
+        "timer" => {
+            let min = q.get("min").and_then(|x| x.parse::<f64>().ok()).filter(|x| *x > 0.0).unwrap_or(30.0);
+            core.stage_timer("start", min).map_err(|e| e.to_string())?;
+        }
+        "timer-pause" => {
+            let act = if core.b.stage.timer.running { "pause" } else { "resume" };
+            core.stage_timer(act, 0.0).map_err(|e| e.to_string())?;
+        }
+        "timer-reset" => core.stage_timer("reset", 0.0).map_err(|e| e.to_string())?,
+        "message" => core.stage_message(&q.get("text").cloned().unwrap_or_default()),
+        "macro" => {
+            let key = q.get("id").or(q.get("name")).cloned().unwrap_or_default();
+            core.run_macro(&key).map_err(|e| e.to_string())?;
+        }
+        "draw-clear" => {
             return Err(format!("'{action}' 동작은 아직 Rust 판에 없습니다 (준비 중)."));
         }
         _ => return Err(format!("알 수 없는 동작: {action}")),
@@ -123,5 +138,37 @@ mod tests {
         assert!(!safe_eq("abc", "abd"));
         assert!(!safe_eq("", ""));
         assert_eq!(TRIGGERS.len(), 16);
+    }
+}
+
+#[cfg(test)]
+mod tests_b {
+    // [트랙 B] 외부 단추 → 타이머 · 무대 메시지 · 오버레이 · 매크로
+    use super::*;
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-trig-{}", crate::util::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap(); // 빈 DB (기존 자료 복사 안 함)
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+    #[test]
+    fn timer_message_macro() {
+        let mut c = core();
+        let q = |p: &[(&str, &str)]| p.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect::<HashMap<_, _>>();
+        run(&mut c, "timer", &q(&[("min", "5")])).unwrap();
+        assert!(c.b.stage.timer.running);
+        assert_eq!(c.b.stage.timer.duration, 300_000);
+        run(&mut c, "timer-pause", &q(&[])).unwrap();
+        assert!(!c.b.stage.timer.running);
+        run(&mut c, "timer-pause", &q(&[])).unwrap();
+        assert!(c.b.stage.timer.running);
+        run(&mut c, "timer-reset", &q(&[])).unwrap();
+        assert_eq!(c.b.stage.timer.duration, 0);
+        run(&mut c, "message", &q(&[("text", "설교 5분 남음")])).unwrap();
+        assert_eq!(c.b.stage.message, "설교 5분 남음");
+        run(&mut c, "overlays", &q(&[])).unwrap();
+        assert!(run(&mut c, "macro", &q(&[("name", "없는 매크로")])).is_err());
+        c.save_macro(&serde_json::json!({ "name": "로고", "actions": { "logo": true } })).unwrap();
+        run(&mut c, "macro", &q(&[("name", "로고")])).unwrap();
     }
 }

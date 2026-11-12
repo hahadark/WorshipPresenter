@@ -320,6 +320,10 @@ impl App {
             let tpls = self.core.lock().settings.get()["messageTemplates"].as_array().cloned().unwrap_or_default();
             ui.horizontal_wrapped(|ui| {
                 for t in &tpls {
+                    if ui.small_button("×").on_hover_text("이 틀 지우기").clicked() {
+                        let id = t["id"].as_str().unwrap_or("").to_string();
+                        self.core.lock().delete_message_template(&id);
+                    }
                     if ui.button(t["name"].as_str().unwrap_or("")).clicked() {
                         let text = t["text"].as_str().unwrap_or("").to_string();
                         self.tb.msg_fields = wp_core::overlays::template_fields(&text).into_iter().map(|f| (f, String::new())).collect();
@@ -463,6 +467,48 @@ impl App {
                 let m = json!({ "name": self.tb.macro_name, "actions": { "logo": c.layers.logo, "bgOff": c.layers.hide_bg, "overlayOn": on, "message": self.tb.macro_msg } });
                 self.tb.note = err(c.save_macro(&m));
             }
+            // 예약 실행: 요일·시각에 매크로 (시스템 시간대)
+            ui.separator();
+            ui.label(RichText::new("예약 실행 (요일·시각이 되면 매크로)").strong());
+            let sched = self.core.lock().settings.get()["schedule"].as_array().cloned().unwrap_or_default();
+            for s in &sched {
+                let mut e = s.clone();
+                let mut changed = false;
+                let mut del = false;
+                ui.horizontal_wrapped(|ui| {
+                    let mut on = e["enabled"].as_bool().unwrap_or(true);
+                    if ui.checkbox(&mut on, "").changed() { e["enabled"] = json!(on); changed = true; }
+                    let days: Vec<u64> = e["days"].as_array().into_iter().flatten().filter_map(|d| d.as_u64()).collect();
+                    for (k, nm) in wp_core::schedule::DAY_NAMES.iter().enumerate() {
+                        let has = days.contains(&(k as u64));
+                        if ui.selectable_label(has, *nm).clicked() {
+                            let mut d2 = days.clone();
+                            if has { d2.retain(|x| *x != k as u64) } else { d2.push(k as u64) }
+                            e["days"] = json!(d2);
+                            changed = true;
+                        }
+                    }
+                    let mut t = e["time"].as_str().unwrap_or("").to_string();
+                    let r = ui.add(egui::TextEdit::singleline(&mut t).desired_width(52.0));
+                    if r.changed() { e["time"] = json!(t); }
+                    if r.lost_focus() { changed = true; }
+                    let cur = e["macroId"].as_str().unwrap_or("").to_string();
+                    let name = list.iter().find(|m| m["id"] == cur.as_str()).and_then(|m| m["name"].as_str()).unwrap_or("(매크로 고르기)").to_string();
+                    egui::ComboBox::from_id_salt(format!("sc-{}", e["id"])).selected_text(name).show_ui(ui, |ui| {
+                        for m in &list {
+                            if ui.selectable_label(m["id"] == cur.as_str(), m["name"].as_str().unwrap_or("")).clicked() { e["macroId"] = m["id"].clone(); changed = true; }
+                        }
+                    });
+                    if ui.small_button("지우기").clicked() { del = true; }
+                });
+                let id = e["id"].as_str().unwrap_or("").to_string();
+                if del { self.core.lock().delete_schedule(&id); }
+                else if changed { self.tb.note = err(self.core.lock().save_schedule(&e)); }
+            }
+            if ui.button("예약 더하기").clicked() {
+                let first = list.first().map(|m| m["id"].clone()).unwrap_or(json!(""));
+                self.tb.note = err(self.core.lock().save_schedule(&json!({ "days": [0], "time": "10:55", "macroId": first, "enabled": true })));
+            }
         });
         self.tb.macros = open;
     }
@@ -536,13 +582,9 @@ impl App {
     }
 }
 
-/// (요일 0=일, "HH:MM", 날짜 키) — 지역 시각 (윈도우: 표준 라이브러리에 시간대가 없어 KST 를 기본으로)
+/// (요일 0=일, "HH:MM", 날짜 키) — 시스템 시간대
 fn chrono_now() -> (u32, String, String) {
-    let ms = wp_core::util::now_ms() + 9 * 3600 * 1000;
-    let mins = ms / 60000;
-    let days = mins / 1440;
-    let wd = ((days + 4) % 7) as u32; // 1970-01-01 은 목요일
-    (wd, format!("{:02}:{:02}", (mins / 60) % 24, mins % 60), days.to_string())
+    wp_core::localtime::local_now()
 }
 
 #[cfg(test)]
@@ -551,5 +593,34 @@ mod tests {
     fn now_shape() {
         let (wd, hm, _) = super::chrono_now();
         assert!(wd < 7 && hm.len() == 5);
+    }
+}
+
+impl App {
+    /// LIVE 영상 조작 줄 (영상 슬라이드를 송출 중일 때만): 재생·멈춤 · 처음부터 · ±10초 · 소리 크기 · 반복
+    pub(crate) fn video_bar(&mut self, ui: &mut egui::Ui) {
+        let v = self.core.lock().b.video.clone();
+        let Some(v) = v else { return };
+        let mut act: Option<(&str, f64)> = None;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("영상").strong().color(Color32::from_rgb(0xd9, 0x6a, 0x6a)));
+            if ui.button(if v.playing { "⏸ 멈춤" } else { "▶ 재생" }).clicked() { act = Some((if v.playing { "pause" } else { "play" }, 0.0)); }
+            if ui.button("⏮ 처음부터").clicked() { act = Some(("restart", 0.0)); }
+            let pos = v.position();
+            if ui.button("−10초").clicked() { act = Some(("seek", (pos - 10.0).max(0.0))); }
+            if ui.button("+10초").clicked() { act = Some(("seek", pos + 10.0)); }
+            let p = pos.max(0.0) as i64;
+            ui.label(RichText::new(format!("{:02}:{:02}{}", p / 60, p % 60, if v.ended { " (끝)" } else { "" })).monospace());
+            ui.separator();
+            let mut vol = v.volume.unwrap_or(1.0) as f32;
+            if ui.add(egui::Slider::new(&mut vol, 0.0..=1.0).text("소리")).changed() { act = Some(("volume", vol as f64)); }
+            let mut lp = v.looped.unwrap_or(false);
+            if ui.checkbox(&mut lp, "반복").changed() { act = Some(("loop", if lp { 1.0 } else { 0.0 })); }
+        });
+        if let Some((a, x)) = act {
+            let mut c = self.core.lock();
+            if let Err(e) = c.video_control(a, x) { c.notify(e.to_string(), "warn"); }
+        }
+        if v.playing { ui.ctx().request_repaint_after(std::time::Duration::from_millis(500)); }
     }
 }

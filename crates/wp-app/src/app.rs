@@ -754,6 +754,7 @@ impl eframe::App for App {
                 if ui.add(big("모두 지우기")).clicked() { acts.push(Act::ClearAll) }
             });
             });
+            self.video_bar(ui); // [트랙 B] 영상 조작 줄
         });
         egui::CentralPanel::default_margins().show(ui, |ui| {
             self.search_panel(ui, &s, &mut acts);
