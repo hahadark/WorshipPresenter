@@ -104,6 +104,7 @@ impl Core {
         let media_dir = data_dir.join("media");
         std::fs::create_dir_all(&media_dir)?;
         let store = BibleStore::open(&data_dir.join("bible.db"))?;
+        let _ = crate::usage::ensure(&store.db); // [트랙 C] 사용 기록 표
         let settings = Settings::load(&data_dir);
         let (tx, _) = broadcast::channel(256);
         let port = settings.get()["port"].as_u64().unwrap_or(37528) as u16;
@@ -382,6 +383,8 @@ impl Core {
     fn add_history(&mut self) {
         let Some(l) = &self.pres.live else { return };
         let p = l.deck.passage.clone();
+        let cue_name = self.cue.as_ref().filter(|c| p["cueId"] == c.id.as_str()).map(|c| c.name.clone()).unwrap_or_default(); // [트랙 C]
+        crate::usage::record(&self.store.db, &p, &cue_name); // [트랙 C] 사용 기록
         self.settings.update(|d| {
             if !d["history"].is_array() {
                 d["history"] = json!([]);

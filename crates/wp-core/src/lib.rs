@@ -10,3 +10,5 @@ pub mod settings;
 pub mod slides;
 pub mod textnorm;
 pub mod util;
+pub mod templates; // [트랙 C]
+pub mod usage; // [트랙 C]
