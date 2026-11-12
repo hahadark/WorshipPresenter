@@ -753,4 +753,18 @@ mod tests {
         assert_eq!(b64(b"Ma"), "TWE=");
         assert_eq!(hex16("a").len(), 16);
     }
+    #[test]
+    fn layers_into_edits() {
+        let mut it = json!({ "type": "hymn", "range": "2-3", "edits": { "0": { "items": [{ "id": "mine", "type": "text" }, { "id": "p1t0", "type": "text" }] } } });
+        let l = json!({ "slides": [[], [{ "id": "p1t0", "type": "text" }, { "id": "p1i1", "type": "image" }], []] });
+        let r = apply_layers(&mut it, &l, 3);
+        assert_eq!(r, (1, 1, 1, 0));
+        assert_eq!(it["edits"]["0"]["pptBg"], true);
+        let ids: Vec<&str> = it["edits"]["0"]["items"].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["p1t0", "p1i1", "mine"]); // 꺼낸 것 + 사용자가 덧붙인 것 (예전에 꺼낸 것은 새로)
+        let parts = vec![crate::pptsplit::Part { a: 1, b: 2, name: "찬송".into(), kind: "hymn".into() }, crate::pptsplit::Part { a: 3, b: 3, name: "기도".into(), kind: "prayer".into() }];
+        let items = split_items(&json!({ "type": "hymn", "file": "x.pptx", "title": "전체" }), &parts);
+        assert_eq!(items[0]["range"], "1-2");
+        assert_eq!(items[1]["title"], "기도");
+    }
 }

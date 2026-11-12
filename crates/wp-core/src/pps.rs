@@ -212,3 +212,26 @@ mod tests {
         assert_eq!(&p[0].data[..4], &[0x89, 0x50, 0x4E, 0x47]);
     }
 }
+
+#[cfg(test)]
+mod real {
+    /// WP_PPS_DIR 의 .pps 들을 읽어 본다: cargo test -p wp-core real_pps -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn real_pps() {
+        let dir = std::env::var("WP_PPS_DIR").unwrap();
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let (bg, scores, texts) = super::extract(&e.path()).unwrap();
+            eprintln!("{}: 배경 {} · 악보 {}장 · 글 {}장 · 첫 글 {:?}", e.file_name().to_string_lossy(), bg.map(|b| b.ext).unwrap_or("없음"), scores.len(), texts.len(), texts.iter().flatten().next().map(|t| t.chars().take(30).collect::<String>()));
+        }
+        // 새찬송가 1장 가사를 악보 장수에 맞추기 (베들레헴 가사 DB 가 있으면)
+        let db = dirs::document_dir().unwrap().join("BethlehemWin").join("새찬송가.hdb");
+        if db.exists() {
+            let c = rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+            let h: String = c.query_row("SELECT htext FROM hymnal WHERE chapter = 1 ORDER BY id LIMIT 1", [], |r| r.get(0)).unwrap();
+            let (v, ch) = crate::hymnal::parse_htext(&h);
+            let a = crate::hymnal::align_lyrics(&v, &ch, 4);
+            eprintln!("1장 절 {}개 · 후렴 {:?} → 4장: {:?}", v.len(), ch, a);
+        }
+    }
+}
