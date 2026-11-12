@@ -13,6 +13,7 @@ pub struct TrackC {
     pub templates: TemplateUi,
     pub history: HistoryUi,
     pub slideedit: crate::slideedit_ui::SlideEditUi,
+    pub themes: crate::theme_ui::ThemeUi,
 }
 
 /// 메뉴에서 고른 트랙 C 항목
@@ -24,6 +25,9 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "c:usage" => app.tc.history.usage_open = true,
         "c:about" => app.tc.history.about_open = true,
         "c:slideedit" => app.tc.slideedit.open = true,
+        "c:themes" => app.tc.themes.open = true,
+        "c:obsfull" => { let mut c = app.core.lock(); let f = !c.obs_full; wp_core::themes::set_obs_view(&mut c, Some(f), None); c.notify(if f { "OBS 자막: 슬라이드 그대로 (예배당 화면 모양)" } else { "OBS 자막: 자막 템플릿" }, "ok"); }
+        "c:obspip" => { let mut c = app.core.lock(); let p = !c.settings.get()["output"]["obsPip"].as_bool().unwrap_or(false); wp_core::themes::set_obs_view(&mut c, None, Some(p)); }
         "c:import-bible" => app.core.lock().notify("성경 번역본 가져오기는 다음 차례에 옮깁니다.", "warn"),
         // 트랙 B 창 (예전 도구 줄)
         "b:songs" => app.tb.songs = true,
@@ -75,6 +79,7 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::E))) { app.tc.slideedit.open = !app.tc.slideedit.open; }
     let (sel, wd, dd) = (app.sel, app.web_dir.clone(), app.data_dir.clone());
     app.tc.slideedit.show(ctx, &core, sel, &wd, &dd, acts);
+    app.tc.themes.show(ctx, &core);
     // 점검용: --open-c settings|templates|history|usage|about
     if let Some(w) = std::env::args().position(|x| x == "--open-c").and_then(|i| std::env::args().nth(i + 1)) {
         if !OPENED.swap(true, std::sync::atomic::Ordering::SeqCst) {
