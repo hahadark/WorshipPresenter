@@ -64,6 +64,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
     let running = app.out.running();
     let mon = app.out.monitors.iter().find(|m| m.index == app.monitor).map(|m| json!({ "index": m.index, "name": m.name, "width": m.size.0, "height": m.size.1, "primary": m.primary }));
     wp_core::trackd::set_desktop_status(json!({ "running": running, "monitor": mon }));
+    ime_on_focus(app, ctx);
     // 점검용: --open-d bulletin|output|obs
     static ARGS: std::sync::Once = std::sync::Once::new();
     ARGS.call_once(|| {
@@ -368,4 +369,24 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
         }
     }
     ui.label(RichText::new("큐시트 순서의 '송출할 때 자동으로'(actions)에 obsScene · obsStream · obsRecord 를 두면 그 순서를 송출할 때 OBS 가 같이 움직입니다.").small().color(Color32::GRAY));
+}
+
+/// 한글 입력 자동 전환 (설정 imeAuto, 윈도우): 글 입력칸에 새로 들어가면 입력기를 한글로.
+/// egui 는 칸의 종류를 알 수 없어서, 장절·낱말 찾기 칸(search-box)만 빼고 모든 글 입력칸에 적용한다.
+fn ime_on_focus(app: &App, ctx: &egui::Context) {
+    static LAST: Lazy<Mutex<Option<egui::Id>>> = Lazy::new(|| Mutex::new(None));
+    let focused = ctx.memory(|m| m.focused());
+    let mut last = LAST.lock();
+    if focused == *last {
+        return;
+    }
+    *last = focused;
+    let Some(id) = focused else { return };
+    if !app.core.lock().settings.get()["imeAuto"].as_bool().unwrap_or(true) {
+        return;
+    }
+    let is_text = egui::text_edit::TextEditState::load(ctx, id).is_some();
+    if is_text && id != egui::Id::new("search-box") {
+        wp_core::winkeys::ime_korean();
+    }
 }

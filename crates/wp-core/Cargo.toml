@@ -34,4 +34,4 @@ ureq = { version = "3.5.1", features = ["json"] }
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_SystemInformation"] } # [트랙 B] 시간대
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_Ime"] } # [트랙 B] 시간대
