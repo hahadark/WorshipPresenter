@@ -2,6 +2,7 @@
 pub mod books;
 pub mod core;
 pub mod db;
+pub mod hymns; // [트랙 A]
 pub mod measure;
 pub mod parser;
 pub mod presentation;

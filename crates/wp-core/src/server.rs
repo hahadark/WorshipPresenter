@@ -126,6 +126,16 @@ async fn lib_file(State(core): State<Shared>, Query(q): Query<HashMap<String, St
     }
 }
 
+/// 찬송가 캐시 그림 (SVG 면 안의 그림을 data: 로 넣어서) // [트랙 A]
+async fn hymn_file(State(core): State<Shared>, axum::extract::Path((key, file)): axum::extract::Path<(String, String)>) -> Response {
+    let Some(fp) = crate::hymns::cache_path(&core.lock(), &key, &file) else { return status(StatusCode::NOT_FOUND) };
+    if let Some(svg) = crate::hymns::svg_to_send(&fp) {
+        return ([(header::CONTENT_TYPE, "image/svg+xml"), (header::CACHE_CONTROL, "no-cache")], svg).into_response();
+    }
+    let dir = fp.parent().unwrap().to_path_buf();
+    send_file(&dir, &file).await
+}
+
 /// 접속이 끊기면 목록에서 지운다
 struct ClientGuard {
     id: u64,
@@ -248,6 +258,7 @@ pub fn router(core: Shared) -> Router {
         .route("/shared/{*f}", get(move |axum::extract::Path(f): axum::extract::Path<String>| { let w = w4.clone(); async move { send_file(&w.join("shared"), &f).await } }))
         .route("/media/{f}", get(move |axum::extract::Path(f): axum::extract::Path<String>| { let m = media.clone(); async move { send_file(&m, &f).await } }))
         .route("/lib/file", get(lib_file))
+        .route("/hymn/{key}/{file}", get(hymn_file)) // [트랙 A]
         .route("/events", get(events))
         .route("/api/state", get(|State(c): State<Shared>| async move { Json(c.lock().output_payload("main")) }))
         .route("/api/live", get(|State(c): State<Shared>| async move { Json(c.lock().pres.live_state()) }))

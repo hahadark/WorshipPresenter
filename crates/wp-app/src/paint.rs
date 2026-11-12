@@ -54,6 +54,12 @@ pub fn image_uri(c: &Ctx, url: &str) -> Option<String> {
         PathBuf::from(percent_encoding::percent_decode_str(q).decode_utf8().ok()?.to_string())
     } else if let Some(f) = url.strip_prefix("/media/") {
         c.data_dir.join("media").join(f)
+    } else if let Some(r) = url.strip_prefix("/hymn/") {
+        // [트랙 A] 찬송가 캐시: 우리 것 → Electron 판
+        let (key, file) = r.split_once('/')?;
+        let mut dirs = vec![c.data_dir.join("hymn-cache")];
+        if let Some(e) = wp_core::hymns::electron_data() { dirs.push(e.join("hymn-cache")); }
+        dirs.into_iter().map(|d| d.join(key).join(file)).find(|p| p.is_file())?
     } else if let Some(f) = url.strip_prefix("/shared/") {
         c.web_dir.join("shared").join(f)
     } else if url.len() > 2 && url.as_bytes()[1] == b':' {
