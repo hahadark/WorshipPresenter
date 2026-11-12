@@ -118,7 +118,7 @@ fn main() -> anyhow::Result<()> {
             let mut rx = rx;
             std::thread::spawn(move || loop {
                 match rx.blocking_recv() {
-                    Ok(Ev::Ui) | Ok(Ev::Live) | Ok(Ev::Outputs) => ctx.request_repaint(),
+                    Ok(Ev::Ui) | Ok(Ev::Live) | Ok(Ev::Outputs) | Ok(Ev::Draw) => ctx.request_repaint(), // [트랙 B] Draw
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => ctx.request_repaint(),
                     Err(_) => break,
                 }

@@ -21,6 +21,8 @@ pub enum Ev {
     Ui,
     /// 출력 화면 접속 목록이 바뀜
     Outputs,
+    /// 화면에 그리기 · 강조가 바뀜 (SSE 'draw') [트랙 B]
+    Draw,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -102,6 +104,7 @@ fn is_lyrics(passage: &Value, slide: Option<&Value>) -> bool {
 
 impl Core {
     pub fn open(data_dir: PathBuf, web_dir: PathBuf, seed_db: Option<&Path>) -> Result<Self> {
+        crate::sync::apply_pending_restore(&data_dir); // [트랙 B] 예약된 백업 되돌리기 (DB 열기 전)
         let note = prepare_data_dir(&data_dir, seed_db)?;
         let media_dir = data_dir.join("media");
         std::fs::create_dir_all(&media_dir)?;
