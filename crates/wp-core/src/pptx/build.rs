@@ -296,7 +296,16 @@ pub fn build_into(bytes: &[u8], dir: &Path) -> Result<Built, String> {
     if slides_out.is_empty() {
         return Err("슬라이드를 그리지 못했습니다.".into());
     }
-    let layers = json!({ "v": 4, "w": doc.w, "h": doc.h, "engine": "rs", "bgs": bgs, "slides": recs_all, "hide": {}, "texts": texts });
+    // [트랙 A] PowerPoint 로 배경 그림을 만들 때 숨길 도형 id (보이는 슬라이드 번호 → cNvPr id)
+    let mut hide = serde_json::Map::new();
+    for (k, recs) in recs_all.iter().enumerate() {
+        let mut ids: Vec<String> = recs.iter().filter_map(|r| r["id"].as_str().filter(|s| !s.is_empty()).map(String::from)).collect();
+        ids.dedup();
+        if !ids.is_empty() {
+            hide.insert((k + 1).to_string(), json!(ids));
+        }
+    }
+    let layers = json!({ "v": 4, "w": doc.w, "h": doc.h, "engine": "rs", "bgs": bgs, "slides": recs_all, "hide": hide, "texts": texts });
     std::fs::write(dir.join("layers.json"), layers.to_string()).map_err(|e| e.to_string())?;
     Ok(Built { w: doc.w, h: doc.h, slides: slides_out, texts })
 }

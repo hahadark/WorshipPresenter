@@ -296,7 +296,18 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
             let lk = format!("layers:{}", norm(file));
             if PENDING.lock().insert(lk.clone()) {
                 let (dd, f) = (core.data_dir.clone(), file.to_string());
-                run_bg(move || crate::pptx::build::build_cache(&dd, &f), move |c, r: Result<Value, String>| {
+                let by_pp = meta["mode"] == "slides" && has_powerpoint();
+                run_bg(move || {
+                    let m = crate::pptx::build::build_cache(&dd, &f)?;
+                    // PowerPoint 로 그린 PPT 면 배경도 PowerPoint 로 (픽셀 그대로, 직접 그린 배경은 실패할 때만)
+                    if by_pp {
+                        let dir = dd.join("hymn-cache").join(m["key"].as_str().unwrap_or(""));
+                        if let Err(e) = powerpoint_bgs(&f, &dir) {
+                            log::warn!("PowerPoint 배경 그림을 만들지 못해 직접 그린 배경을 씁니다: {e}");
+                        }
+                    }
+                    Ok(m)
+                }, move |c, r: Result<Value, String>| {
                     PENDING.lock().remove(&lk);
                     META.lock().clear(); // layerBgs 를 다시 읽게
                     match r {
@@ -465,6 +476,75 @@ try {
   if ($pp.Presentations.Count -eq 0) { $pp.Quit() }
 }
 "#;
+
+/// Electron pptrender.js PS_BG: hide.json 의 도형을 숨기고 슬라이드마다 slide-NNN-bg.png (파일은 저장하지 않음)
+const PS_BG: &str = r#"
+$ErrorActionPreference = 'Stop'
+$hide = Get-Content -LiteralPath $env:WC_PPT_HIDE -Raw -Encoding UTF8 | ConvertFrom-Json
+$pp = New-Object -ComObject PowerPoint.Application
+try {
+  $p = $pp.Presentations.Open($env:WC_PPT_FILE, -1, 0, 0)
+  $slideW = $p.PageSetup.SlideWidth; $slideH = $p.PageSetup.SlideHeight
+  $outW = 1920; $outH = [int](1920 * $slideH / $slideW)
+  function Get-Flat($shapes) {
+    $out = New-Object System.Collections.ArrayList
+    foreach ($x in $shapes) {
+      try {
+        [void]$out.Add($x)
+        if ($x.Type -eq 6) { foreach ($y in (Get-Flat $x.GroupItems)) { [void]$out.Add($y) } }
+      } catch { }
+    }
+    return ,$out
+  }
+  $n = 0
+  foreach ($s in $p.Slides) {
+    if ($s.SlideShowTransition.Hidden) { continue }
+    $n++
+    $ids = @()
+    $prop = $hide.PSObject.Properties[[string]$n]
+    if ($prop) { $ids = @($prop.Value | ForEach-Object { [string]$_ }) }
+    if ($ids.Count -gt 0) {
+      foreach ($x in (Get-Flat $s.Shapes)) {
+        try { if ($ids -contains [string]$x.Id) { $x.Visible = 0 } } catch { }
+      }
+    }
+    $s.Export((Join-Path $env:WC_PPT_OUT ('slide-{0:D3}-bg.png' -f $n)), 'PNG', $outW, $outH)
+  }
+  $p.Saved = -1
+  $p.Close()
+  Write-Output "OK $n $outW $outH"
+} finally {
+  if ($pp.Presentations.Count -eq 0) { $pp.Quit() }
+}
+"#;
+
+/// PowerPoint 로 요소를 숨긴 배경 그림을 dir(layers.json 이 있는 캐시 폴더)에 만든다 → 슬라이드 수
+pub fn powerpoint_bgs(file: &str, dir: &Path) -> Result<usize, String> {
+    let lj = dir.join("layers.json");
+    let mut raw: Value = std::fs::read_to_string(&lj).ok().and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok()).ok_or("layers.json 이 없습니다.")?;
+    let hide = dir.join("hide.json");
+    std::fs::write(&hide, raw["hide"].to_string()).map_err(|e| e.to_string())?;
+    let script = dir.join("bg.ps1");
+    std::fs::write(&script, format!("\u{feff}{PS_BG}")).map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]).arg(&script).env("WC_PPT_FILE", file).env("WC_PPT_OUT", dir).env("WC_PPT_HIDE", &hide);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let out = cmd.output().map_err(|e| format!("PowerPoint 를 부르지 못했습니다: {e}"))?;
+    let _ = std::fs::remove_file(&script);
+    let so = String::from_utf8_lossy(&out.stdout).to_string();
+    let n = so.lines().find_map(|l| l.strip_prefix("OK ")).and_then(|l| l.split_whitespace().next()).and_then(|x| x.parse::<usize>().ok())
+        .ok_or_else(|| format!("PowerPoint 배경 그림 실패: {}", String::from_utf8_lossy(&out.stderr).lines().find(|l| !l.trim().is_empty()).unwrap_or("")))?;
+    // 배경 그림 이름은 직접 그린 것과 같다 (slide-NNN-bg.png) → 표시만
+    let bgs: Vec<Value> = (1..=n).map(|i| json!(format!("slide-{i:03}-bg.png"))).collect();
+    raw["bgs"] = json!(bgs);
+    raw["bgFrom"] = json!("powerpoint");
+    std::fs::write(&lj, raw.to_string()).map_err(|e| e.to_string())?;
+    Ok(n)
+}
 
 /// 캐시 폴더 이름: 파일 경로 · 크기 · 시각 · 방식
 pub fn cache_key(file: &str, tag: &str) -> String {
@@ -839,5 +919,31 @@ mod render_dump_tests {
         let (Ok(file), Ok(out)) = (std::env::var("WP_RENDER_FILE"), std::env::var("WP_RENDER_OUT")) else { return };
         let r = super::build_meta(std::path::Path::new(&out), &file, "direct");
         println!("{}", r.map(|m| m.to_string()).unwrap_or_else(|e| e));
+    }
+}
+
+#[cfg(test)]
+mod ps_bg_tests {
+    /// PowerPoint 로 요소 숨긴 배경: cargo test --release -p wp-core ps_bg_real -- --ignored --nocapture (WP_BG_OUT 에 남김)
+    #[test]
+    #[ignore]
+    fn ps_bg_real() {
+        if !super::has_powerpoint() { return; }
+        let src = std::env::var("WP_BG_FILE").unwrap_or_else(|_| format!(r"{}\WorshipCue\data\pasted\clip-20261110-210506.pptx", std::env::var("APPDATA").unwrap()));
+        let out = std::path::PathBuf::from(std::env::var("WP_BG_OUT").unwrap_or_else(|_| std::env::temp_dir().join("wp-psbg").to_string_lossy().to_string()));
+        let _ = std::fs::remove_dir_all(&out);
+        std::fs::create_dir_all(&out).unwrap();
+        let file = out.join("t.pptx");
+        std::fs::copy(&src, &file).unwrap();
+        let m = crate::pptx::build::build_cache(&out, &file.to_string_lossy()).unwrap();
+        let dir = out.join("hymn-cache").join(m["key"].as_str().unwrap());
+        let raw: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("layers.json")).unwrap()).unwrap();
+        println!("hide: {}", raw["hide"]);
+        let t0 = std::time::Instant::now();
+        let n = super::powerpoint_bgs(&file.to_string_lossy(), &dir).unwrap();
+        println!("PowerPoint 배경 {n}장 ({:.1}초) → {}", t0.elapsed().as_secs_f32(), dir.display());
+        let raw: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("layers.json")).unwrap()).unwrap();
+        assert_eq!(raw["bgFrom"], "powerpoint");
+        assert!(dir.join("slide-001-bg.png").is_file());
     }
 }
