@@ -1,5 +1,5 @@
 //! [트랙 C] 사용 기록 (Electron usagelog.js): 송출할 때마다 한 줄, 같은 것을 5분 안에 다시 띄우면 적지 않는다.
-//! 저작권 보고 CSV (엑셀용 BOM). 날짜 거르기는 UTC 기준 (TODO: 이 PC 시간대)
+//! 저작권 보고 CSV (엑셀용 BOM). 날짜 거르기는 이 PC 시간대 기준
 
 use crate::util::{iso_now, now_ms};
 use rusqlite::{params_from_iter, Connection};
@@ -81,16 +81,60 @@ pub fn record(db: &Connection, passage: &Value, cue_name: &str) -> Option<Row> {
     Some(Row { id: db.last_insert_rowid(), ..row })
 }
 
+/// 이 PC 시간대의 날짜 'YYYY-MM-DD' (+ 그날 안의 ms) → 기록과 같은 UTC ISO 글
+pub fn local_day_iso(day: &str, plus_ms: i64) -> Option<String> {
+    local_day_iso_at(day, plus_ms, crate::localtime::local_offset_ms())
+}
+
+pub fn local_day_iso_at(day: &str, plus_ms: i64, offset_ms: i64) -> Option<String> {
+    let p: Vec<i64> = day.trim().split('-').map(|x| x.parse().ok()).collect::<Option<Vec<_>>>()?;
+    if p.len() != 3 {
+        return None;
+    }
+    let ms = crate::localtime::days_from_civil(p[0], p[1], p[2]) * 86_400_000 + plus_ms - offset_ms;
+    Some(iso_of(ms))
+}
+
+/// ms (UTC) → 'YYYY-MM-DDTHH:MM:SS.mmmZ'
+pub fn iso_of(ms: i64) -> String {
+    let secs = ms.div_euclid(1000);
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400);
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if mo <= 2 { 1 } else { 0 };
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", y, mo, d, rem / 3600, (rem % 3600) / 60, rem % 60, ms.rem_euclid(1000))
+}
+
+#[cfg(test)]
+mod tz_tests {
+    use super::*;
+    #[test]
+    fn seoul_day() {
+        let off = 9 * 3_600_000;
+        assert_eq!(local_day_iso_at("2026-11-12", 0, off).unwrap(), "2026-11-11T15:00:00.000Z");
+        assert_eq!(local_day_iso_at("2026-11-12", 86_400_000 - 1, off).unwrap(), "2026-11-12T14:59:59.999Z");
+        assert_eq!(local_day_iso_at("2026-03-01", 0, 0).unwrap(), "2026-03-01T00:00:00.000Z");
+        assert!(local_day_iso_at("abc", 0, 0).is_none());
+    }
+}
+
 pub fn list(db: &Connection, f: &Filter) -> Vec<Row> {
     let mut wh: Vec<String> = vec![];
     let mut vals: Vec<String> = vec![];
     if !f.from.is_empty() {
         wh.push("at >= ?".into());
-        vals.push(format!("{}T00:00:00.000Z", f.from));
+        vals.push(local_day_iso(&f.from, 0).unwrap_or_else(|| format!("{}T00:00:00.000Z", f.from)));
     }
     if !f.to.is_empty() {
         wh.push("at <= ?".into());
-        vals.push(format!("{}T23:59:59.999Z", f.to));
+        vals.push(local_day_iso(&f.to, 86_400_000 - 1).unwrap_or_else(|| format!("{}T23:59:59.999Z", f.to)));
     }
     if !f.kinds.is_empty() {
         wh.push(format!("kind IN ({})", vec!["?"; f.kinds.len()].join(",")));

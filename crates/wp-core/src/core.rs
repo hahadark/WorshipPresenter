@@ -1,7 +1,7 @@
 //! 코어: DB · 설정 · 송출 상태 · 출력 화면에 보낼 데이터. 조작 화면(egui)과 웹 서버가 같이 쓴다.
 
 use crate::db::{BibleStore, Cue, CueSummary};
-use crate::presentation::{Deck, Move, Presentation};
+use crate::presentation::{Deck, Presentation};
 use crate::settings::Settings;
 use crate::slides::{self, SplitOpts};
 use crate::util::{iso_now, now_ms, short_id};
