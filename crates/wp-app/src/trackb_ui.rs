@@ -320,6 +320,10 @@ impl App {
             let tpls = self.core.lock().settings.get()["messageTemplates"].as_array().cloned().unwrap_or_default();
             ui.horizontal_wrapped(|ui| {
                 for t in &tpls {
+                    if ui.small_button("×").on_hover_text("이 틀 지우기").clicked() {
+                        let id = t["id"].as_str().unwrap_or("").to_string();
+                        self.core.lock().delete_message_template(&id);
+                    }
                     if ui.button(t["name"].as_str().unwrap_or("")).clicked() {
                         let text = t["text"].as_str().unwrap_or("").to_string();
                         self.tb.msg_fields = wp_core::overlays::template_fields(&text).into_iter().map(|f| (f, String::new())).collect();
@@ -462,6 +466,48 @@ impl App {
                 let on: Vec<Value> = c.overlays().into_iter().filter(|o| o["on"] == true).map(|o| o["id"].clone()).collect();
                 let m = json!({ "name": self.tb.macro_name, "actions": { "logo": c.layers.logo, "bgOff": c.layers.hide_bg, "overlayOn": on, "message": self.tb.macro_msg } });
                 self.tb.note = err(c.save_macro(&m));
+            }
+            // 예약 실행: 요일·시각에 매크로 (시스템 시간대)
+            ui.separator();
+            ui.label(RichText::new("예약 실행 (요일·시각이 되면 매크로)").strong());
+            let sched = self.core.lock().settings.get()["schedule"].as_array().cloned().unwrap_or_default();
+            for s in &sched {
+                let mut e = s.clone();
+                let mut changed = false;
+                let mut del = false;
+                ui.horizontal_wrapped(|ui| {
+                    let mut on = e["enabled"].as_bool().unwrap_or(true);
+                    if ui.checkbox(&mut on, "").changed() { e["enabled"] = json!(on); changed = true; }
+                    let days: Vec<u64> = e["days"].as_array().into_iter().flatten().filter_map(|d| d.as_u64()).collect();
+                    for (k, nm) in wp_core::schedule::DAY_NAMES.iter().enumerate() {
+                        let has = days.contains(&(k as u64));
+                        if ui.selectable_label(has, *nm).clicked() {
+                            let mut d2 = days.clone();
+                            if has { d2.retain(|x| *x != k as u64) } else { d2.push(k as u64) }
+                            e["days"] = json!(d2);
+                            changed = true;
+                        }
+                    }
+                    let mut t = e["time"].as_str().unwrap_or("").to_string();
+                    let r = ui.add(egui::TextEdit::singleline(&mut t).desired_width(52.0));
+                    if r.changed() { e["time"] = json!(t); }
+                    if r.lost_focus() { changed = true; }
+                    let cur = e["macroId"].as_str().unwrap_or("").to_string();
+                    let name = list.iter().find(|m| m["id"] == cur.as_str()).and_then(|m| m["name"].as_str()).unwrap_or("(매크로 고르기)").to_string();
+                    egui::ComboBox::from_id_salt(format!("sc-{}", e["id"])).selected_text(name).show_ui(ui, |ui| {
+                        for m in &list {
+                            if ui.selectable_label(m["id"] == cur.as_str(), m["name"].as_str().unwrap_or("")).clicked() { e["macroId"] = m["id"].clone(); changed = true; }
+                        }
+                    });
+                    if ui.small_button("지우기").clicked() { del = true; }
+                });
+                let id = e["id"].as_str().unwrap_or("").to_string();
+                if del { self.core.lock().delete_schedule(&id); }
+                else if changed { self.tb.note = err(self.core.lock().save_schedule(&e)); }
+            }
+            if ui.button("예약 더하기").clicked() {
+                let first = list.first().map(|m| m["id"].clone()).unwrap_or(json!(""));
+                self.tb.note = err(self.core.lock().save_schedule(&json!({ "days": [0], "time": "10:55", "macroId": first, "enabled": true })));
             }
         });
         self.tb.macros = open;
