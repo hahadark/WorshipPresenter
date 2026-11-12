@@ -205,7 +205,7 @@ fn start_build(core: &Core, file: &str) {
     let render = folder_render(core, file);
     let file = file.to_string();
     let tx = core.tx.clone();
-    std::thread::spawn(move || {
+    spawn_big(move || {
         let r = build_meta(&data_dir, &file, &render);
         PENDING.lock().remove(&key);
         let Some(shared) = SHARED.get().and_then(|w| w.upgrade()) else { return };
@@ -252,6 +252,11 @@ pub fn set_folder_render(core: &mut Core, dir: &str, render: &str) {
     });
 }
 
+/// 큰 스택으로 스레드 (resvg·XML 이 깊게 들어가 기본 2MB 로는 넘칠 수 있다 — 넘치면 프로그램 전체가 죽는다)
+pub fn spawn_big(f: impl FnOnce() + Send + 'static) {
+    let _ = std::thread::Builder::new().stack_size(64 * 1024 * 1024).spawn(f);
+}
+
 /// 지금 코어 (백그라운드 일이 끝난 뒤 다시 잡으려고)
 pub fn shared() -> Option<crate::core::Shared> {
     SHARED.get().and_then(|w| w.upgrade())
@@ -259,7 +264,7 @@ pub fn shared() -> Option<crate::core::Shared> {
 
 /// 백그라운드로 일을 돌리고, 끝나면 코어를 잡아 done 을 부른다 (화면이 멈추지 않게)
 pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done: impl FnOnce(&mut Core, T) + Send + 'static) {
-    std::thread::spawn(move || {
+    spawn_big(move || {
         let r = work();
         if let Some(sh) = shared() {
             let mut c = sh.lock();

@@ -1,75 +1,399 @@
-//! [트랙 A] 찬송가·교독문 PPT: 폴더 등록·찾기 · 찬송가 순서 편집칸
+//! [트랙 A] 찬송가·교독문 PPT 와 베들레헴 찬송가: 폴더 등록·읽는 방식 · 찾기 · 찬송가 순서 편집칸 · PPT 도구(요소 꺼내기·나누기)
+//! · 클립보드 붙여 넣기(Ctrl+V: 글·그림·PowerPoint 슬라이드) · 받은 찬양 PPT 지켜보기
 
 use crate::app::{Act, App};
 use eframe::egui::{self, Color32, RichText};
 use serde_json::{json, Value};
-use wp_core::hymns;
+use wp_core::{clippaste, hymnal, hymns, pptsplit, songinbox};
 
 const Q: &str = "hymn-q";
 const RES: &str = "hymn-res";
 const OPEN: &str = "hymn-open";
+const SRC: &str = "hymn-src"; // ppt | beth
+const ANSWER: &str = "hymn-ai-answer";
 
-/// 큐시트 아래 '찬송가 찾기' (번호·제목 → 누르면 순서로 넣기)
+fn id(k: &str) -> egui::Id {
+    egui::Id::new(k)
+}
+
+fn get<T: Clone + Default + Send + Sync + 'static>(ui: &egui::Ui, k: &str) -> T {
+    ui.data(|d| d.get_temp(id(k)).unwrap_or_default())
+}
+fn set<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, k: &str, v: T) {
+    ui.data_mut(|d| d.insert_temp(id(k), v));
+}
+
+/// 큐시트 아래 '찬송가 찾기' + 붙여 넣기 + 고른 PPT 순서의 도구
 pub fn search_box(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
-    let id = |k: &str| egui::Id::new(k);
-    let mut open: bool = ui.data(|d| d.get_temp(id(OPEN)).unwrap_or(false));
-    if ui.selectable_label(open, RichText::new("찬송가·교독문 PPT 찾기").color(Color32::from_rgb(0xf0, 0x9a, 0x4a))).clicked() {
-        open = !open;
-        ui.data_mut(|d| d.insert_temp(id(OPEN), open));
+    paste(app, ui, acts);
+    // 왼쪽 패널을 넓히지 않게: 지금 폭 안에서만
+    let w = ui.available_width().max(200.0);
+    ui.scope(|ui| {
+        ui.set_max_width(w);
+        search_inner(app, ui, acts);
+    });
+}
+
+fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
+    let mut open: bool = get(ui, OPEN);
+    ui.horizontal(|ui| {
+        if ui.selectable_label(open, RichText::new("찬송가·교독문 PPT 찾기").color(Color32::from_rgb(0xf0, 0x9a, 0x4a))).clicked() {
+            open = !open;
+            set(ui, OPEN, open);
+        }
+        if ui.small_button("붙여 넣기").on_hover_text("클립보드의 PowerPoint 슬라이드·그림을 새 순서로 (글은 Ctrl+V)").clicked() {
+            grab_clipboard(app);
+        }
+        let st = songinbox::status(&app.core.lock());
+        let watching = st["watching"].as_bool().unwrap_or(false);
+        let label = if watching { format!("받는 중 ({}분)", st["secondsLeft"].as_u64().unwrap_or(0) / 60 + 1) } else { "온라인에서 찾기".into() };
+        if ui
+            .small_button(label)
+            .on_hover_text(format!("다운로드 폴더({})에 새 찬양 PPT 가 들어오면 '{}' 로 옮겨 큐시트에 넣습니다 (20분). 다시 누르면 그만", st["downloads"].as_str().unwrap_or(""), st["target"].as_str().unwrap_or("")))
+            .clicked()
+        {
+            if watching {
+                songinbox::disarm();
+            } else {
+                let q: String = get(ui, Q);
+                let tpl = app.core.lock().settings.str(&["songSearchUrl"]);
+                if let Ok(url) = songinbox::online_search_url(&tpl, &q) {
+                    open_url(&url);
+                }
+                if let Err(e) = songinbox::arm(&app.core) {
+                    app.core.lock().notify(e, "error");
+                }
+            }
+        }
+    });
+    if let Some(i) = app.sel {
+        let it = app.core.lock().cue.as_ref().and_then(|c| c.items.get(i).cloned());
+        if let Some(it) = it.filter(|it| it["type"] == "hymn" && it["file"].as_str().is_some_and(|f| !f.is_empty())) {
+            ppt_tools(app, ui, i, &it);
+        }
     }
     if !open {
         return;
     }
-    let mut q: String = ui.data(|d| d.get_temp(id(Q)).unwrap_or_default());
-    let mut res: Vec<Value> = ui.data(|d| d.get_temp(id(RES)).unwrap_or_default());
-    let folders = hymns::folders(&app.core.lock());
+    let mut src: String = get(ui, SRC);
+    if src.is_empty() {
+        src = "ppt".into();
+    }
+    let mut q: String = get(ui, Q);
+    let mut res: Vec<Value> = get(ui, RES);
+    let mut refresh = false;
     ui.horizontal(|ui| {
-        let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text("번호(10) 또는 제목").desired_width(ui.available_width() - 90.0));
-        if r.changed() || (res.is_empty() && !folders.is_empty() && q.is_empty()) {
-            res = hymns::search(&app.core.lock(), &q)
-                .into_iter()
-                .take(80)
-                .map(|h| json!({ "file": h.file.to_string_lossy(), "number": h.number, "title": h.title, "folder": h.folder }))
-                .collect();
+        for (k, l) in [("ppt", "PPT 폴더"), ("beth", "베들레헴 찬송가")] {
+            if ui.selectable_label(src == k, l).clicked() {
+                src = k.into();
+                refresh = true;
+            }
         }
-        if ui.button("폴더 추가…").clicked() {
+    });
+    let folders = hymns::folders(&app.core.lock());
+    ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if src == "ppt" && ui.button("폴더 추가…").clicked() {
             if let Some(dir) = rfd::FileDialog::new().set_title("찬송가·교독문 PPT 폴더").pick_folder() {
                 let mut c = app.core.lock();
                 match hymns::add_folder(&mut c, &dir, None) {
                     Ok(v) => c.notify(format!("'{}' 폴더를 넣었습니다 ({}개)", v["name"].as_str().unwrap_or(""), v["count"]), "ok"),
                     Err(e) => c.notify(e, "error"),
                 }
-                res.clear();
+                refresh = true;
             }
         }
+        if src == "beth" && ui.button("가져오기…").on_hover_text("베들레헴 BethlehemWin 폴더의 찬송가 가사(.hdb)·악보(.cmp)를 데이터 폴더로 복사").clicked() {
+            if let Some(dir) = rfd::FileDialog::new().set_title("BethlehemWin 폴더").pick_folder() {
+                let mut c = app.core.lock();
+                let done = hymnal::import_from(&c, &dir);
+                if done.is_empty() {
+                    c.notify("그 폴더에 찬송가 파일(새찬송가.hdb 등)이 없습니다.", "warn");
+                } else {
+                    c.notify(format!("찬송가 {}권을 가져왔습니다.", done.len()), "ok");
+                }
+            }
+        }
+        let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text(if src == "ppt" { "번호(10) 또는 제목" } else { "번호(10장) · 교독문 1 · 제목·가사" }).desired_width(ui.available_width().max(40.0)));
+        refresh |= r.changed() || (res.is_empty() && src == "ppt" && !folders.is_empty() && q.is_empty());
     });
-    if folders.is_empty() {
-        ui.label(RichText::new("찬송가 PPT(.pps .ppt .pptx) 폴더를 넣으세요.").small().color(Color32::GRAY));
+    if refresh {
+        let c = app.core.lock();
+        res = if src == "ppt" {
+            hymns::search(&c, &q).into_iter().take(80).map(|h| json!({ "file": h.file.to_string_lossy(), "number": h.number, "title": h.title, "folder": h.folder })).collect()
+        } else {
+            hymnal::search(&c, &q, 60)
+        };
     }
-    ui.horizontal_wrapped(|ui| {
-        for f in &folders {
-            let name = f["name"].as_str().unwrap_or("");
-            let warn = !f["exists"].as_bool().unwrap_or(false);
-            ui.label(RichText::new(format!("{} {}개{}", name, f["count"], if warn { " (폴더 없음)" } else { "" })).small().color(if warn { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::GRAY }));
-            if ui.small_button("×").on_hover_text("폴더 빼기 (파일은 그대로)").clicked() {
-                hymns::remove_folder(&mut app.core.lock(), f["path"].as_str().unwrap_or(""));
-                res.clear();
-            }
+    if src == "ppt" {
+        if folders.is_empty() {
+            ui.label(RichText::new("찬송가 PPT(.pps .ppt .pptx) 폴더를 넣으세요.").small().color(Color32::GRAY));
         }
-    });
+        for f in &folders {
+            ui.horizontal(|ui| {
+                let name = f["name"].as_str().unwrap_or("");
+                let path = f["path"].as_str().unwrap_or("").to_string();
+                let warn = !f["exists"].as_bool().unwrap_or(false);
+                ui.label(RichText::new(format!("{} {}개{}", name, f["count"], if warn { " (폴더 없음)" } else { "" })).small().color(if warn { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::GRAY }));
+                // 폴더별 읽는 방식
+                let cur = f["render"].as_str().unwrap_or("auto").to_string();
+                let label = |r: &str| match r {
+                    "slides" => "PowerPoint 로 그대로",
+                    "direct" => "PowerPoint 없이",
+                    _ => "자동",
+                };
+                egui::ComboBox::from_id_salt(format!("render-{path}")).selected_text(RichText::new(label(&cur)).small()).width(130.0).show_ui(ui, |ui| {
+                    for r in ["auto", "slides", "direct"] {
+                        let tip = match r {
+                            "slides" => "PowerPoint 로 슬라이드를 화면 그대로 그림으로 (PowerPoint 필요)",
+                            "direct" => ".pptx 를 직접 읽어 그림으로 (.pps 는 악보·배경을 나눠 꺼냄)",
+                            _ => ".pps 는 악보·배경을 나눠 꺼내고, .pptx 는 PowerPoint 가 있으면 그것으로",
+                        };
+                        if ui.selectable_label(cur == r, label(r)).on_hover_text(tip).clicked() {
+                            hymns::set_folder_render(&mut app.core.lock(), &path, r);
+                        }
+                    }
+                });
+                if ui.small_button("×").on_hover_text("폴더 빼기 (파일은 그대로)").clicked() {
+                    hymns::remove_folder(&mut app.core.lock(), &path);
+                    res.clear();
+                }
+            });
+        }
+    } else {
+        let books = hymnal::books(&app.core.lock());
+        if books.is_empty() {
+            ui.label(RichText::new("베들레헴 성경의 찬송가 파일을 찾지 못했습니다. '가져오기…' 로 BethlehemWin 폴더를 고르세요.").small().color(Color32::GRAY));
+        } else {
+            let t = books.iter().map(|b| format!("{} {}장{}", b["name"].as_str().unwrap_or(""), b["count"], if b["scores"].as_bool().unwrap_or(false) { " · 악보" } else { "" })).collect::<Vec<_>>().join("  ");
+            ui.label(RichText::new(t).small().color(Color32::GRAY));
+        }
+    }
     egui::ScrollArea::vertical().id_salt("hymn-res").max_height(150.0).show(ui, |ui| {
         for h in &res {
-            let n = h["number"].as_i64().map(|n| format!("{n}  ")).unwrap_or_default();
-            let t = format!("{}{}  · {}", n, h["title"].as_str().unwrap_or(""), h["folder"].as_str().unwrap_or(""));
+            let t = if src == "ppt" {
+                format!("{}{}  · {}", h["number"].as_i64().map(|n| format!("{n}  ")).unwrap_or_default(), h["title"].as_str().unwrap_or(""), h["folder"].as_str().unwrap_or(""))
+            } else {
+                format!("{}  · {}", h["label"].as_str().unwrap_or(""), h["book"].as_str().unwrap_or(""))
+            };
             if ui.selectable_label(false, t).on_hover_text("눌러서 큐시트에 넣기").clicked() {
-                acts.push(Act::AddItem("hymn", Some(json!({ "title": h["title"], "file": h["file"], "number": h["number"].as_i64().unwrap_or(0), "background": "default", "obsLyrics": "" }))));
+                if src == "ppt" {
+                    acts.push(Act::AddItem("hymn", Some(json!({ "title": h["title"], "file": h["file"], "number": h["number"].as_i64().unwrap_or(0), "background": "default", "obsLyrics": "" }))));
+                } else {
+                    let r = hymnal::get(&app.core.lock(), h["book"].as_str().unwrap_or(""), h["number"].as_i64().unwrap_or(0));
+                    match r {
+                        Ok(v) if v["kind"] == "reading" => acts.push(Act::AddItem("text", Some(json!({ "title": v["title"], "body": v["body"] })))),
+                        Ok(v) => acts.push(Act::AddItem("song", Some(json!({ "title": v["title"], "lyrics": v["lyrics"], "order": v["order"], "credit": v["credit"], "creditShow": "", "scoreUrl": v["score"] })))),
+                        Err(e) => app.core.lock().notify(e, "error"),
+                    }
+                }
             }
         }
     });
-    ui.data_mut(|d| {
-        d.insert_temp(id(Q), q);
-        d.insert_temp(id(RES), res);
+    set(ui, Q, q);
+    set(ui, RES, res);
+    set(ui, SRC, src);
+}
+
+fn open_url(url: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).creation_flags(0x0800_0000).spawn();
+    }
+    #[cfg(not(windows))]
+    let _ = url;
+}
+
+fn to_parts(v: &Value) -> Vec<pptsplit::Part> {
+    v["parts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|p| pptsplit::Part { a: p["a"].as_u64().unwrap_or(1) as usize, b: p["b"].as_u64().unwrap_or(1) as usize, name: p["name"].as_str().unwrap_or("").into(), kind: p["kind"].as_str().unwrap_or("title").into() })
+        .collect()
+}
+
+/// 고른 PPT 순서의 도구: 요소 따로 꺼내기 · 자동으로 나누기 (규칙 · API · 채팅 AI)
+fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
+    let file = it["file"].as_str().unwrap_or("").to_string();
+    let title = it["title"].as_str().unwrap_or("").to_string();
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("PPT:").small().color(Color32::GRAY));
+        if hymns::is_building(&file) {
+            ui.label(RichText::new("그림 만드는 중…").small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+        }
+        if ui.small_button("요소 따로 꺼내기").on_hover_text("PPT 의 글상자·그림·도형을 하나씩 꺼내 슬라이드 편집기에서 고칠 수 있게").clicked() {
+            let mut c = app.core.lock();
+            let n = hymns::load(&c, &file).map(|m| m["slides"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
+            match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), false) {
+                Ok(l) => {
+                    let mut x = it.clone();
+                    let (sl, t, p, s) = hymns::apply_layers(&mut x, &l, n);
+                    if let Some(cue) = &mut c.cue {
+                        if i < cue.items.len() {
+                            cue.items[i] = x;
+                        }
+                    }
+                    c.save_cue();
+                    c.preview_item(i);
+                    if t + p + s > 0 {
+                        c.notify(format!("슬라이드 {sl}장에서 글상자 {t}개 · 그림 {p}개 · 도형 {s}개를 꺼냈습니다."), "ok");
+                    } else {
+                        c.notify("따로 꺼낼 요소를 찾지 못했습니다 (글이 그림으로 되어 있거나 돌린 요소).", "warn");
+                    }
+                }
+                Err(e) => {
+                    let k = if e == hymns::BUILDING { "info" } else { "error" };
+                    c.notify(e, k);
+                }
+            }
+        }
+        if ui.small_button("자동으로 나누기").on_hover_text("한 PPT 를 순서 이름·찬송 장·성경 장절로 여러 순서로 나눕니다 (AI 없이)").clicked() {
+            let mut c = app.core.lock();
+            match hymns::slide_texts(&c, &file).and_then(|t| pptsplit::rule_split(&t, &title)) {
+                Ok(parts) if parts.len() > 1 => replace_with_parts(&mut c, i, it, &parts),
+                Ok(_) => c.notify("나눌 곳을 찾지 못했습니다. AI 로 나누기를 써 보세요.", "warn"),
+                Err(e) => c.notify(e, "error"),
+            }
+        }
+        if ui.small_button("AI 로 나누기").on_hover_text("주보 AI 와 같은 오픈라우터 키·모델").clicked() {
+            let prep = {
+                let c = app.core.lock();
+                let ai = c.settings.get()["ai"].clone();
+                hymns::slide_texts(&c, &file).map(|t| (t, ai))
+            };
+            match prep {
+                Ok((texts, ai)) => {
+                    let key = ai["key"].as_str().unwrap_or("").to_string();
+                    let model = ai["model"].as_str().unwrap_or("").to_string();
+                    let endpoint = ai["endpoint"].as_str().unwrap_or("").to_string();
+                    let (it2, t2) = (it.clone(), title.clone());
+                    app.core.lock().notify("AI 에게 나누기를 묻는 중…", "info");
+                    hymns::run_bg(
+                        move || pptsplit::ask_split(&key, &model, &endpoint, &texts, &t2, "", &[]),
+                        move |c, r| match r {
+                            Ok(v) => {
+                                let idx = c.cue.as_ref().and_then(|q| q.items.iter().position(|x| x["id"] == it2["id"]));
+                                if let Some(i) = idx {
+                                    replace_with_parts(c, i, &it2, &to_parts(&v));
+                                }
+                            }
+                            Err(e) => c.notify(e, "error"),
+                        },
+                    );
+                }
+                Err(e) => app.core.lock().notify(e, "error"),
+            }
+        }
+        if ui.small_button("채팅 AI 프롬프트 복사").on_hover_text("ChatGPT·Claude·Gemini 에 붙여 넣고, 답을 아래 칸에 붙여 넣으세요").clicked() {
+            let r = {
+                let c = app.core.lock();
+                hymns::slide_texts(&c, &file).and_then(|t| pptsplit::chat_prompt(&t, &title, "", 0))
+            };
+            match r {
+                Ok(p) => {
+                    ui.ctx().copy_text(p);
+                    app.core.lock().notify("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요.", "ok");
+                }
+                Err(e) => app.core.lock().notify(e, "error"),
+            }
+        }
     });
+    let mut ans: String = get(ui, ANSWER);
+    ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let go = ui.small_button("나누기").clicked();
+        ui.add(egui::TextEdit::singleline(&mut ans).hint_text("채팅 AI 답 (JSON) 붙여 넣기").desired_width(ui.available_width().max(40.0)));
+        if go && !ans.trim().is_empty() {
+            let mut c = app.core.lock();
+            match hymns::slide_texts(&c, &file).and_then(|t| pptsplit::parse_answer(&ans, t.len(), &title)) {
+                Ok(parts) => {
+                    replace_with_parts(&mut c, i, it, &parts);
+                    ans.clear();
+                }
+                Err(e) => c.notify(e, "error"),
+            }
+        }
+    });
+    set(ui, ANSWER, ans);
+}
+
+fn replace_with_parts(c: &mut wp_core::core::Core, i: usize, it: &Value, parts: &[pptsplit::Part]) {
+    let items = hymns::split_items(it, parts);
+    let n = items.len();
+    if let Some(cue) = &mut c.cue {
+        if i < cue.items.len() {
+            cue.items.splice(i..=i, items);
+        }
+    }
+    c.save_cue();
+    c.notify(format!("PPT 를 순서 {n}개로 나눴습니다."), "ok");
+}
+
+/// 클립보드의 PowerPoint 슬라이드 · 그림 → 새 순서 (백그라운드)
+fn grab_clipboard(app: &mut App) {
+    let dd = app.core.lock().data_dir.clone();
+    app.core.lock().notify("클립보드를 읽는 중…", "info");
+    hymns::run_bg(
+        move || {
+            let (slides, image, _) = clippaste::clipboard_info();
+            if slides {
+                clippaste::grab_slides(&dd, false).map(|(f, _)| ("slides", f.to_string_lossy().to_string()))
+            } else if image {
+                clippaste::grab_image(&dd).map(|u| ("image", u))
+            } else {
+                Err("클립보드에 PowerPoint 슬라이드나 그림이 없습니다. (글은 Ctrl+V)".to_string())
+            }
+        },
+        |c, r| match r {
+            Ok(("slides", f)) => {
+                let h = hymns::HymnFile { number: None, title: "붙여 넣은 슬라이드".into(), name: String::new(), folder: String::new(), file: std::path::PathBuf::from(&f) };
+                c.add_item(hymns::new_hymn_item(&h), None);
+                c.notify("PowerPoint 슬라이드를 새 순서로 넣었습니다.", "ok");
+            }
+            Ok((_, url)) => {
+                let mut it = wp_core::core::new_item("image", "붙여 넣은 그림");
+                it["image"] = json!(url);
+                c.add_item(it, None);
+                c.notify("그림을 새 순서로 넣었습니다.", "ok");
+            }
+            Err(e) => c.notify(e, "warn"),
+        },
+    );
+}
+
+/// Ctrl+V (글 입력칸 밖): 글 → 성경/찬양/공지 · 글이 없으면 슬라이드·그림
+fn paste(app: &mut App, ui: &egui::Ui, acts: &mut Vec<Act>) {
+    let ctx = ui.ctx().clone();
+    if ctx.memory(|m| m.focused().is_some()) {
+        return;
+    }
+    let text = ctx.input(|i| i.events.iter().find_map(|e| if let egui::Event::Paste(t) = e { Some(t.clone()) } else { None }));
+    let ctrl_v = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::V, pressed: true, modifiers, .. } if modifiers.command)));
+    match text.filter(|t| !t.trim().is_empty()) {
+        Some(t) => {
+            let plan = {
+                let mut c = app.core.lock();
+                let v = c.version_id();
+                let store = &mut c.store;
+                let cell = std::cell::RefCell::new(store);
+                let is_ref = |l: &str| cell.borrow_mut().resolve_reference(&v, l)["ok"] == json!(true);
+                clippaste::plan_text(&t, "", &is_ref)
+            };
+            if let Some((_, items)) = plan {
+                for x in items {
+                    let ty: &'static str = match x["type"].as_str() {
+                        Some("bible") => "bible",
+                        Some("song") => "song",
+                        Some("title") => "title",
+                        _ => "text",
+                    };
+                    acts.push(Act::AddItem(ty, Some(x["extra"].clone())));
+                }
+            }
+        }
+        None if ctrl_v => grab_clipboard(app),
+        None => {}
+    }
 }
 
 /// 찬송가 순서 편집칸 (파일 · 번호 · 배경 · 범위 · OBS 가사) → 바뀌었으면 true
@@ -109,7 +433,7 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
         e["range"] = json!(r);
         changed = true;
     }
-    ui.label(RichText::new("OBS 자막 가사 (비우면 PPT 안의 글자. 빈 줄로 슬라이드마다)").small());
+    ui.label(RichText::new("OBS 자막 가사 (비우면 PPT 안의 글자 · 새찬송가 가사. 빈 줄로 슬라이드마다)").small());
     let mut o = e["obsLyrics"].as_str().unwrap_or("").to_string();
     if ui.add(egui::TextEdit::multiline(&mut o).desired_rows(4).desired_width(f32::INFINITY)).changed() {
         e["obsLyrics"] = json!(o);

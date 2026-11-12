@@ -93,7 +93,7 @@ pub fn arm(shared: &Shared) -> Result<Value, String> {
     };
     if start {
         let weak = std::sync::Arc::downgrade(shared);
-        std::thread::spawn(move || loop {
+        crate::hymns::spawn_big(move || loop {
             std::thread::sleep(Duration::from_millis(1500));
             let Some(sh) = weak.upgrade() else { return };
             if !tick(&sh) {
