@@ -244,6 +244,9 @@ impl App {
         });
         let kind = self.tb.lib_kind.clone();
         let folders = wp_core::library::folders(self.core.lock().settings.get(), &kind);
+        if folders.is_empty() {
+            ui.label(RichText::new(format!("등록한 {} 폴더가 없습니다. '폴더 더하기…' 로 교회 {} 폴더를 등록하세요.", if kind == "audio" { "음악" } else { "그림·영상" }, if kind == "audio" { "음악" } else { "사진" })).color(Color32::GRAY));
+        }
         for f in &folders {
             ui.horizontal(|ui| {
                 ui.label(format!("📁 {} ({}개){}", f["name"].as_str().unwrap_or(""), f["count"], if f["exists"] == false { " · 폴더 없음" } else { "" }));
