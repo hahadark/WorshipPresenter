@@ -143,7 +143,7 @@ const ALIGN: &[(&str, &str)] = &[("left", "왼쪽"), ("center", "가운데"), ("
 pub fn fields(ui: &mut egui::Ui, t: &mut Value) -> bool {
     let mut ch = false;
     let grid = |ui: &mut egui::Ui, id: &str, f: &mut dyn FnMut(&mut egui::Ui)| {
-        egui::Grid::new(id).num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| f(ui));
+        egui::Grid::new(id).num_columns(4).spacing([8.0, 6.0]).min_col_width(70.0).show(ui, |ui| f(ui));
     };
     ui.heading("기본");
     grid(ui, "g-basic", &mut |ui| {

@@ -49,6 +49,7 @@ pub struct Core {
     pub pres: Presentation,
     pub layers: Layers,
     pub obs_hold: bool,
+    pub obs_full: bool, // [트랙 C] OBS 자막에 '슬라이드 그대로'
     pub outputs: HashMap<u64, OutputClient>,
     pub tx: broadcast::Sender<Ev>,
     /// 열어 둔 큐시트
@@ -114,7 +115,8 @@ impl Core {
         let (tx, _) = broadcast::channel(256);
         let port = settings.get()["port"].as_u64().unwrap_or(37528) as u16;
         let mut c = Self {
-            data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), obs_hold: false,
+            data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), obs_hold: false, obs_full: false, // [트랙 C] obs_full
+           
             outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, port, b: Default::default(), flow: Default::default(), // [트랙 B] · [트랙 C] flow
         };
         c.trackb_init(); // [트랙 B]
@@ -202,9 +204,9 @@ impl Core {
             "held": self.obs_hold,
             "slide": live["slide"],
             "versionName": live["passage"]["versionName"].as_str().unwrap_or(""),
-            "template": self.template_for(output),
-            "obsFull": false,
-            "pip": if output == "overlay" && s["output"]["obsPip"].as_bool().unwrap_or(false) { json!({ "template": self.template_for("main") }) } else { Value::Null },
+            "template": if output == "overlay" && self.obs_full { self.template_for("main") } else { self.template_for(output) }, // [트랙 C]
+            "obsFull": output == "overlay" && self.obs_full, // [트랙 C]
+            "pip": if output == "overlay" && !self.obs_full && s["output"]["obsPip"].as_bool().unwrap_or(false) { json!({ "template": self.template_for("main") }) } else { Value::Null },
             "overlays": (self.overlays_for(output)), // [트랙 B]
             "layers": self.layers_payload(output),
             "video": self.video_payload(), // [트랙 B]

@@ -49,6 +49,10 @@ pub fn menus() -> Vec<Menu> {
         ] },
         Menu { label: "보기", items: vec![
             it("c:templates", "출력 템플릿 편집", ""),
+            it("c:themes", "테마 고르기 (구세군 · 방송 스타일)", ""),
+            it("-", "-", ""),
+            it("c:obsfull", "OBS 자막: 슬라이드 그대로 켜기·끄기", ""),
+            it("c:obspip", "OBS 자막: 그림 슬라이드 작게 켜기·끄기", ""),
             it("d:output", "출력 설정 (예배당 창 · 모니터 · OBS 숨김)", ""), // [트랙 D]
         ] },
         Menu { label: "도구", items: vec![

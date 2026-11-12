@@ -530,6 +530,7 @@ impl App {
             ui.label(RichText::new("메모 (무대 화면에 보임)").small());
             changed |= field(ui, e, "note", false, 1, "");
             if it["type"] != "audio" { changed |= crate::flow_ui::item_fields(ui, e); } // [트랙 C] 자동 넘김·글자 숨김
+            changed |= crate::theme_ui::item_templates(ui, e, &self.core); // [트랙 C] 순서별 템플릿·테마
         });
         if changed {
             acts.push(Act::UpdateItem(i, e.clone()));
