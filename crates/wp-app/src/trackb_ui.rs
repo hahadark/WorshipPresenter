@@ -595,3 +595,32 @@ mod tests {
         assert!(wd < 7 && hm.len() == 5);
     }
 }
+
+impl App {
+    /// LIVE 영상 조작 줄 (영상 슬라이드를 송출 중일 때만): 재생·멈춤 · 처음부터 · ±10초 · 소리 크기 · 반복
+    pub(crate) fn video_bar(&mut self, ui: &mut egui::Ui) {
+        let v = self.core.lock().b.video.clone();
+        let Some(v) = v else { return };
+        let mut act: Option<(&str, f64)> = None;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("영상").strong().color(Color32::from_rgb(0xd9, 0x6a, 0x6a)));
+            if ui.button(if v.playing { "⏸ 멈춤" } else { "▶ 재생" }).clicked() { act = Some((if v.playing { "pause" } else { "play" }, 0.0)); }
+            if ui.button("⏮ 처음부터").clicked() { act = Some(("restart", 0.0)); }
+            let pos = v.position();
+            if ui.button("−10초").clicked() { act = Some(("seek", (pos - 10.0).max(0.0))); }
+            if ui.button("+10초").clicked() { act = Some(("seek", pos + 10.0)); }
+            let p = pos.max(0.0) as i64;
+            ui.label(RichText::new(format!("{:02}:{:02}{}", p / 60, p % 60, if v.ended { " (끝)" } else { "" })).monospace());
+            ui.separator();
+            let mut vol = v.volume.unwrap_or(1.0) as f32;
+            if ui.add(egui::Slider::new(&mut vol, 0.0..=1.0).text("소리")).changed() { act = Some(("volume", vol as f64)); }
+            let mut lp = v.looped.unwrap_or(false);
+            if ui.checkbox(&mut lp, "반복").changed() { act = Some(("loop", if lp { 1.0 } else { 0.0 })); }
+        });
+        if let Some((a, x)) = act {
+            let mut c = self.core.lock();
+            if let Err(e) = c.video_control(a, x) { c.notify(e.to_string(), "warn"); }
+        }
+        if v.playing { ui.ctx().request_repaint_after(std::time::Duration::from_millis(500)); }
+    }
+}
