@@ -416,7 +416,7 @@ impl App {
         egui::Window::new("무대 화면").open(&mut open).default_size([440.0, 360.0]).show(ctx, |ui| {
             let (timer, port, presets) = { let c = self.core.lock(); (c.b.stage.timer_json(), c.port, c.settings.get()["stagePresets"].as_array().cloned().unwrap_or_default()) };
             let rem = timer["remaining"].as_i64().unwrap_or(0);
-            ui.label(RichText::new(format!("타이머 {}{:02}:{:02} {}", if rem < 0 { "-" } else { "" }, rem.abs() / 60000, (rem.abs() / 1000) % 60, if timer["running"] == true { "▶" } else { "⏸" })).size(20.0));
+            ui.label(RichText::new(format!("타이머 {}{:02}:{:02} {}", if rem < 0 { "-" } else { "" }, rem.abs() / 60000, (rem.abs() / 1000) % 60, if timer["running"] == true { "· 진행 중" } else if timer["duration"].as_i64().unwrap_or(0) > 0 { "· 멈춤" } else { "" })).size(20.0));
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.tb.timer_min).desired_width(50.0).hint_text("분"));
                 let m: f64 = self.tb.timer_min.parse().unwrap_or(30.0);
