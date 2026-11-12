@@ -153,8 +153,15 @@ impl App {
             }
             ui.horizontal(|ui| {
                 if ui.button("지금 백업").clicked() {
-                    let r = self.core.lock().backup_now();
-                    note = match r { Ok(b) => format!("백업했습니다: {}", b["day"].as_str().unwrap_or("")), Err(e) => format!("백업 실패: {e}") };
+// 큰 DB 를 복사하는 동안 화면이 멈추지 않게 따로 스레드에서
+                    let dir = self.data_dir.clone();
+                    let ctx2 = ui.ctx().clone();
+                    note = "백업하는 중…".into();
+                    std::thread::spawn(move || {
+                        let r = wp_core::sync::backup_files(&dir);
+                        ST.lock().note = match r { Ok(b) => format!("백업했습니다: {}", b["day"].as_str().unwrap_or("")), Err(e) => format!("백업 실패: {e}") };
+                        ctx2.request_repaint();
+                    });
                 }
                 if ui.button("백업 폴더 열기").clicked() {
                     let d = self.core.lock().backup_dir();

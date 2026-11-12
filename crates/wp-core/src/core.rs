@@ -368,6 +368,13 @@ impl Core {
 
     // ---------------- LIVE ----------------
     pub fn send_preview(&mut self) {
+        // [트랙 B] '미리보기 거쳐 송출' 을 끈 채 두 번 눌러 송출하면 고르기(=송출)와 송출이 겹친다 → 방금(1.5초 안) 같은 것을 보냈으면 다시 보내지 않음
+        if let (Some(p), Some(l)) = (&self.pres.preview, &self.pres.live) {
+            if l.visible && l.deck.index == p.index && l.deck.slides.len() == p.slides.len() && l.deck.passage == p.passage && crate::util::now_ms() - l.sent_at < 1500 {
+                self.emit(Ev::Ui);
+                return;
+            }
+        }
         self.layers.hide_bg = false;
         self.obs_hold = false;
         if self.pres.send_live(None) {

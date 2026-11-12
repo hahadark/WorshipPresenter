@@ -27,7 +27,20 @@ pub struct SyncStatus {
 }
 
 pub fn hostname() -> String {
-    std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default()
+    if let Some(h) = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).ok().filter(|x| !x.is_empty()) {
+        return h;
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{ComputerNameDnsHostname, GetComputerNameExW};
+        let mut buf = [0u16; 256];
+        let mut n = buf.len() as u32;
+        // SAFETY: 버퍼 길이를 알려 주고, 돌려받은 길이만큼만 읽는다
+        if unsafe { GetComputerNameExW(ComputerNameDnsHostname, buf.as_mut_ptr(), &mut n) } != 0 {
+            return String::from_utf16_lossy(&buf[..n as usize]);
+        }
+    }
+    String::new()
 }
 
 fn hash(s: &str) -> i32 {
@@ -294,58 +307,22 @@ impl Core {
 
     /// 최신순 [{ day, db, settings, size }]
     pub fn backups(&self) -> Vec<Value> {
-        let dir = self.backup_dir();
-        let mut out = vec![];
-        for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-            let name = e.file_name().to_string_lossy().to_string();
-            let Some(day) = name.strip_prefix("WorshipCue-").and_then(|x| x.strip_suffix(".db")) else { continue };
-            if day.len() != 10 || day.as_bytes()[4] != b'-' {
-                continue;
-            }
-            let st = dir.join(format!("settings-{day}.json"));
-            out.push(json!({ "day": day, "db": e.path().to_string_lossy(), "settings": if st.exists() { st.to_string_lossy().to_string() } else { String::new() }, "size": e.metadata().map(|m| m.len()).unwrap_or(0) }));
-        }
-        out.sort_by(|a, b| b["day"].as_str().cmp(&a["day"].as_str()));
-        out
+        backups_in(&self.data_dir)
     }
 
+    /// 지금 백업 (코어 잠금을 쥔 채로 부르면 큰 DB 에서 몇 초 멈춘다 → 화면은 backup_files 를 따로 스레드에서)
     pub fn backup_now(&mut self) -> Result<Value> {
-        let dir = self.backup_dir();
-        std::fs::create_dir_all(&dir)?;
-        let day = iso_now()[..10].to_string();
-        let _ = self.store.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)");
-        let out = dir.join(format!("WorshipCue-{day}.db"));
-        let tmp = dir.join(format!("WorshipCue-{day}.db.tmp"));
-        let _ = std::fs::remove_file(&tmp);
-        let ok = self.store.db.execute("VACUUM INTO ?", [tmp.to_string_lossy().to_string()]).is_ok() && std::fs::rename(&tmp, &out).is_ok();
-        if !ok {
-            std::fs::copy(self.data_dir.join("bible.db"), &out)?;
-        }
-        let st = self.data_dir.join("settings.json");
-        if st.exists() {
-            std::fs::copy(&st, dir.join(format!("settings-{day}.json")))?;
-        }
-        for b in self.backups().iter().skip(KEEP_BACKUPS) {
-            for k in ["db", "settings"] {
-                if let Some(p) = b[k].as_str().filter(|x| !x.is_empty()) {
-                    let _ = std::fs::remove_file(p);
-                }
-            }
-        }
-        log::info!("백업: {}", out.display());
-        Ok(self.backups().into_iter().next().unwrap_or(Value::Null))
+        let _ = self.store.db.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
+        backup_files(&self.data_dir)
     }
 
     /// 오늘 백업이 없으면 만든다
     pub fn backup_daily(&mut self) -> Result<Option<Value>> {
-        let today = iso_now()[..10].to_string();
-        if self.backups().iter().any(|b| b["day"] == today.as_str()) {
+        if has_today(&self.data_dir) {
             return Ok(None);
         }
         self.backup_now().map(Some)
     }
-
-    /// 되돌리기 예약: 다음 시작 때 bible.db 를 이 백업으로 (지금 것은 bible.pre-restore.db 로 남김)
     pub fn restore_backup(&mut self, day: &str) -> Result<Value> {
         let b = self.backups().into_iter().find(|x| x["day"] == day).context("그 날짜의 백업이 없습니다.")?;
         std::fs::copy(b["db"].as_str().unwrap_or(""), self.data_dir.join("bible.restore.db"))?;
@@ -383,12 +360,16 @@ pub fn install(core: &Shared) {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(10));
             n += 1;
-            let mut c = core.lock();
             if n == 2 {
-                if let Err(e) = c.backup_daily() {
-                    log::warn!("자동 백업 실패: {e}");
+                // 백업은 잠금 없이 (큰 DB 를 복사하는 동안 화면이 멈추지 않게)
+                let dir = core.lock().data_dir.clone();
+                if !has_today(&dir) {
+                    if let Err(e) = backup_files(&dir) {
+                        log::warn!("자동 백업 실패: {e}");
+                    }
                 }
             }
+            let mut c = core.lock();
             if n % 6 == 0 {
                 if let Err(e) = c.sync_export_if_changed() {
                     c.b.sync.error = e.to_string();
@@ -456,4 +437,57 @@ mod tests {
         assert!(apply_pending_restore(&root.join("pc2")));
         assert!(root.join("pc2").join("bible.pre-restore.db").exists());
     }
+}
+
+/// 최신순 [{ day, db, settings, size }]
+pub fn backups_in(data_dir: &Path) -> Vec<Value> {
+    let dir = data_dir.join("backups");
+    let mut out = vec![];
+    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        let Some(day) = name.strip_prefix("WorshipCue-").and_then(|x| x.strip_suffix(".db")) else { continue };
+        if day.len() != 10 || day.as_bytes()[4] != b'-' {
+            continue;
+        }
+        let st = dir.join(format!("settings-{day}.json"));
+        out.push(json!({ "day": day, "db": e.path().to_string_lossy(), "settings": if st.exists() { st.to_string_lossy().to_string() } else { String::new() }, "size": e.metadata().map(|m| m.len()).unwrap_or(0) }));
+    }
+    out.sort_by(|a, b| b["day"].as_str().cmp(&a["day"].as_str()));
+    out
+}
+
+pub fn has_today(data_dir: &Path) -> bool {
+    let today = iso_now()[..10].to_string();
+    backups_in(data_dir).iter().any(|b| b["day"] == today.as_str())
+}
+
+/// 백업 만들기: 따로 연 연결로 VACUUM INTO (코어 잠금 없이 — 프로그램이 멈추지 않게)
+pub fn backup_files(data_dir: &Path) -> Result<Value> {
+    let dir = data_dir.join("backups");
+    std::fs::create_dir_all(&dir)?;
+    let day = iso_now()[..10].to_string();
+    let out = dir.join(format!("WorshipCue-{day}.db"));
+    let tmp = dir.join(format!("WorshipCue-{day}.db.tmp"));
+    let _ = std::fs::remove_file(&tmp);
+    let src = data_dir.join("bible.db");
+    let ok = rusqlite::Connection::open_with_flags(&src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .and_then(|c| c.execute("VACUUM INTO ?", [tmp.to_string_lossy().to_string()]))
+        .is_ok()
+        && std::fs::rename(&tmp, &out).is_ok();
+    if !ok {
+        std::fs::copy(&src, &out)?;
+    }
+    let st = data_dir.join("settings.json");
+    if st.exists() {
+        std::fs::copy(&st, dir.join(format!("settings-{day}.json")))?;
+    }
+    for b in backups_in(data_dir).iter().skip(KEEP_BACKUPS) {
+        for k in ["db", "settings"] {
+            if let Some(p) = b[k].as_str().filter(|x| !x.is_empty()) {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+    log::info!("백업: {}", out.display());
+    Ok(backups_in(data_dir).into_iter().next().unwrap_or(Value::Null))
 }
