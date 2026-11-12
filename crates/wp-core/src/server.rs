@@ -57,37 +57,55 @@ fn status(code: StatusCode) -> Response {
 /// base 안의 파일만 보낸다 (../ 로 빠져나가지 못하게)
 async fn send_file(base: &Path, rel: &str) -> Response {
     let rel = rel.trim_start_matches('/');
-    if rel.split(['/', '\\']).any(|s| s == "..") {
+    if !safe_relative_path(rel) {
         return status(StatusCode::FORBIDDEN);
     }
-    let file = base.join(rel);
+    let (Ok(root), Ok(file)) = (tokio::fs::canonicalize(base).await, tokio::fs::canonicalize(base.join(rel)).await) else {
+        return status(StatusCode::NOT_FOUND);
+    };
+    if !file.starts_with(&root) {
+        return status(StatusCode::FORBIDDEN);
+    }
     match tokio::fs::read(&file).await {
         Ok(buf) => { let buf = if rel.ends_with(".html") { crate::i18n::with_lang(buf) } else { buf }; ([(header::CONTENT_TYPE, mime(&file)), (header::CACHE_CONTROL, "no-cache")], buf).into_response() } // [트랙 D] 영어 화면
         Err(_) => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
 
-/// 라이브러리 파일: 등록한 폴더 · 끌어다 놓은 파일만 (Range 요청 지원 → 영상·소리 위치 이동)
+/// 드라이브·UNC·상위 폴더·NTFS 대체 스트림은 정적 파일 주소로 받지 않는다.
+fn safe_relative_path(rel: &str) -> bool {
+    !rel.is_empty() && !rel.contains(':') && !rel.contains('\0')
+        && !rel.starts_with('\\')
+        && !rel.split(['/', '\\']).any(|s| s == "..")
+        && !Path::new(rel).is_absolute()
+        && Path::new(rel).components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir))
+}
+
+fn inside_folder(file: &Path, folder: &Path) -> bool {
+    std::fs::canonicalize(folder).ok().is_some_and(|root| file.starts_with(root))
+}
+
+/// 라이브러리 파일: 등록한 폴더 · 끌어다 놓은 파일만. 실제 경로와 폴더 경계를 비교한다.
 fn allowed_lib_file(core: &crate::core::Core, p: &str) -> Option<PathBuf> {
-    let f = PathBuf::from(p);
-    if !f.is_absolute() || !f.is_file() {
+    let candidate = PathBuf::from(p);
+    if !candidate.is_absolute() || p.contains('\0') {
         return None;
     }
+    let f = std::fs::canonicalize(&candidate).ok()?;
+    if !f.is_file() { return None; }
     let s = core.settings.get();
-    let norm = |x: &str| x.replace('/', "\\").to_lowercase();
-    let fp = norm(p);
     for key in ["imageFolders", "audioFolders", "hymnFolders"] {
         for d in s[key].as_array().into_iter().flatten() {
-            let dp = norm(d["path"].as_str().unwrap_or(""));
-            if !dp.is_empty() && fp.starts_with(&(dp.trim_end_matches('\\').to_string() + "\\")) {
-                return Some(f);
+            if let Some(folder) = d["path"].as_str().filter(|s| !s.is_empty()) {
+                if inside_folder(&f, Path::new(folder)) { return Some(f); }
             }
         }
     }
-    let dropped = s["droppedFiles"].as_array().into_iter().flatten().any(|d| d.as_str().map(norm).as_deref() == Some(fp.as_str()) || d["path"].as_str().map(norm).as_deref() == Some(fp.as_str()));
-    let dd = std::path::absolute(&core.data_dir).unwrap_or_else(|_| core.data_dir.clone()); // [트랙 B] --data 가 상대 경로여도
-    let in_data = fp.starts_with(&norm(&dd.to_string_lossy()));
-    if dropped || in_data { Some(f) } else { None }
+    let dropped = s["droppedFiles"].as_array().into_iter().flatten().any(|d| {
+        d.as_str().or_else(|| d["path"].as_str())
+            .and_then(|p| std::fs::canonicalize(p).ok()).as_ref() == Some(&f)
+    });
+    if dropped || inside_folder(&f, &core.data_dir) { Some(f) } else { None }
 }
 
 async fn lib_file(State(core): State<Shared>, Query(q): Query<HashMap<String, String>>, headers: HeaderMap) -> Response {
@@ -107,7 +125,7 @@ async fn lib_file(State(core): State<Shared>, Query(q): Query<HashMap<String, St
         Some((a, b)) => {
             let start = match (a, b) { (Some(a), _) => a, (None, Some(n)) => size.saturating_sub(n), _ => 0 };
             // 한 번에 최대 8MB (브라우저는 이어서 다시 요청한다)
-            let end = match (a, b) { (Some(_), Some(b)) => b.min(size.saturating_sub(1)), _ => size.saturating_sub(1) }.min(start + 8 * 1024 * 1024 - 1);
+            let end = match (a, b) { (Some(_), Some(b)) => b.min(size.saturating_sub(1)), _ => size.saturating_sub(1) }.min(start.saturating_add(8 * 1024 * 1024 - 1));
             if start > end || start >= size {
                 return (StatusCode::RANGE_NOT_SATISFIABLE, [(header::CONTENT_RANGE, format!("bytes */{size}"))]).into_response();
             }
@@ -242,7 +260,7 @@ async fn command(State(core): State<Shared>, headers: HeaderMap, Json(b): Json<V
     if headers.get("x-worshipcue").and_then(|v| v.to_str().ok()) != Some("1") {
         return status(StatusCode::FORBIDDEN);
     }
-    // 출력 화면이 부르는 명령: 영상 끝남 (아직 영상 송출은 다음 단계)
+    // 출력 화면이 부르는 명령: 영상 끝남
     match b["cmd"].as_str() {
         Some("videoEnded") => { core.lock().video_ended(b["args"]["key"].as_str().unwrap_or(""), b["args"]["duration"].as_f64()); Json(json!({ "ok": true, "result": null })).into_response() } // [트랙 B]
         _ => Json(json!({ "ok": false, "error": "조작 명령은 Rust 판 조작 화면에서만 합니다." })).into_response(),
@@ -314,4 +332,56 @@ pub async fn serve(core: Shared) -> anyhow::Result<u16> {
         }
     }
     Err(anyhow::anyhow!("포트를 열 수 없습니다: {:?}", last))
+}
+
+
+#[cfg(test)]
+mod file_boundary_tests {
+    use super::*;
+
+    fn fixture() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("wp-file-boundary-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        std::fs::create_dir_all(dir.join("data-old")).unwrap();
+        std::fs::write(dir.join("data/allowed.txt"), b"allowed").unwrap();
+        std::fs::write(dir.join("data-old/private.txt"), b"private").unwrap();
+        dir
+    }
+
+    #[test]
+    fn static_paths_reject_drive_unc_parent_and_streams() {
+        for value in ["../secret", "a/../../secret", "a\\..\\secret", "C:\\Windows\\win.ini", "C:win.ini", "\\\\server\\share\\secret", "file.txt:secret", "\\secret", "a\0b"] {
+            assert!(!safe_relative_path(value), "거절되지 않은 경로: {value:?}");
+        }
+        assert!(safe_relative_path("assets/그림.png"));
+        assert!(safe_relative_path("./output.js"));
+    }
+
+    #[tokio::test]
+    async fn static_files_require_real_folder_boundary() {
+        let dir = fixture();
+        let root = dir.join("data");
+        assert_eq!(send_file(&root, "allowed.txt").await.status(), StatusCode::OK);
+        assert_eq!(send_file(&root, "../data-old/private.txt").await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(send_file(&root, "C:\\Windows\\win.ini").await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(send_file(&root, "missing.txt").await.status(), StatusCode::NOT_FOUND);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn library_paths_do_not_accept_a_sibling_with_same_prefix() {
+        let dir = fixture();
+        let data = dir.join("data");
+        // 빈 DB를 먼저 만들어 사용자 자료를 복사하지 않는 독립 시험으로 고정한다.
+        drop(rusqlite::Connection::open(data.join("bible.db")).unwrap());
+        let mut core = crate::core::Core::open(data.clone(), data.join("web"), None).unwrap();
+        assert!(allowed_lib_file(&core, &data.join("allowed.txt").to_string_lossy()).is_some());
+        let private = dir.join("data-old/private.txt");
+        assert!(allowed_lib_file(&core, &private.to_string_lossy()).is_none());
+        assert!(allowed_lib_file(&core, &data.join("../data-old/private.txt").to_string_lossy()).is_none());
+        core.settings.update(|s| s["droppedFiles"] = json!([private.to_string_lossy()]));
+        assert!(allowed_lib_file(&core, &private.to_string_lossy()).is_some());
+        drop(core);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
