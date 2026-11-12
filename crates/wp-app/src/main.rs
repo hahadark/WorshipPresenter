@@ -8,6 +8,7 @@ mod paint;
 mod paint_edit; // [트랙 A]
 mod a_tools; // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
 mod parity_ui; // [트랙 A] 기능 대조에서 빠진 작은 것들
+mod parity2_ui; // [트랙 A] 성경 책 목록 · 종류 골라 붙여 넣기 · 썸네일 오른쪽 클릭
 mod trackb_ui; // [트랙 B]
 mod lyrics_ui; // [트랙 B]
 mod music_ui; // [트랙 B]
