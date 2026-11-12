@@ -175,8 +175,14 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.label(format!("{} · {:.1}MB{}", b["day"].as_str().unwrap_or(""), b["size"].as_f64().unwrap_or(0.0) / 1048576.0, if b["settings"].as_str().unwrap_or("").is_empty() { "" } else { " · 설정 포함" }));
                         if ui.small_button(wp_core::i18n::tr("이 날로 되돌리기")).on_hover_text(wp_core::i18n::tr("다음 시작 때 이 백업으로 바꿉니다 (지금 것은 bible.pre-restore.db 로 남김)")).clicked() {
-                            let r = self.core.lock().restore_backup(b["day"].as_str().unwrap_or(""));
-                            note = match r { Ok(_) => "되돌리기를 예약했습니다. 프로그램을 다시 시작하세요.".into(), Err(e) => e.to_string() };
+// 큰 파일 복사는 따로 스레드에서 (화면이 멈추지 않게)
+                            let (dir, day, ctx2) = (self.data_dir.clone(), b["day"].as_str().unwrap_or("").to_string(), ui.ctx().clone());
+                            note = "되돌리기 예약하는 중…".into();
+                            std::thread::spawn(move || {
+                                let r = wp_core::sync::restore_files(&dir, &day);
+                                ST.lock().note = match r { Ok(_) => format!("{day} 로 되돌리기를 예약했습니다. 프로그램을 다시 시작하세요."), Err(e) => e.to_string() };
+                                ctx2.request_repaint();
+                            });
                         }
                     });
                 }

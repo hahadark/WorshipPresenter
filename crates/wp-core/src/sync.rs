@@ -324,12 +324,7 @@ impl Core {
         self.backup_now().map(Some)
     }
     pub fn restore_backup(&mut self, day: &str) -> Result<Value> {
-        let b = self.backups().into_iter().find(|x| x["day"] == day).context("그 날짜의 백업이 없습니다.")?;
-        std::fs::copy(b["db"].as_str().unwrap_or(""), self.data_dir.join("bible.restore.db"))?;
-        if let Some(st) = b["settings"].as_str().filter(|x| !x.is_empty()) {
-            std::fs::copy(st, self.data_dir.join("settings.restore.json"))?;
-        }
-        Ok(json!({ "day": day, "restartNeeded": true }))
+        restore_files(&self.data_dir, day)
     }
 
     pub fn cancel_restore(&mut self) {
@@ -490,4 +485,17 @@ pub fn backup_files(data_dir: &Path) -> Result<Value> {
     }
     log::info!("백업: {}", out.display());
     Ok(backups_in(data_dir).into_iter().next().unwrap_or(Value::Null))
+}
+
+/// 되돌리기 예약 (코어 잠금 없이 — 큰 파일 복사 동안 화면이 멈추지 않게). 임시 이름으로 복사한 뒤 바꿔 끼워, 도중에 끊겨도 반쪽 파일로 되돌리지 않는다
+pub fn restore_files(data_dir: &Path, day: &str) -> Result<Value> {
+    let b = backups_in(data_dir).into_iter().find(|x| x["day"] == day).context("그 날짜의 백업이 없습니다.")?;
+    let tmp = data_dir.join("bible.restore.db.tmp");
+    std::fs::copy(b["db"].as_str().unwrap_or(""), &tmp)?;
+    std::fs::rename(&tmp, data_dir.join("bible.restore.db"))?;
+    if let Some(st) = b["settings"].as_str().filter(|x| !x.is_empty()) {
+        std::fs::copy(st, data_dir.join("settings.restore.json"))?;
+    }
+    log::info!("되돌리기 예약: {day}");
+    Ok(json!({ "day": day, "restartNeeded": true }))
 }
