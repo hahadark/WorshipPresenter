@@ -27,7 +27,20 @@ pub struct SyncStatus {
 }
 
 pub fn hostname() -> String {
-    std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default()
+    if let Some(h) = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).ok().filter(|x| !x.is_empty()) {
+        return h;
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{ComputerNameDnsHostname, GetComputerNameExW};
+        let mut buf = [0u16; 256];
+        let mut n = buf.len() as u32;
+        // SAFETY: 버퍼 길이를 알려 주고, 돌려받은 길이만큼만 읽는다
+        if unsafe { GetComputerNameExW(ComputerNameDnsHostname, buf.as_mut_ptr(), &mut n) } != 0 {
+            return String::from_utf16_lossy(&buf[..n as usize]);
+        }
+    }
+    String::new()
 }
 
 fn hash(s: &str) -> i32 {

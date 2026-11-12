@@ -308,7 +308,7 @@ impl App {
                         ui.horizontal(|ui| {
                             let mut on = o["on"].as_bool().unwrap_or(false);
                             if ui.checkbox(&mut on, o["name"].as_str().unwrap_or("")).changed() { let _ = self.core.lock().toggle_overlay(&id, Some(on)); }
-                            ui.label(RichText::new(o["type"].as_str().unwrap_or("")).small().color(Color32::GRAY));
+                            ui.label(RichText::new(ov_type_ko(o["type"].as_str().unwrap_or(""))).small().color(Color32::GRAY));
                             for (out, lb) in [("main", "예배당"), ("overlay", "OBS")] {
                                 let mut has = o["outputs"].as_array().is_some_and(|a| a.iter().any(|x| x == out));
                                 if ui.checkbox(&mut has, lb).changed() {
@@ -328,8 +328,8 @@ impl App {
                                     if ui.add(egui::TextEdit::singleline(&mut s).desired_width(200.0).hint_text(if k == "target" { "HH:MM 또는 분" } else { "글" })).changed() { v[k] = json!(s); changed = true; }
                                 }
                             }
-                            egui::ComboBox::from_id_salt(format!("pos{id}")).selected_text(v["position"].as_str().unwrap_or("").to_string()).show_ui(ui, |ui| {
-                                for p in wp_core::overlays::POSITIONS { if ui.selectable_label(v["position"] == p, p).clicked() { v["position"] = json!(p); changed = true; } }
+                            egui::ComboBox::from_id_salt(format!("pos{id}")).selected_text(pos_ko(v["position"].as_str().unwrap_or(""))).show_ui(ui, |ui| {
+                                for p in wp_core::overlays::POSITIONS { if ui.selectable_label(v["position"] == p, pos_ko(p)).clicked() { v["position"] = json!(p); changed = true; } }
                             });
                             let mut size = v["size"].as_f64().unwrap_or(44.0);
                             if ui.add(egui::DragValue::new(&mut size).range(10.0..=800.0).prefix("크기 ")).changed() { v["size"] = json!(size); changed = true; }
@@ -482,7 +482,7 @@ impl App {
                         let mut c = self.core.lock();
                         if let Err(e) = c.run_macro(&id) { c.notify(e.to_string(), "warn"); }
                     }
-                    ui.label(RichText::new(m["actions"].to_string()).small().color(Color32::GRAY));
+                    ui.label(RichText::new(actions_ko(&m["actions"])).small().color(Color32::GRAY));
                     if ui.small_button("지우기").clicked() { self.core.lock().delete_macro(&id); }
                 });
             }
@@ -681,5 +681,49 @@ impl App {
                 self.edit = None;
             }
         }
+    }
+}
+
+/// 오버레이 종류 이름
+fn ov_type_ko(t: &str) -> &'static str {
+    match t { "clock" => "시계", "countdown" => "카운트다운", "banner" => "배너", "text" => "글자", "logo" => "로고", _ => "오버레이" }
+}
+
+/// 자리 이름 (top-left → 왼쪽 위)
+fn pos_ko(p: &str) -> String {
+    match p {
+        "top-left" => "왼쪽 위", "top-center" => "가운데 위", "top-right" => "오른쪽 위",
+        "middle-left" => "왼쪽 가운데", "center" => "한가운데", "middle-right" => "오른쪽 가운데",
+        "bottom-left" => "왼쪽 아래", "bottom-center" => "가운데 아래", "bottom-right" => "오른쪽 아래",
+        x => x,
+    }.to_string()
+}
+
+/// 매크로 동작 요약 (JSON 대신 사람이 읽는 글)
+fn actions_ko(a: &Value) -> String {
+    let mut out: Vec<String> = vec![];
+    let b = |k: &str| a[k].as_bool();
+    if b("clearAll") == Some(true) { out.push("모두 지우기".into()); }
+    if b("hideText") == Some(true) { out.push("글자 숨김".into()); }
+    if let Some(x) = b("logo") { out.push(if x { "로고 켜기" } else { "로고 끄기" }.into()); }
+    if let Some(x) = b("bgOff") { out.push(if x { "배경 끄기" } else { "배경 켜기" }.into()); }
+    if b("overlaysOff") == Some(true) { out.push("오버레이 모두 끄기".into()); }
+    let n = |k: &str| a[k].as_array().map(|x| x.len()).unwrap_or(0);
+    if n("overlayOn") > 0 { out.push(format!("오버레이 {}개 켜기", n("overlayOn"))); }
+    if n("overlayOff") > 0 { out.push(format!("오버레이 {}개 끄기", n("overlayOff"))); }
+    if let Some(t) = a["message"].as_str().filter(|x| !x.is_empty()) { out.push(format!("메시지 '{}'", t.chars().take(16).collect::<String>())); }
+    if let Some(t) = a["stageMessage"].as_str().filter(|x| !x.is_empty()) { out.push(format!("무대 메시지 '{}'", t.chars().take(12).collect::<String>())); }
+    if let Some(m) = a["timer"].as_f64().filter(|x| *x > 0.0) { out.push(format!("타이머 {m}분")); }
+    if let Some(i) = a["cueItem"].as_u64() { out.push(format!("{}번 순서 송출", i + 1)); }
+    if a["stagePin"].is_object() { out.push("무대 화면 고정".into()); }
+    if out.is_empty() { "동작 없음".into() } else { out.join(" · ") }
+}
+
+#[cfg(test)]
+mod tests_ko {
+    #[test]
+    fn labels() {
+        assert_eq!(super::pos_ko("top-left"), "왼쪽 위");
+        assert_eq!(super::actions_ko(&serde_json::json!({ "logo": false, "message": "홍길동 어린이 부모님" })), "로고 끄기 · 메시지 '홍길동 어린이 부모님'");
     }
 }
