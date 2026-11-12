@@ -44,6 +44,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "d:trigger" => crate::tools_ui::open(crate::tools_ui::Tool::Trigger),
         "d:devices" => crate::tools_ui::open(crate::tools_ui::Tool::Devices),
         "d:lan" => crate::tools_ui::open(crate::tools_ui::Tool::Lan),
+        d if d.starts_with("d:") && crate::trackd_ui::handle_menu(d) => {} // [트랙 D] 주보 · 출력 · OBS
         _ => {}
     }
 }
