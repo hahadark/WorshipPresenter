@@ -49,6 +49,7 @@ impl App {
         let sc = |m: Modifiers, k: Key| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(m, k)));
         if sc(Modifiers::CTRL, Key::M) { self.tb.message = true; }
         if sc(Modifiers::CTRL, Key::T) { self.tb.quick = true; }
+        if sc(Modifiers::CTRL, Key::L) { crate::lyrics_ui::open(); }
         if sc(Modifiers::CTRL, Key::P) { self.print_cue(); }
         if !ctx.egui_wants_keyboard_input() {
             if sc(Modifiers::CTRL, Key::Z) { self.core.lock().undo_items(false); self.edit = None; }
@@ -104,7 +105,7 @@ impl App {
             let a: Vec<String> = std::env::args().collect();
             if let Some(v) = a.iter().position(|x| x == "--open").and_then(|i| a.get(i + 1)) {
                 for w in v.split(',') {
-                    match w { "songs" => self.tb.songs = true, "lib" => self.tb.lib = true, "overlays" => self.tb.overlays = true, "message" => self.tb.message = true, "quick" => self.tb.quick = true, "stage" => self.tb.stage = true, "macros" => self.tb.macros = true, "cues" => self.tb.cues = true, _ => {} }
+                    match w { "songs" => self.tb.songs = true, "lib" => self.tb.lib = true, "overlays" => self.tb.overlays = true, "message" => self.tb.message = true, "quick" => self.tb.quick = true, "stage" => self.tb.stage = true, "macros" => self.tb.macros = true, "cues" => self.tb.cues = true, "lyrics" => crate::lyrics_ui::open(), _ => {} }
                 }
             }
         });
@@ -116,6 +117,8 @@ impl App {
         self.stage_window(ctx);
         self.macros_window(ctx);
         self.cues_window(ctx);
+        self.lyrics_window(ctx);
+        self.music_tick(ctx);
     }
 
     fn add_to_cue(&mut self, it: Value) {
@@ -130,65 +133,7 @@ impl App {
     // ---------------- 찬양 ----------------
     fn songs_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.songs;
-        egui::Window::new("찬양 라이브러리").open(&mut open).default_size([520.0, 560.0]).show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.tb.song_q).hint_text("제목·가사로 찾기").desired_width(260.0));
-                if ui.button("새 찬양").clicked() { self.tb.song_edit = Some(json!({ "title": "", "lyrics": "", "credit": "", "tags": "", "arrangement": "" })); }
-            });
-            let list = self.core.lock().list_songs(&self.tb.song_q);
-            ui.label(RichText::new(format!("{}곡", list.len())).small());
-            egui::ScrollArea::vertical().id_salt("songlist").max_height(200.0).show(ui, |ui| {
-                for s in &list {
-                    ui.horizontal(|ui| {
-                        let r = ui.selectable_label(false, format!("{}  ·  {}", s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or("")));
-                        let id = s["id"].as_str().unwrap_or("").to_string();
-                        if r.clicked() { self.tb.song_edit = self.core.lock().get_song(&id); }
-                        if r.double_clicked() || ui.small_button("큐시트에").clicked() {
-                            let it = self.core.lock().song_item(&id);
-                            if let Some(it) = it { self.add_to_cue(it); }
-                        }
-                    });
-                }
-            });
-            ui.separator();
-            if let Some(e) = &mut self.tb.song_edit {
-                let mut s = |k: &str, ui: &mut egui::Ui, multi: bool| {
-                    let mut v = e[k].as_str().unwrap_or("").to_string();
-                    let r = if multi { ui.add(egui::TextEdit::multiline(&mut v).desired_rows(8).desired_width(f32::INFINITY)) } else { ui.add(egui::TextEdit::singleline(&mut v).desired_width(f32::INFINITY)) };
-                    if r.changed() { e[k] = json!(v); }
-                };
-                ui.label("제목"); s("title", ui, false);
-                ui.label("가사 (빈 줄로 슬라이드, [1절] [후렴] 이름표)"); s("lyrics", ui, true);
-                ui.label("곡 정보 (작사·작곡·저작권)"); s("credit", ui, false);
-                ui.label("기본 부를 순서 (예: 1 C 2 C)"); s("arrangement", ui, false);
-                ui.label(RichText::new(format!("저장한 부를 순서: {}", e["arrangements"].as_array().map(|a| a.iter().map(|x| format!("{}={}", x["name"].as_str().unwrap_or(""), x["order"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(" · ")).unwrap_or_default())).small());
-                let e2 = e.clone();
-                ui.horizontal(|ui| {
-                    if ui.button("저장").clicked() {
-                        let r = self.core.lock().save_song(&e2);
-                        match r { Ok(v) => { self.tb.song_edit = Some(v); self.tb.note = "찬양을 저장했습니다.".into(); } Err(x) => self.tb.note = x.to_string() }
-                    }
-                    if ui.button("이 부를 순서 이름 붙여 저장").clicked() {
-                        if let (Some(id), Some(o)) = (e2["id"].as_str(), e2["arrangement"].as_str()) {
-                            let name = format!("순서 {}", e2["arrangements"].as_array().map(|a| a.len() + 1).unwrap_or(1));
-                            let r = self.core.lock().save_song_arrangement(id, &name, o);
-                            if let Ok(v) = r { self.tb.song_edit = Some(v); }
-                        }
-                    }
-                    if ui.button(RichText::new("지우기").color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
-                        if let Some(id) = e2["id"].as_str() { self.tb.note = err(self.core.lock().delete_song(id)); self.tb.song_edit = None; }
-                    }
-                });
-            }
-            ui.separator();
-            ui.collapsing("가사 붙여 넣어 가져오기 (여러 곡은 '# 제목' 줄로 나눔)", |ui| {
-                ui.add(egui::TextEdit::multiline(&mut self.tb.import_text).desired_rows(5).desired_width(f32::INFINITY));
-                if ui.button("가져오기").clicked() {
-                    let r = self.core.lock().import_song_text(&self.tb.import_text, 2);
-                    self.tb.note = match r { Ok(v) => format!("{}곡 저장 · 같은 제목 {}곡 건너뜀", v["saved"], v["skipped"]), Err(e) => e.to_string() };
-                }
-            });
-        });
+        egui::Window::new("찬양 라이브러리").open(&mut open).default_size([520.0, 560.0]).show(ctx, |ui|  self.songs_panel(ui));
         self.tb.songs = open;
     }
 
@@ -196,64 +141,147 @@ impl App {
     fn lib_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.lib;
         if self.tb.lib_kind.is_empty() { self.tb.lib_kind = "image".into(); }
-        egui::Window::new("라이브러리 (그림·영상·음악)").open(&mut open).default_size([520.0, 520.0]).show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.tb.lib_kind, "image".to_string(), "그림·영상");
-                ui.selectable_value(&mut self.tb.lib_kind, "audio".to_string(), "음악");
-                if ui.button("폴더 더하기…").clicked() {
-                    if let Some(d) = rfd::FileDialog::new().pick_folder() {
-                        let k = self.tb.lib_kind.clone();
-                        self.tb.note = err(self.core.lock().add_lib_folder(&k, &d));
-                    }
-                }
-                if ui.button("파일 넣기…").on_hover_text("폴더 밖 파일도 (끌어다 놓은 파일처럼 기억)").clicked() {
-                    if let Some(fs) = rfd::FileDialog::new().pick_files() {
-                        let items = self.core.lock().add_dropped_files(&fs);
-                        for it in items { let mut x = wp_core::core::new_item(it["type"].as_str().unwrap_or("image"), ""); wp_core::settings::merge_into(&mut x, &it); self.add_to_cue(x); }
-                    }
-                }
-            });
-            let kind = self.tb.lib_kind.clone();
-            let folders = wp_core::library::folders(self.core.lock().settings.get(), &kind);
-            for f in &folders {
+        egui::Window::new("라이브러리 (그림·영상·음악)").open(&mut open).default_size([520.0, 520.0]).show(ctx, |ui|  self.library_panel(ui));
+        self.tb.lib = open;
+    }
+
+    // ---------------- 왼쪽 탭에도 쓰는 패널 ----------------
+    pub(crate) fn songs_panel(&mut self, ui: &mut egui::Ui) {
+
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.tb.song_q).hint_text("제목·가사로 찾기").desired_width(260.0));
+            if ui.button("새 찬양").clicked() { self.tb.song_edit = Some(json!({ "title": "", "lyrics": "", "credit": "", "tags": "", "arrangement": "" })); }
+            if ui.button("웹에서 가사 찾기 Ctrl+L").clicked() { crate::lyrics_ui::open(); }
+        });
+        let list = self.core.lock().list_songs(&self.tb.song_q);
+        ui.label(RichText::new(format!("{}곡", list.len())).small());
+        egui::ScrollArea::vertical().id_salt("songlist").max_height(200.0).show(ui, |ui| {
+            for s in &list {
                 ui.horizontal(|ui| {
-                    ui.label(format!("📁 {} ({}개){}", f["name"].as_str().unwrap_or(""), f["count"], if f["exists"] == false { " · 폴더 없음" } else { "" }));
-                    if ui.small_button("빼기").clicked() { self.core.lock().remove_lib_folder(&kind, f["path"].as_str().unwrap_or("")); }
+                    let r = ui.selectable_label(false, format!("{}  ·  {}", s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or("")));
+                    let id = s["id"].as_str().unwrap_or("").to_string();
+                    if r.clicked() { self.tb.song_edit = self.core.lock().get_song(&id); }
+                    if r.double_clicked() || ui.small_button("큐시트에").clicked() {
+                        let it = self.core.lock().song_item(&id);
+                        if let Some(it) = it { self.add_to_cue(it); }
+                    }
                 });
             }
-            ui.add(egui::TextEdit::singleline(&mut self.tb.lib_q).hint_text("파일 이름으로 찾기"));
-            let files = self.core.lock().search_lib(&kind, &self.tb.lib_q, "");
-            egui::ScrollArea::vertical().id_salt("libfiles").show(ui, |ui| {
-                for f in files.iter().take(300) {
-                    ui.horizontal(|ui| {
-                        ui.label(format!("{}{}", if f["video"] == true { "🎞 " } else { "" }, f["name"].as_str().unwrap_or("")));
-                        let url = f["url"].as_str().unwrap_or("").to_string();
-                        let name = f["name"].as_str().unwrap_or("").to_string();
-                        if kind == "image" {
-                            if ui.small_button("순서로").clicked() {
-                                let it = if f["video"] == true { json!({ "type": "video", "title": name, "file": url, "sound": true, "volume": 1.0, "loop": false, "endAction": "hold" }) } else { json!({ "type": "image", "title": name, "image": url }) };
-                                let mut x = wp_core::core::new_item(it["type"].as_str().unwrap(), &name); wp_core::settings::merge_into(&mut x, &it);
-                                self.add_to_cue(x);
-                            }
-                            if ui.small_button("배경으로").clicked() {
-                                let ty = if f["video"] == true { "video" } else { "image" };
-                                self.core.lock().set_background_media(Some(json!({ "type": ty, "url": url, "label": name, "fit": "cover" })));
-                            }
-                        } else if ui.small_button("고른 순서 배경 음악").clicked() {
-                            if let Some(i) = self.sel {
-                                let mut c = self.core.lock();
-                                c.remember_items();
-                                if let Some(cue) = &mut c.cue { if let Some(it) = cue.items.get_mut(i) { it["music"] = json!(url); } }
-                                c.save_cue();
-                                self.edit = None;
-                            }
-                        }
-                    });
+        });
+        ui.separator();
+        if let Some(e) = &mut self.tb.song_edit {
+            let mut s = |k: &str, ui: &mut egui::Ui, multi: bool| {
+                let mut v = e[k].as_str().unwrap_or("").to_string();
+                let r = if multi { ui.add(egui::TextEdit::multiline(&mut v).desired_rows(8).desired_width(f32::INFINITY)) } else { ui.add(egui::TextEdit::singleline(&mut v).desired_width(f32::INFINITY)) };
+                if r.changed() { e[k] = json!(v); }
+            };
+            ui.label("제목"); s("title", ui, false);
+            ui.label("가사 (빈 줄로 슬라이드, [1절] [후렴] 이름표)"); s("lyrics", ui, true);
+            ui.label("곡 정보 (작사·작곡·저작권)"); s("credit", ui, false);
+            ui.label("기본 부를 순서 (예: 1 C 2 C)"); s("arrangement", ui, false);
+            ui.label(RichText::new(format!("저장한 부를 순서: {}", e["arrangements"].as_array().map(|a| a.iter().map(|x| format!("{}={}", x["name"].as_str().unwrap_or(""), x["order"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(" · ")).unwrap_or_default())).small());
+            let e2 = e.clone();
+            ui.horizontal(|ui| {
+                if ui.button("저장").clicked() {
+                    let r = self.core.lock().save_song(&e2);
+                    match r { Ok(v) => { self.tb.song_edit = Some(v); self.tb.note = "찬양을 저장했습니다.".into(); } Err(x) => self.tb.note = x.to_string() }
+                }
+                if ui.button("이 부를 순서 이름 붙여 저장").clicked() {
+                    if let (Some(id), Some(o)) = (e2["id"].as_str(), e2["arrangement"].as_str()) {
+                        let name = format!("순서 {}", e2["arrangements"].as_array().map(|a| a.len() + 1).unwrap_or(1));
+                        let r = self.core.lock().save_song_arrangement(id, &name, o);
+                        if let Ok(v) = r { self.tb.song_edit = Some(v); }
+                    }
+                }
+                if ui.button(RichText::new("지우기").color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
+                    if let Some(id) = e2["id"].as_str() { self.tb.note = err(self.core.lock().delete_song(id)); self.tb.song_edit = None; }
                 }
             });
-            if ui.button("배경 미디어 끄기").clicked() { self.core.lock().set_background_media(None); }
+        }
+        ui.separator();
+        ui.horizontal(|ui| {
+            if ui.button("파일에서 가져오기…").on_hover_text("OpenLP(OpenLyrics .xml) · ChordPro(.cho) · ProPresenter 6(.pro6) · PowerPoint(.pptx .ppt .pps) · 글(.txt)").clicked() {
+                if let Some(fs) = rfd::FileDialog::new().add_filter("찬양 파일", &wp_core::songimport::SONG_EXT).pick_files() {
+                    let r = self.core.lock().import_song_files(&fs);
+                    self.tb.note = match r {
+                        Ok(v) => {
+                            let errs: Vec<String> = v["errors"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+                            format!("{}곡 저장 · 같은 제목 {}곡 건너뜀{}", v["saved"], v["skipped"], if errs.is_empty() { String::new() } else { format!(" · 못 읽음: {}", errs.join(" / ")) })
+                        }
+                        Err(e) => e.to_string(),
+                    };
+                }
+            }
+            ui.label(RichText::new("OpenLP · ChordPro · ProPresenter 6 · PPT · txt").small().color(Color32::GRAY));
         });
-        self.tb.lib = open;
+        ui.collapsing("가사 붙여 넣어 가져오기 (여러 곡은 '# 제목' 줄로 나눔)", |ui| {
+            ui.add(egui::TextEdit::multiline(&mut self.tb.import_text).desired_rows(5).desired_width(f32::INFINITY));
+            if ui.button("가져오기").clicked() {
+                let r = self.core.lock().import_song_text(&self.tb.import_text, 2);
+                self.tb.note = match r { Ok(v) => format!("{}곡 저장 · 같은 제목 {}곡 건너뜀", v["saved"], v["skipped"]), Err(e) => e.to_string() };
+            }
+        });
+    }
+
+    pub(crate) fn library_panel(&mut self, ui: &mut egui::Ui) {
+
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.tb.lib_kind, "image".to_string(), "그림·영상");
+            ui.selectable_value(&mut self.tb.lib_kind, "audio".to_string(), "음악");
+            if ui.button("폴더 더하기…").clicked() {
+                if let Some(d) = rfd::FileDialog::new().pick_folder() {
+                    let k = self.tb.lib_kind.clone();
+                    self.tb.note = err(self.core.lock().add_lib_folder(&k, &d));
+                }
+            }
+            if ui.button("파일 넣기…").on_hover_text("폴더 밖 파일도 (끌어다 놓은 파일처럼 기억)").clicked() {
+                if let Some(fs) = rfd::FileDialog::new().pick_files() {
+                    let items = self.core.lock().add_dropped_files(&fs);
+                    for it in items { let mut x = wp_core::core::new_item(it["type"].as_str().unwrap_or("image"), ""); wp_core::settings::merge_into(&mut x, &it); self.add_to_cue(x); }
+                }
+            }
+        });
+        let kind = self.tb.lib_kind.clone();
+        let folders = wp_core::library::folders(self.core.lock().settings.get(), &kind);
+        for f in &folders {
+            ui.horizontal(|ui| {
+                ui.label(format!("📁 {} ({}개){}", f["name"].as_str().unwrap_or(""), f["count"], if f["exists"] == false { " · 폴더 없음" } else { "" }));
+                if ui.small_button("빼기").clicked() { self.core.lock().remove_lib_folder(&kind, f["path"].as_str().unwrap_or("")); }
+            });
+        }
+        ui.add(egui::TextEdit::singleline(&mut self.tb.lib_q).hint_text("파일 이름으로 찾기"));
+        let files = self.core.lock().search_lib(&kind, &self.tb.lib_q, "");
+        egui::ScrollArea::vertical().id_salt("libfiles").show(ui, |ui| {
+            for f in files.iter().take(300) {
+                ui.horizontal(|ui| {
+                    ui.label(format!("{}{}", if f["video"] == true { "🎞 " } else { "" }, f["name"].as_str().unwrap_or("")));
+                    let url = f["url"].as_str().unwrap_or("").to_string();
+                    let name = f["name"].as_str().unwrap_or("").to_string();
+                    if kind == "image" {
+                        if ui.small_button("순서로").clicked() {
+                            let it = if f["video"] == true { json!({ "type": "video", "title": name, "file": url, "sound": true, "volume": 1.0, "loop": false, "endAction": "hold" }) } else { json!({ "type": "image", "title": name, "image": url }) };
+                            let mut x = wp_core::core::new_item(it["type"].as_str().unwrap(), &name); wp_core::settings::merge_into(&mut x, &it);
+                            self.add_to_cue(x);
+                        }
+                        if ui.small_button("배경으로").clicked() {
+                            let ty = if f["video"] == true { "video" } else { "image" };
+                            self.core.lock().set_background_media(Some(json!({ "type": ty, "url": url, "label": name, "fit": "cover" })));
+                        }
+                    } else if ui.small_button("▶").on_hover_text("바로 재생 (조작 PC)").clicked() {
+                        crate::music_ui::play_now(&url, &name);
+                    } else if ui.small_button("고른 순서 배경 음악").clicked() {
+                        if let Some(i) = self.sel {
+                            let mut c = self.core.lock();
+                            c.remember_items();
+                            if let Some(cue) = &mut c.cue { if let Some(it) = cue.items.get_mut(i) { it["music"] = json!(url); } }
+                            c.save_cue();
+                            self.edit = None;
+                        }
+                    }
+                });
+            }
+        });
+        if ui.button("배경 미디어 끄기").clicked() { self.core.lock().set_background_media(None); }
     }
 
     // ---------------- 오버레이 ----------------
@@ -599,6 +627,14 @@ mod tests {
 impl App {
     /// LIVE 영상 조작 줄 (영상 슬라이드를 송출 중일 때만): 재생·멈춤 · 처음부터 · ±10초 · 소리 크기 · 반복
     pub(crate) fn video_bar(&mut self, ui: &mut egui::Ui) {
+        // 음악 재생 줄 · 트랙 B 알림 (위 도구 줄이 메뉴로 바뀌어 여기에)
+        self.music_bar(ui);
+        if !self.tb.note.is_empty() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&self.tb.note).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                if ui.small_button("닫기").clicked() { self.tb.note.clear(); }
+            });
+        }
         let v = self.core.lock().b.video.clone();
         let Some(v) = v else { return };
         let mut act: Option<(&str, f64)> = None;
@@ -622,5 +658,27 @@ impl App {
             if let Err(e) = c.video_control(a, x) { c.notify(e.to_string(), "warn"); }
         }
         if v.playing { ui.ctx().request_repaint_after(std::time::Duration::from_millis(500)); }
+    }
+}
+
+impl App {
+    /// 큐시트 순서 끌어서 옮기기: 끌기 시작하면 번호를 싣고, 놓은 줄 자리로 (실행 취소 됨)
+    pub(crate) fn cue_row_dnd(&mut self, ui: &egui::Ui, r: &egui::Response, i: usize) {
+        if r.drag_started() || r.dragged() {
+            r.dnd_set_drag_payload(i);
+        }
+        if let Some(from) = r.dnd_hover_payload::<usize>() {
+            if *from != i {
+                let y = if *from < i { r.rect.bottom() } else { r.rect.top() };
+                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(2.5, Color32::from_rgb(0x5b, 0x9c, 0xf6)));
+            }
+        }
+        if let Some(from) = r.dnd_release_payload::<usize>() {
+            if *from != i {
+                self.core.lock().move_item_to(*from, i);
+                self.sel = Some(i);
+                self.edit = None;
+            }
+        }
     }
 }
