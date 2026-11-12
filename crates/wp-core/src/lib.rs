@@ -8,6 +8,7 @@ pub mod pps; // [트랙 A]
 pub mod pptx; // [트랙 A]
 pub mod pptsplit; // [트랙 A]
 pub mod pptsheets; // [트랙 A] 모아보기 그림
+pub mod sermonpoints; // [트랙 A] 설교 포인트
 pub mod clippaste; // [트랙 A]
 pub mod songinbox; // [트랙 A]
 pub mod measure;
