@@ -36,7 +36,10 @@ pub fn text_width(s: &str, size: f32, bold: bool, letter: f32) -> f32 {
     let font = if bold { FONTS.bold.as_ref().or(FONTS.regular.as_ref()) } else { FONTS.regular.as_ref() };
     match font {
         Some(f) => {
-            let sf = f.as_scaled(PxScale::from(size));
+            // [트랙 A] ab_glyph 의 PxScale 은 글자 높이(ascent-descent)라, CSS·PPT 글꼴 크기(em)로 바꿔 준다
+            // (그대로 넣으면 맑은 고딕에서 폭이 3/4 쯤으로 작게 재져 글이 상자 밖으로 나갔다)
+            let em = f.units_per_em().unwrap_or(1000.0);
+            let sf = f.as_scaled(PxScale::from(size * f.height_unscaled() / em));
             s.chars().map(|c| sf.h_advance(f.glyph_id(c)) + letter).sum()
         }
         None => s
@@ -219,4 +222,15 @@ pub fn fit_size(slide: &Value, t: &Value, version_name: &str) -> f32 {
         if fits_at(slide, t, mid as f32, version_name) { lo = mid } else { hi = mid }
     }
     lo as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn em_width() {
+        // 맑은 고딕 한글 한 글자 폭은 대략 글꼴 크기(em)의 0.9~1.0 배
+        let w = text_width("가", 100.0, false, 0.0);
+        if FONTS.regular.is_some() { assert!(w > 85.0 && w < 105.0, "가 폭 {w}"); }
+    }
 }

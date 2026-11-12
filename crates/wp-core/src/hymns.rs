@@ -829,3 +829,15 @@ mod timing_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod render_dump_tests {
+    /// 파일 하나를 직접 그려 폴더에 남긴다: WP_RENDER_FILE · WP_RENDER_OUT
+    #[test]
+    #[ignore]
+    fn render_dump() {
+        let (Ok(file), Ok(out)) = (std::env::var("WP_RENDER_FILE"), std::env::var("WP_RENDER_OUT")) else { return };
+        let r = super::build_meta(std::path::Path::new(&out), &file, "direct");
+        println!("{}", r.map(|m| m.to_string()).unwrap_or_else(|e| e));
+    }
+}
