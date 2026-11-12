@@ -584,6 +584,7 @@ impl App {
                 for v in p["verses"].as_array().into_iter().flatten() {
                     let (c, n) = (v["chapter"].as_i64().unwrap_or(0), v["verse"].as_i64().unwrap_or(0));
                     let resp = ui.add(egui::Label::new(RichText::new(format!("{}:{}  {}", c, n, v["text"].as_str().unwrap_or("")))).sense(Sense::click()).wrap());
+                    crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", p["book"]["name"].as_str().unwrap_or(""), c, n), v["text"].as_str().unwrap_or("")); // [트랙 A]
                     if resp.clicked() { acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n)))) }
                     if resp.double_clicked() { acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n)))); acts.push(Act::SendPreview) }
                 }
@@ -593,6 +594,7 @@ impl App {
                 for v in rows {
                     let q = format!("{}{}:{}", v["bookShort"].as_str().unwrap_or(""), v["chapter"], v["verse"]);
                     let resp = ui.add(egui::Label::new(RichText::new(format!("{}  {}", v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or("")))).sense(Sense::click()).wrap());
+                    crate::parity_ui::verse_menu(&resp, v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or("")); // [트랙 A]
                     if resp.clicked() { acts.push(Act::PreviewRef(q.clone(), None)) }
                     if resp.double_clicked() { acts.push(Act::SendRef(q, None)) }
                 }
