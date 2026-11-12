@@ -164,7 +164,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                     Err(e) => app.core.lock().notify(e, "warn"),
                 }
             }
-            if ui.add_enabled(!p.busy, egui::Button::new(if p.busy { "AI 가 읽는 중…" } else { "AI 로 뽑기" })).on_hover_text(wp_core::i18n::tr("주보 AI 와 같은 오픈라우터 키·모델")).clicked() {
+            if ui.add_enabled(!p.busy, egui::Button::new(if p.busy { wp_core::i18n::tr_s("AI 가 읽는 중…") } else { wp_core::i18n::tr_s("AI 로 뽑기") })).on_hover_text(wp_core::i18n::tr("주보 AI 와 같은 오픈라우터 키·모델")).clicked() {
                 let (key, ai) = {
                     let c = app.core.lock();
                     (c.ai_key(), c.settings.get()["ai"].clone())
@@ -187,7 +187,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                 match sp::chat_prompt(&p.text, &meta(p), p.extra.trim()) {
                     Ok(t) => {
                         ui.ctx().copy_text(t);
-                        app.core.lock().notify("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요.", "ok");
+                        app.core.lock().notify(wp_core::i18n::tr("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요."), "ok");
                     }
                     Err(e) => app.core.lock().notify(e, "warn"),
                 }
@@ -235,7 +235,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             for i in 0..n {
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("대지 {}", i + 1)).strong());
+                        ui.label(RichText::new(wp_core::i18n::tr_args("대지 {1}", &[&(i + 1)])).strong());
                         if ui.small_button(wp_core::i18n::tr("빼기")).clicked() {
                             del = Some(i);
                         }
@@ -266,7 +266,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                 match sp::to_cue_item(p.data.as_ref().unwrap(), &p.numbering, p.theme, p.application) {
                     Ok(it) => {
                         acts.push(Act::AddItem("title", Some(it.clone())));
-                        app.core.lock().notify(format!("설교 포인트를 큐시트에 넣었습니다 ({}).", it["note"].as_str().unwrap_or("")), "ok");
+                        app.core.lock().notify(wp_core::i18n::tr_args("설교 포인트를 큐시트에 넣었습니다 ({1}).", &[&(it["note"].as_str().unwrap_or(""))]), "ok");
                     }
                     Err(e) => app.core.lock().notify(e, "error"),
                 }
@@ -316,7 +316,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
         });
         for (i, g) in p.groups.iter().enumerate() {
             let n = g["files"].as_array().map(|a| a.len()).unwrap_or(0);
-            ui.checkbox(&mut p.use_group[i], format!("{}  ({}장){}", g["base"].as_str().unwrap_or(""), n, if i == 0 { " · 가장 최근" } else { "" }));
+            ui.checkbox(&mut p.use_group[i], wp_core::i18n::tr_args("{1}  ({2}장){3}", &[&(g["base"].as_str().unwrap_or("")), &n, &(if i == 0 { wp_core::i18n::tr_s(" · 가장 최근") } else { "" })]));
         }
         ui.separator();
         ui.label(RichText::new(wp_core::i18n::tr("말씀 글 (설교쇼츠 '홈페이지 묶음')")).strong());
@@ -330,7 +330,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
             if ui.button(wp_core::i18n::tr("불러오기")).clicked() {
                 p.bundle = preservice::bundle(&mut app.core.lock(), &p.bundle_dir);
                 if p.bundle.is_none() {
-                    app.core.lock().notify("이 폴더에서 오늘 이전의 묶음(날짜 폴더의 bundle.json)을 찾지 못했습니다.", "warn");
+                    app.core.lock().notify(wp_core::i18n::tr("이 폴더에서 오늘 이전의 묶음(날짜 폴더의 bundle.json)을 찾지 못했습니다."), "warn");
                 }
             }
         });
@@ -349,14 +349,14 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
             }
         });
         if let Some(q) = &p.qt {
-            ui.label(RichText::new(format!("{} · {}절", q["passage"]["title"].as_str().unwrap_or(""), q["passage"]["verses"].as_array().map(|a| a.len()).unwrap_or(0))).color(Color32::from_rgb(0xff, 0xd4, 0x79)));
+            ui.label(RichText::new(wp_core::i18n::tr_args("{1} · {2}절", &[&(q["passage"]["title"].as_str().unwrap_or("")), &(q["passage"]["verses"].as_array().map(|a| a.len()).unwrap_or(0))])).color(Color32::from_rgb(0xff, 0xd4, 0x79)));
         }
         ui.separator();
         ui.horizontal(|ui| {
             ui.label(wp_core::i18n::tr("예배 시작"));
             ui.add(egui::TextEdit::singleline(&mut p.countdown).hint_text("11:00").desired_width(60.0));
             ui.label(wp_core::i18n::tr("넘김"));
-            ui.add(egui::DragValue::new(&mut p.auto_sec).range(3.0..=60.0).suffix("초"));
+            ui.add(egui::DragValue::new(&mut p.auto_sec).range(3.0..=60.0).suffix(wp_core::i18n::tr("초")));
             if ui.button(RichText::new(wp_core::i18n::tr("만들어 큐시트 맨 앞에")).strong()).clicked() {
                 let images: Vec<Value> = p.groups.iter().zip(&p.use_group).filter(|(_, u)| **u).flat_map(|(g, _)| g["files"].as_array().cloned().unwrap_or_default()).map(|f| f["url"].clone()).collect();
                 let line = p.bundle.as_ref().filter(|_| p.use_card_line).map(|b| b["cardLine"].clone()).unwrap_or(json!(""));
@@ -367,7 +367,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
                         let mut x = wp_core::core::new_item("slideshow", "예배 전 화면");
                         wp_core::settings::merge_into(&mut x, &it);
                         c.add_item(x, Some(0));
-                        c.notify(format!("예배 전 화면을 큐시트 맨 앞에 넣었습니다 ({}).", it["note"].as_str().unwrap_or("")), "ok");
+                        c.notify(wp_core::i18n::tr_args("예배 전 화면을 큐시트 맨 앞에 넣었습니다 ({1}).", &[&(it["note"].as_str().unwrap_or(""))]), "ok");
                     }
                     Err(e) => c.notify(e, "warn"),
                 }
@@ -394,7 +394,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
         ui.label(RichText::new(wp_core::i18n::tr("교회 홈페이지의 주보 JSON → 큐시트 · 광고 슬라이드")).small().color(Color32::GRAY));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut h.url).hint_text(wp_core::i18n::tr("https://교회주소/bulletin/feed.json")).desired_width(420.0));
-            if ui.add_enabled(!h.busy, egui::Button::new(if h.busy { "받는 중…" } else { "받기" })).clicked() {
+            if ui.add_enabled(!h.busy, egui::Button::new(if h.busy { wp_core::i18n::tr_s("받는 중…") } else { wp_core::i18n::tr_s("받기") })).clicked() {
                 h.busy = true;
                 let url = h.url.trim().to_string();
                 hymns::run_bg(
@@ -417,7 +417,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                                 s.home.b = list.iter().position(|b| !date.is_empty() && b["date"] == date.as_str()).unwrap_or(0);
                                 s.home.service = 0;
                                 s.home.news = vec![true; list.get(s.home.b).and_then(|b| b["news"].as_array()).map(|a| a.len()).unwrap_or(0)];
-                                c.notify(format!("주보 {}개를 받았습니다 ({}).", list.len(), f["church"].as_str().unwrap_or("")), "ok");
+                                c.notify(wp_core::i18n::tr_args("주보 {1}개를 받았습니다 ({2}).", &[&(list.len()), &(f["church"].as_str().unwrap_or(""))]), "ok");
                                 s.home.feed = Some(f);
                             }
                             Err(e) => c.notify(e, "error"),
@@ -444,7 +444,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             h.service = 0;
         }
         if let Some(t) = b["sermon"]["title"].as_str().filter(|x| !x.is_empty()) {
-            ui.label(format!("설교: {} {}", t, b["sermon"]["passage"].as_str().unwrap_or("")));
+            ui.label(wp_core::i18n::tr_args("설교: {1} {2}", &[&t, &(b["sermon"]["passage"].as_str().unwrap_or(""))]));
         }
         let svcs = b["services"].as_array().cloned().unwrap_or_default();
         ui.horizontal_wrapped(|ui| {
@@ -462,8 +462,8 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             }
         });
         ui.horizontal(|ui| {
-            ui.checkbox(&mut h.events, format!("이번 주 일정 ({})", b["events"].as_array().map(|a| a.len()).unwrap_or(0)));
-            ui.checkbox(&mut h.prayers, format!("기도 제목 ({})", b["prayers"].as_array().map(|a| a.len()).unwrap_or(0)));
+            ui.checkbox(&mut h.events, wp_core::i18n::tr_args("이번 주 일정 ({1})", &[&(b["events"].as_array().map(|a| a.len()).unwrap_or(0))]));
+            ui.checkbox(&mut h.prayers, wp_core::i18n::tr_args("기도 제목 ({1})", &[&(b["prayers"].as_array().map(|a| a.len()).unwrap_or(0))]));
         });
         let sel = json!({ "news": h.news.iter().enumerate().filter(|(_, v)| **v).map(|(i, _)| i).collect::<Vec<_>>(), "events": h.events, "prayers": h.prayers });
         ui.horizontal(|ui| {
@@ -472,7 +472,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                 match homefeed::make_cue(&mut c, &b, h.service, &sel) {
                     Ok(r) => {
                         let warn = r["warnings"].as_array().map(|a| a.len()).unwrap_or(0);
-                        c.notify(format!("홈페이지 주보로 큐시트를 만들었습니다{}{}.", if r["newsPlaced"] == json!(true) { " (교회 소식에 광고)" } else { "" }, if warn > 0 { format!(" · 확인할 것 {warn}개") } else { String::new() }), "ok");
+                        c.notify(wp_core::i18n::tr_args("홈페이지 주보로 큐시트를 만들었습니다{1}{2}.", &[&(if r["newsPlaced"] == json!(true) { wp_core::i18n::tr_s(" (교회 소식에 광고)") } else { "" }), &(if warn > 0 { format!(" · 확인할 것 {warn}개") } else { String::new() })]), "ok");
                     }
                     Err(e) => c.notify(e, "error"),
                 }

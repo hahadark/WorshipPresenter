@@ -67,7 +67,7 @@ pub fn check(core: &Shared, manual: bool) {
     let repo = core.lock().settings.get()["updateRepo"].as_str().unwrap_or("").to_string();
     let Some(url) = api_url(&repo) else {
         if manual {
-            core.lock().notify("새 버전 확인 주소(저장소)가 정해지지 않았습니다. Rust 판은 아직 릴리스 전입니다.", "warn");
+            core.lock().notify(crate::i18n::tr("새 버전 확인 주소(저장소)가 정해지지 않았습니다. Rust 판은 아직 릴리스 전입니다."), "warn");
         }
         return;
     };
@@ -80,7 +80,7 @@ pub fn check(core: &Shared, manual: bool) {
         let mut c = sh.lock();
         let skipped = c.settings.get()["skipVersion"].as_str() == v["version"].as_str();
         if v["state"] == "available" && (!skipped || manual) {
-            c.notify(format!("새 버전 {} 이 나왔습니다 (도움말 → 새 버전)", v["version"].as_str().unwrap_or("")), "info");
+            c.notify(crate::i18n::tr_args("새 버전 {1} 이 나왔습니다 (도움말 → 새 버전)", &[&(v["version"].as_str().unwrap_or(""))]), "info");
         } else if manual {
             c.notify(if v["state"] == "latest" { "지금이 최신 버전입니다.".to_string() } else { v["error"].as_str().unwrap_or("확인 실패").to_string() }, if v["state"] == "error" { "warn" } else { "ok" });
         }
@@ -140,7 +140,7 @@ pub fn send_once(core: &Shared, url: &str) -> Result<bool, String> {
         core.lock().settings.update(|d| d["telemetryDay"] = json!(today));
         return Ok(true);
     }
-    Err(format!("상태 {}", r.status()))
+    Err(crate::i18n::tr_args("상태 {1}", &[&(r.status())]))
 }
 
 /// 켜고 1분 뒤, 그다음 3시간마다 (날이 바뀌었으면) 보낸다

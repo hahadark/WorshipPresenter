@@ -96,7 +96,7 @@ impl App {
                 st = ST.lock();
             }
             if !st.busy.is_empty() { ui.label(RichText::new(&st.busy).color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
-            for e in &st.errors { ui.label(RichText::new(format!("못 읽음 · {e}")).small().color(Color32::GRAY)); }
+            for e in &st.errors { ui.label(RichText::new(wp_core::i18n::tr_args("못 읽음 · {1}", &[&e])).small().color(Color32::GRAY)); }
             let mut pick: Option<Value> = None;
             egui::ScrollArea::vertical().id_salt("lyr-res").max_height(180.0).show(ui, |ui| {
                 for x in &st.results {
@@ -114,7 +114,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label(wp_core::i18n::tr("슬라이드마다"));
                 let mut n = st.lines;
-                if ui.add(egui::DragValue::new(&mut n).range(1..=6).suffix("줄")).changed() {
+                if ui.add(egui::DragValue::new(&mut n).range(1..=6).suffix(wp_core::i18n::tr("줄"))).changed() {
                     st.lines = n;
                     // 이름표가 없는 원문일 때만 다시 나눔 (이미 정리한 글은 그대로)
                 }
@@ -128,7 +128,7 @@ impl App {
             let (lyrics, order) = (st.lyrics.clone(), st.order.clone());
             drop(st);
             ui.horizontal(|ui| {
-                let label = if sel_song.is_some() { "고른 찬양 순서에 넣기" } else { "새 찬양 순서로 넣기" };
+                let label = if sel_song.is_some() { wp_core::i18n::tr_s("고른 찬양 순서에 넣기") } else { wp_core::i18n::tr_s("새 찬양 순서로 넣기") };
                 if ui.add_enabled(has, egui::Button::new(label)).clicked() {
                     let mut c = self.core.lock();
                     c.remember_items();

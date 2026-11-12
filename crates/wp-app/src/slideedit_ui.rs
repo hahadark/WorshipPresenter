@@ -61,7 +61,7 @@ impl SlideEditUi {
 
             ui.horizontal(|ui| {
                 ui.label(RichText::new(it["title"].as_str().unwrap_or("")).strong());
-                ui.label(RichText::new(format!("슬라이드 {}장", slides.len())).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr_args("슬라이드 {1}장", &[&(slides.len())])).small().color(Color32::GRAY));
                 ui.checkbox(&mut self.common, wp_core::i18n::tr("모든 슬라이드에 공통(*)"));
             });
             ui.separator();
@@ -94,7 +94,7 @@ impl SlideEditUi {
                                 op("del", "지우기", ui);
                                 op("split", "여기서 새 순서로 나누기", ui);
                             } else if base.is_some() {
-                                op("skip", if skipped { "다시 보이기" } else { "건너뛰기" }, ui);
+                                op("skip", if skipped { wp_core::i18n::tr_s("다시 보이기") } else { wp_core::i18n::tr_s("건너뛰기") }, ui);
                                 let n = slides.iter().filter(|x| x["base"].is_number()).count();
                                 let pos = slides.iter().take(k).filter(|x| x["base"].is_number()).count();
                                 if ui.button(wp_core::i18n::tr("위로")).clicked() && pos > 0 { let mut a = it.clone(); se::move_order(&mut a, n, pos, pos - 1); new_it = Some(a); ui.close(); }

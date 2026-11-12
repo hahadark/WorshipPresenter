@@ -62,6 +62,53 @@ pub fn tr(s: &str) -> String {
     DICT.get(s).cloned().unwrap_or_else(|| s.to_string())
 }
 
+/// &'static str 그대로 쓰는 자리(if/else 가지 등)용: 번역한 글을 한 번만 만들어 두고 같은 것을 돌려준다
+pub fn tr_s(s: &'static str) -> &'static str {
+    if !is_en() {
+        return s;
+    }
+    static CACHE: Lazy<parking_lot::Mutex<HashMap<&'static str, &'static str>>> = Lazy::new(|| parking_lot::Mutex::new(HashMap::new()));
+    let mut c = CACHE.lock();
+    if let Some(v) = c.get(s) {
+        return v;
+    }
+    let t = tr(s);
+    let v: &'static str = if t == s { s } else { Box::leak(t.into_boxed_str()) };
+    c.insert(s, v);
+    v
+}
+
+/// 자리가 있는 문구: tr_args("{1}장 · {2}", &[&a, &b]) — 사전은 Electron 처럼 {1} {2} 자리로 찾고, 자리를 채운다
+pub fn tr_args(template: &str, args: &[&dyn std::fmt::Display]) -> String {
+    fill_args(&tr(template), args)
+}
+
+/// 원래 문구의 자리만 치환한다. 인수에 들어 있는 {2} 같은 사용자 글은 다시 치환하지 않는다.
+fn fill_args(template: &str, args: &[&dyn std::fmt::Display]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let candidate = &rest[start + 1..];
+        if let Some(end) = candidate.find('}') {
+            let number = &candidate[..end];
+            if !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()) {
+                if let Ok(index) = number.parse::<usize>() {
+                    if let Some(arg) = index.checked_sub(1).and_then(|i| args.get(i)) {
+                        out.push_str(&arg.to_string());
+                        rest = &candidate[end + 1..];
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push('{');
+        rest = candidate;
+    }
+    out.push_str(rest);
+    out
+}
+
 /// 출력 HTML 에 영어 번역 스크립트 넣기 (prefix = /shared/)
 pub fn with_lang(buf: Vec<u8>) -> Vec<u8> {
     if !is_en() {
@@ -80,6 +127,13 @@ pub fn with_lang(buf: Vec<u8>) -> Vec<u8> {
 mod tests {
     use super::*;
     #[test]
+    fn arguments_are_not_reinterpreted() {
+        assert_eq!(fill_args("{1} / {2} / {1}", &[&"사용자 {2}", &"끝"]), "사용자 {2} / 끝 / 사용자 {2}");
+        assert_eq!(fill_args("{0} {3} {x} {1} {", &[&"정상"]), "{0} {3} {x} 정상 {");
+        assert_eq!(fill_args("{{1}}", &[&"글"]), "{글}");
+    }
+
+    #[test]
     fn lang() {
         set_lang("ko");
         assert_eq!(tr("파일"), "파일");
@@ -88,6 +142,7 @@ mod tests {
         assert_eq!(tr("파일"), "File");
         assert_eq!(tr("새 버전"), "New version");
         assert_eq!(tr("홍길동"), "홍길동");
+        assert_eq!(tr_args("{1}장 없음", &[&3]), "{1}장 없음".replace("{1}", "3"));
         let h = String::from_utf8(with_lang(b"<html lang=\"ko\"><head></head>".to_vec())).unwrap();
         assert!(h.contains("data-lang=\"en\"") && h.contains("i18n-en.js"));
         set_lang("ko");

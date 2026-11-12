@@ -214,7 +214,7 @@ fn point_of(rest: &str, follow: &str) -> Value {
 pub fn find_points(text: &str, meta: &Value) -> Result<Value, String> {
     let (t, is_sub) = normalize(text);
     if t.is_empty() {
-        return Err("설교 원고를 붙여 넣거나 파일을 불러오세요.".into());
+        return Err(crate::i18n::tr("설교 원고를 붙여 넣거나 파일을 불러오세요.").into());
     }
     let m = |k: &str| meta[k].as_str().unwrap_or("").to_string();
     if let Some(mut d) = try_answer(&t) {
@@ -253,7 +253,7 @@ pub fn find_points(text: &str, meta: &Value) -> Result<Value, String> {
         }
     }
     if blocks.is_empty() {
-        return Err("대지 표시('첫째·둘째', '1. 2.', 'Ⅰ. Ⅱ.')를 찾지 못했습니다. 'AI 로 뽑기' 를 쓰거나 대지를 직접 입력하세요.".into());
+        return Err(crate::i18n::tr("대지 표시('첫째·둘째', '1. 2.', 'Ⅰ. Ⅱ.')를 찾지 못했습니다. 'AI 로 뽑기' 를 쓰거나 대지를 직접 입력하세요.").into());
     }
     out["points"] = json!(blocks.iter().take(6).map(|(r, f)| point_of(r, f)).filter(|p| p["heading"].as_str().is_some_and(|h| !h.is_empty())).collect::<Vec<_>>());
     static AP: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(?:적용|결론|맺음말|마치며)\s*[:：]?\s*").unwrap());
@@ -299,7 +299,7 @@ fn head60k(t: &str) -> String {
 pub fn chat_prompt(text: &str, meta: &Value, extra: &str) -> Result<String, String> {
     let (t, _) = normalize(text);
     if t.is_empty() {
-        return Err("설교 원고를 먼저 붙여 넣으세요.".into());
+        return Err(crate::i18n::tr("설교 원고를 먼저 붙여 넣으세요.").into());
     }
     let ml = meta_lines(meta);
     Ok(format!(
@@ -315,7 +315,7 @@ pub fn chat_prompt(text: &str, meta: &Value, extra: &str) -> Result<String, Stri
 pub fn request_body(model: &str, text: &str, meta: &Value, extra: &str) -> Result<Value, String> {
     let (t, _) = normalize(text);
     if t.is_empty() {
-        return Err("설교 원고를 붙여 넣으세요.".into());
+        return Err(crate::i18n::tr("설교 원고를 붙여 넣으세요.").into());
     }
     let ml = meta_lines(meta);
     let user = format!("{}[설교 원고]\n{}{}", if ml.is_empty() { String::new() } else { format!("{ml}\n\n") }, head60k(&t), if extra.is_empty() { String::new() } else { format!("\n\n추가 요청: {extra}") });
@@ -325,17 +325,17 @@ pub fn request_body(model: &str, text: &str, meta: &Value, extra: &str) -> Resul
 /// 오픈라우터 응답 → { data, usage, model }
 pub fn parse_response(status: u16, body: &Value, model: &str, meta: &Value) -> Result<Value, String> {
     if !(200..300).contains(&status) {
-        return Err(format!("오픈라우터 오류 ({status}): {}", body["error"]["message"].as_str().unwrap_or("")));
+        return Err(crate::i18n::tr_args("오픈라우터 오류 ({1}): {2}", &[&status, &(body["error"]["message"].as_str().unwrap_or(""))]));
     }
     let msg = &body["choices"][0]["message"]["content"];
     let raw = match msg {
         Value::String(s) if !s.is_empty() => s.clone(),
         Value::Array(a) => a.iter().filter_map(|c| c["text"].as_str()).collect(),
-        _ => return Err("AI 응답이 비었습니다.".into()),
+        _ => return Err(crate::i18n::tr("AI 응답이 비었습니다.").into()),
     };
     let mut d = clean_data(&parse_json(&raw)?);
     if d["points"].as_array().is_none_or(|a| a.is_empty()) {
-        return Err("AI 답에 대지(points)가 없습니다.".into());
+        return Err(crate::i18n::tr("AI 답에 대지(points)가 없습니다.").into());
     }
     for k in ["title", "verse", "speaker"] {
         if d[k].as_str().is_none_or(|x| x.is_empty()) {
@@ -348,7 +348,7 @@ pub fn parse_response(status: u16, body: &Value, model: &str, meta: &Value) -> R
 /// 오픈라우터로 뽑기 (실제 호출 — 다른 스레드에서)
 pub fn ask_points(api_key: &str, model: &str, endpoint: &str, text: &str, meta: &Value, extra: &str) -> Result<Value, String> {
     if api_key.is_empty() {
-        return Err("오픈라우터 API 키가 없습니다. 파일 → 주보로 큐시트 만들기 → API 키로 에서 넣거나, 채팅 AI 를 쓰세요.".into());
+        return Err(crate::i18n::tr("오픈라우터 API 키가 없습니다. 파일 → 주보로 큐시트 만들기 → API 키로 에서 넣거나, 채팅 AI 를 쓰세요.").into());
     }
     let body = request_body(model, text, meta, extra)?;
     let resp = ureq::post(if endpoint.is_empty() { DEFAULT_ENDPOINT } else { endpoint })
@@ -438,7 +438,7 @@ pub fn to_cue_item(data: &Value, numbering: &str, theme: bool, application: bool
     let d = clean_data(data);
     let pts = d["points"].as_array().cloned().unwrap_or_default();
     if pts.is_empty() {
-        return Err("대지가 하나도 없습니다.".into());
+        return Err(crate::i18n::tr("대지가 하나도 없습니다.").into());
     }
     let numbering = if ["word", "num", "none"].contains(&numbering) { numbering } else { "word" };
     let g = |k: &str| d[k].as_str().unwrap_or("").to_string();
@@ -473,7 +473,7 @@ pub fn read_text_file(path: &std::path::Path) -> Result<String, String> {
     }
     match crate::bulletin::read_bulletin(&buf, &name)? {
         crate::bulletin::Input::Text(t) => Ok(t),
-        _ => Err("PDF·사진에서는 글을 꺼낼 수 없습니다. 원고를 복사해 붙여 넣거나 hwp·docx·txt 파일을 고르세요.".into()),
+        _ => Err(crate::i18n::tr("PDF·사진에서는 글을 꺼낼 수 없습니다. 원고를 복사해 붙여 넣거나 hwp·docx·txt 파일을 고르세요.").into()),
     }
 }
 

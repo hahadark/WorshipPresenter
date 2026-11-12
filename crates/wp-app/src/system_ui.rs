@@ -86,8 +86,8 @@ impl App {
         let r = std::fs::write(&p, text);
         let mut c = self.core.lock();
         match r {
-            Ok(_) => c.notify(format!("로그 묶음을 저장했습니다: {}", p.display()), "ok"),
-            Err(e) => c.notify(format!("로그 묶음 저장 실패: {e}"), "error"),
+            Ok(_) => c.notify(wp_core::i18n::tr_args("로그 묶음을 저장했습니다: {1}", &[&(p.display())]), "ok"),
+            Err(e) => c.notify(wp_core::i18n::tr_args("로그 묶음 저장 실패: {1}", &[&e]), "error"),
         }
     }
 
@@ -181,7 +181,7 @@ impl App {
             egui::ScrollArea::vertical().id_salt("backups").max_height(160.0).show(ui, |ui| {
                 for b in &list {
                     ui.horizontal(|ui| {
-                        ui.label(format!("{} · {:.1}MB{}", b["day"].as_str().unwrap_or(""), b["size"].as_f64().unwrap_or(0.0) / 1048576.0, if b["settings"].as_str().unwrap_or("").is_empty() { "" } else { " · 설정 포함" }));
+                        ui.label(format!("{} · {:.1}MB{}", b["day"].as_str().unwrap_or(""), b["size"].as_f64().unwrap_or(0.0) / 1048576.0, if b["settings"].as_str().unwrap_or("").is_empty() { "" } else { wp_core::i18n::tr_s(" · 설정 포함") }));
                         if ui.add_enabled(!restore_busy && info["restorePending"] != true, egui::Button::new(wp_core::i18n::tr("이 날로 되돌리기")).small()).on_hover_text(wp_core::i18n::tr("다음 시작 때 이 백업으로 바꿉니다 (지금 것은 bible.pre-restore.db 로 남김)")).clicked() {
                             // 큰 파일 복사는 별도 스레드에서. 복사 중 중복 예약과 취소는 막는다.
                             let (dir, day, ctx2) = (self.data_dir.clone(), b["day"].as_str().unwrap_or("").to_string(), ui.ctx().clone());
@@ -383,7 +383,7 @@ impl App {
             let mut st = ST.lock();
             for (id, label) in &list {
                 let name = if label.is_empty() { format!("카메라 {}", &id[..id.len().min(8)]) } else { label.clone() };
-                if ui.selectable_label(st.cam_edit.as_ref().is_some_and(|e| &e.0 == id), format!("📷 {name}{}", if saved.contains_key(id) { " · 설정됨" } else { "" })).clicked() {
+                if ui.selectable_label(st.cam_edit.as_ref().is_some_and(|e| &e.0 == id), format!("📷 {name}{}", if saved.contains_key(id) { wp_core::i18n::tr_s(" · 설정됨") } else { "" })).clicked() {
                     let mut p = saved.get(id).cloned().unwrap_or(json!({ "label": label, "res": "auto", "fps": 0, "exact": false, "mirror": false, "brightness": 100, "contrast": 100, "saturation": 100 }));
                     if p["label"].as_str().unwrap_or("").is_empty() { p["label"] = json!(label); }
                     st.cam_edit = Some((id.clone(), p));

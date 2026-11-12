@@ -124,7 +124,7 @@ pub fn state_for(core: &Core) -> Value {
         // Rust 판은 조작 화면이 같은 프로그램이라 늘 열려 있음
         "control": true,
         "stage": { "message": core.b.stage.message, "timer": core.b.stage.timer_json() }, // [트랙 B]
-        "obs": { "pip": s["output"]["obsPip"].as_bool().unwrap_or(false), "full": false },
+        "obs": { "pip": s["output"]["obsPip"].as_bool().unwrap_or(false), "full": core.obs_full },
     })
 }
 
@@ -151,7 +151,7 @@ pub fn act(core: &mut Core, a: &Value) -> Result<Value, String> {
         "message" => core.stage_message(a["text"].as_str().unwrap_or("")),
         "timer" => core.stage_timer(a["op"].as_str().unwrap_or(""), a["minutes"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?,
         "obsFull" => { let f = a["on"].as_bool().unwrap_or(!core.obs_full); crate::themes::set_obs_view(core, Some(f), None); } // [트랙 C]
-        _ => return Err("알 수 없는 조작입니다.".into()),
+        _ => return Err(crate::i18n::tr("알 수 없는 조작입니다.").into()),
     }
     Ok(json!({ "ok": true }))
 }

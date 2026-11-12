@@ -141,7 +141,7 @@ pub fn classify(lines: &[String]) -> Option<(String, String, String)> {
 pub fn rule_split(texts: &[String], title: &str) -> Result<Vec<Part>, String> {
     let n = texts.len();
     if n == 0 {
-        return Err("슬라이드가 없습니다.".into());
+        return Err(crate::i18n::tr("슬라이드가 없습니다.").into());
     }
     let mut parts: Vec<(Part, String)> = vec![];
     for (k, t) in texts.iter().enumerate() {
@@ -175,7 +175,7 @@ pub fn rule_split(texts: &[String], title: &str) -> Result<Vec<Part>, String> {
 pub fn clean_parts(list: &[Value], count: usize, title: &str) -> Result<Vec<Part>, String> {
     let n = count;
     if n == 0 {
-        return Err("슬라이드 수를 알 수 없습니다.".into());
+        return Err(crate::i18n::tr("슬라이드 수를 알 수 없습니다.").into());
     }
     let num = |v: &Value| -> Option<i64> { v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok())).map(|x| x.round() as i64) };
     let rng = Regex::new(r"^\s*(\d+)\s*(?:[-~]\s*(\d+))?\s*$").unwrap();
@@ -293,7 +293,7 @@ fn user_text(texts: &[String], title: &str, extra: &str, sheets: usize) -> Strin
 /// 채팅 AI 에 붙여 넣을 프롬프트
 pub fn chat_prompt(texts: &[String], title: &str, extra: &str, sheets: usize) -> Result<String, String> {
     if texts.is_empty() {
-        return Err("슬라이드가 없습니다.".into());
+        return Err(crate::i18n::tr("슬라이드가 없습니다.").into());
     }
     Ok(format!("{}\n\n답하는 법:\n- JSON 하나만 ```json 코드 블록으로 답합니다. 앞뒤 설명은 쓰지 않습니다.{}\n\n{}", system(), if sheets > 0 { "\n- 함께 올린 모아보기 그림도 봅니다." } else { "" }, user_text(texts, title, extra, sheets)))
 }
@@ -341,10 +341,10 @@ pub fn parse_answer(text: &str, count: usize, title: &str) -> Result<Vec<Part>, 
 /// sheets: [(from, to, data:image/…)] 모아보기 그림
 pub fn ask_split(api_key: &str, model: &str, endpoint: &str, texts: &[String], title: &str, extra: &str, sheets: &[(usize, usize, String)]) -> Result<Value, String> {
     if api_key.is_empty() {
-        return Err("오픈라우터 API 키가 없습니다. 주보 AI 설정에서 넣거나, 채팅 AI 를 쓰세요.".into());
+        return Err(crate::i18n::tr("오픈라우터 API 키가 없습니다. 주보 AI 설정에서 넣거나, 채팅 AI 를 쓰세요.").into());
     }
     if texts.is_empty() {
-        return Err("슬라이드가 없습니다.".into());
+        return Err(crate::i18n::tr("슬라이드가 없습니다.").into());
     }
     let imgs: Vec<&(usize, usize, String)> = sheets.iter().filter(|s| s.2.starts_with("data:image/")).take(40).collect();
     let ut = user_text(texts, title, extra, imgs.len());
@@ -372,13 +372,13 @@ pub fn ask_split(api_key: &str, model: &str, endpoint: &str, texts: &[String], t
     let status = resp.status();
     let v: Value = resp.into_body().read_json().unwrap_or(Value::Null);
     if !status.is_success() {
-        return Err(format!("오픈라우터 오류 ({}): {}", status.as_u16(), v["error"]["message"].as_str().unwrap_or("")));
+        return Err(crate::i18n::tr_args("오픈라우터 오류 ({1}): {2}", &[&(status.as_u16()), &(v["error"]["message"].as_str().unwrap_or(""))]));
     }
     let msg = &v["choices"][0]["message"]["content"];
     let raw = match msg {
         Value::String(s) => s.clone(),
         Value::Array(a) => a.iter().filter_map(|c| c["text"].as_str()).collect(),
-        _ => return Err("AI 응답이 비었습니다.".into()),
+        _ => return Err(crate::i18n::tr("AI 응답이 비었습니다.").into()),
     };
     let parts = read_parts(&raw, texts.len(), title).ok_or("AI 답에서 순서 나누기(parts)를 찾지 못했습니다. 다시 해 보거나 다른 모델을 고르세요.")?;
     Ok(json!({ "parts": parts.iter().map(|p| p.json()).collect::<Vec<_>>(), "usage": v["usage"], "model": v["model"].as_str().unwrap_or(model) }))

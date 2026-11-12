@@ -21,7 +21,7 @@ pub fn clamp_int(v: &Value, min: i64, max: i64, def: i64) -> i64 {
 pub fn save_template(st: &mut Settings, tpl: &Value) -> Result<Value, String> {
     let mut t = normalize_template(tpl);
     if t["name"].as_str().map(|s| s.trim().is_empty()).unwrap_or(true) {
-        return Err("템플릿 이름을 입력하세요.".into());
+        return Err(crate::i18n::tr("템플릿 이름을 입력하세요.").into());
     }
     t["width"] = json!(clamp_int(&t["width"], 320, 7680, 1920));
     t["height"] = json!(clamp_int(&t["height"], 180, 4320, 1080));
@@ -63,14 +63,14 @@ pub fn duplicate_template(st: &mut Settings, id: &str, name: Option<&str>) -> Re
 pub fn delete_template(st: &mut Settings, id: &str) -> Result<(), String> {
     let s = st.get();
     if s["templates"].as_array().map(|a| a.len()).unwrap_or(0) <= 1 {
-        return Err("마지막 템플릿은 삭제할 수 없습니다.".into());
+        return Err(crate::i18n::tr("마지막 템플릿은 삭제할 수 없습니다.").into());
     }
     let in_use: Vec<&str> = s["activeTemplates"]
         .as_object()
         .map(|o| o.iter().filter(|(_, v)| *v == id).map(|(k, _)| if k == "main" { "전체 화면" } else { "OBS 자막" }).collect())
         .unwrap_or_default();
     if !in_use.is_empty() {
-        return Err(format!("현재 {} 출력에서 사용 중인 템플릿입니다. 다른 템플릿을 먼저 지정하세요.", in_use.join(", ")));
+        return Err(crate::i18n::tr_args("현재 {1} 출력에서 사용 중인 템플릿입니다. 다른 템플릿을 먼저 지정하세요.", &[&(in_use.join(", "))]));
     }
     let id = id.to_string();
     st.update(|d| d["templates"].as_array_mut().unwrap().retain(|t| t["id"] != id.as_str()));

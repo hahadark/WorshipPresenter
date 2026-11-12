@@ -73,11 +73,11 @@ pub fn folders(core: &Core) -> Vec<Value> {
 
 pub fn add_folder(core: &mut Core, dir: &Path, name: Option<&str>) -> Result<Value, String> {
     if !dir.is_dir() {
-        return Err("폴더를 찾을 수 없습니다.".into());
+        return Err(crate::i18n::tr("폴더를 찾을 수 없습니다.").into());
     }
     let n = list_folder(dir, "").len();
     if n == 0 {
-        return Err("이 폴더에 .pps / .ppt / .pptx 파일이 없습니다.".into());
+        return Err(crate::i18n::tr("이 폴더에 .pps / .ppt / .pptx 파일이 없습니다.").into());
     }
     let label = name.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| dir.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default());
     let ds = dir.to_string_lossy().to_string();
@@ -222,7 +222,7 @@ fn start_build(core: &Core, file: &str) {
                 if let Some(i) = want.filter(|i| pv.is_none() || pv == Some(*i as i64)) {
                     c.preview_item(i);
                 }
-                c.notify(format!("'{name}' 슬라이드를 만들었습니다."), "ok");
+                c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");
             }
             Err(e) => c.notify(e, "error"),
         }
@@ -280,7 +280,7 @@ pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done
 pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool) -> Result<Value, String> {
     let meta = load(core, file)?;
     if !meta["layers"].as_bool().unwrap_or(false) && !file.to_lowercase().ends_with('x') {
-        return Err("옛 형식(.ppt/.pps)은 요소를 꺼낼 수 없습니다. PowerPoint 에서 .pptx 로 저장한 뒤 넣어 주세요.".into());
+        return Err(crate::i18n::tr("옛 형식(.ppt/.pps)은 요소를 꺼낼 수 없습니다. PowerPoint 에서 .pptx 로 저장한 뒤 넣어 주세요.").into());
     }
     if again {
         let dir = core.data_dir.join("hymn-cache").join(cache_key(file, "pptx-rs1"));
@@ -311,7 +311,7 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
                     PENDING.lock().remove(&lk);
                     META.lock().clear(); // layerBgs 를 다시 읽게
                     match r {
-                        Ok(_) => c.notify("PPT 요소를 꺼냈습니다. 다시 누르면 슬라이드 편집기에 들어갑니다.", "ok"),
+                        Ok(_) => c.notify(crate::i18n::tr("PPT 요소를 꺼냈습니다. 다시 누르면 슬라이드 편집기에 들어갑니다."), "ok"),
                         Err(e) => c.notify(e, "error"),
                     }
                 });
@@ -563,7 +563,7 @@ fn hex16(s: &str) -> String {
 
 fn export_powerpoint(data_dir: &Path, file: &str) -> Result<Value, String> {
     if !has_powerpoint() {
-        return Err("이 PC 에 PowerPoint 가 없어 PPT 를 그림으로 만들 수 없습니다. (PowerPoint 없이 직접 그리기는 Rust 판 다음 작업)".into());
+        return Err(crate::i18n::tr("이 PC 에 PowerPoint 가 없어 PPT 를 그림으로 만들 수 없습니다. (PowerPoint 없이 직접 그리기는 Rust 판 다음 작업)").into());
     }
     let key = cache_key(file, "slides-rs1");
     let dir = data_dir.join("hymn-cache").join(&key);
@@ -581,12 +581,12 @@ fn export_powerpoint(data_dir: &Path, file: &str) -> Result<Value, String> {
     let _ = std::fs::remove_file(&script);
     let so = String::from_utf8_lossy(&out.stdout).to_string();
     let Some(line) = so.lines().find(|l| l.starts_with("OK ")) else {
-        return Err(format!("PowerPoint 로 슬라이드를 내보내지 못했습니다: {}", String::from_utf8_lossy(&out.stderr).lines().next().unwrap_or("")));
+        return Err(crate::i18n::tr_args("PowerPoint 로 슬라이드를 내보내지 못했습니다: {1}", &[&(String::from_utf8_lossy(&out.stderr).lines().next().unwrap_or(""))]));
     };
     let nums: Vec<f64> = line[3..].split_whitespace().filter_map(|x| x.parse().ok()).collect();
     let n = nums.first().copied().unwrap_or(0.0) as usize;
     if n == 0 {
-        return Err("슬라이드가 없는 파일입니다.".into());
+        return Err(crate::i18n::tr("슬라이드가 없는 파일입니다.").into());
     }
     let texts: Value = std::fs::read_to_string(dir.join("texts.json")).ok().and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok()).unwrap_or(json!([]));
     let (number, title, name) = parse_name(Path::new(file));
@@ -603,10 +603,10 @@ fn export_powerpoint(data_dir: &Path, file: &str) -> Result<Value, String> {
 /// 파일 → meta (캐시에 있으면 바로, 없으면 PowerPoint 로 만든다) + captions
 pub fn load(core: &Core, file: &str) -> Result<Value, String> {
     if !is_allowed(core, file) {
-        return Err("등록한 찬송가 폴더 안의 파일만 열 수 있습니다.".into());
+        return Err(crate::i18n::tr("등록한 찬송가 폴더 안의 파일만 열 수 있습니다.").into());
     }
     if !Path::new(file).is_file() {
-        return Err(format!("파일이 없습니다: {file}"));
+        return Err(crate::i18n::tr_args("파일이 없습니다: {1}", &[&file]));
     }
     let stamp = format!("{}|{}", norm(file), file_stamp(Path::new(file)));
     if let Some(m) = META.lock().get(&stamp) {

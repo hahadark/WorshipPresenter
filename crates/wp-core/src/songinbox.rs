@@ -67,7 +67,7 @@ fn list(dir: &Path) -> Vec<(String, u128, u64)> {
 pub fn online_search_url(template: &str, query: &str) -> Result<String, String> {
     let t = template.trim();
     if !(t.starts_with("http://") || t.starts_with("https://")) || t.contains(char::is_whitespace) {
-        return Err("온라인 검색 주소가 올바르지 않습니다 (http:// 또는 https:// 로 시작).".into());
+        return Err(crate::i18n::tr("온라인 검색 주소가 올바르지 않습니다 (http:// 또는 https:// 로 시작).").into());
     }
     let q: String = query.trim().bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
     Ok(if t.contains("{q}") { t.replacen("{q}", &q, 1) } else { t.to_string() })
@@ -77,7 +77,7 @@ pub fn online_search_url(template: &str, query: &str) -> Result<String, String> 
 pub fn arm(shared: &Shared) -> Result<Value, String> {
     let dir = downloads_dir(&shared.lock());
     if !dir.is_dir() {
-        return Err(format!("다운로드 폴더를 찾을 수 없습니다: {}", dir.display()));
+        return Err(crate::i18n::tr_args("다운로드 폴더를 찾을 수 없습니다: {1}", &[&(dir.display())]));
     }
     let start = {
         let mut st = ST.lock();
@@ -143,7 +143,7 @@ fn tick(shared: &Shared) -> bool {
                 Ok(dest) => {
                     let h = crate::hymns::HymnFile { number: crate::hymns::parse_name(&dest).0, title: crate::hymns::parse_name(&dest).1, name: String::new(), folder: String::new(), file: dest.clone() };
                     c.add_item(crate::hymns::new_hymn_item(&h), None);
-                    c.notify(format!("받은 찬양 PPT '{}' 를 큐시트에 넣었습니다.", h.title), "ok");
+                    c.notify(crate::i18n::tr_args("받은 찬양 PPT '{1}' 를 큐시트에 넣었습니다.", &[&h.title]), "ok");
                 }
                 Err(e) => c.notify(format!("{name}: {e}"), "error"),
             }

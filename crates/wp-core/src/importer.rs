@@ -155,7 +155,7 @@ fn parse_json(text: &str, report: &mut Value) -> Result<Parsed, String> {
         report["format"] = json!("JSON (책/장/절 객체)");
         return Ok(out);
     }
-    Err("지원하지 않는 JSON 구조입니다.".into())
+    Err(crate::i18n::tr("지원하지 않는 JSON 구조입니다.").into())
 }
 
 // ---------- CSV ----------
@@ -182,7 +182,7 @@ pub fn parse_csv_rows(text: &str) -> Vec<Vec<String>> {
 
 fn parse_csv(text: &str, report: &mut Value) -> Result<Parsed, String> {
     let rows = parse_csv_rows(text);
-    if rows.is_empty() { return Err("CSV 파일이 비어 있습니다.".into()); }
+    if rows.is_empty() { return Err(crate::i18n::tr("CSV 파일이 비어 있습니다.").into()); }
     let head: Vec<String> = rows[0].iter().map(|h| h.trim().to_lowercase()).collect();
     let idx = |names: &[&str]| head.iter().position(|h| names.contains(&h.as_str()));
     let (mut ib, mut ic, mut iv, mut it) = (idx(&["book", "book_id", "b", "책", "권"]), idx(&["chapter", "c", "장"]), idx(&["verse", "v", "절"]), idx(&["text", "t", "본문", "내용"]));
@@ -298,7 +298,7 @@ pub fn split_bethlehem_text(raw: &str) -> (String, Vec<String>, Vec<String>) {
 fn parse_bethlehem(file: &Path, report: &mut Value) -> Result<Parsed, String> {
     let db = Connection::open_with_flags(file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| e.to_string())?;
     let has: Option<String> = db.query_row("SELECT name FROM sqlite_master WHERE type='table' AND name='Bible'", [], |r| r.get(0)).ok();
-    if has.is_none() { return Err("베들레헴 성경 형식(Bible 테이블)이 아닙니다. 주석(.cdb)·사전 파일은 가져올 수 없습니다.".into()); }
+    if has.is_none() { return Err(crate::i18n::tr("베들레헴 성경 형식(Bible 테이블)이 아닙니다. 주석(.cdb)·사전 파일은 가져올 수 없습니다.").into()); }
     let stem = file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     let name = Regex::new(r"^\d{10,}-").unwrap().replace(&stem, "").to_string();
     let mut out = Parsed { meta: json!({ "name": name }), ..Default::default() };
@@ -412,7 +412,7 @@ pub fn analyze_file(file: &Path) -> Analysis {
         if ext == "json" || t.starts_with('[') || t.starts_with('{') { parse_json(&text, &mut report) }
         else if ext == "xml" || t.starts_with("<?xml") || text.to_uppercase().contains("<XMLBIBLE") { parse_zefania(&text, &mut report) }
         else if ["csv", "tsv", "txt"].contains(&ext.as_str()) { parse_csv(&text, &mut report) }
-        else { Err("지원하지 않는 파일 형식입니다. (JSON, CSV, Zefania XML, 베들레헴 .bdb)".into()) }
+        else { Err(crate::i18n::tr("지원하지 않는 파일 형식입니다. (JSON, CSV, Zefania XML, 베들레헴 .bdb)").into()) }
     };
     let parsed = match parsed { Ok(p) => p, Err(e) => { report["errors"].as_array_mut().unwrap().push(json!(format!("파일을 해석할 수 없습니다: {e}"))); return Analysis { report, data: None, meta: json!({}) } } };
     let data = validate(&parsed, &mut report);

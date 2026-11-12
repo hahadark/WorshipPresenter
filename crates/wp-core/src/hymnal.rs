@@ -254,9 +254,9 @@ pub fn search(core: &Core, query: &str, limit: usize) -> Vec<Value> {
 
 /// 한 장 → 큐시트 순서로 쓸 모양 (찬송: 가사·부를 순서·악보 / 교독문: 공지 글)
 pub fn get(core: &Core, book: &str, number: i64) -> Result<Value, String> {
-    let db = find(core, book, ".hdb").and_then(|f| open(&f)).ok_or(format!("{book} 가사 파일을 찾지 못했습니다. 베들레헴 폴더를 지정하거나 가져오기를 하세요."))?;
+    let db = find(core, book, ".hdb").and_then(|f| open(&f)).ok_or(crate::i18n::tr_args("{1} 가사 파일을 찾지 못했습니다. 베들레헴 폴더를 지정하거나 가져오기를 하세요.", &[&book]))?;
     let r: Option<(i64, String, String)> = db.query_row("SELECT chapter, title, htext FROM hymnal WHERE chapter = ? ORDER BY id LIMIT 1", [number], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(|e| e.to_string())?;
-    let (ch, title, htext) = r.ok_or(format!("{book} {number}장이 없습니다."))?;
+    let (ch, title, htext) = r.ok_or(crate::i18n::tr_args("{1} {2}장이 없습니다.", &[&book, &number]))?;
     let kind = kind_of(book, ch);
     let b = BOOKS.iter().find(|x| x.id == book).unwrap();
     if kind == "reading" {

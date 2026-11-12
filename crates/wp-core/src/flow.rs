@@ -113,16 +113,8 @@ fn on_edge(c: &mut Core, edge: &str) {
     // 큐시트 순서면 다음(이전) 순서로
     let ci = p["cueIndex"].as_i64().unwrap_or(-1);
     if in_cue && ci >= 0 && s["cueAdvance"].as_bool().unwrap_or(true) {
-        let n = c.cue.as_ref().map(|x| x.items.len() as i64).unwrap_or(0);
-        let next = ci + if edge == "end" { 1 } else { -1 };
-        if next >= 0 && next < n {
-            if let Ok(mut deck) = c.item_deck(next as usize) {
-                if edge == "start" {
-                    deck.index = deck.slides.len().saturating_sub(1);
-                }
-                c.pres.preview = Some(deck.clone());
-                c.send_deck(deck);
-            }
+        if let Err(e) = crate::trigger::advance_live_cue(c, if edge == "end" { 1 } else { -1 }) {
+            c.notify(e, "warn");
         }
         return;
     }

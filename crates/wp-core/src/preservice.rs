@@ -58,7 +58,7 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 pub fn card_groups(folder: &str, max: usize) -> Result<Vec<CardGroup>, String> {
     let dir = folder.trim();
     if dir.is_empty() {
-        return Err("말씀카드 그림 폴더를 고르세요.".into());
+        return Err(crate::i18n::tr("말씀카드 그림 폴더를 고르세요.").into());
     }
     let rd = std::fs::read_dir(dir).map_err(|_| format!("폴더를 열 수 없습니다: {dir}"))?;
     static TAIL: Lazy<Regex> = Lazy::new(|| Regex::new(r"[_\-\s]?\(?\d{1,3}\)?$").unwrap());
@@ -115,7 +115,7 @@ pub fn latest_bundle(root: &str, today: &str) -> Option<Value> {
 pub fn parse_qt(text: &str, looks_like_ref: &dyn Fn(&str) -> bool) -> Result<Value, String> {
     let t = text.trim_start_matches('\u{feff}').trim();
     if t.is_empty() {
-        return Err("이번 주 QT 첫날 본문(장절)을 넣거나 QT 자료를 붙여 넣으세요.".into());
+        return Err(crate::i18n::tr("이번 주 QT 첫날 본문(장절)을 넣거나 QT 자료를 붙여 넣으세요.").into());
     }
     static BLK: Lazy<Regex> = Lazy::new(|| Regex::new(r"```(?:json|JSON)?\s*([\s\S]*?)```").unwrap());
     let mut cands: Vec<String> = BLK.captures_iter(t).map(|m| m[1].to_string()).collect();
@@ -157,7 +157,7 @@ pub fn parse_qt(text: &str, looks_like_ref: &dyn Fn(&str) -> bool) -> Result<Val
             return Ok(json!({ "title": "", "dayTitle": "", "ref": l }));
         }
     }
-    Err("QT 첫날 본문 장절을 찾지 못했습니다. \"마 6:9-13\" 처럼 장절을 넣어 주세요.".into())
+    Err(crate::i18n::tr("QT 첫날 본문 장절을 찾지 못했습니다. \"마 6:9-13\" 처럼 장절을 넣어 주세요.").into())
 }
 
 /// 절들 → 슬라이드 글 (한 장에 3절 또는 160자 안쪽)
@@ -206,7 +206,7 @@ pub fn build_item(a: &Value) -> Result<Value, String> {
     }
     let images: Vec<String> = a["images"].as_array().into_iter().flatten().filter_map(|x| x.as_str()).filter(|x| !x.is_empty()).take(60).map(String::from).collect();
     if images.is_empty() && pages.is_empty() {
-        return Err("넣을 것이 없습니다. 말씀카드 그림·말씀 글·QT 본문 중 하나 이상 고르세요.".into());
+        return Err(crate::i18n::tr("넣을 것이 없습니다. 말씀카드 그림·말씀 글·QT 본문 중 하나 이상 고르세요.").into());
     }
     let sec = a["autoSec"].as_f64().filter(|x| *x > 0.0).unwrap_or(8.0).round().clamp(3.0, 60.0);
     static HM: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\d{1,2}:\d{2}$").unwrap());
@@ -275,7 +275,7 @@ pub fn qt(core: &mut Core, text: &str) -> Result<Value, String> {
     let r = core.store.resolve_reference(&v, q["ref"].as_str().unwrap_or(""));
     let verses = r["passage"]["verses"].as_array().cloned().unwrap_or_default();
     if r["ok"] != json!(true) || verses.is_empty() {
-        return Err(format!("'{}' 본문을 성경에서 찾지 못했습니다. 장절을 확인하세요.", q["ref"].as_str().unwrap_or("")));
+        return Err(crate::i18n::tr_args("'{1}' 본문을 성경에서 찾지 못했습니다. 장절을 확인하세요.", &[&(q["ref"].as_str().unwrap_or(""))]));
     }
     q["passage"] = json!({ "title": r["passage"]["title"], "verses": verses.iter().take(30).map(|v| json!({ "verse": v["verse"], "text": v["text"] })).collect::<Vec<_>>() });
     Ok(q)

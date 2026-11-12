@@ -47,10 +47,10 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 기능 | Electron 위치 | Rust 위치 | 상태 | 메모 |
 |---|---|---|---|---|
 | listVersions | core.js | core/db.rs list_versions | 됨 | |
-| 번역본 가져오기 analyzeImport · commitImport | core.js · importer.js | — (메뉴 c:import-bible 은 '다음 차례' 알림) | 없음 | 트랙 C 맡음 |
-| 번역본 지우기 deleteVersion | core.js | — | 없음 | 트랙 C 맡음 |
-| 주석 listCommentaries · analyzeCommentary · commitCommentary · deleteCommentary · commentaryFor | core.js · commentary.js | core/db.rs 표만 | 없음 | 트랙 C 맡음 |
-| 베들레헴 찾기·가져오기 openBethlehemSetup · findBethlehem · importBethlehem | core.js | core/hymnal.rs find · import_from | 일부 | 베들레헴 찬송가는 됨. 베들레헴 성경 번역본(.bdb) 가져오기는 트랙 C(성경 가져오기) |
+| 번역본 가져오기 analyzeImport · commitImport | core.js · importer.js | core/importer.rs analyze_file · commit · app 메뉴 c:import-bible | 됨 | 6차 확인 (트랙 C 4차): JSON·CSV·Zefania·베들레헴 .bdb |
+| 번역본 지우기 deleteVersion | core.js | core/importer.rs delete_version | 됨 | 6차 확인 (트랙 C) |
+| 주석 listCommentaries · analyzeCommentary · commitCommentary · deleteCommentary · commentaryFor | core.js · commentary.js | core/db.rs 표만 | 없음 | 트랙 C 차례 (6차 기준 아직) |
+| 베들레헴 찾기·가져오기 openBethlehemSetup · findBethlehem · importBethlehem | core.js | core/hymnal.rs find · import_from · importer.rs (.bdb) | 됨 | 6차: 성경(.bdb)은 트랙 C importer |
 | importBethlehemHymns · hymnalBooks · hymnalGet · hymnLyricsStatus | core.js | core/hymnal.rs import_from · books · get · lyrics | 됨 | |
 
 ### 찬송가 · PPT · 붙여 넣기 (트랙 A)
@@ -139,14 +139,14 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 홈페이지 주보 | a:home | 됨 | |
 | 큐시트 인쇄 | b:print | 됨 | HTML 열어 인쇄 |
 | 가져오기: 찬양 | b:songs (찬양 창의 가져오기) | 됨 | |
-| 가져오기: 성경 번역본 | c:import-bible | 없음 | 트랙 C |
+| 가져오기: 성경 번역본 | c:import-bible (app track_c import 창) | 됨 | 6차 확인 (트랙 C) |
 | 송출 기록 · 사용 기록 · 동기화 · 설정 | c:history · c:usage · b:sync · c:settings | 됨 | |
 | 실행 취소 · 다시 | b:undo · b:redo | 됨 | 글 고치기 묶음 실행 취소 포함(remember_typing) |
 | 순서 넣기: 찬송가·PPT · 성경 · 찬양 · 웹 가사 · 공지 · 제목 · 이미지 · 빈 화면 | 큐시트 '넣기' 단추 · 찬송가 탭 · 라이브러리 · lyrics_ui | 됨 | |
 | 순서 넣기: 영상 · 음악 | 라이브러리 창 | 됨 | |
 | 순서 넣기: 카메라 · 슬라이드쇼 (+ 영상 편집칸) | app parity_ui.rs add_buttons · editor | 됨 | 5차. 카메라 기기는 설정·큐시트에 나온 것에서 고르거나 직접(비우면 기본 카메라) |
 | 설교 포인트 · 예배 전 화면 | a:points · a:preservice | 됨 | |
-| 클립보드 붙여 넣기 · 종류 골라 붙여 넣기 | Ctrl+V · 찬송가 탭 '붙여 넣기' | 일부 | '종류를 골라 붙여 넣기'(Ctrl+Shift+V) 창 없음 |
+| 클립보드 붙여 넣기 · 종류 골라 붙여 넣기 | Ctrl+V · Ctrl+Shift+V 창 (app parity2_ui.rs) | 됨 | 6차: 알아서·성경·찬양·공지·제목 · 슬라이드 · 그림. UI 자동 점검으로 성경 2개 넣기 확인 |
 | 편집칸 · 슬라이드 편집 · 위/아래 · 복제 · 지우기 · 송출 | 큐시트 아래 단추 · c:slideedit · 순서 오른쪽 클릭 | 됨 | 5차 |
 | 송출 메뉴 (다음·이전·다음 순서 미리보기·즉석 자막·회중 메시지·화면 지우기·음악 멈춤·모두 지우기) | 송출 단추 줄 · 단축키 · b:quick · b:message · music_ui | 됨 | |
 | OBS · 송출 배경 · OBS 자막 모양 · 보조 화면 · 무대 화면 창 | d:obs · b:lib · c:obsfull/obspip · 예배당 화면 켜기 · b:stage | 됨 | |
@@ -162,7 +162,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 항목 | Rust 위치 | 상태 | 메모 |
 |---|---|---|---|
 | 큐시트 순서: 미리보기 · 송출 · 편집 · 제목 바꾸기 · 예정 시간 · 찬양 라이브러리에 저장 · 나누기 · 위/아래/맨위/맨아래 · 복제 · 지우기 | app parity_ui.rs cue_row_menu | 일부 | 5차. 예정 시간은 큐시트 관리 창, PPT 나누기는 편집칸 \"PPT 도구\" 에 (메뉴엔 없음) |
-| 슬라이드(미리보기·LIVE): 바로 송출 · 이 슬라이드 편집 · 새 슬라이드 · 복제 · 구역 나누기 | app slideedit_ui (편집기 안) | 일부 | 미리보기·LIVE 썸네일 오른쪽 클릭은 없음 |
+| 슬라이드(미리보기·LIVE): 바로 송출 · 이 슬라이드 편집 · 새 슬라이드 · 복제 · 구역 나누기 | app slideedit_ui (편집기 안) · parity2_ui.rs slide_menu (썸네일) | 됨 | 6차: 바로 송출 · 새 슬라이드 · 복제 · 구역 나누기 · 건너뛰기 / LIVE: 여기로 · 글자 숨김. UI 자동 점검으로 건너뛰기 확인 |
 | 성경 결과: 이 본문을 큐시트에 넣기 · 장절·본문 복사 | '큐시트에 넣기' 단추 · parity_ui.rs verse_menu (오른쪽 클릭) | 됨 | 5차 |
 | 화면: 글자 숨김 · 음악 멈춤 · 모두 지우기 · 송출 배경 · 미리보기 끄기 · 무대 창 · 송출 기록 · 그린 것 지우기 | 단추 줄 · 메뉴 | 됨 | 메뉴로 |
 
@@ -171,7 +171,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 |---|---|---|---|
 | Ctrl+K · Ctrl+Enter · F5 · F6 · F9 · F10 · PageUp/Down · Ctrl+↑↓ · Ctrl+Shift+F | app.rs shortcuts · keys.rs | 됨 | 설정에서 바꾼 키 적용 |
 | Alt+←→ (이전·다음 절) · Ctrl+Home (장 처음) | core/flow.rs preview_adjacent_verse · preview_chapter_start | 됨 | |
-| Escape (보조 화면 끄기) · Ctrl+B (성경 책) · Ctrl+H (기록) · F2 (편집) · Ctrl+Shift+E (편집칸) | keys.rs · track_c (Ctrl+H) | 일부 | Ctrl+B 성경 책 목록 창은 확인 못 함 |
+| Escape (보조 화면 끄기) · Ctrl+B (성경 책) · Ctrl+H (기록) · F2 (편집) · Ctrl+Shift+E (편집칸) | keys.rs · track_c (Ctrl+H) · parity2_ui (Ctrl+B 성경 책 목록 창) | 됨 | 6차: 책 → 장 → 미리보기. UI 자동 점검으로 시편 23 송출 확인 |
 | Ctrl+L · Ctrl+T · Ctrl+M · Ctrl+P · Ctrl+Z/Y · Alt+1~9 · Ctrl+E · Ctrl+V | lyrics_ui · trackb · slideedit · hymns_ui | 됨 | |
 
 ## 4. 출력 · 무대 · 리모컨 화면이 기대하는 데이터
@@ -180,7 +180,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | render: output·version·hasLive·visible·held·slide·versionName·template·obsFull·pip·overlays·layers·video·cursorHidden·cameras | core.rs output_payload | 됨 | output.js 가 읽는 칸 모두 |
 | render(stage): slide·nextSlide·index·count·title·note·timer·message·pin | core.rs stage_payload · trackb | 됨 | |
 | draw 이벤트 · hello · ack | server.rs · draw.rs | 됨 | |
-| 리모컨 /r/state (cue·live·pin) · /r/do 동작 | core/remote.rs | 일부 | message · timer · obsFull 일부 '준비 중' 이었음(4차 연결 여부는 트랙 D 확인) |
+| 리모컨 /r/state (cue·live·pin) · /r/do 동작 | core/remote.rs | 됨 | 6차: message · timer · obsFull 연결 확인 (/dock POST /r/do → 무대 화면 메시지·타이머 보임) |
 
 ## 5. 창 · 시작 · 종료 (main.js)
 | 기능 | Electron 위치 | Rust 위치 | 상태 | 메모 |
@@ -198,6 +198,34 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 
 ## 6. README · 사용자설명서 기능 목록 (요약)
 README 의 큰 기능(성경·찬양·찬송가 PPT·공지·영상·카메라·오버레이·OBS·무대·리모컨·스트림덱·주보 AI·설교 포인트·예배 전 화면·홈페이지·동기화·사용 기록·템플릿·테마)은 위 표에 모두 들어 있다. 위 표에 없는 README 항목: 없음.
+
+## 6차 숫자 (합친 판 e475b13 이후 + 6차 채움)
+- 코어 명령 189개: 됨 177 · 일부 2 (업데이트 설치 — 릴리스 정지) · 없음 5 (주석, 트랙 C) · 대체 5
+- 서버 경로 13줄: 됨 9 · 일부 1 (/api/command 는 videoEnded 만 — 의도적) · 대체 3
+- 메뉴·오른쪽 클릭·단축키 31줄: 됨 28 · 일부 2 (언어 — 트랙 D, 큐시트 순서 메뉴의 예정 시간·나누기) · 대체 1
+- 출력 데이터 4줄: 됨 4
+- 창·시작 10줄: 됨 8 · 일부 1 · 대체 1
+
+## 6차 UI 자동 점검 (AccessKit + Windows UI 자동화, tools/ui-e2e.ps1)
+디버그 빌드를 임시 데이터 폴더로 띄우고 단추·입력칸을 UI 자동화로 누른 뒤 /api/live · /api/state · 웹 출력으로 확인.
+| 흐름 | 결과 | 메모 |
+|---|---|---|
+| 성경 찾기(요3:16-18) → 미리보기 → 송출 → 다음(단추·F6) · 이전(단추·F5) · F10 숨김/복원 | 됨 | 1/3 → 2/3 → 3/3 → 2/3, visible false/true |
+| 큐시트 순서 송출: 성경(시 23) · 찬양 · 찬송가 PPT(clip-…210506.pptx) · 공지 · 제목 | 됨 | PPT 는 요소 27개(edit) + 배경, 웹 예배당 화면에 표 그대로 |
+| 큐시트 새로 만들기 → 성경 넣기 → 제목·장절 고치기 → 송출 | 됨 | '말씀 봉독' 요한복음 3:16-17 |
+| 공지 넣기 → 본문 '---' 두 장 → 송출 | 됨 | 1/2 '첫 광고입니다' |
+| 템플릿 바꾸기 (예배당: 레드 쉴드 → 일반 예배) | 됨 | /api/state template · settings.json activeTemplates 바뀜 |
+| 성경 책 목록(시편 → 23) → 송출 | 됨 | 시편 23:1-6 1/6 |
+| 종류 골라 붙여 넣기 → 글로 넣기 | 됨 | 성경 순서 2개(요3:16 · 롬8:28) |
+| 썸네일 오른쪽 클릭 → 이 슬라이드 건너뛰기 | 됨 | PPT 4장 → 3장 |
+| 예배당 창 wp-output --windowed | 됨 | 출력 연결 수 늘고 창에 송출 중 성경 |
+| 리모컨 메시지·타이머 (/dock /r/do) | 됨 | 무대 화면에 메시지 띠 · 29:56 |
+
+찾은 것:
+- OBS 자막(투명 템플릿)에 표가 든 PPT 를 보내면 슬라이드 글 전체가 가사처럼 위로 넘친다. 데이터(caption = 슬라이드 글)와 그리기(render.js)가 Electron 판과 같아서 Electron 판도 같다. 표·일정 PPT 는 편집칸 'OBS 자막 가사' 를 비우지 말고 짧게 넣거나, 순서 템플릿 pptMode 를 '그림'으로 — 고치지 않고 적어 둠.
+- 디버그 빌드는 콘솔 창이 같이 뜬다 (출시 빌드는 windows_subsystem 이라 없음).
+- 자동 점검의 SendKeys 첫 키가 가끔 빠진다 (창 활성화 시점). 앱 문제 아님 — 단추·UI 자동화로 확인.
+- Ctrl+Shift+V: egui 는 Ctrl(+Shift)+V 를 Key 가 아니라 Paste 이벤트로 준다 → Shift 가 눌린 Paste 로 창을 연다 (6차에서 고침). Ctrl+B 는 위젯보다 먼저 처리하도록 옮김.
 
 ## 숫자 요약 (5차 작성 시점)
 아래 '5차에서 채운 것' 전의 상태:

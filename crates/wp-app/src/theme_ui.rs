@@ -36,7 +36,7 @@ impl ThemeUi {
                             let mut go = |outs: &[&str]| {
                                 let mut c = core.lock();
                                 match themes::apply_theme(&mut c, id, outs) {
-                                    Ok(_) => c.notify(format!("테마 적용: {}", t["name"].as_str().unwrap_or("")), "ok"),
+                                    Ok(_) => c.notify(wp_core::i18n::tr_args("테마 적용: {1}", &[&(t["name"].as_str().unwrap_or(""))]), "ok"),
                                     Err(e) => c.notify(e, "error"),
                                 }
                             };
@@ -62,7 +62,7 @@ pub fn item_templates(ui: &mut egui::Ui, e: &mut serde_json::Value, core: &Share
         ui.horizontal(|ui| {
             ui.label(wp_core::i18n::tr(label));
             let cur = e[key].as_str().unwrap_or("").to_string();
-            let name = tpls.iter().find(|t| t.0 == cur).map(|t| t.1.clone()).unwrap_or_else(|| "(기본)".into());
+            let name = tpls.iter().find(|t| t.0 == cur).map(|t| t.1.clone()).unwrap_or_else(|| wp_core::i18n::tr("(기본)"));
             egui::ComboBox::from_id_salt(salt).selected_text(name).width(220.0).show_ui(ui, |ui| {
                 if ui.selectable_label(cur.is_empty(), wp_core::i18n::tr("(기본)")).clicked() { e[key] = serde_json::json!(""); ch = true; }
                 for (id, n) in &tpls {
