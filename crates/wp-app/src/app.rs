@@ -734,7 +734,8 @@ impl eframe::App for App {
             ui.separator();
             match tab {
                 1 => crate::hymns_ui::tab(self, ui, &mut acts),
-                2 | 3 => { ui.label(RichText::new("위 도구 줄의 '찬양'·'라이브러리' 창을 쓰세요. (이 탭으로 옮길 자리)").color(Color32::GRAY)); }
+                2 => self.songs_panel(ui), // [트랙 B]
+                3 => self.library_panel(ui), // [트랙 B]
                 _ => self.cue_panel(ui, &s, &mut acts),
             }
         });
