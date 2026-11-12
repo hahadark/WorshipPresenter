@@ -6,6 +6,12 @@ mod hymns_ui; // [트랙 A]
 mod outwin;
 mod paint;
 mod trackb_ui; // [트랙 B]
+mod form; // [트랙 C]
+mod history_ui; // [트랙 C]
+mod menubar; // [트랙 C]
+mod settings_ui; // [트랙 C]
+mod template_ui; // [트랙 C]
+mod track_c; // [트랙 C]
 
 use eframe::egui;
 use parking_lot::Mutex;

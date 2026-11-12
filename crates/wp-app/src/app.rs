@@ -55,6 +55,7 @@ pub struct App {
     pub(crate) tb: crate::trackb_ui::TbState, // [트랙 B]
     /// 점검용: --search 글 · --send · --shot 파일 (몇 초 뒤 화면을 그림 파일로 저장하고 끝냄)
     test: Option<(Instant, Option<String>, bool, Option<String>, u8)>,
+    pub(crate) tc: crate::track_c::TrackC, // [트랙 C]
 }
 
 pub(crate) struct Snap {
@@ -114,7 +115,7 @@ impl App {
         let out = OutWin::new();
         let saved = core.lock().settings.get()["rsOutputMonitor"].as_u64().map(|x| x as usize);
         let monitor = saved.filter(|m| out.monitors.iter().any(|x| x.index == *m)).unwrap_or_else(|| out.default_monitor());
-        Self { core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */ }
+        Self { core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */ }
     }
 
     fn snap(&self) -> Snap {
@@ -680,6 +681,9 @@ impl eframe::App for App {
         self.run_test(&ctx, &mut acts);
         let s = self.snap();
 
+        let _other_menu = crate::track_c::menu_bar(self, ui); // [트랙 C] 메뉴 줄 (다른 트랙 항목 id)
+        crate::track_c::windows(self, &ctx, &mut acts); // [트랙 C] 설정·템플릿·기록 창
+        let s = self.snap(); // [트랙 C] 창에서 바뀐 것 반영
         egui::Panel::top("top").show(ui, |ui| {
             ui.add_space(4.0);
             self.top_bar(ui, &s, &mut acts);
