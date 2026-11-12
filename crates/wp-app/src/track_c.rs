@@ -21,6 +21,7 @@ pub struct TrackC {
 /// 메뉴에서 고른 트랙 C 항목
 pub fn handle_menu(app: &mut App, id: &str) {
     match id {
+        "w:workspaces" => app.workspace.open = true,
         "c:settings" => app.tc.settings.open = true,
         "c:templates" => app.tc.templates.open = true,
         "c:history" => app.tc.history.open = true,
