@@ -40,6 +40,8 @@ pub mod flow; // [트랙 C]
 pub mod slideedit; // [트랙 C]
 pub mod themes; // [트랙 C]
 pub mod importer; // [트랙 C]
+pub mod bethlehem; // [트랙 C]
+pub mod commentary; // [트랙 C]
 pub mod templates; // [트랙 C]
 pub mod usage; // [트랙 C]
 // [트랙 D] 외부 연동·리모컨·내부망

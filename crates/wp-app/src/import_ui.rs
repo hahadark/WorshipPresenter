@@ -14,6 +14,8 @@ pub struct ImportUi {
     meta: Value,
     msg: String,
     confirm_del: Option<String>,
+    /// 베들레헴 폴더: (폴더, [(파일, 이름, 고름)])
+    beth: Option<Vec<(std::path::PathBuf, Vec<(String, String, bool)>)>>,
 }
 
 impl ImportUi {
@@ -74,6 +76,35 @@ impl ImportUi {
                 }
                 ui.label(RichText::new(wp_core::i18n::tr("JSON · CSV/TSV · Zefania XML · 베들레헴 .bdb")).small().color(Color32::GRAY));
             });
+            // 베들레헴 성경 폴더에서 여러 개 한꺼번에
+            ui.horizontal(|ui| {
+                if ui.button("베들레헴 성경 폴더 찾기").clicked() {
+                    self.beth = Some(wp_core::bethlehem::find_dirs(&[]).into_iter().map(|d| {
+                        let list = wp_core::bethlehem::list_bibles(&d).into_iter().map(|x| (x["file"].as_str().unwrap_or("").to_string(), x["name"].as_str().unwrap_or("").to_string(), x["known"].as_bool().unwrap_or(false))).collect();
+                        (d, list)
+                    }).collect());
+                }
+                if ui.button("폴더 고르기…").clicked() {
+                    if let Some(d) = rfd::FileDialog::new().pick_folder() {
+                        let list = wp_core::bethlehem::list_bibles(&d).into_iter().map(|x| (x["file"].as_str().unwrap_or("").to_string(), x["name"].as_str().unwrap_or("").to_string(), false)).collect();
+                        self.beth = Some(vec![(d, list)]);
+                    }
+                }
+            });
+            if let Some(dirs) = &mut self.beth {
+                if dirs.is_empty() { ui.label(RichText::new("BethlehemWin 폴더를 찾지 못했습니다. '폴더 고르기'로 직접 고르세요.").small().color(Color32::GRAY)); }
+                let mut run: Option<(std::path::PathBuf, Vec<String>)> = None;
+                for (d, list) in dirs.iter_mut() {
+                    ui.label(RichText::new(d.to_string_lossy()).small());
+                    ui.horizontal_wrapped(|ui| { for (_, name, on) in list.iter_mut() { ui.checkbox(on, name.as_str()); } });
+                    let files: Vec<String> = list.iter().filter(|x| x.2).map(|x| x.0.clone()).collect();
+                    if ui.add_enabled(!files.is_empty(), egui::Button::new(format!("고른 {}개 가져오기", files.len()))).clicked() { run = Some((d.clone(), files)); }
+                }
+                if let Some((d, files)) = run {
+                    let res = wp_core::bethlehem::import_files(&mut core.lock(), &d, &files);
+                    self.msg = res.iter().map(|r| if r["ok"] == json!(true) { format!("{}: {}절", r["file"].as_str().unwrap_or(""), r["verses"]) } else { format!("{}: 실패 — {}", r["file"].as_str().unwrap_or(""), r["error"].as_str().unwrap_or("")) }).collect::<Vec<_>>().join("\n");
+                }
+            }
             if self.busy.is_some() { ui.spinner(); }
             if let Some(a) = self.analysis.clone() {
                 let r = &a.report;

@@ -15,6 +15,7 @@ pub struct TrackC {
     pub slideedit: crate::slideedit_ui::SlideEditUi,
     pub themes: crate::theme_ui::ThemeUi,
     pub import: crate::import_ui::ImportUi,
+    pub commentary: crate::commentary_ui::CommentaryUi,
 }
 
 /// 메뉴에서 고른 트랙 C 항목
@@ -30,6 +31,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "c:obsfull" => { let mut c = app.core.lock(); let f = !c.obs_full; wp_core::themes::set_obs_view(&mut c, Some(f), None); c.notify(if f { wp_core::i18n::tr_s("OBS 자막: 슬라이드 그대로 (예배당 화면 모양)") } else { wp_core::i18n::tr_s("OBS 자막: 자막 템플릿") }, "ok"); }
         "c:obspip" => { let mut c = app.core.lock(); let p = !c.settings.get()["output"]["obsPip"].as_bool().unwrap_or(false); wp_core::themes::set_obs_view(&mut c, None, Some(p)); }
         "c:import-bible" => app.tc.import.open = true,
+        "c:commentary" => app.tc.commentary.open = true,
         // 트랙 B 창 (예전 도구 줄)
         "b:songs" => app.tb.songs = true,
         "b:lib" => app.tb.lib = true,
@@ -85,6 +87,7 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     app.tc.slideedit.show(ctx, &core, sel, &wd, &dd, acts);
     app.tc.themes.show(ctx, &core);
     app.tc.import.show(ctx, &core);
+    app.tc.commentary.show(ctx, &core);
     // 점검용: --open-c settings|templates|history|usage|about
     if let Some(w) = std::env::args().position(|x| x == "--open-c").and_then(|i| std::env::args().nth(i + 1)) {
         if !OPENED.swap(true, std::sync::atomic::Ordering::SeqCst) {
