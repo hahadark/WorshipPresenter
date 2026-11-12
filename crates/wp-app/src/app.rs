@@ -282,25 +282,28 @@ impl App {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context, acts: &mut Vec<Act>, typing: bool) {
-        let k = |key: Key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key));
-        if k(Key::F5) { acts.push(Act::Step(-1)) }
-        if k(Key::F6) { acts.push(Act::Step(1)) }
-        if k(Key::F9) { acts.push(Act::SendPreview) }
-        if k(Key::F10) { acts.push(Act::ToggleClear) }
-        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::K))) { self.focus_search = true }
-        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::ArrowDown))) { acts.push(Act::CuePreviewStep(1)) }
-        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::ArrowUp))) { acts.push(Act::CuePreviewStep(-1)) }
-        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::F))) { acts.push(Act::OutputToggle) }
+        // [트랙 C] 설정 → 단축키에서 바꾼 키를 쓴다 (없으면 기본값)
+        let st = self.core.lock().settings.get()["shortcuts"].clone();
+        let st = serde_json::json!({ "shortcuts": st });
+        let mut on = |id: &str, def: &str| (!typing || crate::keys::safe_while_typing(&st, id, def)) && crate::keys::pressed(ctx, &st, id, def);
+        if on("prevSlide", "F5") { acts.push(Act::Step(-1)) }
+        if on("nextSlide", "F6") { acts.push(Act::Step(1)) }
+        if on("sendPreview", "F9") { acts.push(Act::SendPreview) }
+        if on("toggleClear", "F10") { acts.push(Act::ToggleClear) }
+        if on("focusSearch", "Ctrl+K") { self.focus_search = true }
+        if on("cueNext", "Ctrl+ArrowDown") { acts.push(Act::CuePreviewStep(1)) }
+        if on("cuePrev", "Ctrl+ArrowUp") { acts.push(Act::CuePreviewStep(-1)) }
+        if on("toggleOutputWindow", "Ctrl+Shift+F") { acts.push(Act::OutputToggle) }
+        if on("outputOff", "Escape") && self.out.running() { acts.push(Act::OutputToggle) }
         if !typing {
             let pv = self.core.lock().pres.preview.as_ref().map(|p| (p.index, p.slides.len()));
             if let Some((i, n)) = pv {
-                if k(Key::PageDown) && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
-                if k(Key::PageUp) && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
+                if on("previewNextSlide", "PageDown") && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
+                if on("previewPrevSlide", "PageUp") && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
             }
-            if k(Key::Space) { acts.push(Act::Step(1)) }
+            if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Space)) { acts.push(Act::Step(1)) }
         }
     }
-
     fn top_bar(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         ui.horizontal(|ui| {
             ui.label(RichText::new("워십프리젠터").strong().size(16.0));
@@ -331,8 +334,7 @@ impl App {
             if ui.selectable_label(s.preview_mode, "미리보기 거쳐 송출").on_hover_text("끄면 누른 본문·순서를 바로 송출합니다").clicked() {
                 acts.push(Act::TogglePreviewMode);
             }
-            crate::tools_ui::menu_button(ui); // [트랙 D] 도구 창 (상단 메뉴 줄이 생기면 옮김)
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let running = self.out.running();
                 let btn = egui::Button::new(if running { "예배당 화면 끄기" } else { "예배당 화면 켜기" }).fill(if running { Color32::from_rgb(0x2e, 0x7d, 0x4f) } else { Color32::from_rgb(0x33, 0x38, 0x44) });
                 if ui.add(btn).on_hover_text("Ctrl+Shift+F").clicked() {
@@ -682,13 +684,12 @@ impl eframe::App for App {
         self.run_test(&ctx, &mut acts);
         let s = self.snap();
 
-        let _other_menu = crate::track_c::menu_bar(self, ui); // [트랙 C] 메뉴 줄 (다른 트랙 항목 id)
+        crate::track_c::menu_bar(self, ui); // [트랙 C] 메뉴 줄 (트랙 B·D 항목도 여기서 연다)
         crate::track_c::windows(self, &ctx, &mut acts); // [트랙 C] 설정·템플릿·기록 창
         let s = self.snap(); // [트랙 C] 창에서 바뀐 것 반영
         egui::Panel::top("top").show(ui, |ui| {
             ui.add_space(4.0);
             self.top_bar(ui, &s, &mut acts);
-            self.trackb_toolbar(ui); // [트랙 B]
             ui.add_space(4.0);
         });
         egui::Panel::bottom("status").show(ui, |ui| {

@@ -8,6 +8,7 @@ mod paint;
 mod trackb_ui; // [트랙 B]
 mod form; // [트랙 C]
 mod history_ui; // [트랙 C]
+mod keys; // [트랙 C]
 mod menubar; // [트랙 C]
 mod settings_ui; // [트랙 C]
 mod template_ui; // [트랙 C]
