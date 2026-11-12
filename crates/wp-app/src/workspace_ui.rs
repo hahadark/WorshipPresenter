@@ -101,7 +101,7 @@ impl App {
             ui.label("표시된 패널이 없습니다. 위쪽 ‘저장 · 관리 · 패널’에서 다시 표시하세요.");
         }
         self.workspace.state.layout = layout;
-        if let Some(p) = ui.data_mut(|d| d.remove_temp::<Pane>(egui::Id::new("workspace-hide"))) {
+        if let Some(p) = ui.data_mut(|d| d.remove_temp::<Option<Pane>>(egui::Id::unique("workspace-hide")).flatten()) {
             self.workspace.state.toggle(p)
         }
         if let Some((p, t, side)) = self.workspace.pending.take() {
@@ -270,7 +270,7 @@ impl App {
                                         }
                                         if ui.button("패널 숨기기").clicked() {
                                             ui.data_mut(|d| {
-                                                d.insert_temp(egui::Id::new("workspace-hide"), tab)
+                                                d.insert_temp(egui::Id::unique("workspace-hide"), Some(tab))
                                             });
                                             ui.close()
                                         }
