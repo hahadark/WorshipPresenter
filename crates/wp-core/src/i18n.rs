@@ -62,6 +62,22 @@ pub fn tr(s: &str) -> String {
     DICT.get(s).cloned().unwrap_or_else(|| s.to_string())
 }
 
+/// &'static str 그대로 쓰는 자리(if/else 가지 등)용: 번역한 글을 한 번만 만들어 두고 같은 것을 돌려준다
+pub fn tr_s(s: &'static str) -> &'static str {
+    if !is_en() {
+        return s;
+    }
+    static CACHE: Lazy<parking_lot::Mutex<HashMap<&'static str, &'static str>>> = Lazy::new(|| parking_lot::Mutex::new(HashMap::new()));
+    let mut c = CACHE.lock();
+    if let Some(v) = c.get(s) {
+        return v;
+    }
+    let t = tr(s);
+    let v: &'static str = if t == s { s } else { Box::leak(t.into_boxed_str()) };
+    c.insert(s, v);
+    v
+}
+
 /// 자리가 있는 문구: tr_args("{1}장 · {2}", &[&a, &b]) — 사전은 Electron 처럼 {1} {2} 자리로 찾고, 자리를 채운다
 pub fn tr_args(template: &str, args: &[&dyn std::fmt::Display]) -> String {
     let mut s = tr(template);

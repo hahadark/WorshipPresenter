@@ -27,7 +27,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "c:about" => app.tc.history.about_open = true,
         "c:slideedit" => app.tc.slideedit.open = true,
         "c:themes" => app.tc.themes.open = true,
-        "c:obsfull" => { let mut c = app.core.lock(); let f = !c.obs_full; wp_core::themes::set_obs_view(&mut c, Some(f), None); c.notify(if f { "OBS 자막: 슬라이드 그대로 (예배당 화면 모양)" } else { "OBS 자막: 자막 템플릿" }, "ok"); }
+        "c:obsfull" => { let mut c = app.core.lock(); let f = !c.obs_full; wp_core::themes::set_obs_view(&mut c, Some(f), None); c.notify(if f { wp_core::i18n::tr_s("OBS 자막: 슬라이드 그대로 (예배당 화면 모양)") } else { wp_core::i18n::tr_s("OBS 자막: 자막 템플릿") }, "ok"); }
         "c:obspip" => { let mut c = app.core.lock(); let p = !c.settings.get()["output"]["obsPip"].as_bool().unwrap_or(false); wp_core::themes::set_obs_view(&mut c, None, Some(p)); }
         "c:import-bible" => app.tc.import.open = true,
         // 트랙 B 창 (예전 도구 줄)

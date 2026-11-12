@@ -206,7 +206,7 @@ fn trigger(ui: &mut egui::Ui, core: &Shared) {
 }
 
 fn run_bg(f: impl FnOnce() -> Result<Value, String> + Send + 'static) {
-    ST.lock().msg = "보내는 중…".into();
+    ST.lock().msg = wp_core::i18n::tr("보내는 중…").into();
     std::thread::spawn(move || {
         let r = f();
         *RESULT.lock() = Some(match r {
@@ -254,10 +254,10 @@ fn devices(ui: &mut egui::Ui, core: &Shared) {
     let list = devs.as_array().cloned().unwrap_or_default();
     for d in &list {
         ui.horizontal(|ui| {
-            let kind = if d["kind"] == "x32" { "X32 음향" } else { "PTZ 카메라" };
+            let kind = if d["kind"] == "x32" { wp_core::i18n::tr_s("X32 음향") } else { wp_core::i18n::tr_s("PTZ 카메라") };
             ui.label(format!("{} · {} · {}:{}", d["name"].as_str().unwrap_or(""), kind, d["host"].as_str().unwrap_or(""), d["port"]));
             let mut s = ST.lock();
-            ui.add(egui::TextEdit::singleline(&mut s.dv_action).hint_text(if d["kind"] == "x32" { "ch1 on, scene 3" } else { "프리셋 번호·home" }).desired_width(140.0));
+            ui.add(egui::TextEdit::singleline(&mut s.dv_action).hint_text(if d["kind"] == "x32" { "ch1 on, scene 3" } else { wp_core::i18n::tr_s("프리셋 번호·home") }).desired_width(140.0));
             if ui.button(wp_core::i18n::tr("보내기")).clicked() {
                 let (all, id, act) = (devs.clone(), d["id"].as_str().unwrap_or("").to_string(), s.dv_action.clone());
                 drop(s);

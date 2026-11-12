@@ -99,7 +99,7 @@ impl TemplateUi {
                                     self.sel = t["id"].as_str().unwrap_or("").to_string();
                                     self.draft = t;
                                     self.dirty = false;
-                                    self.msg = "저장했습니다.".into();
+                                    self.msg = wp_core::i18n::tr("저장했습니다.").into();
                                     let c = core.lock();
                                     c.emit(wp_core::core::Ev::Live);
                                     c.emit(wp_core::core::Ev::Ui);
@@ -109,13 +109,13 @@ impl TemplateUi {
                         }
                         if ui.button(wp_core::i18n::tr("복제")).clicked() && !self.sel.is_empty() {
                             match templates::duplicate_template(&mut core.lock().settings, &self.sel, None) {
-                                Ok(t) => { self.sel = t["id"].as_str().unwrap_or("").into(); self.draft = t; self.dirty = false; self.msg = "복제했습니다.".into(); }
+                                Ok(t) => { self.sel = t["id"].as_str().unwrap_or("").into(); self.draft = t; self.dirty = false; self.msg = wp_core::i18n::tr("복제했습니다.").into(); }
                                 Err(e) => self.msg = e,
                             }
                         }
                         if ui.button(RichText::new(wp_core::i18n::tr("삭제")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() && !self.sel.is_empty() {
                             match templates::delete_template(&mut core.lock().settings, &self.sel) {
-                                Ok(()) => { self.sel.clear(); self.draft = Value::Null; self.msg = "삭제했습니다.".into(); }
+                                Ok(()) => { self.sel.clear(); self.draft = Value::Null; self.msg = wp_core::i18n::tr("삭제했습니다.").into(); }
                                 Err(e) => self.msg = e,
                             }
                         }
@@ -124,7 +124,7 @@ impl TemplateUi {
                         for (slot, label) in [("main", "예배당에 쓰기"), ("overlay", "OBS 자막에 쓰기"), ("overlayLyrics", "OBS 찬송가·찬양에 쓰기")] {
                             if ui.add_enabled(!self.sel.is_empty() && !self.dirty, egui::Button::new(label)).clicked() {
                                 core.lock().set_template(slot, &self.sel);
-                                self.msg = format!("{label} 했습니다.");
+                                self.msg = wp_core::i18n::tr_args("{1} 했습니다.", &[&label]);
                             }
                         }
                     });

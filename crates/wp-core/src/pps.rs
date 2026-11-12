@@ -173,7 +173,7 @@ pub fn build_cache(data_dir: &Path, file: &str) -> Result<Value, String> {
     }
     let (bg, scores, texts) = extract(Path::new(file))?;
     if scores.is_empty() && !texts.iter().any(|t| !t.is_empty()) {
-        return Err("파일에서 그림도 글자도 꺼내지 못했습니다.".into());
+        return Err(crate::i18n::tr("파일에서 그림도 글자도 꺼내지 못했습니다.").into());
     }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let url = |f: &str| format!("/hymn/{key}/{f}");

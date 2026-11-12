@@ -62,7 +62,7 @@ pub fn safe_eq(a: &str, b: &str) -> bool {
 pub fn send_cue_item(core: &mut Core, index: i64) -> Result<Value, String> {
     let n = core.cue.as_ref().map(|c| c.items.len() as i64).unwrap_or(0);
     if index < 0 || index >= n {
-        return Err("그 순서가 없습니다.".into());
+        return Err(crate::i18n::tr("그 순서가 없습니다.").into());
     }
     let d = core.item_deck(index as usize)?;
     core.pres.preview = Some(d.clone());
@@ -83,7 +83,7 @@ pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result
         "cue-next" | "cue-prev" => {
             let ci = core.pres.live.as_ref().filter(|l| !l.deck.passage["cueId"].as_str().unwrap_or("").is_empty()).and_then(|l| l.deck.passage["cueIndex"].as_i64()).unwrap_or(-1);
             if ci < 0 {
-                return Err("송출 중인 큐시트 순서가 없습니다.".into());
+                return Err(crate::i18n::tr("송출 중인 큐시트 순서가 없습니다.").into());
             }
             return send_cue_item(core, ci + if action == "cue-next" { 1 } else { -1 });
         }
@@ -104,7 +104,7 @@ pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result
             core.run_macro(&key).map_err(|e| e.to_string())?;
         }
         "draw-clear" => core.draw_clear(), // [트랙 B]
-        _ => return Err(format!("알 수 없는 동작: {action}")),
+        _ => return Err(crate::i18n::tr_args("알 수 없는 동작: {1}", &[&action])),
     }
     Ok(Value::Bool(true))
 }

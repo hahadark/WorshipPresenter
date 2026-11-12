@@ -230,7 +230,7 @@ pub fn parse_pro6(xml: &str, file: &Path) -> Result<Vec<Value>, String> {
         }
     }
     if blocks.is_empty() {
-        return Err("ProPresenter 파일에서 가사를 찾지 못했습니다 (ProPresenter 7 의 .pro 는 아직 못 읽습니다 — 텍스트·ChordPro 로 내보내 주세요).".into());
+        return Err(crate::i18n::tr("ProPresenter 파일에서 가사를 찾지 못했습니다 (ProPresenter 7 의 .pro 는 아직 못 읽습니다 — 텍스트·ChordPro 로 내보내 주세요).").into());
     }
     Ok(vec![song(&title, &clean(&blocks.join("\n\n")), &credit, "")])
 }
@@ -258,7 +258,7 @@ pub fn power_point_texts(file: &Path) -> Result<Vec<String>, String> {
 pub fn songs_from_slides(texts: &[String], file: &Path) -> Result<Vec<Value>, String> {
     let mut slides: Vec<String> = texts.iter().map(|t| clean(t)).filter(|t| !t.is_empty()).collect();
     if slides.is_empty() {
-        return Err("PPT 안에 글자가 없습니다 (악보 그림만 있는 PPT 는 찬송가·PPT 폴더로 쓰세요).".into());
+        return Err(crate::i18n::tr("PPT 안에 글자가 없습니다 (악보 그림만 있는 PPT 는 찬송가·PPT 폴더로 쓰세요).").into());
     }
     // 첫 장이 제목 한 줄이면 제목으로
     let b = base(file);
@@ -330,18 +330,18 @@ pub fn parse_song_file(file: &Path) -> Result<Vec<Value>, String> {
     }
     let buf = std::fs::read(file).map_err(|e| e.to_string())?;
     if buf.len() > 5 * 1024 * 1024 {
-        return Err("파일이 너무 큽니다.".into());
+        return Err(crate::i18n::tr("파일이 너무 큽니다.").into());
     }
     let text = decode_text(&buf);
     if ext == "pro6" || text.contains("<RVPresentationDocument") {
         return parse_pro6(&text, file);
     }
     if ext == "pro" {
-        return Err("ProPresenter 7 (.pro) 파일은 아직 못 읽습니다. ProPresenter 에서 텍스트나 ChordPro 로 내보내 주세요.".into());
+        return Err(crate::i18n::tr("ProPresenter 7 (.pro) 파일은 아직 못 읽습니다. ProPresenter 에서 텍스트나 ChordPro 로 내보내 주세요.").into());
     }
     if ext == "xml" || re!(r"(?i)<song\b[^>]*openlyrics").is_match(&text) {
         if !re!(r"(?i)<song\b").is_match(&text) {
-            return Err("OpenLyrics(OpenLP) 형식의 XML 이 아닙니다.".into());
+            return Err(crate::i18n::tr("OpenLyrics(OpenLP) 형식의 XML 이 아닙니다.").into());
         }
         return Ok(parse_open_lyrics(&text, file));
     }
@@ -351,7 +351,7 @@ pub fn parse_song_file(file: &Path) -> Result<Vec<Value>, String> {
     if ext == "txt" {
         return Ok(if re!(r"(?m)^#\s*\S").is_match(&text) { parse_song_text(&text, "", 2) } else { vec![song(&base(file), &clean(&text), "", "")] });
     }
-    Err("읽을 수 없는 형식입니다 (OpenLP .xml · ChordPro .cho · ProPresenter 6 .pro6 · PPT · .txt).".into())
+    Err(crate::i18n::tr("읽을 수 없는 형식입니다 (OpenLP .xml · ChordPro .cho · ProPresenter 6 .pro6 · PPT · .txt).").into())
 }
 
 /// 여러 파일 → (곡 목록, 못 읽은 파일 '이름: 까닭')

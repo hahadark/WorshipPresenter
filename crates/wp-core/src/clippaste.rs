@@ -283,7 +283,7 @@ pub fn grab_slides(data_dir: &Path, force: bool) -> Result<(PathBuf, &'static st
         let _ = std::fs::remove_file(&file);
     }
     if !confirmed {
-        return Err("클립보드에 PowerPoint 슬라이드가 없습니다. PowerPoint 의 슬라이드 목록에서 슬라이드를 골라 복사한 뒤 다시 붙여 넣으세요.".into());
+        return Err(crate::i18n::tr("클립보드에 PowerPoint 슬라이드가 없습니다. PowerPoint 의 슬라이드 목록에서 슬라이드를 골라 복사한 뒤 다시 붙여 넣으세요.").into());
     }
     if crate::hymns::has_powerpoint() {
         let file = next_file(&dir, &base, "pptx");
@@ -294,7 +294,7 @@ pub fn grab_slides(data_dir: &Path, force: bool) -> Result<(PathBuf, &'static st
             }
         }
     }
-    Err("클립보드에서 PowerPoint 슬라이드를 가져오지 못했습니다. PowerPoint 에서 슬라이드를 다시 복사하거나, PPT 파일을 큐시트에 끌어다 놓으세요.".into())
+    Err(crate::i18n::tr("클립보드에서 PowerPoint 슬라이드를 가져오지 못했습니다. PowerPoint 에서 슬라이드를 다시 복사하거나, PPT 파일을 큐시트에 끌어다 놓으세요.").into())
 }
 
 /// 클립보드 그림 → <데이터>/media/clip-….png → '/media/…' 주소
@@ -304,7 +304,7 @@ pub fn grab_image(data_dir: &Path) -> Result<String, String> {
     let file = next_file(&dir, &format!("clip-{}", stamp()), "png");
     let out = run_ps(PS_CLIP_IMAGE, &[("WC_CLIP_OUT", &file.to_string_lossy())])?;
     if !out.contains("OK") || !file.exists() {
-        return Err("클립보드에 그림이 없습니다.".into());
+        return Err(crate::i18n::tr("클립보드에 그림이 없습니다.").into());
     }
     Ok(format!("/media/{}", file.file_name().unwrap().to_string_lossy()))
 }

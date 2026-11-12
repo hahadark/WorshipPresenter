@@ -44,7 +44,7 @@ impl HistoryUi {
             let mut open = self.open;
             egui::Window::new(wp_core::i18n::tr("송출 기록")).open(&mut open).default_size([520.0, 520.0]).show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(format!("{}개 (최근 300개)", hist.len()));
+                    ui.label(wp_core::i18n::tr_args("{1}개 (최근 300개)", &[&(hist.len())]));
                     if ui.button(wp_core::i18n::tr("기록 지우기")).clicked() {
                         wp_core::templates::clear_history(&mut core.lock().settings);
                     }
@@ -82,14 +82,14 @@ impl HistoryUi {
                 ui.horizontal(|ui| {
                     if ui.button(wp_core::i18n::tr("CSV 저장…")).clicked() {
                         let csv = usage::csv(&core.lock().store.db, &f, self.by_title);
-                        let name = format!("WorshipCue-사용기록{}.csv", if self.by_title { "-제목별" } else { "" });
+                        let name = format!("WorshipCue-사용기록{}.csv", if self.by_title { wp_core::i18n::tr_s("-제목별") } else { "" });
                         if let Some(p) = rfd::FileDialog::new().set_file_name(&name).add_filter("CSV", &["csv"]).save_file() {
                             self.msg = match std::fs::write(&p, csv) { Ok(()) => format!("저장했습니다: {}", p.display()), Err(e) => format!("저장 실패: {e}") };
                         }
                     }
                     if ui.button(RichText::new(wp_core::i18n::tr("모두 지우기")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
                         let n = usage::clear(&core.lock().store.db, "");
-                        self.msg = format!("{n}줄을 지웠습니다.");
+                        self.msg = wp_core::i18n::tr_args("{1}줄을 지웠습니다.", &[&n]);
                     }
                     ui.label(RichText::new(&self.msg).small());
                 });
@@ -101,7 +101,7 @@ impl HistoryUi {
                             for s in usage::summary(db, &f) {
                                 ui.label(usage::kind_name(&s.kind));
                                 ui.label(&s.title);
-                                ui.label(format!("{}번", s.count));
+                                ui.label(wp_core::i18n::tr_args("{1}번", &[&s.count]));
                                 ui.label(RichText::new(&s.credit).small());
                                 ui.end_row();
                             }
@@ -123,7 +123,7 @@ impl HistoryUi {
             let mut open = self.about_open;
             egui::Window::new(wp_core::i18n::tr("정보")).open(&mut open).default_size([520.0, 420.0]).show(ctx, |ui| {
                 ui.heading(wp_core::i18n::tr("워십프리젠터 (Rust 판)"));
-                ui.label(format!("버전 {} · 라이선스 GPL-3.0-or-later", env!("CARGO_PKG_VERSION")));
+                ui.label(wp_core::i18n::tr_args("버전 {1} · 라이선스 GPL-3.0-or-later", &[&(env!("CARGO_PKG_VERSION"))]));
                 ui.separator();
                 ui.label(wp_core::i18n::tr("가져다 쓴 공개 코드·글꼴"));
                 egui::ScrollArea::vertical().show(ui, |ui| {

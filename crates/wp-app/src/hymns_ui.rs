@@ -65,7 +65,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
         let label = if watching { format!("받는 중 ({}분)", st["secondsLeft"].as_u64().unwrap_or(0) / 60 + 1) } else { "온라인에서 찾기".into() };
         if ui
             .small_button(label)
-            .on_hover_text(format!("다운로드 폴더({})에 새 찬양 PPT 가 들어오면 '{}' 로 옮겨 큐시트에 넣습니다 (20분). 다시 누르면 그만", st["downloads"].as_str().unwrap_or(""), st["target"].as_str().unwrap_or("")))
+            .on_hover_text(wp_core::i18n::tr_args("다운로드 폴더({1})에 새 찬양 PPT 가 들어오면 '{2}' 로 옮겨 큐시트에 넣습니다 (20분). 다시 누르면 그만", &[&(st["downloads"].as_str().unwrap_or("")), &(st["target"].as_str().unwrap_or(""))]))
             .clicked()
         {
             if watching {
@@ -106,7 +106,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             if let Some(dir) = rfd::FileDialog::new().set_title("찬송가·교독문 PPT 폴더").pick_folder() {
                 let mut c = app.core.lock();
                 match hymns::add_folder(&mut c, &dir, None) {
-                    Ok(v) => c.notify(format!("'{}' 폴더를 넣었습니다 ({}개)", v["name"].as_str().unwrap_or(""), v["count"]), "ok"),
+                    Ok(v) => c.notify(wp_core::i18n::tr_args("'{1}' 폴더를 넣었습니다 ({2}개)", &[&(v["name"].as_str().unwrap_or("")), &(v["count"])]), "ok"),
                     Err(e) => c.notify(e, "error"),
                 }
                 refresh = true;
@@ -117,13 +117,13 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 let mut c = app.core.lock();
                 let done = hymnal::import_from(&c, &dir);
                 if done.is_empty() {
-                    c.notify("그 폴더에 찬송가 파일(새찬송가.hdb 등)이 없습니다.", "warn");
+                    c.notify(wp_core::i18n::tr("그 폴더에 찬송가 파일(새찬송가.hdb 등)이 없습니다."), "warn");
                 } else {
-                    c.notify(format!("찬송가 {}권을 가져왔습니다.", done.len()), "ok");
+                    c.notify(wp_core::i18n::tr_args("찬송가 {1}권을 가져왔습니다.", &[&(done.len())]), "ok");
                 }
             }
         }
-        let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text(if src == "ppt" { "번호(10) 또는 제목" } else { "번호(10장) · 교독문 1 · 제목·가사" }).desired_width(ui.available_width().max(40.0)));
+        let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text(if src == "ppt" { wp_core::i18n::tr_s("번호(10) 또는 제목") } else { wp_core::i18n::tr_s("번호(10장) · 교독문 1 · 제목·가사") }).desired_width(ui.available_width().max(40.0)));
         refresh |= r.changed() || (res.is_empty() && src == "ppt" && !folders.is_empty() && q.is_empty());
     });
     if refresh {
@@ -143,7 +143,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 let name = f["name"].as_str().unwrap_or("");
                 let path = f["path"].as_str().unwrap_or("").to_string();
                 let warn = !f["exists"].as_bool().unwrap_or(false);
-                ui.label(RichText::new(format!("{} {}개{}", name, f["count"], if warn { " (폴더 없음)" } else { "" })).small().color(if warn { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::GRAY }));
+                ui.label(RichText::new(wp_core::i18n::tr_args("{1} {2}개{3}", &[&name, &(f["count"]), &(if warn { wp_core::i18n::tr_s(" (폴더 없음)") } else { "" })])).small().color(if warn { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::GRAY }));
                 // 폴더별 읽는 방식
                 let cur = f["render"].as_str().unwrap_or("auto").to_string();
                 let label = |r: &str| match r {
@@ -247,9 +247,9 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
                     c.save_cue();
                     c.preview_item(i);
                     if t + p + s > 0 {
-                        c.notify(format!("슬라이드 {sl}장에서 글상자 {t}개 · 그림 {p}개 · 도형 {s}개를 꺼냈습니다."), "ok");
+                        c.notify(wp_core::i18n::tr_args("슬라이드 {1}장에서 글상자 {2}개 · 그림 {3}개 · 도형 {4}개를 꺼냈습니다.", &[&sl, &t, &p, &s]), "ok");
                     } else {
-                        c.notify("따로 꺼낼 요소를 찾지 못했습니다 (글이 그림으로 되어 있거나 돌린 요소).", "warn");
+                        c.notify(wp_core::i18n::tr("따로 꺼낼 요소를 찾지 못했습니다 (글이 그림으로 되어 있거나 돌린 요소)."), "warn");
                     }
                 }
                 Err(e) => {
@@ -262,7 +262,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             let mut c = app.core.lock();
             match hymns::slide_texts(&c, &file).and_then(|t| pptsplit::rule_split(&t, &title)) {
                 Ok(parts) if parts.len() > 1 => replace_with_parts(&mut c, i, it, &parts),
-                Ok(_) => c.notify("나눌 곳을 찾지 못했습니다. AI 로 나누기를 써 보세요.", "warn"),
+                Ok(_) => c.notify(wp_core::i18n::tr("나눌 곳을 찾지 못했습니다. AI 로 나누기를 써 보세요."), "warn"),
                 Err(e) => c.notify(e, "error"),
             }
         }
@@ -279,7 +279,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
                     let model = ai["model"].as_str().unwrap_or("").to_string();
                     let endpoint = ai["endpoint"].as_str().unwrap_or("").to_string();
                     let (it2, t2) = (it.clone(), title.clone());
-                    app.core.lock().notify("AI 에게 나누기를 묻는 중…", "info");
+                    app.core.lock().notify(wp_core::i18n::tr("AI 에게 나누기를 묻는 중…"), "info");
                     hymns::run_bg(
                         move || {
                             let blank = texts.iter().all(|t| t.trim().is_empty());
@@ -303,11 +303,11 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
         if ui.small_button(wp_core::i18n::tr("모아보기 그림 저장")).on_hover_text(wp_core::i18n::tr("슬라이드 16장씩 번호를 붙인 그림 — 글자가 없는 PPT 를 채팅 AI 에 올릴 때")).clicked() {
             match wp_core::pptsheets::inputs(&app.core.lock(), &file) {
                 Ok(inp) => {
-                    app.core.lock().notify("모아보기 그림을 만드는 중…", "info");
+                    app.core.lock().notify(wp_core::i18n::tr("모아보기 그림을 만드는 중…"), "info");
                     hymns::run_bg(move || wp_core::pptsheets::build(&inp), |c, r| match r.and_then(|s| wp_core::pptsheets::save(c, &s).map(|d| (d, s.len()))) {
                         Ok((dir, n)) => {
                             open_url(&dir.to_string_lossy());
-                            c.notify(format!("모아보기 그림 {n}장을 '{}' 에 저장했습니다. 채팅 AI 에 프롬프트와 함께 올리세요.", dir.display()), "ok");
+                            c.notify(wp_core::i18n::tr_args("모아보기 그림 {1}장을 '{2}' 에 저장했습니다. 채팅 AI 에 프롬프트와 함께 올리세요.", &[&n, &(dir.display())]), "ok");
                         }
                         Err(e) => c.notify(e, "error"),
                     });
@@ -324,7 +324,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             match r {
                 Ok(p) => {
                     ui.ctx().copy_text(p);
-                    app.core.lock().notify("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요.", "ok");
+                    app.core.lock().notify(wp_core::i18n::tr("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요."), "ok");
                 }
                 Err(e) => app.core.lock().notify(e, "error"),
             }
@@ -357,13 +357,13 @@ fn replace_with_parts(c: &mut wp_core::core::Core, i: usize, it: &Value, parts: 
         }
     }
     c.save_cue();
-    c.notify(format!("PPT 를 순서 {n}개로 나눴습니다."), "ok");
+    c.notify(wp_core::i18n::tr_args("PPT 를 순서 {1}개로 나눴습니다.", &[&n]), "ok");
 }
 
 /// 클립보드의 PowerPoint 슬라이드 · 그림 → 새 순서 (백그라운드)
 fn grab_clipboard(app: &mut App) {
     let dd = app.core.lock().data_dir.clone();
-    app.core.lock().notify("클립보드를 읽는 중…", "info");
+    app.core.lock().notify(wp_core::i18n::tr("클립보드를 읽는 중…"), "info");
     hymns::run_bg(
         move || {
             let (slides, image, _) = clippaste::clipboard_info();
@@ -372,20 +372,20 @@ fn grab_clipboard(app: &mut App) {
             } else if image {
                 clippaste::grab_image(&dd).map(|u| ("image", u))
             } else {
-                Err("클립보드에 PowerPoint 슬라이드나 그림이 없습니다. (글은 Ctrl+V)".to_string())
+                Err(wp_core::i18n::tr("클립보드에 PowerPoint 슬라이드나 그림이 없습니다. (글은 Ctrl+V)").to_string())
             }
         },
         |c, r| match r {
             Ok(("slides", f)) => {
                 let h = hymns::HymnFile { number: None, title: "붙여 넣은 슬라이드".into(), name: String::new(), folder: String::new(), file: std::path::PathBuf::from(&f) };
                 c.add_item(hymns::new_hymn_item(&h), None);
-                c.notify("PowerPoint 슬라이드를 새 순서로 넣었습니다.", "ok");
+                c.notify(wp_core::i18n::tr("PowerPoint 슬라이드를 새 순서로 넣었습니다."), "ok");
             }
             Ok((_, url)) => {
                 let mut it = wp_core::core::new_item("image", "붙여 넣은 그림");
                 it["image"] = json!(url);
                 c.add_item(it, None);
-                c.notify("그림을 새 순서로 넣었습니다.", "ok");
+                c.notify(wp_core::i18n::tr("그림을 새 순서로 넣었습니다."), "ok");
             }
             Err(e) => c.notify(e, "warn"),
         },
@@ -434,7 +434,7 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
     ui.label(RichText::new(wp_core::i18n::tr("PPT 파일")).small());
     ui.horizontal(|ui| {
         let short = file.rsplit(['\\', '/']).next().unwrap_or("");
-        ui.label(RichText::new(if short.is_empty() { "(없음)" } else { short }).small()).on_hover_text(&file);
+        ui.label(RichText::new(if short.is_empty() { wp_core::i18n::tr_s("(없음)") } else { short }).small()).on_hover_text(&file);
         if ui.button(wp_core::i18n::tr("고르기…")).clicked() {
             if let Some(p) = rfd::FileDialog::new().add_filter("PPT", &["pptx", "ppsx", "ppt", "pps"]).pick_file() {
                 let (num, title, _) = hymns::parse_name(&p);

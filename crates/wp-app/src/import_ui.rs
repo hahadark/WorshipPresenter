@@ -43,8 +43,8 @@ impl ImportUi {
             let cur = core.lock().version_id();
             egui::Grid::new("ver-list").num_columns(3).striped(true).show(ui, |ui| {
                 for v in &versions {
-                    ui.label(format!("{}{}", v.name, if v.id == cur { "  (쓰는 중)" } else { "" }));
-                    ui.label(RichText::new(format!("{} · {}절", v.id, v.verse_count)).small().color(Color32::GRAY));
+                    ui.label(format!("{}{}", v.name, if v.id == cur { wp_core::i18n::tr_s("  (쓰는 중)") } else { "" }));
+                    ui.label(RichText::new(wp_core::i18n::tr_args("{1} · {2}절", &[&v.id, &v.verse_count])).small().color(Color32::GRAY));
                     if self.confirm_del.as_deref() == Some(&v.id) {
                         ui.horizontal(|ui| {
                             if ui.button(RichText::new("정말 지우기").color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
@@ -79,7 +79,7 @@ impl ImportUi {
                 let r = &a.report;
                 ui.label(format!("{} — {} {}", r["file"].as_str().unwrap_or(""), r["format"].as_str().unwrap_or(""), r["encoding"].as_str().unwrap_or("")));
                 let st = &r["stats"];
-                ui.label(format!("구절 {} · 책 {} · 표제 {} · 각주 {}", st["verses"], st["books"], st["headings"], st["notes"]));
+                ui.label(wp_core::i18n::tr_args("구절 {1} · 책 {2} · 표제 {3} · 각주 {4}", &[&(st["verses"]), &(st["books"]), &(st["headings"]), &(st["notes"])]));
                 egui::ScrollArea::vertical().id_salt("imp-rep").max_height(160.0).show(ui, |ui| {
                     for (k, col) in [("errors", Color32::from_rgb(0xff, 0x8a, 0x8a)), ("warnings", Color32::from_rgb(0xff, 0xb0, 0x4a)), ("notes", Color32::GRAY)] {
                         for m in r[k].as_array().into_iter().flatten() {

@@ -10,7 +10,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value) -> bool {
     ui.horizontal(|ui| {
         let mut sec = e["autoSec"].as_f64().unwrap_or(0.0);
         ui.label(wp_core::i18n::tr("자동 넘김"));
-        if ui.add(egui::DragValue::new(&mut sec).range(0.0..=3600.0).speed(1.0).suffix(" 초")).changed() {
+        if ui.add(egui::DragValue::new(&mut sec).range(0.0..=3600.0).speed(1.0).suffix(wp_core::i18n::tr(" 초"))).changed() {
             e["autoSec"] = json!(sec.round());
             ch = true;
         }
@@ -23,7 +23,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value) -> bool {
     ui.horizontal(|ui| {
         let mut h = e["hideAfter"].as_f64().unwrap_or(0.0);
         ui.label(wp_core::i18n::tr("글자 숨김"));
-        if ui.add(egui::DragValue::new(&mut h).range(0.0..=3600.0).speed(1.0).suffix(" 초 뒤")).on_hover_text(wp_core::i18n::tr("0 = 끔 · 숨긴 뒤 F6 은 다음 슬라이드를 보이며 넘김")).changed() {
+        if ui.add(egui::DragValue::new(&mut h).range(0.0..=3600.0).speed(1.0).suffix(wp_core::i18n::tr(" 초 뒤"))).on_hover_text(wp_core::i18n::tr("0 = 끔 · 숨긴 뒤 F6 은 다음 슬라이드를 보이며 넘김")).changed() {
             e["hideAfter"] = json!(h.round());
             ch = true;
         }

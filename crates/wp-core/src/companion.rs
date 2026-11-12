@@ -50,7 +50,7 @@ pub fn http_request(method: &str, host: &str, port: u16, path: &str, body: Optio
 pub fn press(companion: &Value, locs: &str) -> Result<Value, String> {
     let list = parse_locations(locs);
     if list.is_empty() {
-        return Err("Companion 단추 위치를 '페이지/줄/칸' 으로 쓰세요 (예: 1/0/2).".into());
+        return Err(crate::i18n::tr("Companion 단추 위치를 '페이지/줄/칸' 으로 쓰세요 (예: 1/0/2).").into());
     }
     let host = companion["host"].as_str().filter(|x| !x.is_empty()).unwrap_or("127.0.0.1").to_string();
     let port = companion["port"].as_u64().filter(|p| *p > 0).unwrap_or(8000) as u16;

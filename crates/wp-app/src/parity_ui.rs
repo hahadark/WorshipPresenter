@@ -64,9 +64,9 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
                     x["songId"] = saved["id"].clone();
                     drop(c);
                     acts.push(Act::UpdateItem(i, x));
-                    app.core.lock().notify("찬양 라이브러리에 저장했습니다.", "ok");
+                    app.core.lock().notify(wp_core::i18n::tr("찬양 라이브러리에 저장했습니다."), "ok");
                 }
-                Err(e) => c.notify(format!("저장하지 못했습니다: {e}"), "error"),
+                Err(e) => c.notify(wp_core::i18n::tr_args("저장하지 못했습니다: {1}", &[&e]), "error"),
             }
             ui.close();
         }
@@ -109,7 +109,7 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
             if let Some(t) = app.core.lock().active_cue_text() {
                 ui.ctx().copy_text(t);
             }
-            app.core.lock().notify("큐시트 순서표를 글로 복사했습니다.", "ok");
+            app.core.lock().notify(wp_core::i18n::tr("큐시트 순서표를 글로 복사했습니다."), "ok");
             ui.close();
         }
     });
@@ -169,7 +169,7 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
         }
         "slideshow" => {
             let imgs: Vec<String> = e["images"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
-            ui.label(RichText::new(format!("그림 {}장", imgs.len())).small());
+            ui.label(RichText::new(wp_core::i18n::tr_args("그림 {1}장", &[&(imgs.len())])).small());
             let mut del = None;
             for (k, u) in imgs.iter().enumerate() {
                 ui.horizontal(|ui| {
@@ -200,7 +200,7 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
             ui.horizontal(|ui| {
                 let mut sec = e["autoSec"].as_f64().unwrap_or(8.0);
                 ui.label("넘김");
-                if ui.add(egui::DragValue::new(&mut sec).range(2.0..=3600.0).suffix("초")).changed() {
+                if ui.add(egui::DragValue::new(&mut sec).range(2.0..=3600.0).suffix(wp_core::i18n::tr("초"))).changed() {
                     e["autoSec"] = json!(sec);
                     changed = true;
                 }

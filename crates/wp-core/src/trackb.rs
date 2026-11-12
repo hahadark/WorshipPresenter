@@ -280,7 +280,7 @@ impl Core {
         let m = self.settings.get()["macros"].as_array().and_then(|l| l.iter().find(|x| x["id"] == key || x["name"] == key).cloned());
         let Some(m) = m else { bail!("매크로를 찾을 수 없습니다: {key}") };
         self.run_actions(&m["actions"])?;
-        self.notify(format!("매크로 실행: {}", m["name"].as_str().unwrap_or("")), "ok");
+        self.notify(crate::i18n::tr_args("매크로 실행: {1}", &[&(m["name"].as_str().unwrap_or(""))]), "ok");
         Ok(())
     }
     pub fn run_actions(&mut self, a: &Value) -> Result<()> {
@@ -334,7 +334,7 @@ impl Core {
         self.b.fired = fired;
         for m in due {
             if let Err(e) = self.run_macro(&m) {
-                self.notify(format!("예약 실행 실패: {e}"), "warn");
+                self.notify(crate::i18n::tr_args("예약 실행 실패: {1}", &[&e]), "warn");
             }
         }
     }

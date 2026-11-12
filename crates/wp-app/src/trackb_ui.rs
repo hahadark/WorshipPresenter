@@ -155,7 +155,7 @@ impl App {
             if ui.button(wp_core::i18n::tr("웹에서 가사 찾기 Ctrl+L")).clicked() { crate::lyrics_ui::open(); }
         });
         let list = self.core.lock().list_songs(&self.tb.song_q);
-        ui.label(RichText::new(format!("{}곡", list.len())).small());
+        ui.label(RichText::new(wp_core::i18n::tr_args("{1}곡", &[&(list.len())])).small());
         egui::ScrollArea::vertical().id_salt("songlist").max_height(200.0).show(ui, |ui| {
             for s in &list {
                 ui.horizontal(|ui| {
@@ -180,7 +180,7 @@ impl App {
             ui.label(wp_core::i18n::tr("가사 (빈 줄로 슬라이드, [1절] [후렴] 이름표)")); s("lyrics", ui, true);
             ui.label(wp_core::i18n::tr("곡 정보 (작사·작곡·저작권)")); s("credit", ui, false);
             ui.label(wp_core::i18n::tr("기본 부를 순서 (예: 1 C 2 C)")); s("arrangement", ui, false);
-            ui.label(RichText::new(format!("저장한 부를 순서: {}", e["arrangements"].as_array().map(|a| a.iter().map(|x| format!("{}={}", x["name"].as_str().unwrap_or(""), x["order"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(" · ")).unwrap_or_default())).small());
+            ui.label(RichText::new(wp_core::i18n::tr_args("저장한 부를 순서: {1}", &[&(e["arrangements"].as_array().map(|a| a.iter().map(|x| format!("{}={}", x["name"].as_str().unwrap_or(""), x["order"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(" · ")).unwrap_or_default())])).small());
             let e2 = e.clone();
             ui.horizontal(|ui| {
                 if ui.button(wp_core::i18n::tr("저장")).clicked() {
@@ -245,11 +245,11 @@ impl App {
         let kind = self.tb.lib_kind.clone();
         let folders = wp_core::library::folders(self.core.lock().settings.get(), &kind);
         if folders.is_empty() {
-            ui.label(RichText::new(format!("등록한 {} 폴더가 없습니다. '폴더 더하기…' 로 교회 {} 폴더를 등록하세요.", if kind == "audio" { "음악" } else { "그림·영상" }, if kind == "audio" { "음악" } else { "사진" })).color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr_args("등록한 {1} 폴더가 없습니다. '폴더 더하기…' 로 교회 {2} 폴더를 등록하세요.", &[&(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("그림·영상") }), &(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("사진") })])).color(Color32::GRAY));
         }
         for f in &folders {
             ui.horizontal(|ui| {
-                ui.label(format!("📁 {} ({}개){}", f["name"].as_str().unwrap_or(""), f["count"], if f["exists"] == false { " · 폴더 없음" } else { "" }));
+                ui.label(wp_core::i18n::tr_args("📁 {1} ({2}개){3}", &[&(f["name"].as_str().unwrap_or("")), &(f["count"]), &(if f["exists"] == false { wp_core::i18n::tr_s(" · 폴더 없음") } else { "" })]));
                 if ui.small_button(wp_core::i18n::tr("빼기")).clicked() { self.core.lock().remove_lib_folder(&kind, f["path"].as_str().unwrap_or("")); }
             });
         }
@@ -328,7 +328,7 @@ impl App {
                             for k in ["text", "target"] {
                                 if (k == "text" && ["banner", "text"].contains(&o["type"].as_str().unwrap_or(""))) || (k == "target" && o["type"] == "countdown") {
                                     let mut s = v[k].as_str().unwrap_or("").to_string();
-                                    if ui.add(egui::TextEdit::singleline(&mut s).desired_width(200.0).hint_text(if k == "target" { "HH:MM 또는 분" } else { "글" })).changed() { v[k] = json!(s); changed = true; }
+                                    if ui.add(egui::TextEdit::singleline(&mut s).desired_width(200.0).hint_text(if k == "target" { wp_core::i18n::tr_s("HH:MM 또는 분") } else { wp_core::i18n::tr_s("글") })).changed() { v[k] = json!(s); changed = true; }
                                 }
                             }
                             egui::ComboBox::from_id_salt(format!("pos{id}")).selected_text(pos_ko(v["position"].as_str().unwrap_or(""))).show_ui(ui, |ui| {
@@ -370,7 +370,7 @@ impl App {
                 ui.horizontal(|ui| { ui.label(k.as_str()); ui.text_edit_singleline(v); });
             }
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut self.tb.msg_sec).range(0..=3600).suffix("초 (0=계속)"));
+                ui.add(egui::DragValue::new(&mut self.tb.msg_sec).range(0..=3600).suffix(wp_core::i18n::tr("초 (0=계속)")));
                 ui.checkbox(&mut self.tb.msg_obs, wp_core::i18n::tr("OBS 자막에도"));
             });
             ui.horizontal(|ui| {
@@ -419,7 +419,7 @@ impl App {
         egui::Window::new(wp_core::i18n::tr("무대 화면")).open(&mut open).default_size([440.0, 360.0]).show(ctx, |ui| {
             let (timer, port, presets) = { let c = self.core.lock(); (c.b.stage.timer_json(), c.port, c.settings.get()["stagePresets"].as_array().cloned().unwrap_or_default()) };
             let rem = timer["remaining"].as_i64().unwrap_or(0);
-            ui.label(RichText::new(format!("타이머 {}{:02}:{:02} {}", if rem < 0 { "-" } else { "" }, rem.abs() / 60000, (rem.abs() / 1000) % 60, if timer["running"] == true { "· 진행 중" } else if timer["duration"].as_i64().unwrap_or(0) > 0 { "· 멈춤" } else { "" })).size(20.0));
+            ui.label(RichText::new(format!("타이머 {}{:02}:{:02} {}", if rem < 0 { "-" } else { "" }, rem.abs() / 60000, (rem.abs() / 1000) % 60, if timer["running"] == true { wp_core::i18n::tr_s("· 진행 중") } else if timer["duration"].as_i64().unwrap_or(0) > 0 { "· 멈춤" } else { "" })).size(20.0));
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.tb.timer_min).desired_width(50.0).hint_text(wp_core::i18n::tr("분")));
                 let m: f64 = self.tb.timer_min.parse().unwrap_or(30.0);
@@ -460,7 +460,7 @@ impl App {
             ui.separator();
             ui.horizontal(|ui| {
                 let running = self.tb.stage_child.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
-                if ui.button(if running { "무대 화면 창 닫기" } else { "무대 화면 창 열기" }).clicked() {
+                if ui.button(if running { wp_core::i18n::tr_s("무대 화면 창 닫기") } else { wp_core::i18n::tr_s("무대 화면 창 열기") }).clicked() {
                     if let Some(mut ch) = self.tb.stage_child.take() { let _ = ch.kill(); }
                     if !running {
                         let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("wp-output.exe"))).unwrap_or_default();
@@ -590,7 +590,7 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(times.get(i).cloned().unwrap_or_default()).monospace());
                             let mut d = it["duration"].as_f64().unwrap_or(0.0);
-                            if ui.add(egui::DragValue::new(&mut d).range(0.0..=240.0).suffix("분")).changed() {
+                            if ui.add(egui::DragValue::new(&mut d).range(0.0..=240.0).suffix(wp_core::i18n::tr("분"))).changed() {
                                 let mut c = self.core.lock();
                                 c.remember_items();
                                 if let Some(cc) = &mut c.cue { if let Some(x) = cc.items.get_mut(i) { x["duration"] = json!(d); } }
@@ -603,7 +603,7 @@ impl App {
                 });
             }
             ui.separator();
-            ui.label(format!("휴지통 ({}개)", trash.len()));
+            ui.label(wp_core::i18n::tr_args("휴지통 ({1}개)", &[&(trash.len())]));
             for t in &trash {
                 ui.horizontal(|ui| {
                     ui.label(format!("{} · {}", t["name"].as_str().unwrap_or(""), t["serviceDate"].as_str().unwrap_or("")));
@@ -648,13 +648,13 @@ impl App {
         let mut act: Option<(&str, f64)> = None;
         ui.horizontal(|ui| {
             ui.label(RichText::new(wp_core::i18n::tr("영상")).strong().color(Color32::from_rgb(0xd9, 0x6a, 0x6a)));
-            if ui.button(if v.playing { "⏸ 멈춤" } else { "▶ 재생" }).clicked() { act = Some((if v.playing { "pause" } else { "play" }, 0.0)); }
+            if ui.button(if v.playing { wp_core::i18n::tr_s("⏸ 멈춤") } else { wp_core::i18n::tr_s("▶ 재생") }).clicked() { act = Some((if v.playing { "pause" } else { "play" }, 0.0)); }
             if ui.button(wp_core::i18n::tr("⏮ 처음부터")).clicked() { act = Some(("restart", 0.0)); }
             let pos = v.position();
             if ui.button(wp_core::i18n::tr("−10초")).clicked() { act = Some(("seek", (pos - 10.0).max(0.0))); }
             if ui.button(wp_core::i18n::tr("+10초")).clicked() { act = Some(("seek", pos + 10.0)); }
             let p = pos.max(0.0) as i64;
-            ui.label(RichText::new(format!("{:02}:{:02}{}", p / 60, p % 60, if v.ended { " (끝)" } else { "" })).monospace());
+            ui.label(RichText::new(format!("{:02}:{:02}{}", p / 60, p % 60, if v.ended { wp_core::i18n::tr_s(" (끝)") } else { "" })).monospace());
             ui.separator();
             let mut vol = v.volume.unwrap_or(1.0) as f32;
             if ui.add(egui::Slider::new(&mut vol, 0.0..=1.0).text("소리")).changed() { act = Some(("volume", vol as f64)); }
@@ -712,8 +712,8 @@ fn actions_ko(a: &Value) -> String {
     let b = |k: &str| a[k].as_bool();
     if b("clearAll") == Some(true) { out.push("모두 지우기".into()); }
     if b("hideText") == Some(true) { out.push("글자 숨김".into()); }
-    if let Some(x) = b("logo") { out.push(if x { "로고 켜기" } else { "로고 끄기" }.into()); }
-    if let Some(x) = b("bgOff") { out.push(if x { "배경 끄기" } else { "배경 켜기" }.into()); }
+    if let Some(x) = b("logo") { out.push(if x { wp_core::i18n::tr_s("로고 켜기") } else { wp_core::i18n::tr_s("로고 끄기") }.into()); }
+    if let Some(x) = b("bgOff") { out.push(if x { wp_core::i18n::tr_s("배경 끄기") } else { wp_core::i18n::tr_s("배경 켜기") }.into()); }
     if b("overlaysOff") == Some(true) { out.push("오버레이 모두 끄기".into()); }
     let n = |k: &str| a[k].as_array().map(|x| x.len()).unwrap_or(0);
     if n("overlayOn") > 0 { out.push(format!("오버레이 {}개 켜기", n("overlayOn"))); }

@@ -335,7 +335,7 @@ impl Core {
             (None, None)
         };
         let slides = if ty == "hymn" { crate::hymns::build_slides(self, &it, &opts)? } else { crate::slideedit::decorate(&it, slides::build_item(&it, passage.as_ref(), &opts), false) }; // [트랙 A] · [트랙 C] 슬라이드 편집 꾸미기
-        if slides.is_empty() { return Err("이 순서에 보일 슬라이드가 없습니다 (PPT 파일을 고르세요).".into()); } // [트랙 A]
+        if slides.is_empty() { return Err(crate::i18n::tr("이 순서에 보일 슬라이드가 없습니다 (PPT 파일을 고르세요).").into()); } // [트랙 A]
         let meta = p.unwrap_or_else(|| {
             let mut m = json!({ "title": it["title"], "versionId": "", "versionName": "", "book": null, "first": null, "last": null, "query": "", "tpl": null, "auto": null, "hideAfter": 0, "edgeHide": false });
             self.fill_item_meta(&mut m, i, &it);
@@ -488,7 +488,7 @@ impl Core {
     pub fn save_cue(&mut self) {
         if let Some(c) = &self.cue {
             if let Err(e) = self.store.save_cue(c) {
-                self.notify(format!("큐시트 저장 실패: {e}"), "error");
+                self.notify(crate::i18n::tr_args("큐시트 저장 실패: {1}", &[&e]), "error");
                 return;
             }
             self.cues = self.store.list_cues();

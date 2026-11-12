@@ -178,7 +178,7 @@ pub struct Built {
 pub fn build_into(bytes: &[u8], dir: &Path) -> Result<Built, String> {
     let mut doc = Doc::open(bytes)?;
     if doc.slides.is_empty() {
-        return Err("슬라이드가 없는 파일입니다.".into());
+        return Err(crate::i18n::tr("슬라이드가 없는 파일입니다.").into());
     }
     // 그림 복사 (같은 그림은 한 번)
     let mut names: HashMap<String, String> = HashMap::new();
@@ -294,7 +294,7 @@ pub fn build_into(bytes: &[u8], dir: &Path) -> Result<Built, String> {
         recs_all.push(recs);
     }
     if slides_out.is_empty() {
-        return Err("슬라이드를 그리지 못했습니다.".into());
+        return Err(crate::i18n::tr("슬라이드를 그리지 못했습니다.").into());
     }
     // [트랙 A] PowerPoint 로 배경 그림을 만들 때 숨길 도형 id (보이는 슬라이드 번호 → cNvPr id)
     let mut hide = serde_json::Map::new();

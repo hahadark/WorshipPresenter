@@ -151,7 +151,7 @@ pub fn act(core: &mut Core, a: &Value) -> Result<Value, String> {
         "message" => core.stage_message(a["text"].as_str().unwrap_or("")),
         "timer" => core.stage_timer(a["op"].as_str().unwrap_or(""), a["minutes"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?,
         "obsFull" => { let f = a["on"].as_bool().unwrap_or(!core.obs_full); crate::themes::set_obs_view(core, Some(f), None); } // [트랙 C]
-        _ => return Err("알 수 없는 조작입니다.".into()),
+        _ => return Err(crate::i18n::tr("알 수 없는 조작입니다.").into()),
     }
     Ok(json!({ "ok": true }))
 }

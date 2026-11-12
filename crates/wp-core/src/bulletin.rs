@@ -29,11 +29,11 @@ pub fn hwp_text(buf: &[u8]) -> Result<String, String> {
     let mut hdr = vec![];
     c.open_stream("/FileHeader").map_err(|_| "한글 파일 형식이 아닙니다.".to_string())?.read_to_end(&mut hdr).map_err(|e| e.to_string())?;
     if hdr.len() < 40 {
-        return Err("한글 파일 형식이 아닙니다.".into());
+        return Err(crate::i18n::tr("한글 파일 형식이 아닙니다.").into());
     }
     let flags = u32::from_le_bytes([hdr[36], hdr[37], hdr[38], hdr[39]]);
     if flags & 2 != 0 {
-        return Err("암호가 걸린 한글 파일입니다.".into());
+        return Err(crate::i18n::tr("암호가 걸린 한글 파일입니다.").into());
     }
     let compressed = flags & 1 != 0;
     let mut names: Vec<String> = c
@@ -134,7 +134,7 @@ pub fn read_bulletin(buf: &[u8], name: &str) -> Result<Input, String> {
             let base = std::path::Path::new(name).file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
             Ok(Input::File { mime: mime.into(), base64: crate::dpapi::b64(buf), name: base })
         }
-        _ => Err("읽을 수 없는 파일입니다 (hwp · hwpx · docx · pdf · txt · 사진).".into()),
+        _ => Err(crate::i18n::tr("읽을 수 없는 파일입니다 (hwp · hwpx · docx · pdf · txt · 사진).").into()),
     }
 }
 
@@ -219,14 +219,14 @@ pub fn parse_json(text: &str) -> Result<Value, String> {
             }
         }
     }
-    Err("AI 응답을 해석하지 못했습니다.".into())
+    Err(crate::i18n::tr("AI 응답을 해석하지 못했습니다.").into())
 }
 
 /// 채팅 AI 의 답 → (계획, 샘플 그대로인가)
 pub fn parse_chat_answer(text: &str) -> Result<(Value, bool), String> {
     let t = text.trim_start_matches('\u{feff}').trim();
     if t.is_empty() {
-        return Err("AI 답을 붙여 넣거나 결과 파일을 불러오세요.".into());
+        return Err(crate::i18n::tr("AI 답을 붙여 넣거나 결과 파일을 불러오세요.").into());
     }
     let re = Regex::new(r"```(?:json|JSON)?\s*([\s\S]*?)```").unwrap();
     let mut cands: Vec<String> = re.captures_iter(t).map(|m| m[1].to_string()).collect();
@@ -251,7 +251,7 @@ pub fn parse_chat_answer(text: &str) -> Result<(Value, bool), String> {
         o.remove("_안내");
     }
     if plan["items"].as_array().is_none_or(|a| a.is_empty()) {
-        return Err("예배 순서(items)가 비어 있습니다.".into());
+        return Err(crate::i18n::tr("예배 순서(items)가 비어 있습니다.").into());
     }
     let is_sample = plan["items"] == sample()["items"];
     Ok((plan, is_sample))
@@ -468,7 +468,7 @@ pub fn plan_to_cue(plan: &Value, r: &Resolvers) -> Result<(Value, Vec<String>), 
         }
     }
     if items.is_empty() {
-        return Err("주보에서 예배 순서를 찾지 못했습니다.".into());
+        return Err(crate::i18n::tr("주보에서 예배 순서를 찾지 못했습니다.").into());
     }
     let name = s(plan, "name").trim().to_string();
     let date = s(plan, "serviceDate");
@@ -505,10 +505,10 @@ pub fn parse_ai_response(body: &Value, model: &str) -> Result<(Value, Value, Str
     let text = match msg {
         Value::String(s) => s.clone(),
         Value::Array(a) => a.iter().filter_map(|c| c["text"].as_str()).collect::<Vec<_>>().join(""),
-        _ => return Err("AI 응답이 비었습니다.".into()),
+        _ => return Err(crate::i18n::tr("AI 응답이 비었습니다.").into()),
     };
     if text.trim().is_empty() {
-        return Err("AI 응답이 비었습니다.".into());
+        return Err(crate::i18n::tr("AI 응답이 비었습니다.").into());
     }
     Ok((parse_json(&text)?, body["usage"].clone(), body["model"].as_str().unwrap_or(model).to_string()))
 }
@@ -516,7 +516,7 @@ pub fn parse_ai_response(body: &Value, model: &str) -> Result<(Value, Value, Str
 /// 오픈라우터에 묻는다 (오래 걸리니 백그라운드에서 부를 것)
 pub fn ask_ai(api_key: &str, model: &str, endpoint: &str, input: &Input, extra: &str) -> Result<(Value, Value, String), String> {
     if api_key.is_empty() {
-        return Err("오픈라우터 API 키를 넣으세요.".into());
+        return Err(crate::i18n::tr("오픈라우터 API 키를 넣으세요.").into());
     }
     let ep = if endpoint.is_empty() { DEFAULT_ENDPOINT } else { endpoint };
     let body = ai_request_body(model, input, extra);
@@ -532,7 +532,7 @@ pub fn ask_ai(api_key: &str, model: &str, endpoint: &str, input: &Input, extra: 
     let status = resp.status().as_u16();
     let v: Value = resp.body_mut().read_json().unwrap_or(Value::Null);
     if !(200..300).contains(&status) {
-        return Err(format!("오픈라우터 오류 ({status}): {}", v["error"]["message"].as_str().unwrap_or("")));
+        return Err(crate::i18n::tr_args("오픈라우터 오류 ({1}): {2}", &[&status, &(v["error"]["message"].as_str().unwrap_or(""))]));
     }
     parse_ai_response(&v, model)
 }
