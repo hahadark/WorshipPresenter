@@ -244,7 +244,7 @@ async fn command(State(core): State<Shared>, headers: HeaderMap, Json(b): Json<V
     }
     // 출력 화면이 부르는 명령: 영상 끝남 (아직 영상 송출은 다음 단계)
     match b["cmd"].as_str() {
-        Some("videoEnded") => { core.lock().video_ended(b["args"]["key"].as_str().unwrap_or("")); Json(json!({ "ok": true, "result": null })).into_response() } // [트랙 B]
+        Some("videoEnded") => { core.lock().video_ended(b["args"]["key"].as_str().unwrap_or(""), b["args"]["duration"].as_f64()); Json(json!({ "ok": true, "result": null })).into_response() } // [트랙 B]
         _ => Json(json!({ "ok": false, "error": "조작 명령은 Rust 판 조작 화면에서만 합니다." })).into_response(),
     }
 }

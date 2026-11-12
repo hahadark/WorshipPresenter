@@ -147,13 +147,24 @@ impl Core {
         Ok(())
     }
     /// 출력 화면이 알리는 '영상 끝남' → 끝나면(endAction): hold 그대로 · black 글자 숨김 · next 다음 슬라이드
-    pub fn video_ended(&mut self, key: &str) {
+    /// duration: 출력 화면이 잰 영상 길이(초). 끝난 자리를 기억해 둬야 다른 출력이 처음으로 돌아가지 않는다 (Electron 과 같게)
+    pub fn video_ended(&mut self, key: &str, duration: Option<f64>) {
         let Some(v) = self.b.video.as_mut() else { return };
         if v.key != key || v.ended {
             return;
         }
+        let pos = v.position();
+        // 코어 시계로는 아직 한참 남았는데 '끝남' 이 오면 (캐시된 다른 파일 · 어긋난 출력) 믿지 않는다
+        if let Some(d) = duration.filter(|d| *d > 0.0) {
+            if v.playing && pos + 3.0 < d {
+                log::warn!("영상 끝남 알림 무시: 코어 위치 {pos:.1}초 < 길이 {d:.1}초");
+                return;
+            }
+        }
         v.ended = true;
         v.playing = false;
+        v.offset = duration.filter(|d| *d > 0.0).unwrap_or(pos);
+        v.at = now_ms();
         let act = self.pres.live.as_ref().and_then(|l| l.deck.slides.get(l.deck.index)).and_then(|s| s["video"]["endAction"].as_str().map(String::from)).unwrap_or_default();
         match act.as_str() {
             "black" => self.pres.clear(),
@@ -465,5 +476,32 @@ mod tests_typing {
         assert_eq!(t, ["나", "다", "가"]);
         assert!(c.undo_items(false));
         assert_eq!(c.cue.as_ref().unwrap().items[0]["title"], "가");
+    }
+}
+
+#[cfg(test)]
+mod tests_video {
+    use crate::core::Core;
+    use crate::library::Video;
+    #[test]
+    fn ended_keeps_position_and_ignores_stale() {
+        let dir = std::env::temp_dir().join(format!("wp-vid-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir, None).unwrap();
+        c.b.video = Some(Video::start("k1"));
+        // 방금 시작했는데 8초짜리가 끝났다고 함 → 무시
+        c.video_ended("k1", Some(8.0));
+        assert!(c.b.video.as_ref().unwrap().playing);
+        // 다른 열쇠 → 무시
+        c.b.video.as_mut().unwrap().offset = 7.5;
+        c.video_ended("k2", Some(8.0));
+        assert!(c.b.video.as_ref().unwrap().playing);
+        // 끝 근처에서 끝남 → 멈추고 끝 자리 기억
+        c.video_ended("k1", Some(8.0));
+        let v = c.b.video.as_ref().unwrap();
+        assert!(!v.playing && v.ended);
+        assert_eq!(v.offset, 8.0);
+        assert_eq!(c.video_payload()["offset"], 8.0);
     }
 }
