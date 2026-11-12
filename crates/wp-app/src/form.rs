@@ -15,7 +15,7 @@ pub fn at<'a>(v: &'a mut Value, path: &[&str]) -> &'a mut Value {
 pub fn num(ui: &mut egui::Ui, v: &mut Value, path: &[&str], label: &str, lo: f64, hi: f64, speed: f64) -> bool {
     let cur = at(v, path);
     let mut x = cur.as_f64().unwrap_or(lo);
-    ui.label(label);
+    ui.label(wp_core::i18n::tr(label));
     let r = ui.add(egui::DragValue::new(&mut x).range(lo..=hi).speed(speed));
     if r.changed() {
         *cur = if speed >= 1.0 { json!(x.round() as i64) } else { json!((x * 100.0).round() / 100.0) };
@@ -28,7 +28,7 @@ pub fn num(ui: &mut egui::Ui, v: &mut Value, path: &[&str], label: &str, lo: f64
 pub fn text(ui: &mut egui::Ui, v: &mut Value, path: &[&str], label: &str, width: f32) -> bool {
     let cur = at(v, path);
     let mut s = cur.as_str().unwrap_or("").to_string();
-    ui.label(label);
+    ui.label(wp_core::i18n::tr(label));
     if ui.add(egui::TextEdit::singleline(&mut s).desired_width(width)).changed() {
         *cur = json!(s);
         true
@@ -40,7 +40,7 @@ pub fn text(ui: &mut egui::Ui, v: &mut Value, path: &[&str], label: &str, width:
 pub fn check(ui: &mut egui::Ui, v: &mut Value, path: &[&str], label: &str) -> bool {
     let cur = at(v, path);
     let mut b = cur.as_bool().unwrap_or(false);
-    if ui.checkbox(&mut b, label).changed() {
+    if ui.checkbox(&mut b, wp_core::i18n::tr(label)).changed() {
         *cur = json!(b);
         true
     } else {
@@ -55,10 +55,10 @@ pub fn pick(ui: &mut egui::Ui, v: &mut Value, path: &[&str], label: &str, opts: 
     let s = cur.as_str().unwrap_or("").to_string();
     let shown = opts.iter().find(|o| o.0 == s).map(|o| o.1).unwrap_or(&s).to_string();
     let mut changed = false;
-    ui.label(label);
-    egui::ComboBox::from_id_salt(id).selected_text(shown).show_ui(ui, |ui| {
+    ui.label(wp_core::i18n::tr(label));
+    egui::ComboBox::from_id_salt(id).selected_text(wp_core::i18n::tr(&shown)).show_ui(ui, |ui| {
         for (val, name) in opts {
-            if ui.selectable_label(s == *val, *name).clicked() {
+            if ui.selectable_label(s == *val, wp_core::i18n::tr(name)).clicked() {
                 *cur = json!(val);
                 changed = true;
             }
@@ -74,7 +74,7 @@ pub fn color(ui: &mut egui::Ui, v: &mut Value, path: &[&str], label: &str) -> bo
     let c = parse_color(&s).unwrap_or(egui::Color32::BLACK);
     let mut rgb = [c.r(), c.g(), c.b()];
     let mut changed = false;
-    ui.label(label);
+    ui.label(wp_core::i18n::tr(label));
     if ui.color_edit_button_srgb(&mut rgb).changed() {
         s = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
         changed = true;

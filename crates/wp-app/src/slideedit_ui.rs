@@ -28,9 +28,9 @@ impl SlideEditUi {
             return;
         }
         let mut open = self.open;
-        egui::Window::new("슬라이드 편집 (Ctrl+E)").open(&mut open).default_size([980.0, 640.0]).show(ctx, |ui| {
+        egui::Window::new(wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)")).open(&mut open).default_size([980.0, 640.0]).show(ctx, |ui| {
             let Some(i) = sel else {
-                ui.label("큐시트에서 순서를 먼저 고르세요.");
+                ui.label(wp_core::i18n::tr("큐시트에서 순서를 먼저 고르세요."));
                 return;
             };
             let (it, slides, tpl) = {
@@ -62,7 +62,7 @@ impl SlideEditUi {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(it["title"].as_str().unwrap_or("")).strong());
                 ui.label(RichText::new(format!("슬라이드 {}장", slides.len())).small().color(Color32::GRAY));
-                ui.checkbox(&mut self.common, "모든 슬라이드에 공통(*)");
+                ui.checkbox(&mut self.common, wp_core::i18n::tr("모든 슬라이드에 공통(*)"));
             });
             ui.separator();
             egui::Panel::left("se-list").default_size(220.0).show(ui, |ui| {
@@ -97,9 +97,9 @@ impl SlideEditUi {
                                 op("skip", if skipped { "다시 보이기" } else { "건너뛰기" }, ui);
                                 let n = slides.iter().filter(|x| x["base"].is_number()).count();
                                 let pos = slides.iter().take(k).filter(|x| x["base"].is_number()).count();
-                                if ui.button("위로").clicked() && pos > 0 { let mut a = it.clone(); se::move_order(&mut a, n, pos, pos - 1); new_it = Some(a); ui.close(); }
-                                if ui.button("아래로").clicked() && pos + 1 < n { let mut a = it.clone(); se::move_order(&mut a, n, pos, pos + 1); new_it = Some(a); ui.close(); }
-                                if ui.button("뒤에 제목 카드 덧붙이기").clicked() {
+                                if ui.button(wp_core::i18n::tr("위로")).clicked() && pos > 0 { let mut a = it.clone(); se::move_order(&mut a, n, pos, pos - 1); new_it = Some(a); ui.close(); }
+                                if ui.button(wp_core::i18n::tr("아래로")).clicked() && pos + 1 < n { let mut a = it.clone(); se::move_order(&mut a, n, pos, pos + 1); new_it = Some(a); ui.close(); }
+                                if ui.button(wp_core::i18n::tr("뒤에 제목 카드 덧붙이기")).clicked() {
                                     let mut a = it.clone();
                                     let id = wp_core::util::to36(wp_core::util::now_ms() as u64);
                                     let mut ex = a["extra"].as_array().cloned().unwrap_or_default();
@@ -108,7 +108,7 @@ impl SlideEditUi {
                                     new_it = Some(a);
                                     ui.close();
                                 }
-                            } else if s["xid"].is_string() && ui.button("덧붙인 카드 지우기").clicked() {
+                            } else if s["xid"].is_string() && ui.button(wp_core::i18n::tr("덧붙인 카드 지우기")).clicked() {
                                 let mut a = it.clone();
                                 let xid = s["xid"].clone();
                                 let ex: Vec<Value> = a["extra"].as_array().cloned().unwrap_or_default().into_iter().filter(|e| e["id"] != xid).collect();
@@ -139,16 +139,16 @@ impl SlideEditUi {
                 egui::ScrollArea::vertical().id_salt("se-props").auto_shrink([false, false]).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let mut hm = e["hideMain"].as_bool().unwrap_or(false);
-                        if ui.checkbox(&mut hm, "본문 숨기기").changed() { e["hideMain"] = json!(hm); }
+                        if ui.checkbox(&mut hm, wp_core::i18n::tr("본문 숨기기")).changed() { e["hideMain"] = json!(hm); }
                         let mut ao = e["allOutputs"].as_bool().unwrap_or(false);
-                        if ui.checkbox(&mut ao, "OBS 자막에도 적용").changed() { e["allOutputs"] = json!(ao); }
-                        ui.label("배경");
+                        if ui.checkbox(&mut ao, wp_core::i18n::tr("OBS 자막에도 적용")).changed() { e["allOutputs"] = json!(ao); }
+                        ui.label(wp_core::i18n::tr("배경"));
                         let mut bg = e["bg"].as_str().unwrap_or("").to_string();
-                        if ui.add(egui::TextEdit::singleline(&mut bg).hint_text("#색 또는 그림 주소").desired_width(160.0)).changed() { e["bg"] = json!(bg); }
+                        if ui.add(egui::TextEdit::singleline(&mut bg).hint_text(wp_core::i18n::tr("#색 또는 그림 주소")).desired_width(160.0)).changed() { e["bg"] = json!(bg); }
                     });
                     ui.horizontal(|ui| {
                         let mut has = e["box"].is_object();
-                        if ui.checkbox(&mut has, "글상자 위치 (화면 %)").changed() {
+                        if ui.checkbox(&mut has, wp_core::i18n::tr("글상자 위치 (화면 %)")).changed() {
                             e["box"] = if has { json!({ "x": 10, "y": 10, "w": 80, "h": 80 }) } else { Value::Null };
                         }
                         if has {
@@ -160,16 +160,16 @@ impl SlideEditUi {
                         }
                     });
                     ui.horizontal(|ui| {
-                        ui.label("글자 크기");
+                        ui.label(wp_core::i18n::tr("글자 크기"));
                         let mut sz = e["style"]["size"].as_f64().unwrap_or(0.0);
-                        if ui.add(egui::DragValue::new(&mut sz).range(0.0..=400.0).speed(1.0)).on_hover_text("0 = 템플릿대로 (1080 화면 기준 px)").changed() {
+                        if ui.add(egui::DragValue::new(&mut sz).range(0.0..=400.0).speed(1.0)).on_hover_text(wp_core::i18n::tr("0 = 템플릿대로 (1080 화면 기준 px)")).changed() {
                             e["style"]["size"] = if sz >= 8.0 { json!(sz) } else { Value::Null };
                         }
-                        ui.label("색");
+                        ui.label(wp_core::i18n::tr("색"));
                         let mut col = e["style"]["color"].as_str().unwrap_or("").to_string();
                         if ui.add(egui::TextEdit::singleline(&mut col).hint_text("#ffffff").desired_width(70.0)).changed() { e["style"]["color"] = json!(col); }
                         let mut b = e["style"]["bold"].as_bool().unwrap_or(false);
-                        if ui.checkbox(&mut b, "굵게").changed() { e["style"]["bold"] = json!(b); }
+                        if ui.checkbox(&mut b, wp_core::i18n::tr("굵게")).changed() { e["style"]["bold"] = json!(b); }
                         for (a, l) in [("left", "왼쪽"), ("center", "가운데"), ("right", "오른쪽")] {
                             if ui.selectable_label(e["style"]["align"] == a, l).clicked() { e["style"]["align"] = json!(a); }
                         }
@@ -179,7 +179,7 @@ impl SlideEditUi {
                     });
                     ui.separator();
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("덧붙인 요소").strong());
+                        ui.label(RichText::new(wp_core::i18n::tr("덧붙인 요소")).strong());
                         for (t, l) in [("text", "+ 글상자"), ("image", "+ 그림"), ("shape", "+ 도형")] {
                             if ui.button(l).clicked() {
                                 let mut items = e["items"].as_array().cloned().unwrap_or_default();
@@ -206,7 +206,7 @@ impl SlideEditUi {
                                     if ui.add(egui::DragValue::new(&mut s).range(8.0..=400.0).prefix("크기 ")).changed() { x["size"] = json!(s); }
                                 }
                                 Some("image") => {
-                                    if ui.button("그림 고르기…").clicked() {
+                                    if ui.button(wp_core::i18n::tr("그림 고르기…")).clicked() {
                                         if let Some(p) = rfd::FileDialog::new().add_filter("그림", &["png", "jpg", "jpeg", "webp", "gif"]).pick_file() {
                                             let enc = percent_encoding::utf8_percent_encode(&p.to_string_lossy(), percent_encoding::NON_ALPHANUMERIC).to_string();
                                             x["src"] = json!(format!("/lib/file?p={enc}"));
@@ -217,17 +217,17 @@ impl SlideEditUi {
                                     let mut f = x["fill"].as_str().unwrap_or("").to_string();
                                     if ui.add(egui::TextEdit::singleline(&mut f).desired_width(70.0)).changed() { x["fill"] = json!(f); }
                                     let mut el = x["ellipse"].as_bool().unwrap_or(false);
-                                    if ui.checkbox(&mut el, "타원").changed() { x["ellipse"] = json!(el); }
+                                    if ui.checkbox(&mut el, wp_core::i18n::tr("타원")).changed() { x["ellipse"] = json!(el); }
                                 }
                             }
                             let mut below = x["below"].as_bool().unwrap_or(false);
-                            if ui.checkbox(&mut below, "글 뒤").changed() { x["below"] = json!(below); }
+                            if ui.checkbox(&mut below, wp_core::i18n::tr("글 뒤")).changed() { x["below"] = json!(below); }
                             if ui.small_button("✕").clicked() { del = Some(j); }
                         });
                     }
                     if let Some(j) = del { e["items"].as_array_mut().unwrap().remove(j); }
                     ui.add_space(6.0);
-                    if ui.button("이 슬라이드 편집 지우기").clicked() { e = json!({}); }
+                    if ui.button(wp_core::i18n::tr("이 슬라이드 편집 지우기")).clicked() { e = json!({}); }
                 });
             });
             if e != before {
