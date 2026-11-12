@@ -51,7 +51,7 @@ impl ImportUi {
                         ui.horizontal(|ui| {
                             if ui.button(RichText::new(wp_core::i18n::tr("정말 지우기")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
                                 let mut c = core.lock();
-                                self.msg = match importer::delete_version(&mut c, &v.id) { Ok(()) => format!("{} 을(를) 지웠습니다.", v.name), Err(e) => format!("지우기 실패: {e}") };
+                                self.msg = match importer::delete_version(&mut c, &v.id) { Ok(()) => wp_core::i18n::tr_args("{1} 을(를) 지웠습니다.", &[&v.name]), Err(e) => wp_core::i18n::tr_args("지우기 실패: {1}", &[&e]) };
                                 self.confirm_del = None;
                             }
                             if ui.button(wp_core::i18n::tr("그만두기")).clicked() { self.confirm_del = None; }
@@ -66,7 +66,7 @@ impl ImportUi {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(wp_core::i18n::tr("가져오기")).strong());
                 if ui.add_enabled(self.busy.is_none(), egui::Button::new(wp_core::i18n::tr("파일 고르기…"))).clicked() {
-                    if let Some(p) = rfd::FileDialog::new().add_filter("성경 자료", &["json", "csv", "tsv", "txt", "xml", "bdb"]).pick_file() {
+                    if let Some(p) = rfd::FileDialog::new().add_filter(wp_core::i18n::tr("성경 자료"), &["json", "csv", "tsv", "txt", "xml", "bdb"]).pick_file() {
                         let (tx, rx) = std::sync::mpsc::channel();
                         self.busy = Some(rx);
                         self.analysis = None;
@@ -78,13 +78,13 @@ impl ImportUi {
             });
             // 베들레헴 성경 폴더에서 여러 개 한꺼번에
             ui.horizontal(|ui| {
-                if ui.button("베들레헴 성경 폴더 찾기").clicked() {
+                if ui.button(wp_core::i18n::tr("베들레헴 성경 폴더 찾기")).clicked() {
                     self.beth = Some(wp_core::bethlehem::find_dirs(&[]).into_iter().map(|d| {
                         let list = wp_core::bethlehem::list_bibles(&d).into_iter().map(|x| (x["file"].as_str().unwrap_or("").to_string(), x["name"].as_str().unwrap_or("").to_string(), x["known"].as_bool().unwrap_or(false))).collect();
                         (d, list)
                     }).collect());
                 }
-                if ui.button("폴더 고르기…").clicked() {
+                if ui.button(wp_core::i18n::tr("폴더 고르기…")).clicked() {
                     if let Some(d) = rfd::FileDialog::new().pick_folder() {
                         let list = wp_core::bethlehem::list_bibles(&d).into_iter().map(|x| (x["file"].as_str().unwrap_or("").to_string(), x["name"].as_str().unwrap_or("").to_string(), false)).collect();
                         self.beth = Some(vec![(d, list)]);
@@ -92,17 +92,17 @@ impl ImportUi {
                 }
             });
             if let Some(dirs) = &mut self.beth {
-                if dirs.is_empty() { ui.label(RichText::new("BethlehemWin 폴더를 찾지 못했습니다. '폴더 고르기'로 직접 고르세요.").small().color(Color32::GRAY)); }
+                if dirs.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("BethlehemWin 폴더를 찾지 못했습니다. '폴더 고르기'로 직접 고르세요.")).small().color(Color32::GRAY)); }
                 let mut run: Option<(std::path::PathBuf, Vec<String>)> = None;
                 for (d, list) in dirs.iter_mut() {
                     ui.label(RichText::new(d.to_string_lossy()).small());
                     ui.horizontal_wrapped(|ui| { for (_, name, on) in list.iter_mut() { ui.checkbox(on, name.as_str()); } });
                     let files: Vec<String> = list.iter().filter(|x| x.2).map(|x| x.0.clone()).collect();
-                    if ui.add_enabled(!files.is_empty(), egui::Button::new(format!("고른 {}개 가져오기", files.len()))).clicked() { run = Some((d.clone(), files)); }
+                    if ui.add_enabled(!files.is_empty(), egui::Button::new(wp_core::i18n::tr_args("고른 {1}개 가져오기", &[&files.len()]))).clicked() { run = Some((d.clone(), files)); }
                 }
                 if let Some((d, files)) = run {
                     let res = wp_core::bethlehem::import_files(&mut core.lock(), &d, &files);
-                    self.msg = res.iter().map(|r| if r["ok"] == json!(true) { format!("{}: {}절", r["file"].as_str().unwrap_or(""), r["verses"]) } else { format!("{}: 실패 — {}", r["file"].as_str().unwrap_or(""), r["error"].as_str().unwrap_or("")) }).collect::<Vec<_>>().join("\n");
+                    self.msg = res.iter().map(|r| if r["ok"] == json!(true) { wp_core::i18n::tr_args("{1}: {2}절", &[&r["file"].as_str().unwrap_or(""), &r["verses"]]) } else { wp_core::i18n::tr_args("{1}: 실패 — {2}", &[&r["file"].as_str().unwrap_or(""), &r["error"].as_str().unwrap_or("")]) }).collect::<Vec<_>>().join("\n");
                 }
             }
             if self.busy.is_some() { ui.spinner(); }
@@ -120,7 +120,7 @@ impl ImportUi {
                 });
                 egui::Grid::new("imp-meta").num_columns(2).min_col_width(90.0).show(ui, |ui| {
                     for (k, l) in [("id", "번역본 ID (영문)"), ("name", "이름"), ("language", "언어 (ko · en …)"), ("copyright", "저작권"), ("source", "데이터 출처"), ("license", "사용 허가 (라이선스)")] {
-                        ui.label(l);
+                        ui.label(wp_core::i18n::tr(l));
                         let mut s = self.meta[k].as_str().unwrap_or("").to_string();
                         if ui.add(egui::TextEdit::singleline(&mut s).desired_width(320.0)).changed() { self.meta[k] = json!(s); }
                         ui.end_row();
@@ -130,7 +130,7 @@ impl ImportUi {
                 if ui.add_enabled(ok, egui::Button::new(wp_core::i18n::tr("가져오기"))).on_disabled_hover_text(wp_core::i18n::tr("검증 오류가 있으면 가져올 수 없습니다")).clicked() {
                     let mut c = core.lock();
                     self.msg = match importer::commit(&mut c, &a, &self.meta) {
-                        Ok(n) => { self.analysis = None; format!("가져왔습니다: {}절", n) }
+                        Ok(n) => { self.analysis = None; wp_core::i18n::tr_args("가져왔습니다: {1}절", &[&n]) }
                         Err(e) => e.join("\n"),
                     };
                 }

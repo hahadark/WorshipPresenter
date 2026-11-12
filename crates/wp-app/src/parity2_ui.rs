@@ -89,11 +89,11 @@ fn books_win(app: &mut App, ctx: &egui::Context) {
         (c.store.get_structure(&v), name)
     };
     let mut pick: Option<(i64, i64)> = None;
-    egui::Window::new(format!("성경 책 ({vname}) — Ctrl+B")).open(&mut open).default_size([640.0, 520.0]).show(ctx, |ui| {
+    egui::Window::new(wp_core::i18n::tr_args("성경 책 ({1}) — Ctrl+B", &[&vname])).open(&mut open).default_size([640.0, 520.0]).show(ctx, |ui| {
         ui.columns(2, |cols| {
             for (ci, (test, label)) in [("OT", "구약"), ("NT", "신약")].iter().enumerate() {
                 let ui = &mut cols[ci];
-                ui.label(RichText::new(*label).strong());
+                ui.label(RichText::new(wp_core::i18n::tr(label)).strong());
                 egui::ScrollArea::vertical().id_salt(format!("books-{test}")).max_height(220.0).show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
                         for b in structure.iter().filter(|b| b["testament"].as_str().unwrap_or("") == *test) {
@@ -108,18 +108,18 @@ fn books_win(app: &mut App, ctx: &egui::Context) {
         });
         ui.separator();
         if let Some(b) = st.book.and_then(|id| structure.iter().find(|x| x["id"] == id)) {
-            ui.label(RichText::new(format!("{} — 장을 누르면 미리보기", b["name"].as_str().unwrap_or(""))).strong().color(Color32::from_rgb(0xff, 0xd4, 0x79)));
+            ui.label(RichText::new(wp_core::i18n::tr_args("{1} — 장을 누르면 미리보기", &[&b["name"].as_str().unwrap_or("")])).strong().color(Color32::from_rgb(0xff, 0xd4, 0x79)));
             egui::ScrollArea::vertical().id_salt("chapters").max_height(180.0).show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     for (k, n) in b["chapters"].as_array().into_iter().flatten().enumerate() {
-                        if n.as_i64().unwrap_or(0) > 0 && ui.add(egui::Button::new((k + 1).to_string()).min_size(egui::vec2(34.0, 24.0))).on_hover_text(format!("{}절", n)).clicked() {
+                        if n.as_i64().unwrap_or(0) > 0 && ui.add(egui::Button::new((k + 1).to_string()).min_size(egui::vec2(34.0, 24.0))).on_hover_text(wp_core::i18n::tr_args("{1}절", &[&n])).clicked() {
                             pick = Some((b["id"].as_i64().unwrap_or(0), k as i64 + 1));
                         }
                     }
                 });
             });
         } else {
-            ui.label(RichText::new("책을 고르세요.").color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("책을 고르세요.")).color(Color32::GRAY));
         }
     });
     if let Some((book, ch)) = pick {
@@ -134,7 +134,7 @@ fn books_win(app: &mut App, ctx: &egui::Context) {
             app.search = q.clone();
             app.result = json!({ "ok": true, "mode": "reference", "passage": p });
         } else {
-            c.notify(r["error"].as_str().unwrap_or("본문을 찾지 못했습니다."), "warn");
+            c.notify(r["error"].as_str().unwrap_or(&wp_core::i18n::tr("본문을 찾지 못했습니다.")), "warn");
         }
     }
     if !open {
@@ -150,21 +150,21 @@ fn paste_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     }
     let mut open = true;
     let mut close = false;
-    egui::Window::new("종류를 골라 붙여 넣기 (Ctrl+Shift+V)").open(&mut open).default_size([560.0, 420.0]).show(ctx, |ui| {
+    egui::Window::new(wp_core::i18n::tr("종류를 골라 붙여 넣기 (Ctrl+Shift+V)")).open(&mut open).default_size([560.0, 420.0]).show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
-            ui.label("넣을 종류");
+            ui.label(wp_core::i18n::tr("넣을 종류"));
             for (v, l) in [("auto", "알아서"), ("bible", "성경 (줄마다 장절)"), ("song", "찬양 가사"), ("text", "공지"), ("title", "제목")] {
-                ui.radio_value(&mut st.paste_as, v.to_string(), l);
+                ui.radio_value(&mut st.paste_as, v.to_string(), wp_core::i18n::tr(l));
             }
         });
         egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
-            ui.add(egui::TextEdit::multiline(&mut st.paste_text).desired_rows(10).desired_width(f32::INFINITY).hint_text("클립보드에 글이 없습니다. 여기에 붙여 넣거나 쓰세요."));
+            ui.add(egui::TextEdit::multiline(&mut st.paste_text).desired_rows(10).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("클립보드에 글이 없습니다. 여기에 붙여 넣거나 쓰세요.")));
         });
         ui.horizontal(|ui| {
-            if ui.button("다시 읽기").on_hover_text("클립보드 글을 다시 가져옵니다").clicked() {
+            if ui.button(wp_core::i18n::tr("다시 읽기")).on_hover_text(wp_core::i18n::tr("클립보드 글을 다시 가져옵니다")).clicked() {
                 st.paste_text = wp_core::clippaste::run_ps("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw", &[]).unwrap_or_default().trim_end().to_string();
             }
-            if ui.button(RichText::new("글로 넣기").strong()).clicked() {
+            if ui.button(RichText::new(wp_core::i18n::tr("글로 넣기")).strong()).clicked() {
                 let as_ = if st.paste_as == "auto" { "" } else { st.paste_as.as_str() };
                 let plan = {
                     let mut c = app.core.lock();
@@ -185,18 +185,18 @@ fn paste_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                             };
                             acts.push(Act::AddItem(ty, Some(x["extra"].clone())));
                         }
-                        app.core.lock().notify(format!("{} 순서 {}개를 넣었습니다.", kind_name(&kind), n), "ok");
+                        app.core.lock().notify(wp_core::i18n::tr_args("{1} 순서 {2}개를 넣었습니다.", &[&wp_core::i18n::tr(kind_name(&kind)), &n]), "ok");
                         close = true;
                     }
-                    _ => app.core.lock().notify("넣을 글이 없습니다.", "warn"),
+                    _ => app.core.lock().notify(wp_core::i18n::tr("넣을 글이 없습니다."), "warn"),
                 }
             }
             ui.separator();
-            if ui.button("PowerPoint 슬라이드로").on_hover_text("PowerPoint 에서 복사한 슬라이드 → 찬송가·PPT 순서").clicked() {
+            if ui.button(wp_core::i18n::tr("PowerPoint 슬라이드로")).on_hover_text(wp_core::i18n::tr("PowerPoint 에서 복사한 슬라이드 → 찬송가·PPT 순서")).clicked() {
                 grab(app, true);
                 close = true;
             }
-            if ui.button("그림으로").clicked() {
+            if ui.button(wp_core::i18n::tr("그림으로")).clicked() {
                 grab(app, false);
                 close = true;
             }
@@ -226,7 +226,7 @@ fn title_items(text: &str) -> Vec<Value> {
 /// 슬라이드(강제) · 그림 → 새 순서 (백그라운드)
 fn grab(app: &mut App, slides: bool) {
     let dd = app.core.lock().data_dir.clone();
-    app.core.lock().notify("클립보드를 읽는 중…", "info");
+    app.core.lock().notify(wp_core::i18n::tr("클립보드를 읽는 중…"), "info");
     wp_core::hymns::run_bg(
         move || {
             if slides {
@@ -239,13 +239,13 @@ fn grab(app: &mut App, slides: bool) {
             Ok((true, f)) => {
                 let h = wp_core::hymns::HymnFile { number: None, title: "붙여 넣은 슬라이드".into(), name: String::new(), folder: String::new(), file: std::path::PathBuf::from(&f) };
                 c.add_item(wp_core::hymns::new_hymn_item(&h), None);
-                c.notify("PowerPoint 슬라이드를 새 순서로 넣었습니다.", "ok");
+                c.notify(wp_core::i18n::tr("PowerPoint 슬라이드를 새 순서로 넣었습니다."), "ok");
             }
             Ok((false, url)) => {
                 let mut it = wp_core::core::new_item("image", "붙여 넣은 그림");
                 it["image"] = json!(url);
                 c.add_item(it, None);
-                c.notify("그림을 새 순서로 넣었습니다.", "ok");
+                c.notify(wp_core::i18n::tr("그림을 새 순서로 넣었습니다."), "ok");
             }
             Err(e) => c.notify(e, "warn"),
         },
