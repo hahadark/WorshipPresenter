@@ -49,6 +49,7 @@ impl App {
         let sc = |m: Modifiers, k: Key| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(m, k)));
         if sc(Modifiers::CTRL, Key::M) { self.tb.message = true; }
         if sc(Modifiers::CTRL, Key::T) { self.tb.quick = true; }
+        if sc(Modifiers::CTRL, Key::L) { crate::lyrics_ui::open(); }
         if sc(Modifiers::CTRL, Key::P) { self.print_cue(); }
         if !ctx.egui_wants_keyboard_input() {
             if sc(Modifiers::CTRL, Key::Z) { self.core.lock().undo_items(false); self.edit = None; }
@@ -104,7 +105,7 @@ impl App {
             let a: Vec<String> = std::env::args().collect();
             if let Some(v) = a.iter().position(|x| x == "--open").and_then(|i| a.get(i + 1)) {
                 for w in v.split(',') {
-                    match w { "songs" => self.tb.songs = true, "lib" => self.tb.lib = true, "overlays" => self.tb.overlays = true, "message" => self.tb.message = true, "quick" => self.tb.quick = true, "stage" => self.tb.stage = true, "macros" => self.tb.macros = true, "cues" => self.tb.cues = true, _ => {} }
+                    match w { "songs" => self.tb.songs = true, "lib" => self.tb.lib = true, "overlays" => self.tb.overlays = true, "message" => self.tb.message = true, "quick" => self.tb.quick = true, "stage" => self.tb.stage = true, "macros" => self.tb.macros = true, "cues" => self.tb.cues = true, "lyrics" => crate::lyrics_ui::open(), _ => {} }
                 }
             }
         });
@@ -116,6 +117,8 @@ impl App {
         self.stage_window(ctx);
         self.macros_window(ctx);
         self.cues_window(ctx);
+        self.lyrics_window(ctx);
+        self.lyrics_window(ctx);
     }
 
     fn add_to_cue(&mut self, it: Value) {
@@ -148,6 +151,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut self.tb.song_q).hint_text("제목·가사로 찾기").desired_width(260.0));
             if ui.button("새 찬양").clicked() { self.tb.song_edit = Some(json!({ "title": "", "lyrics": "", "credit": "", "tags": "", "arrangement": "" })); }
+            if ui.button("웹에서 가사 찾기 Ctrl+L").clicked() { crate::lyrics_ui::open(); }
         });
         let list = self.core.lock().list_songs(&self.tb.song_q);
         ui.label(RichText::new(format!("{}곡", list.len())).small());
