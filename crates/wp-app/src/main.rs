@@ -4,6 +4,7 @@
 mod app;
 mod outwin;
 mod paint;
+mod tools_ui; // [트랙 D]
 
 use eframe::egui;
 use parking_lot::Mutex;
