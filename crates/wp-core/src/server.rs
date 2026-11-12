@@ -126,6 +126,16 @@ async fn lib_file(State(core): State<Shared>, Query(q): Query<HashMap<String, St
     }
 }
 
+/// 베들레헴 찬송가 악보 그림 // [트랙 A]
+async fn hymnal_score(State(core): State<Shared>, axum::extract::Path((book, file)): axum::extract::Path<(String, String)>) -> Response {
+    let n: Option<i64> = file.strip_suffix(".png").and_then(|x| x.parse().ok());
+    let png = n.and_then(|n| crate::hymnal::score(&core.lock(), &book, n));
+    match png {
+        Some(b) => ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "max-age=86400")], b).into_response(),
+        None => status(StatusCode::NOT_FOUND),
+    }
+}
+
 /// 찬송가 캐시 그림 (SVG 면 안의 그림을 data: 로 넣어서) // [트랙 A]
 async fn hymn_file(State(core): State<Shared>, axum::extract::Path((key, file)): axum::extract::Path<(String, String)>) -> Response {
     let Some(fp) = crate::hymns::cache_path(&core.lock(), &key, &file) else { return status(StatusCode::NOT_FOUND) };
@@ -259,6 +269,7 @@ pub fn router(core: Shared) -> Router {
         .route("/media/{f}", get(move |axum::extract::Path(f): axum::extract::Path<String>| { let m = media.clone(); async move { send_file(&m, &f).await } }))
         .route("/lib/file", get(lib_file))
         .route("/hymn/{key}/{file}", get(hymn_file)) // [트랙 A]
+        .route("/hymnal/score/{book}/{file}", get(hymnal_score)) // [트랙 A]
         .route("/events", get(events))
         .route("/api/state", get(|State(c): State<Shared>| async move { Json(c.lock().output_payload("main")) }))
         .route("/api/live", get(|State(c): State<Shared>| async move { Json(c.lock().pres.live_state()) }))

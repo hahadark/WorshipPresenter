@@ -6,6 +6,9 @@ pub mod hymnal; // [트랙 A]
 pub mod hymns; // [트랙 A]
 pub mod pps; // [트랙 A]
 pub mod pptx; // [트랙 A]
+pub mod pptsplit; // [트랙 A]
+pub mod clippaste; // [트랙 A]
+pub mod songinbox; // [트랙 A]
 pub mod measure;
 pub mod parser;
 pub mod presentation;

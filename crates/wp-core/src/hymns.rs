@@ -252,6 +252,122 @@ pub fn set_folder_render(core: &mut Core, dir: &str, render: &str) {
     });
 }
 
+/// 지금 코어 (백그라운드 일이 끝난 뒤 다시 잡으려고)
+pub fn shared() -> Option<crate::core::Shared> {
+    SHARED.get().and_then(|w| w.upgrade())
+}
+
+/// 백그라운드로 일을 돌리고, 끝나면 코어를 잡아 done 을 부른다 (화면이 멈추지 않게)
+pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done: impl FnOnce(&mut Core, T) + Send + 'static) {
+    std::thread::spawn(move || {
+        let r = work();
+        if let Some(sh) = shared() {
+            let mut c = sh.lock();
+            done(&mut c, r);
+            c.emit(crate::core::Ev::Ui);
+        }
+    });
+}
+
+/// PPT 요소 따로 꺼내기 (pptTextLayers): → { key, bgs, slides: [[편집기 항목…]] }
+/// 아직 꺼낸 적이 없으면 백그라운드로 만들고 BUILDING 을 돌려준다 (끝나면 알림)
+pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool) -> Result<Value, String> {
+    let meta = load(core, file)?;
+    if !meta["layers"].as_bool().unwrap_or(false) && !file.to_lowercase().ends_with('x') {
+        return Err("옛 형식(.ppt/.pps)은 요소를 꺼낼 수 없습니다. PowerPoint 에서 .pptx 로 저장한 뒤 넣어 주세요.".into());
+    }
+    if again {
+        let dir = core.data_dir.join("hymn-cache").join(cache_key(file, "pptx-rs1"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    match read_layers_k(core, &meta).filter(|_| !again) {
+        Some((key, raw)) => {
+            let bgs = layer_bgs(core, &meta).unwrap_or_default();
+            let items = crate::pptx::layers::all_items(&raw, screen, &format!("/hymn/{key}/"));
+            Ok(json!({ "key": key, "bgs": bgs, "slides": items, "w": raw["w"], "h": raw["h"] }))
+        }
+        None => {
+            let lk = format!("layers:{}", norm(file));
+            if PENDING.lock().insert(lk.clone()) {
+                let (dd, f) = (core.data_dir.clone(), file.to_string());
+                run_bg(move || crate::pptx::build::build_cache(&dd, &f), move |c, r: Result<Value, String>| {
+                    PENDING.lock().remove(&lk);
+                    META.lock().clear(); // layerBgs 를 다시 읽게
+                    match r {
+                        Ok(_) => c.notify("PPT 요소를 꺼냈습니다. 다시 누르면 슬라이드 편집기에 들어갑니다.", "ok"),
+                        Err(e) => c.notify(e, "error"),
+                    }
+                });
+            }
+            Err(BUILDING.into())
+        }
+    }
+}
+
+/// 슬라이드마다 글자 (나누기용) — PPT 안의 글자 · .pps 는 슬라이드 글자 · 없으면 빈 글
+pub fn slide_texts(core: &Core, file: &str) -> Result<Vec<String>, String> {
+    let meta = load(core, file)?;
+    if let Some(a) = meta["slideTexts"].as_array().filter(|a| !a.is_empty()) {
+        return Ok(a.iter().map(|t| t.as_str().unwrap_or("").to_string()).collect());
+    }
+    let n = meta["slides"].as_array().or(meta["scores"].as_array()).map(|a| a.len()).unwrap_or(0);
+    let texts: Vec<String> = meta["texts"].as_array().into_iter().flatten().map(|t| t.as_array().into_iter().flatten().filter_map(|x| x.as_str()).collect::<Vec<_>>().join("\n")).collect();
+    Ok(if texts.len() >= n { texts } else { vec![String::new(); n] })
+}
+
+/// 나눈 결과(parts) → 큐시트에 넣을 찬송가(PPT) 순서들 (같은 파일, 범위만 다르게)
+pub fn split_items(it: &Value, parts: &[crate::pptsplit::Part]) -> Vec<Value> {
+    parts.iter().map(|p| {
+        let mut x = it.clone();
+        x["id"] = json!(crate::util::short_id("i"));
+        x["title"] = json!(p.name);
+        x["range"] = json!(if p.a == p.b { p.a.to_string() } else { format!("{}-{}", p.a, p.b) });
+        if let Some(o) = x.as_object_mut() { o.remove("edits"); o.remove("skip"); o.remove("slideOrder"); }
+        x
+    }).collect()
+}
+
+/// 꺼낸 요소를 순서의 편집(edits)에 넣는다 (Electron cue.js pptTextOn): 슬라이드마다 { pptBg:true, items:[꺼낸 것 + 사용자가 덧붙인 것] }
+/// → (꺼낸 슬라이드 수, 글상자, 그림, 도형)
+pub fn apply_layers(it: &mut Value, layers: &Value, slide_count: usize) -> (usize, usize, usize, usize) {
+    let (a0, n) = match it["range"].as_str().and_then(range_of) {
+        Some((a, b)) => (a - 1, b.min(slide_count).saturating_sub(a - 1)),
+        None => (0, slide_count),
+    };
+    let mut edits = it["edits"].as_object().cloned().unwrap_or_default();
+    let (mut sl, mut t, mut p, mut s) = (0, 0, 0, 0);
+    for k in 0..n {
+        let items = layers["slides"][a0 + k].as_array().cloned().unwrap_or_default();
+        let mut e = edits.get(&k.to_string()).cloned().unwrap_or(json!({}));
+        let keep: Vec<Value> = e["items"].as_array().into_iter().flatten().filter(|x| !crate::pptx::layers::is_ppt_item(x["id"].as_str().unwrap_or(""))).cloned().collect();
+        if items.is_empty() {
+            if let Some(o) = e.as_object_mut() { o.remove("pptBg"); }
+            e["items"] = json!(keep);
+        } else if items.len() + keep.len() > 60 {
+            continue;
+        } else {
+            for x in &items {
+                match x["type"].as_str() { Some("image") => p += 1, Some("shape") => s += 1, _ => t += 1 }
+            }
+            let mut all = items;
+            all.extend(keep);
+            e["items"] = json!(all);
+            e["pptBg"] = json!(true);
+            sl += 1;
+        }
+        if e["items"].as_array().is_some_and(|a| a.is_empty()) {
+            if let Some(o) = e.as_object_mut() { o.remove("items"); }
+        }
+        if e.as_object().is_some_and(|o| o.is_empty()) { edits.remove(&k.to_string()); } else { edits.insert(k.to_string(), e); }
+    }
+    if edits.is_empty() {
+        if let Some(o) = it.as_object_mut() { o.remove("edits"); }
+    } else {
+        it["edits"] = Value::Object(edits);
+    }
+    (sl, t, p, s)
+}
+
 pub fn is_building(file: &str) -> bool {
     PENDING.lock().contains(&norm(file))
 }
@@ -535,15 +651,27 @@ pub fn build_slides(core: &Core, it: &Value, opts: &SplitOpts) -> Result<Vec<Val
 
 /// 꺼낸 요소 정보 (layers.json) — 없으면 None
 pub fn read_layers(core: &Core, meta: &Value) -> Option<Value> {
-    let key = meta["key"].as_str()?;
-    let p = cache_path(core, key, "layers.json")?;
-    serde_json::from_str(std::fs::read_to_string(p).ok()?.trim_start_matches('\u{feff}')).ok()
+    read_layers_k(core, meta).map(|x| x.1)
+}
+
+/// (layers.json 이 있는 캐시 열쇠, 내용): 이 캐시 → (PowerPoint 로 만든 것이면) 직접 읽어 만든 캐시
+pub fn read_layers_k(core: &Core, meta: &Value) -> Option<(String, Value)> {
+    let file = meta["file"].as_str().unwrap_or("");
+    let keys = [meta["key"].as_str().map(String::from), (!file.is_empty()).then(|| cache_key(file, "pptx-rs1"))];
+    for key in keys.into_iter().flatten() {
+        if let Some(p) = cache_path(core, &key, "layers.json") {
+            if let Some(v) = std::fs::read_to_string(p).ok().and_then(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).ok()) {
+                return Some((key, v));
+            }
+        }
+    }
+    None
 }
 
 /// 요소를 뺀 배경 그림 주소들 (슬라이드마다)
 pub fn layer_bgs(core: &Core, meta: &Value) -> Option<Vec<String>> {
-    let raw = read_layers(core, meta)?;
-    let key = meta["key"].as_str()?;
+    let (key, raw) = read_layers_k(core, meta)?;
+    let key = key.as_str();
     let bgs = raw["bgs"].as_array()?;
     let n = meta["slides"].as_array().map(|a| a.len()).unwrap_or(0);
     Some((0..n).map(|k| bgs.get(k).and_then(|b| b.as_str()).filter(|b| !b.is_empty()).map(|b| format!("/hymn/{key}/{b}")).unwrap_or_default()).collect())
