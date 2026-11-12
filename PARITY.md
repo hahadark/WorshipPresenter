@@ -119,7 +119,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | updateCueMeta · trashCues · restoreCues · purgeCues · duplicateCue · deleteCue | core.js | core/cues.rs · trackb.rs | 됨 | |
 | exportCues · importCues | core.js | core/cues.rs export · import · trackb.rs | 됨 | |
 | cueText (큐시트를 글로) | core.js | core/parity_a.rs cue_text · 순서 오른쪽 클릭 \"큐시트를 글로 복사\" | 됨 | 5차 |
-| 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | 구현 중 | 없음 | 고정 배치는 동등한 기능이 아니므로 기존 '대체' 판정을 철회. 저장·전환·패널배치·잠금 구현 중 |
+| 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | core/workspace.rs · app/workspace_ui.rs | 일부 | 패널 8개·기본 배치 4개·분할·탭 이동/합치기·개별 독립 창·접기·사용자 배치 관리·잠금 구현, 테스트 5개 통과. 남음: 탭 그룹 전체 띄우기/병합, 독립 창 위치·크기 저장, 하단 송출 줄 중복 정리, 패널별 세부 동등성 대조 |
 
 ## 2. 웹 서버 경로 (server.js)
 | 경로 | Rust 위치 | 상태 | 메모 |
@@ -158,7 +158,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 편집칸 · 슬라이드 편집 · 위/아래 · 복제 · 지우기 · 송출 | 큐시트 아래 단추 · c:slideedit · 순서 오른쪽 클릭 | 됨 | 5차 |
 | 송출 메뉴 (다음·이전·다음 순서 미리보기·즉석 자막·회중 메시지·화면 지우기·음악 멈춤·모두 지우기) | 송출 단추 줄 · 단축키 · b:quick · b:message · music_ui | 됨 | |
 | OBS · 송출 배경 · OBS 자막 모양 · 보조 화면 · 무대 화면 창 | d:obs · b:lib · c:obsfull/obspip · 예배당 화면 켜기 · b:stage | 됨 | |
-| 보기: 패널 · 작업공간 · 패널 잠그기 | 구현 중 | 없음 | 고정 배치 대체 판정 철회 |
+| 보기: 패널 · 작업공간 · 패널 잠그기 | app/workspace_ui.rs | 일부 | 위 작업공간 항목의 남은 기능 참고 |
 | 보기: 조작 화면 테마 · 글자 크기 | 설정 → 조작 화면 | 됨 | |
 | 보기: Language · 언어 | 설정(uiLang) · core/i18n.rs · data/en.json | 일부 | 기존 화면과 주석·성경책·붙여넣기 창 번역 통합. 새 편집기·작업공간·업데이트 문구의 추가 점검 필요 |
 | 도구: 라이브러리 · 오버레이 · 템플릿 · 미디어 · 무대 타이머 · 매크로 · OBS · 장비 · 리모컨 · 스트림덱 | b:* · c:templates · d:* | 됨 | |
@@ -254,3 +254,9 @@ README 의 큰 기능(성경·찬양·찬송가 PPT·공지·영상·카메라·
 - 창·시작 10줄: 됨 8 · 일부 1 (업데이트 설치 — 릴리스 정지) · 대체 1 (시작 화면)
 
 남은 '일부'(다른 트랙 몫 빼고): 종류 골라 붙여 넣기(Ctrl+Shift+V) 창 · 미리보기/LIVE 썸네일 오른쪽 클릭 · Ctrl+B 성경 책 목록 창 확인 · /api/command 다른 명령(의도적)
+
+
+## 챗GPT 재개 후 최신 검증 (2026-11-12)
+- 전체 테스트: 앱 7개, 코어 130개 통과 (13개는 실제 파일·외부 환경용으로 제외).
+- 개발 빌드 성공. 별도 점검 자료에서 성경(요 3:16-18)과 찬양 순서 송출, /api/live·/outputs/main 응답 확인.
+- 통합: 주석·베들레헴 일괄 가져오기, 편집기 세부, 썸네일·백업, LIVE 큐 불일치·음악 계약, 출력 파일 경계, 업데이트 상태 기계(배포 정지 게이트), 작업공간 v2, 새 창 영어 문구.
