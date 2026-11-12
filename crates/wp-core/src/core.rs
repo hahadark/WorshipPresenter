@@ -1,7 +1,7 @@
 //! 코어: DB · 설정 · 송출 상태 · 출력 화면에 보낼 데이터. 조작 화면(egui)과 웹 서버가 같이 쓴다.
 
 use crate::db::{BibleStore, Cue, CueSummary};
-use crate::presentation::{Deck, Move, Presentation};
+use crate::presentation::{Deck, Presentation};
 use crate::settings::Settings;
 use crate::slides::{self, SplitOpts};
 use crate::util::{iso_now, now_ms, short_id};
@@ -329,7 +329,7 @@ impl Core {
         } else {
             (None, None)
         };
-        let slides = if ty == "hymn" { crate::hymns::build_slides(self, &it, &opts)? } else { slides::build_item(&it, passage.as_ref(), &opts) }; // [트랙 A]
+        let slides = if ty == "hymn" { crate::hymns::build_slides(self, &it, &opts)? } else { crate::slideedit::decorate(&it, slides::build_item(&it, passage.as_ref(), &opts), false) }; // [트랙 A] · [트랙 C] 슬라이드 편집 꾸미기
         if slides.is_empty() { return Err("이 순서에 보일 슬라이드가 없습니다 (PPT 파일을 고르세요).".into()); } // [트랙 A]
         let meta = p.unwrap_or_else(|| {
             let mut m = json!({ "title": it["title"], "versionId": "", "versionName": "", "book": null, "first": null, "last": null, "query": "", "tpl": null, "auto": null, "hideAfter": 0, "edgeHide": false });

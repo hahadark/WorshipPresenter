@@ -1,0 +1,510 @@
+//! [트랙 C] 슬라이드 편집 (Electron core/slideedit.js · control/cue.js decorate · shared/slides.js slideOp 등)
+//! 큐시트 순서의 edits = { '*': 공통, '0': 첫 슬라이드, 'x<id>': 덧붙인 제목 카드 } · skip · slideOrder · extra
+//! 데이터 모양은 Electron 판과 같아 웹 출력(render.js)이 그대로 그린다.
+
+use crate::hymns::merge_edit;
+use crate::slides;
+use once_cell::sync::Lazy;
+use regex::Regex;
+use serde_json::{json, Map, Value};
+
+fn num(v: &Value, a: f64, b: f64, d: f64) -> f64 {
+    v.as_f64().filter(|x| x.is_finite()).map(|x| x.clamp(a, b)).unwrap_or(d)
+}
+static COLOR: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^#[0-9a-f]{3,8}$").unwrap());
+fn color(v: &Value) -> Option<String> {
+    v.as_str().filter(|s| COLOR.is_match(s)).map(String::from)
+}
+fn pick(v: &Value, list: &[&str]) -> Option<String> {
+    v.as_str().filter(|s| list.contains(s)).map(String::from)
+}
+
+/// 글자 슬라이드 종류 (편집 열쇠 = 글 덩어리 번호 src)
+pub fn is_chunk(ty: &str) -> bool {
+    matches!(ty, "song" | "text" | "title")
+}
+
+/// 원래 슬라이드 차례 (끌어서 바꾼 slideOrder, 빠진 번호는 뒤에)
+pub fn order_of(it: &Value, n: usize) -> Vec<usize> {
+    let mut out = vec![];
+    for k in it["slideOrder"].as_array().into_iter().flatten().filter_map(|x| x.as_u64()) {
+        let k = k as usize;
+        if k < n && !out.contains(&k) {
+            out.push(k);
+        }
+    }
+    for k in 0..n {
+        if !out.contains(&k) {
+            out.push(k);
+        }
+    }
+    out
+}
+
+fn extra_slide(e: &Value) -> Value {
+    let mut s = slides::title_slide(e["text"].as_str().unwrap_or(""), 1);
+    s["label"] = json!("덧붙임");
+    s["ekey"] = json!(format!("x{}", e["id"].as_str().unwrap_or("")));
+    s["xid"] = e["id"].clone();
+    if let Some(o) = s.as_object_mut() {
+        o.remove("src");
+    }
+    s
+}
+
+/// 꾸미기: 건너뛰기 · 차례 · 덧붙인 제목 카드 · 슬라이드별 편집(edit · bg). with_skipped 면 건너뛴 것도 skipped 표시로 남긴다
+pub fn decorate(it: &Value, slides: Vec<Value>, with_skipped: bool) -> Vec<Value> {
+    let ty = it["type"].as_str().unwrap_or("");
+    let mut out: Vec<Value>;
+    if is_chunk(ty) {
+        out = slides;
+        for s in out.iter_mut() {
+            let src = s["src"].as_u64().unwrap_or(0);
+            s["src"] = json!(src);
+            s["ekey"] = json!(src.to_string());
+        }
+    } else {
+        let n = slides.len();
+        let skip: Vec<u64> = it["skip"].as_array().into_iter().flatten().filter_map(|x| x.as_u64()).collect();
+        let extra = it["extra"].as_array().cloned().unwrap_or_default();
+        let extra_at = |at: i64| extra.iter().filter(|e| e["at"].as_i64() == Some(at)).map(extra_slide).collect::<Vec<_>>();
+        out = extra_at(-1);
+        for k in order_of(it, n) {
+            let mut s = slides[k].clone();
+            s["ekey"] = json!(k.to_string());
+            s["base"] = json!(k);
+            if skip.contains(&(k as u64)) {
+                if with_skipped {
+                    s["skipped"] = json!(true);
+                    out.push(s);
+                }
+            } else {
+                out.push(s);
+            }
+            out.extend(extra_at(k as i64));
+        }
+        let last = n as i64 - 1;
+        out.extend(extra.iter().filter(|e| e["at"].as_i64().is_some_and(|a| a > last)).map(extra_slide));
+        if !with_skipped && !out.iter().any(|s| !s["skipped"].as_bool().unwrap_or(false)) {
+            out = slides.into_iter().take(1).collect();
+        }
+    }
+    if it["edits"].is_object() {
+        for s in out.iter_mut() {
+            let key = s["ekey"].as_str().unwrap_or("").to_string();
+            let Some(mut e) = merge_edit(&it["edits"], &key) else { continue };
+            if let Some(bg) = e["bg"].as_str().filter(|x| !x.is_empty()) {
+                s["bg"] = json!(bg);
+            }
+            if let Some(o) = e.as_object_mut() {
+                o.remove("bg");
+            }
+            if s["pptBgMissing"].as_bool().unwrap_or(false) {
+                if let Some(items) = e["items"].as_array_mut() {
+                    items.retain(|x| !crate::pptx::layers::is_ppt_item(x["id"].as_str().unwrap_or("")));
+                }
+            }
+            s["edit"] = e;
+        }
+    }
+    out
+}
+
+// ---------------- 정리 (normalizeEdit) ----------------
+fn rect(r: &Value) -> Option<Map<String, Value>> {
+    if !r.is_object() {
+        return None;
+    }
+    let mut o = Map::new();
+    o.insert("x".into(), json!(num(&r["x"], -50.0, 150.0, 0.0)));
+    o.insert("y".into(), json!(num(&r["y"], -50.0, 150.0, 0.0)));
+    o.insert("w".into(), json!(num(&r["w"], 1.0, 200.0, 50.0)));
+    o.insert("h".into(), json!(num(&r["h"], 1.0, 200.0, 20.0)));
+    Some(o)
+}
+
+fn style(s: &Value) -> Map<String, Value> {
+    let mut o = Map::new();
+    if !s.is_object() {
+        return o;
+    }
+    if !s["size"].is_null() && s["size"] != "" {
+        o.insert("size".into(), json!(num(&s["size"], 8.0, 400.0, 72.0)));
+    }
+    for b in ["autoFit", "bold", "italic", "shadow"] {
+        if let Some(v) = s[b].as_bool() {
+            o.insert(b.into(), json!(v));
+        }
+    }
+    if let Some(c) = color(&s["color"]) { o.insert("color".into(), json!(c)); }
+    if let Some(c) = color(&s["boxColor"]) { o.insert("boxColor".into(), json!(c)); }
+    if let Some(a) = pick(&s["align"], &["left", "center", "right"]) { o.insert("align".into(), json!(a)); }
+    if let Some(a) = pick(&s["valign"], &["top", "middle", "bottom"]) { o.insert("valign".into(), json!(a)); }
+    if !s["lineHeight"].is_null() && s["lineHeight"] != "" { o.insert("lineHeight".into(), json!(num(&s["lineHeight"], 0.8, 3.0, 1.4))); }
+    if !s["boxOpacity"].is_null() { o.insert("boxOpacity".into(), json!(num(&s["boxOpacity"], 0.0, 1.0, 0.6))); }
+    if !s["radius"].is_null() { o.insert("radius".into(), json!(num(&s["radius"], 0.0, 400.0, 12.0))); }
+    if !s["padding"].is_null() { o.insert("padding".into(), json!(num(&s["padding"], 0.0, 300.0, 24.0))); }
+    o
+}
+
+static ID_OK: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^[a-z0-9]{2,30}$").unwrap());
+static FONT_OK: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[\w가-힣\u{3131}-\u{318e} .+\-()]{1,60}$").unwrap());
+
+fn item(x: &Value, i: usize) -> Option<Value> {
+    let ty = x["type"].as_str().filter(|t| ["text", "image", "shape", "camera"].contains(t))?;
+    let r = rect(x).unwrap();
+    let id = x["id"].as_str().filter(|s| ID_OK.is_match(s)).map(String::from).unwrap_or_else(|| format!("e{}{}", i, crate::util::to36(rand::random::<u32>() as u64)));
+    let mut o = r;
+    o.insert("id".into(), json!(id));
+    o.insert("type".into(), json!(ty));
+    o.insert("opacity".into(), json!(num(&x["opacity"], 0.05, 1.0, 1.0)));
+    o.insert("radius".into(), json!(num(&x["radius"], 0.0, 1000.0, 0.0)));
+    o.insert("below".into(), json!(x["below"].as_bool().unwrap_or(false)));
+    let s = |k: &str, max: usize| json!(x[k].as_str().unwrap_or("").chars().take(max).collect::<String>());
+    match ty {
+        "text" => {
+            o.insert("text".into(), s("text", 2000));
+            o.insert("size".into(), json!(num(&x["size"], 8.0, 400.0, 60.0)));
+            o.insert("color".into(), json!(color(&x["color"]).unwrap_or("#ffffff".into())));
+            o.insert("fill".into(), json!(color(&x["fill"]).unwrap_or_default()));
+            o.insert("bold".into(), json!(x["bold"].as_bool().unwrap_or(false)));
+            o.insert("italic".into(), json!(x["italic"].as_bool().unwrap_or(false)));
+            o.insert("align".into(), json!(pick(&x["align"], &["left", "center", "right"]).unwrap_or("center".into())));
+            o.insert("valign".into(), json!(pick(&x["valign"], &["top", "middle", "bottom"]).unwrap_or("middle".into())));
+            o.insert("padding".into(), json!(num(&x["padding"], 0.0, 300.0, 12.0)));
+            if let Some(f) = x["font"].as_str().map(str::trim).filter(|f| FONT_OK.is_match(f)) {
+                o.insert("font".into(), json!(f));
+            }
+            if x["fit"].as_bool().unwrap_or(false) { o.insert("fit".into(), json!(true)); }
+            if x["shadow"] == json!(false) { o.insert("shadow".into(), json!(false)); }
+            if !x["lineHeight"].is_null() && x["lineHeight"] != "" { o.insert("lineHeight".into(), json!(num(&x["lineHeight"], 0.8, 3.0, 1.3))); }
+        }
+        "image" => {
+            o.insert("src".into(), s("src", 1500));
+            o.insert("fit".into(), json!(if x["fit"] == "contain" { "contain" } else { "cover" }));
+            let c = &x["crop"];
+            if c.is_object() {
+                let (l, t, r, b) = (num(&c["l"], 0.0, 0.95, 0.0), num(&c["t"], 0.0, 0.95, 0.0), num(&c["r"], 0.0, 0.95, 0.0), num(&c["b"], 0.0, 0.95, 0.0));
+                if (l + t + r + b) > 0.0 && l + r < 0.96 && t + b < 0.96 {
+                    o.insert("crop".into(), json!({ "l": l, "t": t, "r": r, "b": b }));
+                }
+            }
+        }
+        "camera" => {
+            o.insert("deviceId".into(), s("deviceId", 200));
+            o.insert("label".into(), s("label", 100));
+            o.insert("fit".into(), json!(if x["fit"] == "contain" { "contain" } else { "cover" }));
+        }
+        _ => {
+            o.insert("fill".into(), json!(color(&x["fill"]).unwrap_or("#1d3557".into())));
+            o.insert("ellipse".into(), json!(x["ellipse"].as_bool().unwrap_or(false)));
+        }
+    }
+    Some(Value::Object(o))
+}
+
+/// 한 슬라이드 편집 정리 (빈 편집이면 None)
+pub fn normalize_edit(e: &Value) -> Option<Value> {
+    if !e.is_object() {
+        return None;
+    }
+    let mut o = Map::new();
+    if let Some(b) = rect(&e["box"]) { o.insert("box".into(), Value::Object(b)); }
+    let st = style(&e["style"]);
+    if !st.is_empty() { o.insert("style".into(), Value::Object(st)); }
+    for b in ["hideMain", "allOutputs", "pptBg"] {
+        if e[b].as_bool().unwrap_or(false) { o.insert(b.into(), json!(true)); }
+    }
+    if let Some(bg) = e["bg"].as_str().filter(|x| !x.is_empty()) {
+        o.insert("bg".into(), json!(bg.chars().take(1500).collect::<String>()));
+    }
+    let items: Vec<Value> = e["items"].as_array().into_iter().flatten().take(60).enumerate().filter_map(|(i, x)| item(x, i)).collect();
+    if !items.is_empty() { o.insert("items".into(), json!(items)); }
+    if o.is_empty() { None } else { Some(Value::Object(o)) }
+}
+
+static KEY_OK: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^(\*|\d{1,4}|x[a-z0-9]{1,16})$").unwrap());
+
+/// 모든 편집 정리 (빈 것은 지움)
+pub fn normalize_edits(edits: &Value) -> Option<Value> {
+    let m = edits.as_object()?;
+    let mut out = Map::new();
+    for (k, v) in m.iter().take(1200) {
+        if !KEY_OK.is_match(k) { continue; }
+        if let Some(e) = normalize_edit(v) { out.insert(k.clone(), e); }
+    }
+    if out.is_empty() { None } else { Some(Value::Object(out)) }
+}
+
+/// 순서의 편집 하나를 바꾼다 (f 가 고침). 빈 편집이면 지운다
+pub fn update_edit(it: &mut Value, key: &str, f: impl FnOnce(&mut Value)) {
+    if !it["edits"].is_object() {
+        it["edits"] = json!({});
+    }
+    let mut e = it["edits"][key].clone();
+    if !e.is_object() { e = json!({}); }
+    f(&mut e);
+    match normalize_edit(&e) {
+        Some(n) => it["edits"][key] = n,
+        None => { it["edits"].as_object_mut().unwrap().remove(key); }
+    }
+    if it["edits"].as_object().is_some_and(|m| m.is_empty()) {
+        it.as_object_mut().unwrap().remove("edits");
+    }
+}
+
+/// 덧붙일 새 요소
+pub fn new_item(ty: &str) -> Value {
+    let id = format!("u{}", crate::util::to36(rand::random::<u32>() as u64));
+    match ty {
+        "image" => json!({ "id": id, "type": "image", "x": 30, "y": 25, "w": 40, "h": 40, "src": "", "fit": "contain" }),
+        "shape" => json!({ "id": id, "type": "shape", "x": 10, "y": 70, "w": 80, "h": 20, "fill": "#1d3557", "opacity": 0.8, "below": true }),
+        _ => json!({ "id": id, "type": "text", "x": 20, "y": 10, "w": 60, "h": 15, "text": "글상자", "size": 60, "color": "#ffffff", "align": "center", "valign": "middle" }),
+    }
+}
+
+// ---------------- 글 덩어리 고치기 (slides.js slideOp · reorderChunks · splitChunks) ----------------
+static BLANK: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n\s*\n").unwrap());
+static DASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n\s*-{3,}\s*\n").unwrap());
+static LABEL: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\[(.{1,20})\]$").unwrap());
+
+fn split_parts(song: bool, text: &str) -> Vec<String> {
+    let t = text.replace('\r', "");
+    (if song { BLANK.split(&t).map(String::from).collect::<Vec<_>>() } else { DASH.split(&t).map(String::from).collect() })
+}
+fn is_label(song: bool, l: &str) -> bool {
+    song && LABEL.is_match(l.trim())
+}
+fn has_content(song: bool, b: &str) -> bool {
+    b.split('\n').any(|l| !l.trim().is_empty() && !is_label(song, l))
+}
+fn join_parts(song: bool, parts: &[String]) -> String {
+    parts.iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect::<Vec<_>>().join(if song { "\n\n" } else { "\n---\n" })
+}
+
+/// 넣기('add') · 복제('dup') · 지우기('del') · 위('up') · 아래('down'). k = 슬라이드(덩어리) 번호
+pub fn slide_op(song: bool, text: &str, op: &str, k: usize, new_text: &str) -> String {
+    let mut parts = split_parts(song, text);
+    let idx: Vec<usize> = parts.iter().enumerate().filter(|(_, b)| has_content(song, b)).map(|(i, _)| i).collect();
+    let at = idx.get(k).copied();
+    let labels_of = |b: &str| b.split('\n').filter(|l| is_label(song, l)).map(String::from).collect::<Vec<_>>();
+    let body_of = |b: &str| b.split('\n').filter(|l| !is_label(song, l)).collect::<Vec<_>>().join("\n").trim().to_string();
+    match op {
+        "add" | "dup" => {
+            let pos = at.map(|a| a + 1).unwrap_or(parts.len());
+            let t = if op == "dup" { at.map(|a| body_of(&parts[a])).unwrap_or_else(|| new_text.into()) } else { new_text.into() };
+            parts.insert(pos, t);
+        }
+        "del" => {
+            let Some(a) = at else { return text.into() };
+            let labels = labels_of(&parts[a]);
+            if let Some(&next) = idx.get(k + 1) {
+                if !labels.is_empty() && next == a + 1 && labels_of(&parts[next]).is_empty() {
+                    parts[next] = format!("{}\n{}", labels.join("\n"), parts[next]);
+                }
+            }
+            parts.remove(a);
+        }
+        "up" | "down" => {
+            let other = if op == "up" { k.checked_sub(1).and_then(|j| idx.get(j)) } else { idx.get(k + 1) };
+            let (Some(a), Some(&o)) = (at, other) else { return text.into() };
+            parts.swap(a, o);
+        }
+        _ => return text.into(),
+    }
+    join_parts(song, &parts)
+}
+
+/// 차례 바꾸기: perm[i] = 새 i 번째 자리에 올 원래 덩어리 번호
+pub fn reorder_chunks(song: bool, text: &str, perm: &[usize]) -> String {
+    let parts = split_parts(song, text);
+    let idx: Vec<usize> = parts.iter().enumerate().filter(|(_, b)| has_content(song, b)).map(|(i, _)| i).collect();
+    let mut sorted = perm.to_vec();
+    sorted.sort();
+    if perm.len() != idx.len() || sorted.iter().enumerate().any(|(i, v)| *v != i) {
+        return text.into();
+    }
+    let mut out = parts.clone();
+    for (i, &pos) in idx.iter().enumerate() {
+        out[pos] = parts[idx[perm[i]]].clone();
+    }
+    join_parts(song, &out)
+}
+
+/// c 번째 덩어리 앞에서 둘로 → (앞 글, 뒤 글)
+pub fn split_chunks(song: bool, text: &str, c: usize) -> Option<(String, String)> {
+    let parts = split_parts(song, text);
+    let idx: Vec<usize> = parts.iter().enumerate().filter(|(_, b)| has_content(song, b)).map(|(i, _)| i).collect();
+    if c == 0 || c >= idx.len() {
+        return None;
+    }
+    Some((join_parts(song, &parts[..idx[c]]), join_parts(song, &parts[idx[c]..])))
+}
+
+/// 편집 번호 옮기기 (slideOpEdits)
+pub fn slide_op_edits(edits: &Value, op: &str, k: usize) -> Value {
+    let Some(m) = edits.as_object() else { return Value::Null };
+    let mut out = Map::new();
+    for (key, v) in m {
+        let Ok(n) = key.parse::<usize>() else { out.insert(key.clone(), v.clone()); continue };
+        let nn = match op {
+            "add" | "dup" => Some(if n > k { n + 1 } else { n }),
+            "del" => if n == k { None } else { Some(if n > k { n - 1 } else { n }) },
+            "up" | "down" => {
+                let o = if op == "up" { k.wrapping_sub(1) } else { k + 1 };
+                Some(if n == k { o } else if n == o { k } else { n })
+            }
+            _ => Some(n),
+        };
+        if let Some(nn) = nn { out.insert(nn.to_string(), v.clone()); }
+    }
+    if op == "dup" {
+        if let Some(e) = m.get(&k.to_string()) { out.insert((k + 1).to_string(), e.clone()); }
+    }
+    if out.is_empty() { Value::Null } else { Value::Object(out) }
+}
+
+/// 구역 나누기: c 번째부터의 편집 번호를 0 부터로 → (앞, 뒤)
+pub fn split_edits(edits: &Value, c: usize) -> (Value, Value) {
+    let (mut a, mut b) = (Map::new(), Map::new());
+    for (k, v) in edits.as_object().into_iter().flatten() {
+        if k == "*" { a.insert(k.clone(), v.clone()); b.insert(k.clone(), v.clone()); continue; }
+        let Ok(n) = k.parse::<usize>() else { continue };
+        if n < c { a.insert(n.to_string(), v.clone()); } else { b.insert((n - c).to_string(), v.clone()); }
+    }
+    let f = |m: Map<String, Value>| if m.is_empty() { Value::Null } else { Value::Object(m) };
+    (f(a), f(b))
+}
+
+/// 큐시트 순서 하나에 편집 동작 적용. 결과로 (고친 순서, 나눴으면 뒤 순서)
+pub fn apply_op(it: &Value, op: &str, k: usize) -> (Value, Option<Value>) {
+    let mut it = it.clone();
+    let ty = it["type"].as_str().unwrap_or("").to_string();
+    let (field, song) = match ty.as_str() { "song" => ("lyrics", true), "text" => ("body", false), _ => ("", false) };
+    if op == "split" {
+        if !field.is_empty() {
+            if let Some((a, b)) = split_chunks(song, it[field].as_str().unwrap_or(""), k) {
+                let (ea, eb) = split_edits(&it["edits"], k);
+                let mut back = it.clone();
+                it[field] = json!(a);
+                back[field] = json!(b);
+                back["id"] = json!(crate::util::short_id("i"));
+                back["title"] = json!(format!("{} (이어서)", it["title"].as_str().unwrap_or("")));
+                set_or_remove(&mut it, "edits", ea);
+                set_or_remove(&mut back, "edits", eb);
+                if song { back.as_object_mut().unwrap().remove("songId"); back["order"] = json!(""); it["order"] = json!(""); }
+                return (it, Some(back));
+            }
+        }
+        return (it, None);
+    }
+    if !field.is_empty() {
+        let t = slide_op(song, it[field].as_str().unwrap_or(""), op, k, "새 슬라이드");
+        it[field] = json!(t);
+        let e = slide_op_edits(&it["edits"], op, k);
+        set_or_remove(&mut it, "edits", e);
+    } else if is_chunk(&ty) {
+        // 제목: 장(more) 단위는 넣기·지우기만
+    } else {
+        // 그 밖: 건너뛰기('skip') · 차례(slideOrder)
+        match op {
+            "skip" => {
+                let mut sk: Vec<u64> = it["skip"].as_array().into_iter().flatten().filter_map(|x| x.as_u64()).collect();
+                if let Some(p) = sk.iter().position(|x| *x == k as u64) { sk.remove(p); } else { sk.push(k as u64); sk.sort(); }
+                set_or_remove(&mut it, "skip", if sk.is_empty() { Value::Null } else { json!(sk) });
+            }
+            _ => {}
+        }
+    }
+    (it, None)
+}
+
+/// 원래 슬라이드 차례 바꾸기 (그 밖 종류): 보이는 차례에서 from → to
+pub fn move_order(it: &mut Value, n: usize, from: usize, to: usize) {
+    let mut ord = order_of(it, n);
+    if from >= ord.len() || to >= ord.len() { return; }
+    let k = ord.remove(from);
+    ord.insert(to, k);
+    let natural = ord.iter().enumerate().all(|(i, v)| i == *v);
+    set_or_remove(it, "slideOrder", if natural { Value::Null } else { json!(ord) });
+}
+
+fn set_or_remove(it: &mut Value, k: &str, v: Value) {
+    if v.is_null() { if let Some(o) = it.as_object_mut() { o.remove(k); } } else { it[k] = v; }
+}
+
+/// 편집을 이 출력의 템플릿에 반영 (render.js editTemplate 근사): 글상자 위치·크기·꾸미기
+/// 투명 배경(OBS 자막) 출력은 '모든 출력에 적용' 일 때만
+pub fn edited_template(t: &Value, e: &Value) -> Value {
+    let mut t = t.clone();
+    let transparent = t["background"]["type"] == "transparent";
+    if transparent && !e["allOutputs"].as_bool().unwrap_or(false) {
+        return t;
+    }
+    let (w, h) = (t["width"].as_f64().unwrap_or(1920.0), t["height"].as_f64().unwrap_or(1080.0));
+    if e["box"].is_object() {
+        let b = &e["box"];
+        let (x, y, bw, bh) = (b["x"].as_f64().unwrap_or(0.0), b["y"].as_f64().unwrap_or(0.0), b["w"].as_f64().unwrap_or(50.0), b["h"].as_f64().unwrap_or(20.0));
+        t["safeArea"] = json!(0);
+        t["padding"] = json!({ "left": w * x / 100.0, "top": h * y / 100.0, "right": w - w * (x + bw) / 100.0, "bottom": h - h * (y + bh) / 100.0 });
+    }
+    let s = &e["style"];
+    let k = h / 1080.0;
+    if let Some(z) = s["size"].as_f64() {
+        t["font"]["size"] = json!(z * k);
+        t["font"]["minSize"] = json!((z * k * 0.6).min(z * k));
+    }
+    if let Some(v) = s["autoFit"].as_bool() { t["font"]["autoFit"] = json!(v); }
+    if let Some(c) = s["color"].as_str() { t["font"]["color"] = json!(c); }
+    if let Some(b) = s["bold"].as_bool() { t["font"]["weight"] = json!(if b { 700 } else { 400 }); }
+    if let Some(a) = s["align"].as_str() { t["align"] = json!(a); }
+    if let Some(a) = s["valign"].as_str() { t["valign"] = json!(a); }
+    if let Some(l) = s["lineHeight"].as_f64() { t["font"]["lineHeight"] = json!(l); }
+    if let Some(sh) = s["shadow"].as_bool() { t["shadow"]["enabled"] = json!(sh); }
+    if s["boxColor"].is_string() || s["boxOpacity"].is_number() {
+        t["box"]["enabled"] = json!(true);
+        if let Some(c) = s["boxColor"].as_str() { t["box"]["color"] = json!(c); }
+        if let Some(o) = s["boxOpacity"].as_f64() { t["box"]["opacity"] = json!(o); }
+    }
+    if let Some(r) = s["radius"].as_f64() { t["box"]["radius"] = json!(r * k); }
+    if let Some(p) = s["padding"].as_f64() { t["box"]["padding"] = json!(p * k); }
+    t
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn decorate_skip_order_extra() {
+        let it = json!({ "type": "image", "skip": [1], "slideOrder": [2, 0, 1], "extra": [{ "id": "a1", "at": 0, "text": "덧" }], "edits": { "0": { "bg": "#ff0000" } } });
+        let sl = vec![json!({"kind":"image","ref":"a"}), json!({"kind":"image","ref":"b"}), json!({"kind":"image","ref":"c"})];
+        let out = decorate(&it, sl, false);
+        let refs: Vec<&str> = out.iter().map(|s| s["ref"].as_str().unwrap()).collect();
+        assert_eq!(refs, vec!["c", "a", "덧"]);
+        assert_eq!(out[1]["bg"], json!("#ff0000"));
+        assert_eq!(out[2]["ekey"], json!("xa1"));
+    }
+    #[test]
+    fn ops() {
+        let t = "[1절]\n가\n\n나\n\n[후렴]\n다";
+        assert_eq!(slide_op(true, t, "del", 0, ""), "[1절]\n나\n\n[후렴]\n다");
+        assert_eq!(slide_op(true, t, "down", 1, ""), "[1절]\n가\n\n[후렴]\n다\n\n나");
+        assert_eq!(slide_op(false, "a\n---\nb", "dup", 0, ""), "a\n---\na\n---\nb");
+        assert_eq!(reorder_chunks(false, "a\n---\nb\n---\nc", &[2, 0, 1]), "c\n---\na\n---\nb");
+        assert_eq!(split_chunks(false, "a\n---\nb\n---\nc", 1), Some(("a".into(), "b\n---\nc".into())));
+        let e = slide_op_edits(&json!({ "*": {}, "0": {"a":1}, "2": {"b":1} }), "del", 1);
+        assert_eq!(e["1"], json!({"b":1}));
+        let (a, b) = split_edits(&json!({ "0": {"a":1}, "3": {"b":1} }), 2);
+        assert_eq!(a["0"], json!({"a":1}));
+        assert_eq!(b["1"], json!({"b":1}));
+    }
+    #[test]
+    fn normalize() {
+        let e = normalize_edit(&json!({ "box": { "x": 500, "y": 5 }, "style": { "size": 1, "color": "red" }, "items": [{ "type": "text", "text": "a" }, { "type": "bad" }] })).unwrap();
+        assert_eq!(e["box"]["x"], json!(150.0));
+        assert_eq!(e["style"]["size"], json!(8.0));
+        assert!(e["style"]["color"].is_null());
+        assert_eq!(e["items"].as_array().unwrap().len(), 1);
+        assert!(normalize_edit(&json!({})).is_none());
+    }
+}

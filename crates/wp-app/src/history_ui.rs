@@ -18,9 +18,9 @@ pub struct HistoryUi {
 }
 
 fn local_time(ms: i64) -> String {
-    // 기록 시각 (UTC ms) → 한국 시간 표시 (이 PC 시간대 대신 +9 — TODO: 시간대)
+    // 기록 시각 (UTC ms) → 이 PC 시간대로 표시
     let iso = {
-        let t = ms + 9 * 3600 * 1000;
+        let t = ms + wp_core::localtime::local_offset_ms();
         let secs = t / 1000;
         let days = secs.div_euclid(86400);
         let rem = secs.rem_euclid(86400);

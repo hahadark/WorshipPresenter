@@ -12,6 +12,7 @@ pub struct TrackC {
     pub settings: SettingsUi,
     pub templates: TemplateUi,
     pub history: HistoryUi,
+    pub slideedit: crate::slideedit_ui::SlideEditUi,
 }
 
 /// 메뉴에서 고른 트랙 C 항목
@@ -22,6 +23,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "c:history" => app.tc.history.open = true,
         "c:usage" => app.tc.history.usage_open = true,
         "c:about" => app.tc.history.about_open = true,
+        "c:slideedit" => app.tc.slideedit.open = true,
         "c:import-bible" => app.core.lock().notify("성경 번역본 가져오기는 다음 차례에 옮깁니다.", "warn"),
         // 트랙 B 창 (예전 도구 줄)
         "b:songs" => app.tb.songs = true,
@@ -69,6 +71,9 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     app.tc.settings.show(ctx, &core);
     app.tc.templates.show(ctx, &core, &app.web_dir, &app.data_dir);
     app.tc.history.show(ctx, &core, acts);
+    if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::E))) { app.tc.slideedit.open = !app.tc.slideedit.open; }
+    let (sel, wd, dd) = (app.sel, app.web_dir.clone(), app.data_dir.clone());
+    app.tc.slideedit.show(ctx, &core, sel, &wd, &dd, acts);
     // 점검용: --open-c settings|templates|history|usage|about
     if let Some(w) = std::env::args().position(|x| x == "--open-c").and_then(|i| std::env::args().nth(i + 1)) {
         if !OPENED.swap(true, std::sync::atomic::Ordering::SeqCst) {
