@@ -6677,6 +6677,7 @@ dependencies = [
  "futures-util",
  "image",
  "log",
+ "miniz_oxide 0.9.1",
  "once_cell",
  "parking_lot 0.13.0",
  "rand 0.10.3",
