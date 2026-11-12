@@ -104,6 +104,23 @@ static FONTDB: Lazy<Arc<resvg::usvg::fontdb::Database>> = Lazy::new(|| {
     Arc::new(db)
 });
 
+/// 시스템 글꼴 하나의 파일 내용 (조작 화면 egui 가 PPT 글꼴로 그릴 때). 이름은 '구세군체 Bold' 처럼 전체 이름도 받는다
+pub fn font_bytes(name: &str) -> Option<(Vec<u8>, u32)> {
+    use resvg::usvg::fontdb::{Family, Query, Weight};
+    let db = &*FONTDB;
+    let want = name.trim();
+    let bold = want.to_lowercase().ends_with(" bold");
+    let base = if bold { want[..want.len() - 5].trim() } else { want };
+    let id = db
+        .faces()
+        .find(|f| f.families.iter().any(|(n, _)| n.eq_ignore_ascii_case(want)) || f.post_script_name.eq_ignore_ascii_case(&want.replace(' ', "")))
+        .map(|f| f.id)
+        .or_else(|| db.query(&Query { families: &[Family::Name(base)], weight: if bold { Weight::BOLD } else { Weight::NORMAL }, ..Default::default() }))?;
+    let mut out = None;
+    db.with_face_data(id, |data, index| out = Some((data.to_vec(), index)));
+    out
+}
+
 /// SVG 글 → PNG (가로 width px). 그림 href 는 dir 기준으로 읽는다
 pub fn render_png(svg: &str, dir: &Path, width: u32) -> Result<Vec<u8>, String> {
     let mut opt = resvg::usvg::Options { resources_dir: Some(dir.to_path_buf()), ..Default::default() };

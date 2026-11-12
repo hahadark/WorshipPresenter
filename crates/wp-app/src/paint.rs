@@ -73,6 +73,11 @@ pub fn image_uri(c: &Ctx, url: &str) -> Option<String> {
     Some(format!("file:///{}", path.to_string_lossy().replace('\\', "/").trim_start_matches('/')))
 }
 
+/// [트랙 A] 다른 모듈에서 쓰는 그림 그리기
+pub fn draw_image_pub(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool) -> bool {
+    draw_image(ui, c, rect, url, cover)
+}
+
 fn draw_image(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool) -> bool {
     let Some(uri) = image_uri(c, url) else { return false };
     let img = egui::Image::new(uri);
@@ -270,6 +275,13 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
         }
         "title" => paint_title(&p, rect, s, t, sc),
         _ => paint_text(&p, rect, s, t, sc, version_name),
+    }
+    // [트랙 A] 그림·악보·빈 화면 슬라이드의 편집 요소 (PPT 에서 꺼낸 글상자·그림·도형)
+    if matches!(kind, "image" | "score" | "blank" | "video" | "camera") {
+        if let Some(items) = s["edit"]["items"].as_array().filter(|a| !a.is_empty()) {
+            crate::paint_edit::paint_items(ui, c, rect, items, true);
+            crate::paint_edit::paint_items(ui, c, rect, items, false);
+        }
     }
     if let Some(cd) = s["countdown"].as_object() {
         let txt = format!("{} {}", cd.get("label").and_then(|x| x.as_str()).unwrap_or(""), cd.get("target").and_then(|x| x.as_str()).unwrap_or(""));
