@@ -55,18 +55,19 @@ pub struct App {
     pub(crate) tb: crate::trackb_ui::TbState, // [트랙 B]
     /// 점검용: --search 글 · --send · --shot 파일 (몇 초 뒤 화면을 그림 파일로 저장하고 끝냄)
     test: Option<(Instant, Option<String>, bool, Option<String>, u8)>,
+    pub(crate) workspace: crate::workspace_ui::WorkspaceUi,
     pub(crate) tc: crate::track_c::TrackC, // [트랙 C]
 }
 
 pub(crate) struct Snap {
-    preview: Option<Deck>,
-    live: Option<Live>,
+    pub(crate) preview: Option<Deck>,
+    pub(crate) live: Option<Live>,
     cue_name: String,
     cue_id: String,
     items: Vec<Value>,
     cues: Vec<CueSummary>,
     templates: Vec<(String, String)>,
-    tpl_main: Value,
+    pub(crate) tpl_main: Value,
     tpl_overlay: Value,
     active_main: String,
     active_overlay: String,
@@ -115,7 +116,8 @@ impl App {
         let out = OutWin::new();
         let saved = core.lock().settings.get()["rsOutputMonitor"].as_u64().map(|x| x as usize);
         let monitor = saved.filter(|m| out.monitors.iter().any(|x| x.index == *m)).unwrap_or_else(|| out.default_monitor());
-        Self { core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */ }
+        let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
+        Self { workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */ }
     }
 
     fn snap(&self) -> Snap {
@@ -366,7 +368,7 @@ impl App {
         });
     }
 
-    fn cue_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    pub(crate) fn cue_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         ui.horizontal(|ui| {
             ui.label(RichText::new(wp_core::i18n::tr("큐시트")).strong());
             egui::ComboBox::from_id_salt("cue").selected_text(if s.cue_name.is_empty() { "(없음)".to_string() } else { s.cue_name.clone() }).width(ui.available_width() - 70.0).show_ui(ui, |ui| {
@@ -540,7 +542,7 @@ impl App {
         }
     }
 
-    fn search_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    pub(crate) fn search_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         ui.horizontal(|ui| {
             let id = egui::Id::new("search-box");
             let r = ui.add(egui::TextEdit::singleline(&mut self.search).id(id).hint_text(wp_core::i18n::tr("장절(요3:16, 시 23) 또는 낱말 — Ctrl+K")).desired_width(ui.available_width() - 190.0).font(egui::TextStyle::Heading));
@@ -602,7 +604,7 @@ impl App {
         });
     }
 
-    fn deck_view(&self, ui: &mut egui::Ui, title: &str, deck: Option<&Deck>, tpl: &Value, live: Option<&Live>, s: &Snap, acts: &mut Vec<Act>) {
+    pub(crate) fn deck_view(&self, ui: &mut egui::Ui, title: &str, deck: Option<&Deck>, tpl: &Value, live: Option<&Live>, s: &Snap, acts: &mut Vec<Act>) {
         let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
         let is_live = live.is_some();
         ui.horizontal(|ui| {
@@ -732,53 +734,8 @@ impl eframe::App for App {
                 });
             });
         });
-        egui::Panel::left("cue").default_size(380.0).min_size(280.0).show(ui, |ui| {
-            ui.add_space(4.0);
-            // [트랙 A] 왼쪽 탭: 큐시트 | 찬송가 | 찬양 | 라이브러리 (찬양·라이브러리 자리는 트랙 B 가 채움)
-            crate::hymns_ui::global(self, ui, &mut acts);
-            let tab_id = egui::Id::new("left-tab");
-            let mut tab: u8 = ui.data(|d| d.get_temp(tab_id)).unwrap_or_else(|| std::env::args().position(|x| x == "--left-tab").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()).unwrap_or(0));
-            ui.horizontal(|ui| {
-                for (k, label) in [(0u8, "큐시트"), (1, "찬송가"), (2, "찬양"), (3, "라이브러리")] {
-                    if ui.selectable_label(tab == k, RichText::new(wp_core::i18n::tr(label)).strong()).clicked() { tab = k; }
-                }
-            });
-            ui.data_mut(|d| d.insert_temp(tab_id, tab));
-            ui.separator();
-            match tab {
-                1 => crate::hymns_ui::tab(self, ui, &mut acts),
-                2 => self.songs_panel(ui), // [트랙 B]
-                3 => self.library_panel(ui), // [트랙 B]
-                _ => self.cue_panel(ui, &s, &mut acts),
-            }
-        });
-        egui::Panel::top("decks").resizable(false).exact_size((ui.available_height() * 0.6).max(320.0)).show(ui, |ui| {
-            ui.add_space(4.0);
-            ui.columns(2, |cols| {
-                self.deck_view(&mut cols[0], "미리보기", s.preview.as_ref(), &s.tpl_main, None, &s, &mut acts);
-                let live_deck = s.live.as_ref().map(|l| &l.deck);
-                self.deck_view(&mut cols[1], "LIVE (예배당)", live_deck, &s.tpl_main, s.live.as_ref(), &s, &mut acts);
-            });
-            ui.separator();
-            ui.vertical_centered(|ui| {
-            ui.horizontal(|ui| {
-                let big = |t: &str| egui::Button::new(RichText::new(wp_core::i18n::tr(t)).size(15.0)).min_size(Vec2::new(78.0, 30.0));
-                if ui.add(big("◀ 이전 F5")).clicked() { acts.push(Act::Step(-1)) }
-                if ui.add(big("송출 F9").fill(Color32::from_rgb(0xb0, 0x2a, 0x2a))).clicked() { acts.push(Act::SendPreview) }
-                if ui.add(big("다음 F6 ▶")).clicked() { acts.push(Act::Step(1)) }
-                ui.separator();
-                let hidden = s.live.as_ref().is_some_and(|l| !l.visible);
-                if ui.add(big(if hidden { wp_core::i18n::tr_s("글자 보이기 F10") } else { wp_core::i18n::tr_s("글자 숨김 F10") }).selected(hidden)).clicked() { acts.push(Act::ToggleClear) }
-                if ui.add(big("배경 끄기").selected(s.hide_bg)).clicked() { acts.push(Act::ToggleBg) }
-                if ui.add(big("로고").selected(s.logo)).clicked() { acts.push(Act::ToggleLogo) }
-                if ui.add(big("모두 지우기")).clicked() { acts.push(Act::ClearAll) }
-            });
-            });
-            self.video_bar(ui); // [트랙 B] 영상 조작 줄
-        });
-        egui::CentralPanel::default_margins().show(ui, |ui| {
-            self.search_panel(ui, &s, &mut acts);
-        });
+        self.workspace_bar(ui);
+        egui::CentralPanel::default_margins().show(ui, |ui| { self.workspace_content(ui, &s, &mut acts); });
         self.trackb_windows(&ctx); // [트랙 B]
         let _ = &s.tpl_overlay;
         crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
@@ -800,6 +757,49 @@ impl eframe::App for App {
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
 
+}
+
+impl App {
+ pub(crate) fn workspace_cue(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+            ui.add_space(4.0);
+            // [트랙 A] 왼쪽 탭: 큐시트 | 찬송가 | 찬양 | 라이브러리 (찬양·라이브러리 자리는 트랙 B 가 채움)
+            crate::hymns_ui::global(self, ui, acts);
+            let tab_id = egui::Id::new("left-tab");
+            let mut tab: u8 = ui.data(|d| d.get_temp(tab_id)).unwrap_or_else(|| std::env::args().position(|x| x == "--left-tab").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()).unwrap_or(0));
+            ui.horizontal(|ui| {
+                for (k, label) in [(0u8, "큐시트"), (1, "찬송가"), (2, "찬양"), (3, "라이브러리")] {
+                    if ui.selectable_label(tab == k, RichText::new(wp_core::i18n::tr(label)).strong()).clicked() { tab = k; }
+                }
+            });
+            ui.data_mut(|d| d.insert_temp(tab_id, tab));
+            ui.separator();
+            match tab {
+                1 => crate::hymns_ui::tab(self, ui, acts),
+                2 => self.songs_panel(ui), // [트랙 B]
+                3 => self.library_panel(ui), // [트랙 B]
+                _ => self.cue_panel(ui, s, acts),
+            }
+
+ }
+ pub(crate) fn workspace_controls(&mut self,ui:&mut egui::Ui,s:&Snap,acts:&mut Vec<Act>){
+            ui.separator();
+            ui.vertical_centered(|ui| {
+            ui.horizontal(|ui| {
+                let big = |t: &str| egui::Button::new(RichText::new(wp_core::i18n::tr(t)).size(15.0)).min_size(Vec2::new(78.0, 30.0));
+                if ui.add(big("◀ 이전 F5")).clicked() { acts.push(Act::Step(-1)) }
+                if ui.add(big("송출 F9").fill(Color32::from_rgb(0xb0, 0x2a, 0x2a))).clicked() { acts.push(Act::SendPreview) }
+                if ui.add(big("다음 F6 ▶")).clicked() { acts.push(Act::Step(1)) }
+                ui.separator();
+                let hidden = s.live.as_ref().is_some_and(|l| !l.visible);
+                if ui.add(big(if hidden { wp_core::i18n::tr_s("글자 보이기 F10") } else { wp_core::i18n::tr_s("글자 숨김 F10") }).selected(hidden)).clicked() { acts.push(Act::ToggleClear) }
+                if ui.add(big("배경 끄기").selected(s.hide_bg)).clicked() { acts.push(Act::ToggleBg) }
+                if ui.add(big("로고").selected(s.logo)).clicked() { acts.push(Act::ToggleLogo) }
+                if ui.add(big("모두 지우기")).clicked() { acts.push(Act::ClearAll) }
+            });
+            });
+            self.video_bar(ui); // [트랙 B] 영상 조작 줄
+
+ }
 }
 
 impl Drop for App {
