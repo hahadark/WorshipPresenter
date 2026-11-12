@@ -46,34 +46,34 @@ impl CommentaryUi {
             }
         }
         let mut open = self.open;
-        egui::Window::new("주석").open(&mut open).default_size([560.0, 600.0]).show(ctx, |ui| {
+        egui::Window::new(wp_core::i18n::tr("주석")).open(&mut open).default_size([560.0, 600.0]).show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.tab, 0, "주석 보기");
-                ui.selectable_value(&mut self.tab, 1, "주석 가져오기·지우기");
+                ui.selectable_value(&mut self.tab, 0, wp_core::i18n::tr("주석 보기"));
+                ui.selectable_value(&mut self.tab, 1, wp_core::i18n::tr("주석 가져오기·지우기"));
             });
             ui.separator();
             let list = commentary::list(&core.lock().store.db);
             if self.tab == 0 {
                 if list.is_empty() {
-                    ui.label(RichText::new("가져온 주석이 없습니다. '주석 가져오기'에서 EPUB 주석서를 넣으세요.").color(Color32::GRAY));
+                    ui.label(RichText::new(wp_core::i18n::tr("가져온 주석이 없습니다. '주석 가져오기'에서 EPUB 주석서를 넣으세요.")).color(Color32::GRAY));
                     return;
                 }
                 ui.horizontal(|ui| {
-                    ui.label("주석서");
-                    let name = list.iter().find(|c| c["id"] == self.only.as_str()).and_then(|c| c["name"].as_str()).unwrap_or("모두").to_string();
+                    ui.label(wp_core::i18n::tr("주석서"));
+                    let name = list.iter().find(|c| c["id"] == self.only.as_str()).and_then(|c| c["name"].as_str()).map(str::to_string).unwrap_or_else(|| wp_core::i18n::tr("모두"));
                     egui::ComboBox::from_id_salt("cm-only").selected_text(name).show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.only, String::new(), "모두");
+                        ui.selectable_value(&mut self.only, String::new(), wp_core::i18n::tr("모두"));
                         for c in &list { ui.selectable_value(&mut self.only, c["id"].as_str().unwrap_or("").to_string(), c["name"].as_str().unwrap_or("")); }
                     });
                 });
                 let Some((b, sc, sv, ec, ev, label)) = preview_range(core) else {
-                    ui.label(RichText::new("성경 본문을 미리보기에 띄우면 그 범위의 주석이 여기 나옵니다.").color(Color32::GRAY));
+                    ui.label(RichText::new(wp_core::i18n::tr("성경 본문을 미리보기에 띄우면 그 범위의 주석이 여기 나옵니다.")).color(Color32::GRAY));
                     return;
                 };
                 ui.label(RichText::new(label).strong().color(Color32::from_rgb(0xff, 0xd4, 0x79)));
                 let only = (!self.only.is_empty()).then_some(self.only.as_str());
                 let rows = commentary::commentary_for(&core.lock().store.db, b, sc, sv, ec, ev, only);
-                if rows.is_empty() { ui.label(RichText::new("이 범위의 주석이 없습니다.").color(Color32::GRAY)); }
+                if rows.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("이 범위의 주석이 없습니다.")).color(Color32::GRAY)); }
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     let mut cur = String::new();
                     for r in rows {
@@ -81,7 +81,7 @@ impl CommentaryUi {
                         if cn != cur { ui.add_space(6.0); ui.label(RichText::new(&cn).strong()); cur = cn; }
                         let range = if r["sc"] == r["ec"] && r["sv"] == r["ev"] { format!("{}:{}", r["sc"], r["sv"]) } else if r["sc"] == r["ec"] { format!("{}:{}-{}", r["sc"], r["sv"], r["ev"]) } else { format!("{}:{}-{}:{}", r["sc"], r["sv"], r["ec"], r["ev"]) };
                         let art = r["kind"] == "article";
-                        ui.label(RichText::new(format!("{}{}  {}", if art { "[글] " } else { "" }, range, r["title"].as_str().unwrap_or(""))).color(Color32::from_rgb(0x8f, 0xb8, 0xff)));
+                        ui.label(RichText::new(format!("{}{}  {}", if art { wp_core::i18n::tr("[글] ") } else { String::new() }, range, r["title"].as_str().unwrap_or(""))).color(Color32::from_rgb(0x8f, 0xb8, 0xff)));
                         ui.add(egui::Label::new(r["text"].as_str().unwrap_or("")).wrap());
                         ui.separator();
                     }
@@ -89,15 +89,15 @@ impl CommentaryUi {
             } else {
                 for c in &list {
                     ui.horizontal(|ui| {
-                        ui.label(format!("{}  ({}항목)", c["name"].as_str().unwrap_or(""), c["entry_count"]));
-                        if ui.small_button("지우기").clicked() {
+                        ui.label(wp_core::i18n::tr_args("{1}  ({2}항목)", &[&c["name"].as_str().unwrap_or(""), &c["entry_count"]]));
+                        if ui.small_button(wp_core::i18n::tr("지우기")).clicked() {
                             let id = c["id"].as_str().unwrap_or("").to_string();
-                            self.msg = match commentary::delete(&core.lock().store.db, &id) { Ok(()) => "지웠습니다.".into(), Err(e) => e.to_string() };
+                            self.msg = match commentary::delete(&core.lock().store.db, &id) { Ok(()) => wp_core::i18n::tr("지웠습니다."), Err(e) => e.to_string() };
                         }
                     });
                 }
                 ui.separator();
-                if ui.add_enabled(self.busy.is_none(), egui::Button::new("EPUB 주석서 고르기…")).clicked() {
+                if ui.add_enabled(self.busy.is_none(), egui::Button::new(wp_core::i18n::tr("EPUB 주석서 고르기…"))).clicked() {
                     if let Some(p) = rfd::FileDialog::new().add_filter("EPUB", &["epub"]).pick_file() {
                         let (tx, rx) = std::sync::mpsc::channel();
                         self.busy = Some(rx);
@@ -106,24 +106,24 @@ impl CommentaryUi {
                         std::thread::spawn(move || { let _ = tx.send(commentary::analyze_epub(&p).map_err(|e| e.to_string())); });
                     }
                 }
-                ui.label(RichText::new("OCR 로 만든 주석서는 절 표시(1:1)로 항목을 나눕니다. 결과는 참고용입니다.").small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("OCR 로 만든 주석서는 절 표시(1:1)로 항목을 나눕니다. 결과는 참고용입니다.")).small().color(Color32::GRAY));
                 if self.busy.is_some() { ui.spinner(); }
                 if let Some(a) = self.analysis.clone() {
                     let s = commentary::summary(&a);
-                    ui.label(format!("{} — 항목 {} · 글 {} · 책 {}권", s["title"].as_str().unwrap_or(""), s["entries"], s["articles"], s["books"]));
+                    ui.label(wp_core::i18n::tr_args("{1} — 항목 {2} · 글 {3} · 책 {4}권", &[&s["title"].as_str().unwrap_or(""), &s["entries"], &s["articles"], &s["books"]]));
                     let weak: Vec<&str> = s["weak"].as_array().into_iter().flatten().filter_map(|x| x.as_str()).collect();
-                    if !weak.is_empty() && weak.len() < 66 { ui.label(RichText::new(format!("장이 많이 빠진 책: {}", weak.join(", "))).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
+                    if !weak.is_empty() && weak.len() < 66 { ui.label(RichText::new(wp_core::i18n::tr_args("장이 많이 빠진 책: {1}", &[&weak.join(", ")])).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
                     egui::Grid::new("cm-meta").num_columns(2).show(ui, |ui| {
                         for (k, l) in [("id", "주석 ID (영문)"), ("name", "이름"), ("source", "출처"), ("license", "사용 허가")] {
-                            ui.label(l);
+                            ui.label(wp_core::i18n::tr(l));
                             let mut v = self.meta[k].as_str().unwrap_or("").to_string();
                             if ui.add(egui::TextEdit::singleline(&mut v).desired_width(300.0)).changed() { self.meta[k] = json!(v); }
                             ui.end_row();
                         }
                     });
-                    if ui.button("가져오기").clicked() {
+                    if ui.button(wp_core::i18n::tr("가져오기")).clicked() {
                         self.msg = match commentary::commit(&core.lock().store.db, &self.meta, &a) {
-                            Ok((n, m)) => { self.analysis = None; format!("가져왔습니다: 항목 {n} · 글 {m}") }
+                            Ok((n, m)) => { self.analysis = None; wp_core::i18n::tr_args("가져왔습니다: 항목 {1} · 글 {2}", &[&n, &m]) }
                             Err(e) => e,
                         };
                     }
