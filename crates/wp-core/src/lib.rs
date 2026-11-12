@@ -50,3 +50,6 @@ pub mod trigger;
 pub mod bulletin; // [트랙 D]
 pub mod trackd; // [트랙 D]
 pub mod obs; // [트랙 D]
+pub mod winkeys; // [트랙 D]
+pub mod updates; // [트랙 D]
+pub mod i18n; // [트랙 D]

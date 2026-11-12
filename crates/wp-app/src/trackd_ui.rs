@@ -14,6 +14,7 @@ pub enum Win {
     Bulletin,
     Output,
     Obs,
+    Update,
 }
 
 #[derive(Default)]
@@ -46,6 +47,7 @@ pub fn handle_menu(id: &str) -> bool {
         "d:bulletin" => open(Win::Bulletin),
         "d:output" => open(Win::Output),
         "d:obs" => open(Win::Obs),
+        "d:update" => open(Win::Update),
         _ => return false,
     }
     true
@@ -64,6 +66,8 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
     let running = app.out.running();
     let mon = app.out.monitors.iter().find(|m| m.index == app.monitor).map(|m| json!({ "index": m.index, "name": m.name, "width": m.size.0, "height": m.size.1, "primary": m.primary }));
     wp_core::trackd::set_desktop_status(json!({ "running": running, "monitor": mon }));
+    wp_core::i18n::set_lang(app.core.lock().settings.get()["uiLang"].as_str().unwrap_or("ko"));
+    ime_on_focus(app, ctx);
     // 점검용: --open-d bulletin|output|obs
     static ARGS: std::sync::Once = std::sync::Once::new();
     ARGS.call_once(|| {
@@ -89,11 +93,13 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
             Win::Bulletin => "주보 → 큐시트",
             Win::Output => "출력 설정 (예배당 화면 · OBS)",
             Win::Obs => "OBS 원격 조작",
+            Win::Update => "새 버전",
         };
-        egui::Window::new(title).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
+        egui::Window::new(wp_core::i18n::tr(title)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),
+            Win::Update => update_ui(ui, &core),
         });
         if !keep {
             ST.lock().open.retain(|x| *x != w);
@@ -368,4 +374,82 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
         }
     }
     ui.label(RichText::new("큐시트 순서의 '송출할 때 자동으로'(actions)에 obsScene · obsStream · obsRecord 를 두면 그 순서를 송출할 때 OBS 가 같이 움직입니다.").small().color(Color32::GRAY));
+}
+
+/// 한글 입력 자동 전환 (설정 imeAuto, 윈도우): 글 입력칸에 새로 들어가면 입력기를 한글로.
+/// egui 는 칸의 종류를 알 수 없어서, 장절·낱말 찾기 칸(search-box)만 빼고 모든 글 입력칸에 적용한다.
+fn ime_on_focus(app: &App, ctx: &egui::Context) {
+    static LAST: Lazy<Mutex<Option<egui::Id>>> = Lazy::new(|| Mutex::new(None));
+    let focused = ctx.memory(|m| m.focused());
+    let mut last = LAST.lock();
+    if focused == *last {
+        return;
+    }
+    *last = focused;
+    let Some(id) = focused else { return };
+    if !app.core.lock().settings.get()["imeAuto"].as_bool().unwrap_or(true) {
+        return;
+    }
+    let is_text = egui::text_edit::TextEditState::load(ctx, id).is_some();
+    if is_text && id != egui::Id::new("search-box") {
+        wp_core::winkeys::ime_korean();
+    }
+}
+fn update_ui(ui: &mut egui::Ui, core: &Shared) {
+    let st = wp_core::updates::status(core.lock().settings.get());
+    ui.label(format!("지금 버전: {}", st["current"].as_str().unwrap_or("")));
+    match st["state"].as_str().unwrap_or("idle") {
+        "checking" => {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("확인하는 중…");
+            });
+        }
+        "available" => {
+            ui.label(RichText::new(format!("새 버전 {} 이 나왔습니다{}", st["version"].as_str().unwrap_or(""), if st["skipped"] == true { " (건너뛰기로 함)" } else { "" })).strong().color(Color32::from_rgb(0x8f, 0xb8, 0xff)));
+            egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                ui.label(st["notes"].as_str().unwrap_or(""));
+            });
+            ui.horizontal(|ui| {
+                if let Some(u) = st["notesUrl"].as_str() {
+                    if ui.button("내려받는 곳 열기").clicked() {
+                        let _ = wp_core::trackd::open_link(u);
+                    }
+                }
+                if st["skipped"] == true {
+                    if ui.button("건너뛰기 취소").clicked() {
+                        wp_core::updates::unskip(core);
+                    }
+                } else if ui.button("이 버전 건너뛰기").clicked() {
+                    wp_core::updates::skip(core);
+                }
+            });
+        }
+        "latest" => {
+            ui.label(RichText::new("지금이 최신 버전입니다.").color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+        }
+        "error" => {
+            ui.label(RichText::new(st["error"].as_str().unwrap_or("")).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+        }
+        _ => {}
+    }
+    ui.separator();
+    let mut repo = st["repo"].as_str().unwrap_or("").to_string();
+    ui.horizontal(|ui| {
+        ui.label("확인할 저장소");
+        if ui.add(egui::TextEdit::singleline(&mut repo).hint_text("예: hahadark/WorshipPresenter-rs (Rust 판은 아직 릴리스 전)").desired_width(320.0)).changed() {
+            core.lock().settings.update(|d| d["updateRepo"] = json!(repo));
+        }
+    });
+    let mut auto = core.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true);
+    if ui.checkbox(&mut auto, "켤 때 새 버전 확인").changed() {
+        core.lock().settings.update(|d| d["autoUpdate"] = json!(auto));
+    }
+    let mut tel = core.lock().settings.get()["telemetry"].as_bool().unwrap_or(true);
+    if ui.checkbox(&mut tel, "익명 사용 통계 보내기 (하루 한 번: 무작위 설치 번호 · 버전 · 언어 · OS)").changed() {
+        core.lock().settings.update(|d| d["telemetry"] = json!(tel));
+    }
+    if ui.button("지금 확인").clicked() {
+        wp_core::updates::check(core, true);
+    }
 }

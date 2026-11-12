@@ -91,6 +91,10 @@ fn main() -> anyhow::Result<()> {
     let core = Core::open(data_dir.clone(), web.clone(), seed_db().as_deref())?;
     let shared = Arc::new(Mutex::new(core));
     wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
+    wp_core::i18n::set_lang(shared.lock().settings.get()["uiLang"].as_str().unwrap_or("ko")); // [트랙 D] 영어 화면 (출력 웹도)
+    wp_core::winkeys::start_global_shortcuts(shared.clone()); // [트랙 D] 전역 단축키
+    wp_core::updates::start_telemetry(shared.clone()); // [트랙 D] 익명 사용 통계 (디버그 빌드는 안 보냄)
+    if shared.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true) { wp_core::updates::check(&shared, false); } // [트랙 D] 새 버전 확인
     wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
     wp_core::sync::install(&shared); // [트랙 B] 여러 PC 동기화 · 하루 1회 백업
 
