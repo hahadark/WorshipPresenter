@@ -4,6 +4,14 @@
 상태: **됨** (같은 일을 함) · **일부** (빠진 것이 있음) · **없음** · **대체** (Rust 판 구조상 다른 방법으로 같은 결과 — 웹 조작 화면용 업로드 경로 등)
 Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 
+## 최신 검토 원칙 (챗GPT 재개 이후)
+
+- 아래 `됨`은 구현 경로가 있다는 뜻이다. 실제 장비 연결·모든 UI 조작·배포 환경까지 검증 완료했다는 뜻이 아니다.
+- 고정 배치를 도킹/작업공간의 동등한 대체로 보던 판정은 철회했다. 현재 패널 표시·배치·잠금·작업공간 저장 기능을 구현 중이다.
+- 독립 소스 검토에서 발견한 LIVE 큐 불일치, 음악 순서의 화면 덮기, 리모컨 OBS 상태는 회귀 테스트와 함께 수정했다.
+- 릴리스 금지와 기능 구현은 구분한다. 업데이트는 다운로드·검증·취소·명시 설치 요청 코드를 갖추되 `RELEASE_HOLD = true`로 실제 다운로드·설치를 차단한다. 실제 설치·배포 검증은 사용자 지시에 따라 보류한다.
+- 과거 단계의 숫자 요약은 당시 관찰 기록이며 현재 완성률로 사용하지 않는다. 최신 전체 테스트·화면 검증 결과는 마지막 절에 기록한다.
+
 ## 1. 코어 명령 (core.js `commands`)
 
 ### 성경 · 미리보기 · LIVE
@@ -12,7 +20,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 장절 찾기 searchReference | core.js:516 | core/db.rs resolve_reference · core.rs search | 됨 | 파서 같은 규칙 (parser.rs 시험) |
 | 낱말 찾기 searchText | core.js:517 | core/db.rs search_text | 됨 | FTS trigram + LIKE |
 | 병행 번역 parallelVerses | core.js | core/flow.rs with_parallel | 됨 | text2 |
-| 책·장 구조 getStructure · getChapter · getRange · getBooks | core.js:518-531 | core/db.rs get_structure · get_chapter · resolve_ranges · books.rs | 됨 | 성경 책 목록 창(Ctrl+B)은 app 쪽 확인 필요 |
+| 책·장 구조 getStructure · getChapter · getRange · getBooks | core.js:518-531 | core/db.rs get_structure · get_chapter · resolve_ranges · books.rs · app/parity2_ui.rs | 됨 | 6차 UI 자동 점검에서 Ctrl+B → 시편 23 송출 확인 |
 | 이웃 절 adjacentVerse | core.js:525 | core/db.rs adjacent_verse · flow.rs preview_adjacent_verse | 됨 | Alt+←→ |
 | 미리보기 previewReference · setPreview · setPreviewIndex | core.js:533-535 | core.rs preview_passage · preview_item · set_preview_index | 됨 | |
 | 송출 sendLive (자동 켜기·사용 기록·기록) | core.js:538 | core.rs send_preview · trackd.rs on_send · usage.rs record | 됨 | |
@@ -30,7 +38,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | setTemplate · saveTemplate · duplicateTemplate · deleteTemplate | core.js:581-620 | core.rs set_template · templates.rs · app template_ui.rs | 됨 | |
 | 테마 listThemes · applyTheme · ensureTheme | core.js | core/themes.rs · app theme_ui.rs | 됨 | |
 | OBS 슬라이드 그대로 setObsView | core.js | core/themes.rs set_obs_view · 메뉴 c:obsfull | 됨 | |
-| 업데이트 updateStatus · updateAction | core.js | core/updates.rs check · skip · unskip · 메뉴 d:update | 일부 | 확인·건너뛰기만. 내려받기·설치 없음 (릴리스 정지 중이라 의도적) |
+| 업데이트 updateStatus · updateAction | core.js | core/updates.rs check · download · cancel · install_now · skip · unskip · 메뉴 d:update | 일부 | 다운로드·SHA-256 검증·취소·명시 설치 코드 구현, 로컬 fixture 9개 테스트 통과. RELEASE_HOLD가 실제 다운로드·설치 차단. 실제 배포·설치 검증 보류 |
 | 내부망 출력 lanOutputInfo · newLanKey | core.js | core/lan.rs info · new_key · app tools_ui | 됨 | |
 | 카메라 설정 setCameraPrefs | core.js | core/cameras.rs · 메뉴 b:cameras | 됨 | |
 | 설정 바꾸기 updateSettings | core.js | app settings_ui.rs (설정을 직접) | 됨 | |
@@ -43,14 +51,14 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 전역 단축키 getGlobalShortcutStatus | core.js | core/winkeys.rs status · start_global_shortcuts | 됨 | |
 | 송출 기록 지우기 clearHistory | core.js | core/templates.rs clear_history · app history_ui | 됨 | |
 
-### 성경 번역본 · 주석 (트랙 C 차례)
+### 성경 번역본 · 주석
 | 기능 | Electron 위치 | Rust 위치 | 상태 | 메모 |
 |---|---|---|---|---|
 | listVersions | core.js | core/db.rs list_versions | 됨 | |
 | 번역본 가져오기 analyzeImport · commitImport | core.js · importer.js | core/importer.rs analyze_file · commit · app 메뉴 c:import-bible | 됨 | 6차 확인 (트랙 C 4차): JSON·CSV·Zefania·베들레헴 .bdb |
 | 번역본 지우기 deleteVersion | core.js | core/importer.rs delete_version | 됨 | 6차 확인 (트랙 C) |
-| 주석 listCommentaries · analyzeCommentary · commitCommentary · deleteCommentary · commentaryFor | core.js · commentary.js | core/db.rs 표만 | 없음 | 트랙 C 차례 (6차 기준 아직) |
-| 베들레헴 찾기·가져오기 openBethlehemSetup · findBethlehem · importBethlehem | core.js | core/hymnal.rs find · import_from · importer.rs (.bdb) | 됨 | 6차: 성경(.bdb)은 트랙 C importer |
+| 주석 listCommentaries · analyzeCommentary · commitCommentary · deleteCommentary · commentaryFor | core.js · commentary.js | core/commentary.rs · app/commentary_ui.rs | 됨 | EPUB 분석·가져오기·삭제·범위 조회, 미리보기 본문의 주석 창 통합. 실제 사용자 EPUB 시험은 별도 |
+| 베들레헴 찾기·가져오기 openBethlehemSetup · findBethlehem · importBethlehem | core.js | core/bethlehem.rs · hymnal.rs · importer.rs · app/import_ui.rs | 됨 | 성경 폴더 탐색·여러 번역본 선택 가져오기와 악보·가사 지원 |
 | importBethlehemHymns · hymnalBooks · hymnalGet · hymnLyricsStatus | core.js | core/hymnal.rs import_from · books · get · lyrics | 됨 | |
 
 ### 찬송가 · PPT · 붙여 넣기 (트랙 A)
@@ -102,7 +110,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | listSongs · getSong · saveSong · saveSongArrangement · deleteSong | core.js · library.js | core/songs.rs · trackb.rs | 됨 | |
 | importSongs · parseSongText · saveImportedSongs | core.js · songimport.js | core/songimport.rs (OpenLyrics · ChordPro · ProPresenter · PPT) · songs.rs | 됨 | |
 | 웹 가사 lyricsSearch · lyricsGet · lyricsArrange | core.js · lyricsweb.js | core/lyricsweb.rs · app lyrics_ui.rs | 됨 | |
-| listLibFolders · addLibFolder · removeLibFolder · searchLibFiles | core.js | core/library.rs · trackb.rs | 됨 | |
+| listLibFolders · addLibFolder · removeLibFolder · searchLibFiles | core.js | core/library.rs · trackb.rs · thumbs.rs · app/thumbs_ui.rs | 됨 | 그림·영상 썸네일 격자, 백그라운드 캐시·EXIF 방향 적용. 영상 썸네일은 ffmpeg 필요 |
 
 ### 큐시트
 | 기능 | Electron 위치 | Rust 위치 | 상태 | 메모 |
@@ -111,7 +119,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | updateCueMeta · trashCues · restoreCues · purgeCues · duplicateCue · deleteCue | core.js | core/cues.rs · trackb.rs | 됨 | |
 | exportCues · importCues | core.js | core/cues.rs export · import · trackb.rs | 됨 | |
 | cueText (큐시트를 글로) | core.js | core/parity_a.rs cue_text · 순서 오른쪽 클릭 \"큐시트를 글로 복사\" | 됨 | 5차 |
-| 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | — | 대체 | egui 는 고정 배치(패널 크기 조절). dockview 작업공간은 없음 |
+| 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | 구현 중 | 없음 | 고정 배치는 동등한 기능이 아니므로 기존 '대체' 판정을 철회. 저장·전환·패널배치·잠금 구현 중 |
 
 ## 2. 웹 서버 경로 (server.js)
 | 경로 | Rust 위치 | 상태 | 메모 |
@@ -150,9 +158,9 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 편집칸 · 슬라이드 편집 · 위/아래 · 복제 · 지우기 · 송출 | 큐시트 아래 단추 · c:slideedit · 순서 오른쪽 클릭 | 됨 | 5차 |
 | 송출 메뉴 (다음·이전·다음 순서 미리보기·즉석 자막·회중 메시지·화면 지우기·음악 멈춤·모두 지우기) | 송출 단추 줄 · 단축키 · b:quick · b:message · music_ui | 됨 | |
 | OBS · 송출 배경 · OBS 자막 모양 · 보조 화면 · 무대 화면 창 | d:obs · b:lib · c:obsfull/obspip · 예배당 화면 켜기 · b:stage | 됨 | |
-| 보기: 패널 · 작업공간 · 패널 잠그기 | — | 대체 | egui 고정 배치 |
+| 보기: 패널 · 작업공간 · 패널 잠그기 | 구현 중 | 없음 | 고정 배치 대체 판정 철회 |
 | 보기: 조작 화면 테마 · 글자 크기 | 설정 → 조작 화면 | 됨 | |
-| 보기: Language · 언어 | 설정(uiLang) · core/i18n.rs | 일부 | 영어 화면 넓히기는 트랙 D |
+| 보기: Language · 언어 | 설정(uiLang) · core/i18n.rs · data/en.json | 일부 | 기존 화면과 주석·성경책·붙여넣기 창 번역 통합. 새 편집기·작업공간·업데이트 문구의 추가 점검 필요 |
 | 도구: 라이브러리 · 오버레이 · 템플릿 · 미디어 · 무대 타이머 · 매크로 · OBS · 장비 · 리모컨 · 스트림덱 | b:* · c:templates · d:* | 됨 | |
 | 도움말: 사용 설명서 · README · OBS 안내 | a:help-manual · a:help-readme · a:help-obs | 됨 | 5차. GitHub 문서를 브라우저로 |
 | 도움말: 연결 점검 · 로그 묶음 · 정보 | b:diagnose · b:logbundle · c:about | 됨 | |
@@ -192,7 +200,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 시작 화면(splash) | main.js:273 | — | 대체 | Rust 판은 시작이 빨라 생략 |
 | 포트가 쓰이면 다음 포트 (~+9) | main.js:346 | core/server.rs serve | 됨 | |
 | 데이터 폴더 (--data · 기존 자료 복사) | main.js:332 | core.rs prepare_data_dir · app main.rs | 됨 | Electron 자료는 복사만 |
-| 자동 업데이트 설치 (electron-updater) | main/updater.js | core/updates.rs (확인만) | 일부 | 릴리스 정지 중 |
+| 자동 업데이트 설치 (electron-updater) | main/updater.js | core/updates.rs · app/trackd_ui.rs | 일부 | 설치 요청 코드·검증 경로 구현, RELEASE_HOLD로 실행 차단. 실제 설치·재시작 시험은 배포 정지 중이므로 보류 |
 | 익명 사용 통계 | main/telemetry.js | core/updates.rs start_telemetry | 됨 | |
 | 끝낼 때 동기화 · 백업 | main.js | core/sync.rs on_exit | 됨 | |
 
