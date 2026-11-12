@@ -29,6 +29,7 @@ pub fn menus() -> Vec<Menu> {
             it("c:settings", "설정", "Ctrl+,"),
         ] },
         Menu { label: "큐시트", items: vec![
+            it("c:slideedit", "슬라이드 편집 (고른 순서)", "Ctrl+E"),
             it("b:cues", "큐시트 관리 (휴지통 · 복제 · 내보내기)", ""),
             it("b:undo", "실행 취소", "Ctrl+Z"),
             it("b:redo", "다시 실행", "Ctrl+Y"),
