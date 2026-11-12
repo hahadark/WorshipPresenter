@@ -76,7 +76,28 @@ pub fn paint_items(ui: &egui::Ui, c: &Ctx, rect: Rect, items: &[Value], below: b
             }
             "image" => {
                 if let Some(src) = x["src"].as_str().filter(|s| !s.is_empty()) {
-                    paint::draw_image_pub(ui, c, r, src, x["fit"].as_str() == Some("cover"));
+                    if let Some(uri) = paint::image_uri(c, src) {
+                        let image = egui::Image::new(uri);
+                        if let Ok(poll) = image.load_for_size(ui.ctx(), r.size()) {
+                            if let Some(size) = poll.size() {
+                                let crop = &x["crop"];
+                                let l = num(&crop["l"], 0.0).clamp(0.0,0.95);
+                                let t = num(&crop["t"], 0.0).clamp(0.0,0.95);
+                                let right = num(&crop["r"], 0.0).clamp(0.0,0.95);
+                                let bottom = num(&crop["b"], 0.0).clamp(0.0,0.95);
+                                let uv = if l+right < 0.96 && t+bottom < 0.96 { Rect::from_min_max(Pos2::new(l,t),Pos2::new(1.0-right,1.0-bottom)) } else { Rect::from_min_max(Pos2::ZERO,Pos2::new(1.0,1.0)) };
+                                let cropped = size * uv.size();
+                                let cover = x["fit"].as_str() != Some("contain");
+                                let scale = if cover { (r.width()/cropped.x).max(r.height()/cropped.y) } else { (r.width()/cropped.x).min(r.height()/cropped.y) };
+                                let full = Rect::from_center_size(r.center(),cropped*scale);
+                                let dest = full.intersect(r);
+                                let a = (dest.min-full.min)/full.size();
+                                let b = (dest.max-full.min)/full.size();
+                                let visible = Rect::from_min_max(uv.min+a*uv.size(),uv.min+b*uv.size());
+                                image.uv(visible).tint(Color32::WHITE.gamma_multiply(op)).paint_at(ui,dest);
+                            }
+                        }
+                    }
                 }
             }
             "camera" => {

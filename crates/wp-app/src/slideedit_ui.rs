@@ -15,6 +15,7 @@ pub struct SlideEditUi {
     k: usize,
     /// 공통('*') 편집 중
     common: bool,
+    drag_slide: Option<usize>,
 }
 
 fn edit_key(slide: &Value) -> String {
@@ -38,9 +39,9 @@ impl SlideEditUi {
                 let Some(it) = c.cue.as_ref().and_then(|q| q.items.get(i)).cloned() else { return };
                 // 건너뛴 슬라이드도 보이게: 꾸미기 전 슬라이드를 다시 꾸민다
                 let slides = match c.item_deck(i) {
-                    Ok(d) if !is_chunk(it["type"].as_str().unwrap_or("")) && it["type"] != "hymn" => {
+                    Ok(d) if !is_chunk(it["type"].as_str().unwrap_or("")) => {
                         let mut bare = it.clone();
-                        if let Some(o) = bare.as_object_mut() { o.remove("skip"); o.remove("slideOrder"); o.remove("extra"); o.remove("edits"); }
+                        if let Some(o) = bare.as_object_mut() { o.remove("skip"); o.remove("slideOrder"); o.remove("extra"); if it["type"] != "hymn" { o.remove("edits"); } }
                         // 꾸미기 전 슬라이드: 잠깐 바꿔 끼워 만들고 되돌린다
                         let orig = std::mem::replace(&mut c.cue.as_mut().unwrap().items[i], bare);
                         let raw = c.item_deck(i);
@@ -52,10 +53,17 @@ impl SlideEditUi {
                 };
                 (it, slides, c.template_for("main"))
             };
+            // 편집 목록은 출력에서 나뉜 화면이 아니라 원래 글 덩어리 단위다.
+            let slides = if matches!(it["type"].as_str(),Some("song" | "text")) {
+                let song=it["type"]=="song";
+                let chunks=if song { wp_core::slides::lyrics_chunks(it["lyrics"].as_str().unwrap_or("")) } else { wp_core::slides::text_chunks(it["body"].as_str().unwrap_or(""),if it["roleLabels"].as_bool().unwrap_or(false) {2} else {1}) };
+                let raw=chunks.into_iter().map(|c| json!({"kind":"text","ref":it["title"],"label":c.label,"src":c.src,"parts":[{"text":c.text}]})).collect();
+                se::decorate(&it,raw,true)
+            } else { slides };
             if slides.is_empty() { return; }
             self.k = self.k.min(slides.len() - 1);
             let ty = it["type"].as_str().unwrap_or("").to_string();
-            let chunk = matches!(ty.as_str(), "song" | "text");
+            let chunk = is_chunk(&ty);
             let mut new_it: Option<Value> = None;
             let mut split_back: Option<Value> = None;
 
@@ -73,7 +81,15 @@ impl SlideEditUi {
                         let mut txt = RichText::new(format!("{:>2}  {}", k + 1, lb));
                         if skipped { txt = txt.strikethrough().color(Color32::GRAY); }
                         if s["edit"].is_object() { txt = txt.color(Color32::from_rgb(0x8f, 0xb8, 0xff)); }
-                        let r = ui.selectable_label(k == self.k, txt);
+                        let r = ui.add(egui::Button::selectable(k == self.k, txt).sense(Sense::click_and_drag()));
+                        if r.drag_started() { self.drag_slide = Some(k); }
+                        if r.contains_pointer() && ui.input(|i| i.pointer.any_released()) {
+                            if let Some(from) = self.drag_slide.take() {
+                                let keys: Vec<String> = slides.iter().map(edit_key).collect();
+                                let a = se::move_slide(&it, &keys, from, k);
+                                if a != it { new_it = Some(a); self.k = k; }
+                            }
+                        }
                         if r.clicked() { self.k = k; }
                         let src = s["src"].as_u64().unwrap_or(k as u64) as usize;
                         let base = s["base"].as_u64().map(|x| x as usize);
@@ -92,7 +108,7 @@ impl SlideEditUi {
                                 op("up", "위로", ui);
                                 op("down", "아래로", ui);
                                 op("del", "지우기", ui);
-                                op("split", "여기서 새 순서로 나누기", ui);
+                                if ty != "title" { op("split", "여기서 새 순서로 나누기", ui); }
                             } else if base.is_some() {
                                 op("skip", if skipped { "다시 보이기" } else { "건너뛰기" }, ui);
                                 let n = slides.iter().filter(|x| x["base"].is_number()).count();
@@ -113,6 +129,7 @@ impl SlideEditUi {
                                 let xid = s["xid"].clone();
                                 let ex: Vec<Value> = a["extra"].as_array().cloned().unwrap_or_default().into_iter().filter(|e| e["id"] != xid).collect();
                                 a["extra"] = json!(ex);
+                                if let Some(edits) = a["edits"].as_object_mut() { edits.remove(&edit_key(s)); }
                                 new_it = Some(a);
                                 ui.close();
                             }
@@ -120,6 +137,7 @@ impl SlideEditUi {
                     }
                 });
             });
+            if ui.input(|i| i.pointer.any_released()) { self.drag_slide = None; }
             let slide = &slides[self.k];
             let key = if self.common { "*".to_string() } else { edit_key(slide) };
             let mut e = it["edits"][&key].clone();
@@ -135,8 +153,31 @@ impl SlideEditUi {
                 if let Some(m) = wp_core::hymns::merge_edit(&{ let mut x = it["edits"].clone(); if x.is_object() { x[&key] = e.clone(); } else { x = json!({ &key: e.clone() }); } x }, &edit_key(slide)) { show["edit"] = m; }
                 let c = paint::Ctx { web_dir, data_dir };
                 paint_slide(ui, &c, rect, Some(&show), &tpl, "", true, false, false);
+                if let Some(items) = e["items"].as_array_mut() {
+                    for (j, x) in items.iter_mut().enumerate().rev() {
+                        let v = |k: &str, d: f64| x[k].as_f64().unwrap_or(d) as f32;
+                        let er = egui::Rect::from_min_size(rect.min + Vec2::new(v("x",0.0)*rect.width()/100.0,v("y",0.0)*rect.height()/100.0),Vec2::new(v("w",30.0)*rect.width()/100.0,v("h",20.0)*rect.height()/100.0));
+                        let response = ui.interact(er.intersect(rect),ui.id().with(("se-element",&key,j)),Sense::drag());
+                        if response.hovered() || response.dragged() { ui.painter().rect_stroke(er,0.0,egui::Stroke::new(1.0,Color32::LIGHT_BLUE),egui::StrokeKind::Inside); }
+                        if response.dragged() {
+                            let d=ui.input(|i| i.pointer.delta());
+                            se::translate_item(x,(d.x/rect.width()*100.0) as f64,(d.y/rect.height()*100.0) as f64);
+                        }
+                    }
+                }
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical().id_salt("se-props").auto_shrink([false, false]).show(ui, |ui| {
+                    if !self.common && (ty == "title" || slide["xid"].is_string()) {
+                        let sk=edit_key(slide);
+                        let mut text=if let Some(id)=sk.strip_prefix('x') {
+                            it["extra"].as_array().into_iter().flatten().find(|e| e["id"].as_str()==Some(id)).and_then(|e| e["text"].as_str()).unwrap_or("").to_string()
+                        } else { wp_core::slides::title_pages(&it).get(slide["src"].as_u64().unwrap_or(0) as usize).cloned().unwrap_or_default() };
+                        ui.label("카드 본문 (첫 줄 제목, 나머지 부제)");
+                        if ui.add(egui::TextEdit::multiline(&mut text).desired_rows(2)).changed() {
+                            let mut a=new_it.clone().unwrap_or_else(||it.clone());
+                            se::set_card_text(&mut a,&sk,&text); new_it=Some(a);
+                        }
+                    }
                     ui.horizontal(|ui| {
                         let mut hm = e["hideMain"].as_bool().unwrap_or(false);
                         if ui.checkbox(&mut hm, wp_core::i18n::tr("본문 숨기기")).changed() { e["hideMain"] = json!(hm); }
@@ -192,7 +233,7 @@ impl SlideEditUi {
                     let n = e["items"].as_array().map(|a| a.len()).unwrap_or(0);
                     for j in 0..n {
                         let x = &mut e["items"][j];
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             ui.label(RichText::new(match x["type"].as_str() { Some("text") => "글", Some("image") => "그림", Some("shape") => "도형", _ => "요소" }).small());
                             for k in ["x", "y", "w", "h"] {
                                 let mut v = x[k].as_f64().unwrap_or(0.0);
@@ -220,9 +261,24 @@ impl SlideEditUi {
                                     if ui.checkbox(&mut el, wp_core::i18n::tr("타원")).changed() { x["ellipse"] = json!(el); }
                                 }
                             }
+                            let mut opacity = x["opacity"].as_f64().unwrap_or(1.0);
+                            if ui.add(egui::DragValue::new(&mut opacity).range(0.05..=1.0).speed(0.01).prefix("불투명도 ")).changed() { x["opacity"] = json!(opacity); }
                             let mut below = x["below"].as_bool().unwrap_or(false);
                             if ui.checkbox(&mut below, wp_core::i18n::tr("글 뒤")).changed() { x["below"] = json!(below); }
                             if ui.small_button("✕").clicked() { del = Some(j); }
+                        });
+                        ui.horizontal(|ui| {
+                            if x["type"]=="text" {
+                                let mut font=x["font"].as_str().unwrap_or("").to_string(); ui.label("글꼴");
+                                if ui.add(egui::TextEdit::singleline(&mut font).hint_text("맑은 고딕").desired_width(160.0)).changed() { x["font"]=json!(font); }
+                            } else if x["type"]=="image" {
+                                ui.label("자르기 (비율)");
+                                for (k,other,label) in [("l","r","왼쪽"),("t","b","위"),("r","l","오른쪽"),("b","t","아래")] {
+                                    let mut v=x["crop"][k].as_f64().unwrap_or(0.0);
+                                    let max=(0.959-x["crop"][other].as_f64().unwrap_or(0.0)).clamp(0.0,0.95);
+                                    if ui.add(egui::DragValue::new(&mut v).range(0.0..=max).speed(0.01).prefix(label)).changed() { x["crop"][k]=json!(v); }
+                                }
+                            }
                         });
                     }
                     if let Some(j) = del { e["items"].as_array_mut().unwrap().remove(j); }
@@ -231,7 +287,7 @@ impl SlideEditUi {
                 });
             });
             if e != before {
-                let mut a = it.clone();
+                let mut a = new_it.clone().unwrap_or_else(|| it.clone());
                 se::update_edit(&mut a, &key, |x| *x = e.clone());
                 new_it = Some(a);
             }
