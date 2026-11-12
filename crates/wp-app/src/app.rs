@@ -771,6 +771,7 @@ impl eframe::App for App {
         self.trackb_windows(&ctx); // [트랙 B]
         let _ = &s.tpl_overlay;
         crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
+        crate::a_tools::show(self, &ctx, &mut acts); // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
         crate::trackd_ui::frame(self, &ctx); // [트랙 D] 주보 · 출력 설정 · OBS 창, 예배당 창 자동 켜기
         if crate::tools_ui::take_off_request() { self.out.close(); } // [트랙 D] 리모컨 '끄기' → 예배당 창도
 

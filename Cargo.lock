@@ -7171,6 +7171,7 @@ dependencies = [
  "tungstenite",
  "unicode-normalization",
  "ureq",
+ "url",
  "windows-sys 0.61.2",
  "zip",
 ]
