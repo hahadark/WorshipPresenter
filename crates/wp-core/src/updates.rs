@@ -29,7 +29,7 @@ impl Busy {
     fn acquire() -> Result<Self, String> {
         BUSY.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .map(|_| Self)
-            .map_err(|_| "다른 업데이트 작업이 진행 중입니다.".into())
+            .map_err(|_| crate::i18n::tr("다른 업데이트 작업이 진행 중입니다.").into())
     }
 }
 impl Drop for Busy {
@@ -46,7 +46,7 @@ struct Asset {
 }
 fn gate() -> Result<(), String> {
     if RELEASE_HOLD {
-        Err(HOLD_REASON.into())
+        Err(crate::i18n::tr(HOLD_REASON))
     } else {
         Ok(())
     }
@@ -82,9 +82,9 @@ pub fn newer(a: &str, b: &str) -> bool {
 pub fn state_from_release(r: &Value, current: &str, now: i64) -> Result<Value, String> {
     let tag = r["tag_name"]
         .as_str()
-        .ok_or("릴리스 정보에 tag_name이 없습니다.")?;
+        .ok_or(crate::i18n::tr("릴리스 정보에 tag_name이 없습니다."))?;
     if r["draft"] == true || r["prerelease"] == true {
-        return Err("정식 릴리스가 아닙니다.".into());
+        return Err(crate::i18n::tr("정식 릴리스가 아닙니다.").into());
     }
     Ok(if newer(tag, current) {
         json!({"state":"available","version":tag.trim_start_matches('v'),"checkedAt":now,"notes":r["body"].as_str().unwrap_or("").chars().take(6000).collect::<String>(),"notesUrl":r["html_url"],"publishedAt":r["published_at"]})
@@ -104,7 +104,7 @@ fn safe_name(n: &str) -> bool {
 }
 fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
     if repo != TRUSTED_REPO {
-        return Err("승인된 Rust 릴리스 저장소가 아닙니다.".into());
+        return Err(crate::i18n::tr("승인된 Rust 릴리스 저장소가 아닙니다.").into());
     }
     let tag = r["tag_name"]
         .as_str()
@@ -113,13 +113,13 @@ fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
                 && t.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(&b))
         })
-        .ok_or("잘못된 릴리스 태그")?;
+        .ok_or(crate::i18n::tr("잘못된 릴리스 태그"))?;
     let arch = match std::env::consts::ARCH {
         "x86_64" => "x64",
         "aarch64" => "arm64",
-        _ => return Err("지원하지 않는 설치 아키텍처".into()),
+        _ => return Err(crate::i18n::tr("지원하지 않는 설치 아키텍처").into()),
     };
-    let list = r["assets"].as_array().ok_or("설치 자산 없음")?;
+    let list = r["assets"].as_array().ok_or(crate::i18n::tr("설치 자산 없음"))?;
     let mut found = None;
     for a in list {
         let n = a["name"].as_str().unwrap_or("");
@@ -128,7 +128,7 @@ fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
         }
         let u = a["browser_download_url"]
             .as_str()
-            .ok_or("다운로드 주소 없음")?;
+            .ok_or(crate::i18n::tr("다운로드 주소 없음"))?;
         let parsed = url::Url::parse(u).map_err(|e| e.to_string())?;
         if parsed.scheme() != "https"
             || parsed.host_str() != Some("github.com")
@@ -139,15 +139,15 @@ fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
             || parsed.fragment().is_some()
             || parsed.path() != format!("/{repo}/releases/download/{tag}/{n}")
         {
-            return Err("신뢰할 수 없는 릴리스 자산 주소".into());
+            return Err(crate::i18n::tr("신뢰할 수 없는 릴리스 자산 주소").into());
         }
-        let hash=a["digest"].as_str().and_then(|s|s.strip_prefix("sha256:")).filter(|s|s.len()==64 && s.bytes().all(|b|b.is_ascii_hexdigit())).ok_or("신뢰 가능한 SHA-256 해시가 없습니다. GitHub 릴리스에 digest를 제공한 뒤 다시 확인하세요.")?;
+        let hash=a["digest"].as_str().and_then(|s|s.strip_prefix("sha256:")).filter(|s|s.len()==64 && s.bytes().all(|b|b.is_ascii_hexdigit())).ok_or(crate::i18n::tr("신뢰 가능한 SHA-256 해시가 없습니다. GitHub 릴리스에 digest를 제공한 뒤 다시 확인하세요."))?;
         let size = a["size"]
             .as_u64()
             .filter(|s| *s > 0 && *s <= MAX_ASSET)
-            .ok_or("설치 파일 크기 제한 초과 또는 잘못된 크기")?;
+            .ok_or(crate::i18n::tr("설치 파일 크기 제한 초과 또는 잘못된 크기"))?;
         if found.is_some() {
-            return Err("설치 자산이 여러 개여서 안전하게 선택할 수 없습니다.".into());
+            return Err(crate::i18n::tr("설치 자산이 여러 개여서 안전하게 선택할 수 없습니다.").into());
         }
         found = Some(Asset {
             url: u.into(),
@@ -156,13 +156,13 @@ fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
             hash: hash.to_ascii_lowercase(),
         });
     }
-    found.ok_or("이 아키텍처용 Windows 설치 자산이 없습니다.".into())
+    found.ok_or(crate::i18n::tr("이 아키텍처용 Windows 설치 자산이 없습니다.").into())
 }
 pub fn status(settings: &Value) -> Value {
     let mut u = UPDATE.lock().clone();
     u["current"] = json!(VERSION);
     u["releaseHold"] = json!(RELEASE_HOLD);
-    u["holdReason"] = json!(HOLD_REASON);
+    u["holdReason"] = json!(crate::i18n::tr(HOLD_REASON));
     u["canDownload"] = json!(
         !RELEASE_HOLD && cfg!(windows) && ASSET.lock().is_some() && !BUSY.load(Ordering::SeqCst)
     );
@@ -199,7 +199,7 @@ fn get_json(url: &str) -> Result<Value, String> {
         .header("User-Agent", "WorshipPresenter-rs")
         .header("Accept", "application/vnd.github+json")
         .call()
-        .map_err(|e| format!("새 버전 확인 실패: {e}"))?;
+        .map_err(|e| crate::i18n::tr_args("새 버전 확인 실패: {1}", &[&e]))?;
     let mut bytes = Vec::new();
     r.body_mut()
         .as_reader()
@@ -207,7 +207,7 @@ fn get_json(url: &str) -> Result<Value, String> {
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
     if bytes.len() > 1024 * 1024 {
-        return Err("릴리스 응답이 너무 큽니다.".into());
+        return Err(crate::i18n::tr("릴리스 응답이 너무 큽니다.").into());
     }
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
@@ -220,7 +220,7 @@ pub fn check(core: &Shared, manual: bool) {
     let Some(url) = api_url(&repo) else {
         if manual {
             core.lock().notify(
-                "올바른 GitHub owner/repo를 입력하세요. Rust 판은 아직 릴리스 전입니다.",
+                crate::i18n::tr("올바른 GitHub owner/repo를 입력하세요. Rust 판은 아직 릴리스 전입니다."),
                 "warn",
             );
         }
@@ -251,18 +251,18 @@ pub fn check(core: &Shared, manual: bool) {
         let skipped = c.settings.get()["skipVersion"].as_str() == s["version"].as_str();
         if s["state"] == "available" && (!skipped || manual) {
             c.notify(
-                format!(
-                    "새 버전 {}이 나왔습니다 (도움말 → 새 버전)",
-                    s["version"].as_str().unwrap_or("")
+                crate::i18n::tr_args(
+                    "새 버전 {1}이 나왔습니다 (도움말 → 새 버전)",
+                    &[&s["version"].as_str().unwrap_or("")]
                 ),
                 "info",
             );
         } else if manual {
             c.notify(
                 if s["state"] == "latest" {
-                    "지금이 최신 버전입니다.".to_string()
+                    crate::i18n::tr("지금이 최신 버전입니다.").to_string()
                 } else {
-                    s["error"].as_str().unwrap_or("확인 실패").to_string()
+                    s["error"].as_str().map(str::to_string).unwrap_or_else(|| crate::i18n::tr("확인 실패"))
                 },
                 "info",
             );
@@ -285,7 +285,7 @@ fn response(url: &str) -> Result<ureq::http::Response<ureq::Body>, String> {
                 .headers()
                 .get("location")
                 .and_then(|h| h.to_str().ok())
-                .ok_or("리다이렉트 주소 없음")?;
+                .ok_or(crate::i18n::tr("리다이렉트 주소 없음"))?;
             let v = url::Url::parse(next).map_err(|e| e.to_string())?;
             if v.scheme() != "https"
                 || !matches!(
@@ -296,14 +296,14 @@ fn response(url: &str) -> Result<ureq::http::Response<ureq::Body>, String> {
                 || v.password().is_some()
                 || v.port().is_some()
             {
-                return Err("신뢰할 수 없는 자산 리다이렉트".into());
+                return Err(crate::i18n::tr("신뢰할 수 없는 자산 리다이렉트").into());
             }
             u = next.into();
             continue;
         }
         return Ok(r);
     }
-    Err("리다이렉트 횟수 초과".into())
+    Err(crate::i18n::tr("리다이렉트 횟수 초과").into())
 }
 /// 임시 파일은 create_new, 성공 시에만 같은 디렉터리로 원자적 rename. 실패·취소 때 정리.
 fn cache_stream(
@@ -314,7 +314,7 @@ fn cache_stream(
     mut progress: impl FnMut(u64, bool),
 ) -> Result<PathBuf, String> {
     if !safe_name(&a.name) || a.size == 0 || a.size > MAX_ASSET {
-        return Err("잘못된 파일명 또는 크기".into());
+        return Err(crate::i18n::tr("잘못된 파일명 또는 크기").into());
     }
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     if std::fs::symlink_metadata(dir)
@@ -322,7 +322,7 @@ fn cache_stream(
         .file_type()
         .is_symlink()
     {
-        return Err("캐시 디렉터리는 링크일 수 없습니다.".into());
+        return Err(crate::i18n::tr("캐시 디렉터리는 링크일 수 없습니다.").into());
     }
     let part = dir.join(format!("{}.part", rand::random::<u64>()));
     let result = (|| {
@@ -336,7 +336,7 @@ fn cache_stream(
         let mut buf = [0u8; 64 * 1024];
         loop {
             if cancel.load(Ordering::SeqCst) {
-                return Err("다운로드 취소됨".into());
+                return Err(crate::i18n::tr("다운로드 취소됨").into());
             }
             let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
             if n == 0 {
@@ -344,7 +344,7 @@ fn cache_stream(
             }
             total += n as u64;
             if total > a.size || total > MAX_ASSET {
-                return Err("설치 파일 크기 제한 초과".into());
+                return Err(crate::i18n::tr("설치 파일 크기 제한 초과").into());
             }
             f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
             hash.update(&buf[..n]);
@@ -352,13 +352,13 @@ fn cache_stream(
         }
         progress(total, true);
         if total != a.size {
-            return Err("설치 파일이 불완전합니다.".into());
+            return Err(crate::i18n::tr("설치 파일이 불완전합니다.").into());
         }
         if hex(&hash.finalize()) != a.hash {
-            return Err("SHA-256 검증 실패: 설치 파일을 폐기했습니다.".into());
+            return Err(crate::i18n::tr("SHA-256 검증 실패: 설치 파일을 폐기했습니다.").into());
         }
         if cancel.load(Ordering::SeqCst) {
-            return Err("다운로드 취소됨".into());
+            return Err(crate::i18n::tr("다운로드 취소됨").into());
         }
         f.sync_all().map_err(|e| e.to_string())?;
         drop(f);
@@ -379,15 +379,15 @@ fn cache_stream(
 pub fn download(core: &Shared) -> Result<(), String> {
     gate()?;
     if !cfg!(windows) {
-        return Err("Windows 설치판에서만 지원합니다.".into());
+        return Err(crate::i18n::tr("Windows 설치판에서만 지원합니다.").into());
     }
     let guard = Busy::acquire()?;
     let a = ASSET
         .lock()
         .clone()
-        .ok_or("검증 가능한 새 버전을 먼저 확인하세요.")?;
+        .ok_or(crate::i18n::tr("검증 가능한 새 버전을 먼저 확인하세요."))?;
     if core.lock().settings.get()["skipVersion"].as_str() == UPDATE.lock()["version"].as_str() {
-        return Err("건너뛴 버전입니다.".into());
+        return Err(crate::i18n::tr("건너뛴 버전입니다.").into());
     }
     let dir = core.lock().data_dir.join("update-cache");
     CANCEL.store(false, Ordering::SeqCst);
@@ -440,16 +440,16 @@ pub fn install_now(core: &Shared) -> Result<(), String> {
     gate()?;
     let _guard = Busy::acquire()?;
     if !cfg!(windows) || UPDATE.lock()["state"] != "ready" {
-        return Err("설치 준비 상태가 아닙니다.".into());
+        return Err(crate::i18n::tr("설치 준비 상태가 아닙니다.").into());
     }
     if core.lock().settings.get()["skipVersion"].as_str() == UPDATE.lock()["version"].as_str() {
-        return Err("건너뛴 버전은 설치하지 않습니다.".into());
+        return Err(crate::i18n::tr("건너뛴 버전은 설치하지 않습니다.").into());
     }
-    let a = ASSET.lock().clone().ok_or("설치 메타데이터 없음")?;
-    let p = READY.lock().clone().ok_or("준비된 설치 파일 없음")?;
+    let a = ASSET.lock().clone().ok_or(crate::i18n::tr("설치 메타데이터 없음"))?;
+    let p = READY.lock().clone().ok_or(crate::i18n::tr("준비된 설치 파일 없음"))?;
     let m = std::fs::symlink_metadata(&p).map_err(|e| e.to_string())?;
     if !m.is_file() || m.len() != a.size {
-        return Err("설치 파일 크기 또는 종류가 바뀌었습니다.".into());
+        return Err(crate::i18n::tr("설치 파일 크기 또는 종류가 바뀌었습니다.").into());
     }
     let mut f = std::fs::File::open(&p).map_err(|e| e.to_string())?;
     let mut h = Sha256::new();
@@ -462,19 +462,19 @@ pub fn install_now(core: &Shared) -> Result<(), String> {
         }
         count += n as u64;
         if count > a.size {
-            return Err("설치 파일 크기가 바뀌었습니다.".into());
+            return Err(crate::i18n::tr("설치 파일 크기가 바뀌었습니다.").into());
         }
         h.update(&buf[..n]);
     }
     if hex(&h.finalize()) != a.hash {
-        return Err("설치 직전 SHA-256 재검증 실패".into());
+        return Err(crate::i18n::tr("설치 직전 SHA-256 재검증 실패").into());
     }
     // 쉘 없이 인자 분리. 실제 릴리스 승인 전 gate가 이 경로 진입을 차단한다.
     #[cfg(windows)]
     std::process::Command::new(&p)
         .arg("/S")
         .spawn()
-        .map_err(|e| format!("설치 실행 실패: {e}"))?;
+        .map_err(|e| crate::i18n::tr_args("설치 실행 실패: {1}", &[&e]))?;
     UPDATE.lock()["state"] = json!("installing");
     core.lock().emit(Ev::Ui);
     Ok(())
