@@ -427,7 +427,6 @@ impl App {
                 }
             }
         });
-        crate::hymns_ui::search_box(self, ui, acts); // [트랙 A]
         if let Some(i) = self.sel.filter(|i| *i < s.items.len()) {
             ui.horizontal(|ui| {
                 if ui.button("▲").clicked() { acts.push(Act::MoveItem(i, -1)) }
@@ -437,6 +436,7 @@ impl App {
                     if ui.button(RichText::new("지우기").color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() { acts.push(Act::RemoveItem(i)) }
                 });
             });
+            crate::hymns_ui::ppt_box(self, ui, i, &s.items[i]); // [트랙 A]
             self.editor(ui, i, &s.items[i], acts);
         }
     }
@@ -715,7 +715,22 @@ impl eframe::App for App {
         });
         egui::Panel::left("cue").default_size(380.0).min_size(280.0).show(ui, |ui| {
             ui.add_space(4.0);
-            self.cue_panel(ui, &s, &mut acts);
+            // [트랙 A] 왼쪽 탭: 큐시트 | 찬송가 | 찬양 | 라이브러리 (찬양·라이브러리 자리는 트랙 B 가 채움)
+            crate::hymns_ui::global(self, ui, &mut acts);
+            let tab_id = egui::Id::new("left-tab");
+            let mut tab: u8 = ui.data(|d| d.get_temp(tab_id)).unwrap_or_else(|| std::env::args().position(|x| x == "--left-tab").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()).unwrap_or(0));
+            ui.horizontal(|ui| {
+                for (k, label) in [(0u8, "큐시트"), (1, "찬송가"), (2, "찬양"), (3, "라이브러리")] {
+                    if ui.selectable_label(tab == k, RichText::new(label).strong()).clicked() { tab = k; }
+                }
+            });
+            ui.data_mut(|d| d.insert_temp(tab_id, tab));
+            ui.separator();
+            match tab {
+                1 => crate::hymns_ui::tab(self, ui, &mut acts),
+                2 | 3 => { ui.label(RichText::new("위 도구 줄의 '찬양'·'라이브러리' 창을 쓰세요. (이 탭으로 옮길 자리)").color(Color32::GRAY)); }
+                _ => self.cue_panel(ui, &s, &mut acts),
+            }
         });
         egui::Panel::top("decks").resizable(false).exact_size((ui.available_height() * 0.6).max(320.0)).show(ui, |ui| {
             ui.add_space(4.0);
