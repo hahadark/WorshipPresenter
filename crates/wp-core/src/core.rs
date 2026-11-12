@@ -55,6 +55,7 @@ pub struct Core {
     /// 화면 아래 알림 (글, 종류, 시각)
     pub toast: Option<(String, &'static str, i64)>,
     pub port: u16,
+    pub b: crate::trackb::TrackB, // [트랙 B]
 }
 
 pub type Shared = Arc<Mutex<Core>>;
@@ -109,8 +110,9 @@ impl Core {
         let port = settings.get()["port"].as_u64().unwrap_or(37528) as u16;
         let mut c = Self {
             data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), obs_hold: false,
-            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, port,
+            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, port, b: Default::default(), // [트랙 B]
         };
+        c.trackb_init(); // [트랙 B]
         if c.version_id().is_empty() {
             if let Some(v) = c.store.list_versions().first() {
                 let id = v.id.clone();
@@ -198,9 +200,9 @@ impl Core {
             "template": self.template_for(output),
             "obsFull": false,
             "pip": if output == "overlay" && s["output"]["obsPip"].as_bool().unwrap_or(false) { json!({ "template": self.template_for("main") }) } else { Value::Null },
-            "overlays": self.active_overlays(output),
+            "overlays": (self.overlays_for(output)), // [트랙 B]
             "layers": self.layers_payload(output),
-            "video": null,
+            "video": self.video_payload(), // [트랙 B]
             "cursorHidden": s["output"]["cursorHidden"].as_bool().unwrap_or(true),
             "cameras": s.get("cameras").cloned().unwrap_or(json!({})),
         })
@@ -214,8 +216,7 @@ impl Core {
             "output": "stage", "version": live["version"], "hasLive": live["hasLive"], "visible": live["visible"],
             "slide": live["slide"], "nextSlide": live["nextSlide"], "index": live["index"], "count": live["count"],
             "title": title, "versionName": p["versionName"], "note": p["note"].as_str().unwrap_or(""),
-            "timer": { "running": false, "remaining": 0, "duration": 0, "now": now_ms() },
-            "message": "", "pin": null,
+            "timer": (self.b.stage.timer_json()), "message": (self.b.stage.message), "pin": (self.stage_pin_json()), // [트랙 B]
         })
     }
 
@@ -380,6 +381,7 @@ impl Core {
     }
 
     fn add_history(&mut self) {
+        self.sync_video_state(); // [트랙 B]
         let Some(l) = &self.pres.live else { return };
         let p = l.deck.passage.clone();
         self.settings.update(|d| {
@@ -395,7 +397,7 @@ impl Core {
     /// 다음/이전 슬라이드. 순서의 끝이면 (설정 cueAdvance) 다음 순서를 바로 송출
     pub fn step(&mut self, d: i64) {
         match self.pres.move_by(d) {
-            Move::Ok => self.emit(Ev::Live),
+            Move::Ok => { self.sync_video_state(); self.emit(Ev::Live) } // [트랙 B]
             Move::NoLive => {}
             Move::Edge(edge) => {
                 let advance = self.settings.get()["cueAdvance"].as_bool().unwrap_or(true);
@@ -420,6 +422,7 @@ impl Core {
 
     pub fn goto_live(&mut self, i: usize) {
         self.pres.goto(i);
+        self.sync_video_state(); // [트랙 B]
         self.emit(Ev::Live);
         self.emit(Ev::Ui);
     }
@@ -496,6 +499,7 @@ impl Core {
     }
 
     pub fn add_item(&mut self, item: Value, at: Option<usize>) {
+        self.remember_items(); // [트랙 B]
         if self.cue.is_none() {
             let _ = self.new_cue("새 큐시트");
         }
@@ -507,6 +511,7 @@ impl Core {
     }
 
     pub fn remove_item(&mut self, i: usize) {
+        self.remember_items(); // [트랙 B]
         if let Some(c) = &mut self.cue {
             if i < c.items.len() {
                 c.items.remove(i);
@@ -516,6 +521,7 @@ impl Core {
     }
 
     pub fn move_item(&mut self, i: usize, d: i64) {
+        self.remember_items(); // [트랙 B]
         if let Some(c) = &mut self.cue {
             let j = i as i64 + d;
             if j >= 0 && (j as usize) < c.items.len() && i < c.items.len() {
