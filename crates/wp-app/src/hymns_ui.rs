@@ -395,8 +395,8 @@ fn grab_clipboard(app: &mut App) {
 /// Ctrl+V (글 입력칸 밖): 글 → 성경/찬양/공지 · 글이 없으면 슬라이드·그림
 fn paste(app: &mut App, ui: &egui::Ui, acts: &mut Vec<Act>) {
     let ctx = ui.ctx().clone();
-    if ctx.memory(|m| m.focused().is_some()) {
-        return;
+    if ctx.memory(|m| m.focused().is_some()) || ctx.input(|i| i.modifiers.shift) {
+        return; // Ctrl+Shift+V 는 '종류 골라 붙여 넣기' 창 (parity2_ui)
     }
     let text = ctx.input(|i| i.events.iter().find_map(|e| if let egui::Event::Paste(t) = e { Some(t.clone()) } else { None }));
     let ctrl_v = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::V, pressed: true, modifiers, .. } if modifiers.command)));
