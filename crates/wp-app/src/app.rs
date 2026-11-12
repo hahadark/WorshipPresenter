@@ -255,7 +255,7 @@ impl App {
                 Act::OutputToggle => {
                     let port = c.port;
                     drop(c);
-                    if self.out.running() { self.out.close() } else { self.out.open(port, self.monitor, false) }
+                    let was = self.out.running(); if was { self.out.close() } else { self.out.open(port, self.monitor, false) } crate::trackd_ui::toggled(&self.core, was, !was); // [트랙 D] linkObs
                     continue;
                 }
                 Act::SetMonitor(m) => {
@@ -768,6 +768,7 @@ impl eframe::App for App {
         self.trackb_windows(&ctx); // [트랙 B]
         let _ = &s.tpl_overlay;
         crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
+        crate::trackd_ui::frame(self, &ctx); // [트랙 D] 주보 · 출력 설정 · OBS 창, 예배당 창 자동 켜기
         if crate::tools_ui::take_off_request() { self.out.close(); } // [트랙 D] 리모컨 '끄기' → 예배당 창도
 
         if !acts.is_empty() {

@@ -46,6 +46,7 @@ pub fn menus() -> Vec<Menu> {
         ] },
         Menu { label: "보기", items: vec![
             it("c:templates", "출력 템플릿 편집", ""),
+            it("d:output", "출력 설정 (예배당 창 · 모니터 · OBS 숨김)", ""), // [트랙 D]
         ] },
         Menu { label: "도구", items: vec![
             it("b:songs", "찬양 라이브러리", ""),
@@ -55,6 +56,8 @@ pub fn menus() -> Vec<Menu> {
             it("d:trigger", "스트림덱 · 외부 단추", ""),
             it("d:devices", "Companion · 장비 (X32 · PTZ)", ""),
             it("d:lan", "내부망 출력 (다른 PC 의 OBS)", ""),
+            it("d:obs", "OBS 원격 조작", ""), // [트랙 D]
+            it("d:bulletin", "주보 → 큐시트", ""), // [트랙 D]
         ] },
         Menu { label: "도움말", items: vec![
             it("c:about", "정보 · 라이선스", ""),

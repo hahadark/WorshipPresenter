@@ -15,7 +15,8 @@ mod menubar; // [트랙 C]
 mod settings_ui; // [트랙 C]
 mod template_ui; // [트랙 C]
 mod track_c; // [트랙 C]
-mod tools_ui; // [트랙 D]
+mod tools_ui;
+mod trackd_ui; // [트랙 D] // [트랙 D]
 
 use eframe::egui;
 use parking_lot::Mutex;
