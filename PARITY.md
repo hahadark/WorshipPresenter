@@ -90,7 +90,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 |---|---|---|---|---|
 | setBackgroundMedia · toggleBackground · toggleLogoScreen · toggleOverlaysOff · clearAll | core.js | core/trackb.rs set_background_media · core.rs toggle_bg · toggle_logo · clear_all · trackb.rs toggle_overlays_off | 됨 | |
 | stageTimer · stageMessage · stagePinSet · saveStagePreset | core.js | core/trackb.rs | 됨 | |
-| deleteStagePreset | core.js | — | 없음 | 저장만 있고 지우기 없음 → 5차에서 채움 |
+| deleteStagePreset | core.js | core/parity_a.rs delete_stage_preset · 무대 창 프리셋 오른쪽 클릭 | 됨 | 5차 |
 | 매크로 saveMacro · deleteMacro · runMacro · saveSchedule | core.js | core/trackb.rs · schedule.rs | 됨 | |
 | 회중 메시지 showMessage · clearMessage · saveMessageTemplate · deleteMessageTemplate | core.js | core/trackb.rs | 됨 | |
 | 영상 videoControl · videoEnded | core.js | core/trackb.rs video_control · video_ended | 됨 | 실제 재생 확인은 트랙 B |
@@ -110,7 +110,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | listCues · getCue · saveCue · newCue · setActiveCue | core.js | core/db.rs · core.rs open_cue · new_cue · save_cue | 됨 | |
 | updateCueMeta · trashCues · restoreCues · purgeCues · duplicateCue · deleteCue | core.js | core/cues.rs · trackb.rs | 됨 | |
 | exportCues · importCues | core.js | core/cues.rs export · import · trackb.rs | 됨 | |
-| cueText (큐시트를 글로) | core.js | — | 없음 | 5차에서 채움 (글로 복사) |
+| cueText (큐시트를 글로) | core.js | core/parity_a.rs cue_text · 순서 오른쪽 클릭 \"큐시트를 글로 복사\" | 됨 | 5차 |
 | 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | — | 대체 | egui 는 고정 배치(패널 크기 조절). dockview 작업공간은 없음 |
 
 ## 2. 웹 서버 경로 (server.js)
@@ -144,24 +144,24 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 실행 취소 · 다시 | b:undo · b:redo | 됨 | 글 고치기 묶음 실행 취소 포함(remember_typing) |
 | 순서 넣기: 찬송가·PPT · 성경 · 찬양 · 웹 가사 · 공지 · 제목 · 이미지 · 빈 화면 | 큐시트 '넣기' 단추 · 찬송가 탭 · 라이브러리 · lyrics_ui | 됨 | |
 | 순서 넣기: 영상 · 음악 | 라이브러리 창 | 됨 | |
-| 순서 넣기: 카메라 · 슬라이드쇼 | — | 없음 | 5차에서 채움 (넣기 단추 + 편집칸) |
+| 순서 넣기: 카메라 · 슬라이드쇼 (+ 영상 편집칸) | app parity_ui.rs add_buttons · editor | 됨 | 5차. 카메라 기기는 설정·큐시트에 나온 것에서 고르거나 직접(비우면 기본 카메라) |
 | 설교 포인트 · 예배 전 화면 | a:points · a:preservice | 됨 | |
 | 클립보드 붙여 넣기 · 종류 골라 붙여 넣기 | Ctrl+V · 찬송가 탭 '붙여 넣기' | 일부 | '종류를 골라 붙여 넣기'(Ctrl+Shift+V) 창 없음 |
-| 편집칸 · 슬라이드 편집 · 위/아래 · 복제 · 지우기 · 송출 | 큐시트 아래 단추 · c:slideedit | 일부 | 큐시트 순서 오른쪽 클릭 메뉴 없음 → 5차에서 채움 |
+| 편집칸 · 슬라이드 편집 · 위/아래 · 복제 · 지우기 · 송출 | 큐시트 아래 단추 · c:slideedit · 순서 오른쪽 클릭 | 됨 | 5차 |
 | 송출 메뉴 (다음·이전·다음 순서 미리보기·즉석 자막·회중 메시지·화면 지우기·음악 멈춤·모두 지우기) | 송출 단추 줄 · 단축키 · b:quick · b:message · music_ui | 됨 | |
 | OBS · 송출 배경 · OBS 자막 모양 · 보조 화면 · 무대 화면 창 | d:obs · b:lib · c:obsfull/obspip · 예배당 화면 켜기 · b:stage | 됨 | |
 | 보기: 패널 · 작업공간 · 패널 잠그기 | — | 대체 | egui 고정 배치 |
 | 보기: 조작 화면 테마 · 글자 크기 | 설정 → 조작 화면 | 됨 | |
 | 보기: Language · 언어 | 설정(uiLang) · core/i18n.rs | 일부 | 영어 화면 넓히기는 트랙 D |
 | 도구: 라이브러리 · 오버레이 · 템플릿 · 미디어 · 무대 타이머 · 매크로 · OBS · 장비 · 리모컨 · 스트림덱 | b:* · c:templates · d:* | 됨 | |
-| 도움말: 사용 설명서 · README · OBS 안내 | — | 없음 | 5차에서 채움 (문서 열기) |
+| 도움말: 사용 설명서 · README · OBS 안내 | a:help-manual · a:help-readme · a:help-obs | 됨 | 5차. GitHub 문서를 브라우저로 |
 | 도움말: 연결 점검 · 로그 묶음 · 정보 | b:diagnose · b:logbundle · c:about | 됨 | |
-| 도움말: 단축키 보기 · 새 소식 · 문제 알리기 | — (단축키는 설정 창에서 보임) | 일부 | 5차에서 채움 (도움말 링크) |
+| 도움말: 단축키 보기 · 새 소식 · 문제 알리기 | a:help-keys(창) · a:help-news · a:help-issue | 됨 | 5차 |
 
 ### 오른쪽 클릭 메뉴 (ctxmenu.js)
 | 항목 | Rust 위치 | 상태 | 메모 |
 |---|---|---|---|
-| 큐시트 순서: 미리보기 · 송출 · 편집 · 제목 바꾸기 · 예정 시간 · 찬양 라이브러리에 저장 · 나누기 · 위/아래/맨위/맨아래 · 복제 · 지우기 | — (단추로 일부) | 일부 | 5차에서 채움 |
+| 큐시트 순서: 미리보기 · 송출 · 편집 · 제목 바꾸기 · 예정 시간 · 찬양 라이브러리에 저장 · 나누기 · 위/아래/맨위/맨아래 · 복제 · 지우기 | app parity_ui.rs cue_row_menu | 일부 | 5차. 예정 시간은 큐시트 관리 창, PPT 나누기는 편집칸 \"PPT 도구\" 에 (메뉴엔 없음) |
 | 슬라이드(미리보기·LIVE): 바로 송출 · 이 슬라이드 편집 · 새 슬라이드 · 복제 · 구역 나누기 | app slideedit_ui (편집기 안) | 일부 | 미리보기·LIVE 썸네일 오른쪽 클릭은 없음 |
 | 성경 결과: 이 본문을 큐시트에 넣기 · 장절·본문 복사 | '큐시트에 넣기' 단추 | 일부 | 복사 없음 |
 | 화면: 글자 숨김 · 음악 멈춤 · 모두 지우기 · 송출 배경 · 미리보기 끄기 · 무대 창 · 송출 기록 · 그린 것 지우기 | 단추 줄 · 메뉴 | 됨 | 메뉴로 |
@@ -187,8 +187,8 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 |---|---|---|---|---|
 | 조작 창 · 예배당 출력 창(전체 화면, 다른 모니터, 항상 위) | main.js | app outwin.rs · wp-output | 됨 | |
 | 무대 화면 창 | main.js stageWin | trackb_ui | 됨 | |
-| 두 번 실행 막기 (second-instance → 앞으로) | main.js:29 | — | 없음 | 5차에서 채움 |
-| 화면 꺼짐 막기 (powerSaveBlocker) | main.js:480 | — | 없음 | 5차에서 채움 |
+| 두 번 실행 막기 (second-instance → 앞으로) | main.js:29 | core/parity_a.rs single_instance · focus_existing_window · app main.rs | 됨 | 5차. 데이터 폴더마다 (점검용 --data 는 따로). 실제로 두 번째 실행이 0.8초에 끝나고 첫 창을 앞으로 |
+| 화면 꺼짐 막기 (powerSaveBlocker) | main.js:480 | core/parity_a.rs keep_display_awake | 됨 | 5차. SetThreadExecutionState(DISPLAY·SYSTEM) |
 | 시작 화면(splash) | main.js:273 | — | 대체 | Rust 판은 시작이 빨라 생략 |
 | 포트가 쓰이면 다음 포트 (~+9) | main.js:346 | core/server.rs serve | 됨 | |
 | 데이터 폴더 (--data · 기존 자료 복사) | main.js:332 | core.rs prepare_data_dir · app main.rs | 됨 | Electron 자료는 복사만 |
@@ -208,4 +208,13 @@ README 의 큰 기능(성경·찬양·찬송가 PPT·공지·영상·카메라·
 - 창·시작 10줄: 됨 6 · 일부 1 · 없음 2 · 대체 1
 
 ## 5차에서 채운 것
-(아래에 이어 적음)
+- 무대 프리셋 지우기 · 큐시트를 글로 복사 · 카메라·슬라이드쇼 순서 넣기와 편집칸(영상 편집칸 포함) · 큐시트 순서 오른쪽 클릭 메뉴 · 도움말 메뉴 6개(설명서·README·OBS 안내·단축키 보기·새 소식·문제 알리기) · 두 번 실행 막기 · 화면 꺼짐 막기
+
+채운 뒤 숫자:
+- 코어 명령 189개: 됨 171 · 일부 5 · 없음 8 (모두 트랙 C 의 성경·주석 가져오기) · 대체 5
+- 서버 경로 13줄: 됨 9 · 일부 1 · 대체 3
+- 메뉴·오른쪽 클릭·단축키 31줄: 됨 23 · 일부 6 · 없음 1 (성경 번역본 가져오기, 트랙 C) · 대체 1
+- 출력 데이터 4줄: 됨 3 · 일부 1
+- 창·시작 10줄: 됨 8 · 일부 1 (업데이트 설치 — 릴리스 정지) · 대체 1 (시작 화면)
+
+남은 '일부'(다른 트랙 몫 빼고): 종류 골라 붙여 넣기(Ctrl+Shift+V) 창 · 미리보기/LIVE 썸네일 오른쪽 클릭 · 성경 결과 '장절·본문 복사' · Ctrl+B 성경 책 목록 창 확인 · /api/command 다른 명령(의도적)

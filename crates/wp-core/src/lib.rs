@@ -11,6 +11,7 @@ pub mod pptsheets; // [트랙 A] 모아보기 그림
 pub mod sermonpoints; // [트랙 A] 설교 포인트
 pub mod preservice; // [트랙 A] 예배 전 화면
 pub mod homefeed; // [트랙 A] 홈페이지 주보
+pub mod parity_a; // [트랙 A] 기능 대조에서 빠진 작은 것들
 pub mod clippaste; // [트랙 A]
 pub mod songinbox; // [트랙 A]
 pub mod measure;

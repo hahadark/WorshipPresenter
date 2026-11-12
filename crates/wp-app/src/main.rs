@@ -7,6 +7,7 @@ mod outwin;
 mod paint;
 mod paint_edit; // [트랙 A]
 mod a_tools; // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
+mod parity_ui; // [트랙 A] 기능 대조에서 빠진 작은 것들
 mod trackb_ui; // [트랙 B]
 mod lyrics_ui; // [트랙 B]
 mod music_ui; // [트랙 B]
@@ -88,6 +89,13 @@ fn main() -> anyhow::Result<()> {
     let _ = std::fs::create_dir_all(&data_dir);
     wp_core::logger::init(&data_dir); // [트랙 B] 파일 로그 (logs\날짜.log)
     let web = web_dir();
+    // [트랙 A] 두 번 실행 막기 (같은 데이터 폴더) · 송출 중 화면 꺼짐 막기
+    let (already, _instance) = wp_core::parity_a::single_instance(&data_dir);
+    if already {
+        wp_core::parity_a::focus_existing_window("워십프리젠터 (Rust)");
+        return Ok(());
+    }
+    wp_core::parity_a::keep_display_awake();
     let core = Core::open(data_dir.clone(), web.clone(), seed_db().as_deref())?;
     let shared = Arc::new(Mutex::new(core));
     wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
