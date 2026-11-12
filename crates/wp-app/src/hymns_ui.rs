@@ -40,7 +40,7 @@ pub fn ppt_box(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
     if it["type"] != "hymn" || it["file"].as_str().is_none_or(|f| f.is_empty()) {
         return;
     }
-    egui::CollapsingHeader::new(RichText::new("PPT 도구 (요소 따로 꺼내기 · 자동으로 나누기)").color(Color32::from_rgb(0xf0, 0x9a, 0x4a))).id_salt("ppt-box").show(ui, |ui| ppt_tools(app, ui, i, it));
+    egui::CollapsingHeader::new(RichText::new(wp_core::i18n::tr("PPT 도구 (요소 따로 꺼내기 · 자동으로 나누기)")).color(Color32::from_rgb(0xf0, 0x9a, 0x4a))).id_salt("ppt-box").show(ui, |ui| ppt_tools(app, ui, i, it));
 }
 
 fn search_box(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
@@ -55,9 +55,9 @@ fn search_box(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
 fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     let mut open: bool = get(ui, OPEN);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("찬송가·교독문").strong().color(Color32::from_rgb(0xf0, 0x9a, 0x4a)));
+        ui.label(RichText::new(wp_core::i18n::tr("찬송가·교독문")).strong().color(Color32::from_rgb(0xf0, 0x9a, 0x4a)));
         open = true;
-        if ui.small_button("붙여 넣기").on_hover_text("클립보드의 PowerPoint 슬라이드·그림을 새 순서로 (글은 Ctrl+V)").clicked() {
+        if ui.small_button(wp_core::i18n::tr("붙여 넣기")).on_hover_text(wp_core::i18n::tr("클립보드의 PowerPoint 슬라이드·그림을 새 순서로 (글은 Ctrl+V)")).clicked() {
             grab_clipboard(app);
         }
         let st = songinbox::status(&app.core.lock());
@@ -102,7 +102,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     });
     let folders = hymns::folders(&app.core.lock());
     ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if src == "ppt" && ui.button("폴더 추가…").clicked() {
+        if src == "ppt" && ui.button(wp_core::i18n::tr("폴더 추가…")).clicked() {
             if let Some(dir) = rfd::FileDialog::new().set_title("찬송가·교독문 PPT 폴더").pick_folder() {
                 let mut c = app.core.lock();
                 match hymns::add_folder(&mut c, &dir, None) {
@@ -112,7 +112,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 refresh = true;
             }
         }
-        if src == "beth" && ui.button("가져오기…").on_hover_text("베들레헴 BethlehemWin 폴더의 찬송가 가사(.hdb)·악보(.cmp)를 데이터 폴더로 복사").clicked() {
+        if src == "beth" && ui.button(wp_core::i18n::tr("가져오기…")).on_hover_text(wp_core::i18n::tr("베들레헴 BethlehemWin 폴더의 찬송가 가사(.hdb)·악보(.cmp)를 데이터 폴더로 복사")).clicked() {
             if let Some(dir) = rfd::FileDialog::new().set_title("BethlehemWin 폴더").pick_folder() {
                 let mut c = app.core.lock();
                 let done = hymnal::import_from(&c, &dir);
@@ -136,7 +136,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     }
     if src == "ppt" {
         if folders.is_empty() {
-            ui.label(RichText::new("찬송가 PPT(.pps .ppt .pptx) 폴더를 넣으세요.").small().color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("찬송가 PPT(.pps .ppt .pptx) 폴더를 넣으세요.")).small().color(Color32::GRAY));
         }
         for f in &folders {
             ui.horizontal(|ui| {
@@ -163,7 +163,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                         }
                     }
                 });
-                if ui.small_button("×").on_hover_text("폴더 빼기 (파일은 그대로)").clicked() {
+                if ui.small_button("×").on_hover_text(wp_core::i18n::tr("폴더 빼기 (파일은 그대로)")).clicked() {
                     hymns::remove_folder(&mut app.core.lock(), &path);
                     res.clear();
                 }
@@ -172,7 +172,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     } else {
         let books = hymnal::books(&app.core.lock());
         if books.is_empty() {
-            ui.label(RichText::new("베들레헴 성경의 찬송가 파일을 찾지 못했습니다. '가져오기…' 로 BethlehemWin 폴더를 고르세요.").small().color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("베들레헴 성경의 찬송가 파일을 찾지 못했습니다. '가져오기…' 로 BethlehemWin 폴더를 고르세요.")).small().color(Color32::GRAY));
         } else {
             let t = books.iter().map(|b| format!("{} {}장{}", b["name"].as_str().unwrap_or(""), b["count"], if b["scores"].as_bool().unwrap_or(false) { " · 악보" } else { "" })).collect::<Vec<_>>().join("  ");
             ui.label(RichText::new(t).small().color(Color32::GRAY));
@@ -185,7 +185,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             } else {
                 format!("{}  · {}", h["label"].as_str().unwrap_or(""), h["book"].as_str().unwrap_or(""))
             };
-            if ui.selectable_label(false, t).on_hover_text("눌러서 큐시트에 넣기").clicked() {
+            if ui.selectable_label(false, t).on_hover_text(wp_core::i18n::tr("눌러서 큐시트에 넣기")).clicked() {
                 if src == "ppt" {
                     acts.push(Act::AddItem("hymn", Some(json!({ "title": h["title"], "file": h["file"], "number": h["number"].as_i64().unwrap_or(0), "background": "default", "obsLyrics": "" }))));
                 } else {
@@ -230,9 +230,9 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new("PPT:").small().color(Color32::GRAY));
         if hymns::is_building(&file) {
-            ui.label(RichText::new("그림 만드는 중…").small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+            ui.label(RichText::new(wp_core::i18n::tr("그림 만드는 중…")).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
         }
-        if ui.small_button("요소 따로 꺼내기").on_hover_text("PPT 의 글상자·그림·도형을 하나씩 꺼내 슬라이드 편집기에서 고칠 수 있게").clicked() {
+        if ui.small_button(wp_core::i18n::tr("요소 따로 꺼내기")).on_hover_text(wp_core::i18n::tr("PPT 의 글상자·그림·도형을 하나씩 꺼내 슬라이드 편집기에서 고칠 수 있게")).clicked() {
             let mut c = app.core.lock();
             let n = hymns::load(&c, &file).map(|m| m["slides"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
             match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), false) {
@@ -258,7 +258,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
                 }
             }
         }
-        if ui.small_button("자동으로 나누기").on_hover_text("한 PPT 를 순서 이름·찬송 장·성경 장절로 여러 순서로 나눕니다 (AI 없이)").clicked() {
+        if ui.small_button(wp_core::i18n::tr("자동으로 나누기")).on_hover_text(wp_core::i18n::tr("한 PPT 를 순서 이름·찬송 장·성경 장절로 여러 순서로 나눕니다 (AI 없이)")).clicked() {
             let mut c = app.core.lock();
             match hymns::slide_texts(&c, &file).and_then(|t| pptsplit::rule_split(&t, &title)) {
                 Ok(parts) if parts.len() > 1 => replace_with_parts(&mut c, i, it, &parts),
@@ -266,7 +266,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
                 Err(e) => c.notify(e, "error"),
             }
         }
-        if ui.small_button("AI 로 나누기").on_hover_text("주보 AI 와 같은 오픈라우터 키·모델").clicked() {
+        if ui.small_button(wp_core::i18n::tr("AI 로 나누기")).on_hover_text(wp_core::i18n::tr("주보 AI 와 같은 오픈라우터 키·모델")).clicked() {
             let prep = {
                 let c = app.core.lock();
                 let ai = c.settings.get()["ai"].clone();
@@ -300,7 +300,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
                 Err(e) => app.core.lock().notify(e, "error"),
             }
         }
-        if ui.small_button("모아보기 그림 저장").on_hover_text("슬라이드 16장씩 번호를 붙인 그림 — 글자가 없는 PPT 를 채팅 AI 에 올릴 때").clicked() {
+        if ui.small_button(wp_core::i18n::tr("모아보기 그림 저장")).on_hover_text(wp_core::i18n::tr("슬라이드 16장씩 번호를 붙인 그림 — 글자가 없는 PPT 를 채팅 AI 에 올릴 때")).clicked() {
             match wp_core::pptsheets::inputs(&app.core.lock(), &file) {
                 Ok(inp) => {
                     app.core.lock().notify("모아보기 그림을 만드는 중…", "info");
@@ -315,7 +315,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
                 Err(e) => app.core.lock().notify(e, "error"),
             }
         }
-        if ui.small_button("채팅 AI 프롬프트 복사").on_hover_text("ChatGPT·Claude·Gemini 에 붙여 넣고, 답을 아래 칸에 붙여 넣으세요").clicked() {
+        if ui.small_button(wp_core::i18n::tr("채팅 AI 프롬프트 복사")).on_hover_text(wp_core::i18n::tr("ChatGPT·Claude·Gemini 에 붙여 넣고, 답을 아래 칸에 붙여 넣으세요")).clicked() {
             let r = {
                 let c = app.core.lock();
                 // [트랙 A] 글자가 없는 PPT: 모아보기 그림 수를 프롬프트에 (그림은 '모아보기 저장' 으로)
@@ -332,8 +332,8 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
     });
     let mut ans: String = get(ui, ANSWER);
     ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        let go = ui.small_button("나누기").clicked();
-        ui.add(egui::TextEdit::singleline(&mut ans).hint_text("채팅 AI 답 (JSON) 붙여 넣기").desired_width(ui.available_width().max(40.0)));
+        let go = ui.small_button(wp_core::i18n::tr("나누기")).clicked();
+        ui.add(egui::TextEdit::singleline(&mut ans).hint_text(wp_core::i18n::tr("채팅 AI 답 (JSON) 붙여 넣기")).desired_width(ui.available_width().max(40.0)));
         if go && !ans.trim().is_empty() {
             let mut c = app.core.lock();
             match hymns::slide_texts(&c, &file).and_then(|t| pptsplit::parse_answer(&ans, t.len(), &title)) {
@@ -431,11 +431,11 @@ fn paste(app: &mut App, ui: &egui::Ui, acts: &mut Vec<Act>) {
 pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
     let mut changed = false;
     let file = e["file"].as_str().unwrap_or("").to_string();
-    ui.label(RichText::new("PPT 파일").small());
+    ui.label(RichText::new(wp_core::i18n::tr("PPT 파일")).small());
     ui.horizontal(|ui| {
         let short = file.rsplit(['\\', '/']).next().unwrap_or("");
         ui.label(RichText::new(if short.is_empty() { "(없음)" } else { short }).small()).on_hover_text(&file);
-        if ui.button("고르기…").clicked() {
+        if ui.button(wp_core::i18n::tr("고르기…")).clicked() {
             if let Some(p) = rfd::FileDialog::new().add_filter("PPT", &["pptx", "ppsx", "ppt", "pps"]).pick_file() {
                 let (num, title, _) = hymns::parse_name(&p);
                 e["file"] = json!(p.to_string_lossy());
@@ -447,8 +447,8 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
             }
         }
     });
-    ui.label(RichText::new("등록한 찬송가 폴더·붙여 넣은 슬라이드 폴더 안의 파일만 열립니다").small().color(Color32::GRAY));
-    ui.label(RichText::new("배경 (악보 그림일 때)").small());
+    ui.label(RichText::new(wp_core::i18n::tr("등록한 찬송가 폴더·붙여 넣은 슬라이드 폴더 안의 파일만 열립니다")).small().color(Color32::GRAY));
+    ui.label(RichText::new(wp_core::i18n::tr("배경 (악보 그림일 때)")).small());
     let mut bg = e["background"].as_str().unwrap_or("default").to_string();
     ui.horizontal_wrapped(|ui| {
         for (v, l) in [("default", "설정대로"), ("original", "파일 배경"), ("template", "템플릿 배경"), ("#ffffff", "흰색"), ("#000000", "검정")] {
@@ -458,13 +458,13 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
             }
         }
     });
-    ui.label(RichText::new("슬라이드 범위 (예: 5-9, 비우면 전부)").small());
+    ui.label(RichText::new(wp_core::i18n::tr("슬라이드 범위 (예: 5-9, 비우면 전부)")).small());
     let mut r = e["range"].as_str().unwrap_or("").to_string();
     if ui.add(egui::TextEdit::singleline(&mut r).desired_width(f32::INFINITY)).changed() {
         e["range"] = json!(r);
         changed = true;
     }
-    ui.label(RichText::new("OBS 자막 가사 (비우면 PPT 안의 글자 · 새찬송가 가사. 빈 줄로 슬라이드마다)").small());
+    ui.label(RichText::new(wp_core::i18n::tr("OBS 자막 가사 (비우면 PPT 안의 글자 · 새찬송가 가사. 빈 줄로 슬라이드마다)")).small());
     let mut o = e["obsLyrics"].as_str().unwrap_or("").to_string();
     if ui.add(egui::TextEdit::multiline(&mut o).desired_rows(4).desired_width(f32::INFINITY)).changed() {
         e["obsLyrics"] = json!(o);

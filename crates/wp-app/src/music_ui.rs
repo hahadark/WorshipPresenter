@@ -222,7 +222,7 @@ impl App {
             if !m.err.is_empty() {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(&m.err).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
-                    if ui.small_button("닫기").clicked() { m.err.clear(); }
+                    if ui.small_button(wp_core::i18n::tr("닫기")).clicked() { m.err.clear(); }
                 });
             }
             if m.url.is_empty() {
@@ -232,15 +232,15 @@ impl App {
                 ui.label(RichText::new(format!("🔊 {}", m.title)).strong().color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
                 let paused = !m.playing();
                 if ui.button(if paused { "▶" } else { "⏸" }).clicked() { m.toggle(); }
-                if ui.button("■").on_hover_text("정지").clicked() { m.stop(); return; }
-                if ui.button("페이드아웃").on_hover_text("3초 동안 줄이며 끄기").clicked() { m.fade_out(3000); }
+                if ui.button("■").on_hover_text(wp_core::i18n::tr("정지")).clicked() { m.stop(); return; }
+                if ui.button(wp_core::i18n::tr("페이드아웃")).on_hover_text(wp_core::i18n::tr("3초 동안 줄이며 끄기")).clicked() { m.fade_out(3000); }
                 let pos = m.position().as_secs();
-                if ui.small_button("−10초").clicked() { m.seek(Duration::from_secs(pos.saturating_sub(10))); }
-                if ui.small_button("+10초").clicked() { m.seek(Duration::from_secs(pos + 10)); }
+                if ui.small_button(wp_core::i18n::tr("−10초")).clicked() { m.seek(Duration::from_secs(pos.saturating_sub(10))); }
+                if ui.small_button(wp_core::i18n::tr("+10초")).clicked() { m.seek(Duration::from_secs(pos + 10)); }
                 ui.label(RichText::new(format!("{}:{:02}", pos / 60, pos % 60)).monospace());
                 let mut v = m.base;
                 if ui.add(egui::Slider::new(&mut v, 0.0..=1.0).text("소리")).changed() { m.set_volume(v); }
-                ui.checkbox(&mut m.looped, "반복");
+                ui.checkbox(&mut m.looped, wp_core::i18n::tr("반복"));
             });
         });
     }

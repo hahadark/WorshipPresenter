@@ -42,14 +42,14 @@ impl HistoryUi {
         if self.open {
             let hist = core.lock().settings.get()["history"].as_array().cloned().unwrap_or_default();
             let mut open = self.open;
-            egui::Window::new("송출 기록").open(&mut open).default_size([520.0, 520.0]).show(ctx, |ui| {
+            egui::Window::new(wp_core::i18n::tr("송출 기록")).open(&mut open).default_size([520.0, 520.0]).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(format!("{}개 (최근 300개)", hist.len()));
-                    if ui.button("기록 지우기").clicked() {
+                    if ui.button(wp_core::i18n::tr("기록 지우기")).clicked() {
                         wp_core::templates::clear_history(&mut core.lock().settings);
                     }
                 });
-                ui.label(RichText::new("누르면 미리보기, 두 번 누르면 송출").small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("누르면 미리보기, 두 번 누르면 송출")).small().color(Color32::GRAY));
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for h in &hist {
                         let q = h["query"].as_str().unwrap_or("").to_string();
@@ -70,24 +70,24 @@ impl HistoryUi {
         if self.usage_open {
             let mut open = self.usage_open;
             let f = usage::Filter { from: self.from.trim().into(), to: self.to.trim().into(), kinds: vec![], q: self.q.clone() };
-            egui::Window::new("사용 기록 (저작권 보고)").open(&mut open).default_size([720.0, 540.0]).show(ctx, |ui| {
+            egui::Window::new(wp_core::i18n::tr("사용 기록 (저작권 보고)")).open(&mut open).default_size([720.0, 540.0]).show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("부터");
+                    ui.label(wp_core::i18n::tr("부터"));
                     ui.add(egui::TextEdit::singleline(&mut self.from).hint_text("2026-11-01").desired_width(90.0));
-                    ui.label("까지");
+                    ui.label(wp_core::i18n::tr("까지"));
                     ui.add(egui::TextEdit::singleline(&mut self.to).hint_text("2026-11-30").desired_width(90.0));
-                    ui.add(egui::TextEdit::singleline(&mut self.q).hint_text("제목 찾기").desired_width(140.0));
-                    ui.checkbox(&mut self.by_title, "제목별 횟수");
+                    ui.add(egui::TextEdit::singleline(&mut self.q).hint_text(wp_core::i18n::tr("제목 찾기")).desired_width(140.0));
+                    ui.checkbox(&mut self.by_title, wp_core::i18n::tr("제목별 횟수"));
                 });
                 ui.horizontal(|ui| {
-                    if ui.button("CSV 저장…").clicked() {
+                    if ui.button(wp_core::i18n::tr("CSV 저장…")).clicked() {
                         let csv = usage::csv(&core.lock().store.db, &f, self.by_title);
                         let name = format!("WorshipCue-사용기록{}.csv", if self.by_title { "-제목별" } else { "" });
                         if let Some(p) = rfd::FileDialog::new().set_file_name(&name).add_filter("CSV", &["csv"]).save_file() {
                             self.msg = match std::fs::write(&p, csv) { Ok(()) => format!("저장했습니다: {}", p.display()), Err(e) => format!("저장 실패: {e}") };
                         }
                     }
-                    if ui.button(RichText::new("모두 지우기").color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
+                    if ui.button(RichText::new(wp_core::i18n::tr("모두 지우기")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
                         let n = usage::clear(&core.lock().store.db, "");
                         self.msg = format!("{n}줄을 지웠습니다.");
                     }
@@ -121,11 +121,11 @@ impl HistoryUi {
         }
         if self.about_open {
             let mut open = self.about_open;
-            egui::Window::new("정보").open(&mut open).default_size([520.0, 420.0]).show(ctx, |ui| {
-                ui.heading("워십프리젠터 (Rust 판)");
+            egui::Window::new(wp_core::i18n::tr("정보")).open(&mut open).default_size([520.0, 420.0]).show(ctx, |ui| {
+                ui.heading(wp_core::i18n::tr("워십프리젠터 (Rust 판)"));
                 ui.label(format!("버전 {} · 라이선스 GPL-3.0-or-later", env!("CARGO_PKG_VERSION")));
                 ui.separator();
-                ui.label("가져다 쓴 공개 코드·글꼴");
+                ui.label(wp_core::i18n::tr("가져다 쓴 공개 코드·글꼴"));
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let notices = include_str!("../../../THIRD_PARTY_NOTICES.md");
                     ui.label(RichText::new(notices).small());

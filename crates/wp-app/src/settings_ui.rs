@@ -50,7 +50,7 @@ impl SettingsUi {
         let mut open = self.open;
         let mut data = core.lock().settings.get().clone();
         let mut ch = false;
-        egui::Window::new("설정").open(&mut open).default_size([640.0, 560.0]).show(ctx, |ui| {
+        egui::Window::new(wp_core::i18n::tr("설정")).open(&mut open).default_size([640.0, 560.0]).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 for (i, n) in ["일반", "출력", "단축키", "조작 화면"].iter().enumerate() {
                     if ui.selectable_label(self.tab == i as u8, *n).clicked() {
@@ -103,7 +103,7 @@ impl SettingsUi {
                         }
                         ch |= text(ui, &mut data, &["reservedKeys"], "다른 프로그램 키 (쉼표로)", 300.0);
                         ui.end_row();
-                        if ui.button("기본 단축키로").clicked() {
+                        if ui.button(wp_core::i18n::tr("기본 단축키로")).clicked() {
                             data["shortcuts"] = wp_core::settings::SHORTCUTS["defaults"].clone();
                             ch = true;
                         }
@@ -117,7 +117,7 @@ impl SettingsUi {
                     }
                 });
                 if self.tab == 2 {
-                    ui.label(RichText::new("Rust 판은 아직 F5·F6·F9·F10·Ctrl+K 등 기본 키로 동작합니다. 바꾼 키는 저장만 됩니다.").small().color(Color32::GRAY));
+                    ui.label(RichText::new(wp_core::i18n::tr("Rust 판은 아직 F5·F6·F9·F10·Ctrl+K 등 기본 키로 동작합니다. 바꾼 키는 저장만 됩니다.")).small().color(Color32::GRAY));
                 }
             });
         });

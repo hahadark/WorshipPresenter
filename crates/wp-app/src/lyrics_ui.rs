@@ -80,14 +80,14 @@ impl App {
             return;
         }
         let sel_song = self.sel.and_then(|i| self.core.lock().cue.as_ref().and_then(|c| c.items.get(i).cloned())).filter(|it| it["type"] == "song");
-        egui::Window::new("웹에서 가사 찾기 (Ctrl+L)").open(&mut open).default_size([560.0, 620.0]).show(ctx, |ui| {
+        egui::Window::new(wp_core::i18n::tr("웹에서 가사 찾기 (Ctrl+L)")).open(&mut open).default_size([560.0, 620.0]).show(ctx, |ui| {
             let mut st = ST.lock();
             let mut search = false;
             ui.horizontal(|ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut st.query).hint_text("곡 제목 (가수 이름을 붙이면 더 정확)").desired_width(330.0));
+                let r = ui.add(egui::TextEdit::singleline(&mut st.query).hint_text(wp_core::i18n::tr("곡 제목 (가수 이름을 붙이면 더 정확)")).desired_width(330.0));
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { search = true; }
-                if ui.button("찾기").clicked() { search = true; }
-                ui.label(RichText::new("벅스·지니·멜론").small().color(Color32::GRAY));
+                if ui.button(wp_core::i18n::tr("찾기")).clicked() { search = true; }
+                ui.label(RichText::new(wp_core::i18n::tr("벅스·지니·멜론")).small().color(Color32::GRAY));
             });
             if search && !st.query.trim().is_empty() {
                 let q = st.query.trim().to_string();
@@ -112,16 +112,16 @@ impl App {
             }
             ui.separator();
             ui.horizontal(|ui| {
-                ui.label("슬라이드마다");
+                ui.label(wp_core::i18n::tr("슬라이드마다"));
                 let mut n = st.lines;
                 if ui.add(egui::DragValue::new(&mut n).range(1..=6).suffix("줄")).changed() {
                     st.lines = n;
                     // 이름표가 없는 원문일 때만 다시 나눔 (이미 정리한 글은 그대로)
                 }
-                ui.label("부를 순서");
-                ui.add(egui::TextEdit::singleline(&mut st.order).desired_width(240.0).hint_text("비우면 가사 순서대로"));
+                ui.label(wp_core::i18n::tr("부를 순서"));
+                ui.add(egui::TextEdit::singleline(&mut st.order).desired_width(240.0).hint_text(wp_core::i18n::tr("비우면 가사 순서대로")));
             });
-            ui.add(egui::TextEdit::multiline(&mut st.lyrics).desired_rows(14).desired_width(f32::INFINITY).hint_text("곡을 고르면 가사가 [1절]·[후렴] 으로 정리되어 여기 나옵니다. 바로 고쳐도 됩니다."));
+            ui.add(egui::TextEdit::multiline(&mut st.lyrics).desired_rows(14).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("곡을 고르면 가사가 [1절]·[후렴] 으로 정리되어 여기 나옵니다. 바로 고쳐도 됩니다.")));
             let has = !st.lyrics.trim().is_empty();
             let title = st.picked.as_ref().map(|p| clean_title(p["title"].as_str().unwrap_or(""))).unwrap_or_default();
             let artist = st.picked.as_ref().map(|p| p["artist"].as_str().unwrap_or("").to_string()).unwrap_or_default();
@@ -158,14 +158,14 @@ impl App {
                         }
                     }
                 }
-                if ui.add_enabled(has, egui::Button::new("찬양 라이브러리에 저장")).clicked() {
+                if ui.add_enabled(has, egui::Button::new(wp_core::i18n::tr("찬양 라이브러리에 저장"))).clicked() {
                     let r = self.core.lock().save_song(&json!({ "title": title, "lyrics": lyrics, "credit": artist, "arrangement": order }));
                     ST.lock().note = match r { Ok(_) => format!("'{title}' 을(를) 찬양 라이브러리에 저장했습니다."), Err(e) => e.to_string() };
                 }
             });
             let note = ST.lock().note.clone();
             if !note.is_empty() { ui.label(RichText::new(note).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
-            ui.label(RichText::new("고른 곡 하나씩만 읽습니다. 사이트 구조가 바뀌어 못 읽으면 가사를 복사해 붙여 넣으세요.").small().color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("고른 곡 하나씩만 읽습니다. 사이트 구조가 바뀌어 못 읽으면 가사를 복사해 붙여 넣으세요.")).small().color(Color32::GRAY));
         });
         ST.lock().open = open;
     }

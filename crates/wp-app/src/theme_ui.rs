@@ -15,8 +15,8 @@ impl ThemeUi {
             return;
         }
         let mut open = self.open;
-        egui::Window::new("테마 고르기").open(&mut open).default_size([560.0, 520.0]).show(ctx, |ui| {
-            ui.label(RichText::new("적용하면 그 테마의 템플릿을 기본값으로 다시 만들어 출력에 지정합니다 (고친 같은 테마 템플릿은 되돌아갑니다).").small().color(Color32::GRAY));
+        egui::Window::new(wp_core::i18n::tr("테마 고르기")).open(&mut open).default_size([560.0, 520.0]).show(ctx, |ui| {
+            ui.label(RichText::new(wp_core::i18n::tr("적용하면 그 테마의 템플릿을 기본값으로 다시 만들어 출력에 지정합니다 (고친 같은 테마 템플릿은 되돌아갑니다).")).small().color(Color32::GRAY));
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 let mut group = String::new();
                 for t in themes::list_themes() {
@@ -40,9 +40,9 @@ impl ThemeUi {
                                     Err(e) => c.notify(e, "error"),
                                 }
                             };
-                            if ui.button("OBS 자막만").clicked() { go(&["overlay"]); }
-                            if ui.button("예배당만").clicked() { go(&["main"]); }
-                            if ui.button("둘 다 적용").clicked() { go(&[]); }
+                            if ui.button(wp_core::i18n::tr("OBS 자막만")).clicked() { go(&["overlay"]); }
+                            if ui.button(wp_core::i18n::tr("예배당만")).clicked() { go(&["main"]); }
+                            if ui.button(wp_core::i18n::tr("둘 다 적용")).clicked() { go(&[]); }
                         });
                     });
                     ui.separator();
@@ -57,14 +57,14 @@ impl ThemeUi {
 pub fn item_templates(ui: &mut egui::Ui, e: &mut serde_json::Value, core: &Shared) -> bool {
     let tpls: Vec<(String, String)> = core.lock().settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
     let mut ch = false;
-    ui.label(RichText::new("이 순서에만 쓸 템플릿 (비우면 기본)").small());
+    ui.label(RichText::new(wp_core::i18n::tr("이 순서에만 쓸 템플릿 (비우면 기본)")).small());
     for (key, label, salt) in [("tplMain", "예배당", "it-tm"), ("tplOverlay", "OBS 자막", "it-to")] {
         ui.horizontal(|ui| {
-            ui.label(label);
+            ui.label(wp_core::i18n::tr(label));
             let cur = e[key].as_str().unwrap_or("").to_string();
             let name = tpls.iter().find(|t| t.0 == cur).map(|t| t.1.clone()).unwrap_or_else(|| "(기본)".into());
             egui::ComboBox::from_id_salt(salt).selected_text(name).width(220.0).show_ui(ui, |ui| {
-                if ui.selectable_label(cur.is_empty(), "(기본)").clicked() { e[key] = serde_json::json!(""); ch = true; }
+                if ui.selectable_label(cur.is_empty(), wp_core::i18n::tr("(기본)")).clicked() { e[key] = serde_json::json!(""); ch = true; }
                 for (id, n) in &tpls {
                     if ui.selectable_label(*id == cur, n).clicked() { e[key] = serde_json::json!(id); ch = true; }
                 }
@@ -72,8 +72,8 @@ pub fn item_templates(ui: &mut egui::Ui, e: &mut serde_json::Value, core: &Share
         });
     }
     ui.horizontal(|ui| {
-        ui.label("테마로");
-        egui::ComboBox::from_id_salt("it-theme").selected_text("고르기…").width(220.0).show_ui(ui, |ui| {
+        ui.label(wp_core::i18n::tr("테마로"));
+        egui::ComboBox::from_id_salt("it-theme").selected_text(wp_core::i18n::tr("고르기…")).width(220.0).show_ui(ui, |ui| {
             for t in themes::list_themes() {
                 if ui.selectable_label(false, t["name"].as_str().unwrap_or("")).clicked() {
                     if let Ok(ids) = themes::ensure_theme(&mut core.lock(), t["id"].as_str().unwrap_or("")) {

@@ -38,7 +38,7 @@ impl TemplateUi {
             self.dirty = false;
         }
         let mut open = self.open;
-        egui::Window::new("출력 템플릿").open(&mut open).default_size([1100.0, 760.0]).vscroll(false).show(ctx, |ui| {
+        egui::Window::new(wp_core::i18n::tr("출력 템플릿")).open(&mut open).default_size([1100.0, 760.0]).vscroll(false).show(ctx, |ui| {
             ui.horizontal_top(|ui| {
                 // 왼쪽: 템플릿 목록
                 ui.vertical(|ui| {
@@ -58,7 +58,7 @@ impl TemplateUi {
                         }
                     });
                     ui.separator();
-                    if ui.button("새 템플릿").clicked() {
+                    if ui.button(wp_core::i18n::tr("새 템플릿")).clicked() {
                         let mut t = wp_core::settings::TEMPLATE_BASE.clone();
                         t["id"] = json!("");
                         t["name"] = json!("새 템플릿");
@@ -92,7 +92,7 @@ impl TemplateUi {
                     ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(1.0, Color32::from_gray(80)), egui::StrokeKind::Outside);
                     ui.add_space(8.0);
                     ui.horizontal_wrapped(|ui| {
-                        if ui.add_enabled(self.dirty, egui::Button::new("저장")).clicked() {
+                        if ui.add_enabled(self.dirty, egui::Button::new(wp_core::i18n::tr("저장"))).clicked() {
                             let r = templates::save_template(&mut core.lock().settings, &self.draft);
                             match r {
                                 Ok(t) => {
@@ -107,13 +107,13 @@ impl TemplateUi {
                                 Err(e) => self.msg = e,
                             }
                         }
-                        if ui.button("복제").clicked() && !self.sel.is_empty() {
+                        if ui.button(wp_core::i18n::tr("복제")).clicked() && !self.sel.is_empty() {
                             match templates::duplicate_template(&mut core.lock().settings, &self.sel, None) {
                                 Ok(t) => { self.sel = t["id"].as_str().unwrap_or("").into(); self.draft = t; self.dirty = false; self.msg = "복제했습니다.".into(); }
                                 Err(e) => self.msg = e,
                             }
                         }
-                        if ui.button(RichText::new("삭제").color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() && !self.sel.is_empty() {
+                        if ui.button(RichText::new(wp_core::i18n::tr("삭제")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() && !self.sel.is_empty() {
                             match templates::delete_template(&mut core.lock().settings, &self.sel) {
                                 Ok(()) => { self.sel.clear(); self.draft = Value::Null; self.msg = "삭제했습니다.".into(); }
                                 Err(e) => self.msg = e,
@@ -128,7 +128,7 @@ impl TemplateUi {
                             }
                         }
                     });
-                    if self.dirty { ui.label(RichText::new("저장하지 않은 고침이 있습니다").small().color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
+                    if self.dirty { ui.label(RichText::new(wp_core::i18n::tr("저장하지 않은 고침이 있습니다")).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
                     if !self.msg.is_empty() { ui.label(RichText::new(&self.msg).small()); }
                 });
             });
@@ -145,7 +145,7 @@ pub fn fields(ui: &mut egui::Ui, t: &mut Value) -> bool {
     let grid = |ui: &mut egui::Ui, id: &str, f: &mut dyn FnMut(&mut egui::Ui)| {
         egui::Grid::new(id).num_columns(4).spacing([8.0, 6.0]).min_col_width(70.0).show(ui, |ui| f(ui));
     };
-    ui.heading("기본");
+    ui.heading(wp_core::i18n::tr("기본"));
     grid(ui, "g-basic", &mut |ui| {
         ch |= text(ui, t, &["name"], "이름", 200.0);
         ui.end_row();
@@ -156,7 +156,7 @@ pub fn fields(ui: &mut egui::Ui, t: &mut Value) -> bool {
         ch |= check(ui, t, &["clearHidesBackground"], "글자 숨김 때 배경도 숨김");
         ui.end_row();
     });
-    ui.heading("배경");
+    ui.heading(wp_core::i18n::tr("배경"));
     grid(ui, "g-bg", &mut |ui| {
         ch |= pick(ui, t, &["background", "type"], "종류", &[("color", "단색"), ("gradient", "그라데이션"), ("image", "그림"), ("video", "영상"), ("camera", "카메라"), ("transparent", "투명 (OBS)")]);
         ch |= color(ui, t, &["background", "color"], "색");
@@ -170,7 +170,7 @@ pub fn fields(ui: &mut egui::Ui, t: &mut Value) -> bool {
         ch |= text(ui, t, &["background", "video"], "영상 주소", 200.0);
         ui.end_row();
     });
-    ui.heading("글꼴");
+    ui.heading(wp_core::i18n::tr("글꼴"));
     grid(ui, "g-font", &mut |ui| {
         ch |= text(ui, t, &["font", "family"], "글꼴", 200.0);
         ch |= color(ui, t, &["font", "color"], "색");
@@ -188,7 +188,7 @@ pub fn fields(ui: &mut egui::Ui, t: &mut Value) -> bool {
         ch |= pick(ui, t, &["valign"], "세로 정렬", &[("top", "위"), ("middle", "가운데"), ("bottom", "아래")]);
         ui.end_row();
     });
-    ui.heading("여백(px)");
+    ui.heading(wp_core::i18n::tr("여백(px)"));
     grid(ui, "g-pad", &mut |ui| {
         ch |= num(ui, t, &["padding", "top"], "위", 0.0, 4000.0, 1.0);
         ch |= num(ui, t, &["padding", "bottom"], "아래", 0.0, 4000.0, 1.0);
@@ -197,7 +197,7 @@ pub fn fields(ui: &mut egui::Ui, t: &mut Value) -> bool {
         ch |= num(ui, t, &["padding", "right"], "오른쪽", 0.0, 4000.0, 1.0);
         ui.end_row();
     });
-    ui.heading("절 번호 · 장절 · 번역본 · 소제목");
+    ui.heading(wp_core::i18n::tr("절 번호 · 장절 · 번역본 · 소제목"));
     grid(ui, "g-ref", &mut |ui| {
         ch |= check(ui, t, &["verseNumbers", "show"], "절 번호");
         ch |= check(ui, t, &["verseBreak"], "절마다 줄바꿈");
@@ -227,7 +227,7 @@ pub fn fields(ui: &mut egui::Ui, t: &mut Value) -> bool {
         ch |= color(ui, t, &["headings", "color"], "소제목 색");
         ui.end_row();
     });
-    ui.heading("상자 · 외곽선 · 그림자");
+    ui.heading(wp_core::i18n::tr("상자 · 외곽선 · 그림자"));
     grid(ui, "g-box", &mut |ui| {
         ch |= check(ui, t, &["box", "enabled"], "글 상자");
         ch |= color(ui, t, &["box", "color"], "상자 색");
@@ -250,7 +250,7 @@ pub fn fields(ui: &mut egui::Ui, t: &mut Value) -> bool {
         ch |= text(ui, t, &["shadow", "color"], "그림자 색", 160.0);
         ui.end_row();
     });
-    ui.heading("넘김 · PPT · 로고");
+    ui.heading(wp_core::i18n::tr("넘김 · PPT · 로고"));
     grid(ui, "g-etc", &mut |ui| {
         ch |= pick(ui, t, &["animation", "type"], "넘김", &[("dissolve", "디졸브"), ("cut", "컷")]);
         ch |= num(ui, t, &["animation", "duration"], "시간(ms)", 0.0, 5000.0, 10.0);
