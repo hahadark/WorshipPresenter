@@ -255,36 +255,11 @@ impl App {
         }
         ui.add(egui::TextEdit::singleline(&mut self.tb.lib_q).hint_text(wp_core::i18n::tr("파일 이름으로 찾기")));
         let files = self.core.lock().search_lib(&kind, &self.tb.lib_q, "");
-        egui::ScrollArea::vertical().id_salt("libfiles").show(ui, |ui| {
-            for f in files.iter().take(300) {
-                ui.horizontal(|ui| {
-                    ui.label(format!("{}{}", if f["video"] == true { "🎞 " } else { "" }, f["name"].as_str().unwrap_or("")));
-                    let url = f["url"].as_str().unwrap_or("").to_string();
-                    let name = f["name"].as_str().unwrap_or("").to_string();
-                    if kind == "image" {
-                        if ui.small_button(wp_core::i18n::tr("순서로")).clicked() {
-                            let it = if f["video"] == true { json!({ "type": "video", "title": name, "file": url, "sound": true, "volume": 1.0, "loop": false, "endAction": "hold" }) } else { json!({ "type": "image", "title": name, "image": url }) };
-                            let mut x = wp_core::core::new_item(it["type"].as_str().unwrap(), &name); wp_core::settings::merge_into(&mut x, &it);
-                            self.add_to_cue(x);
-                        }
-                        if ui.small_button(wp_core::i18n::tr("배경으로")).clicked() {
-                            let ty = if f["video"] == true { "video" } else { "image" };
-                            self.core.lock().set_background_media(Some(json!({ "type": ty, "url": url, "label": name, "fit": "cover" })));
-                        }
-                    } else if ui.small_button("▶").on_hover_text(wp_core::i18n::tr("바로 재생 (조작 PC)")).clicked() {
-                        crate::music_ui::play_now(&url, &name);
-                    } else if ui.small_button(wp_core::i18n::tr("고른 순서 배경 음악")).clicked() {
-                        if let Some(i) = self.sel {
-                            let mut c = self.core.lock();
-                            c.remember_items();
-                            if let Some(cue) = &mut c.cue { if let Some(it) = cue.items.get_mut(i) { it["music"] = json!(url); } }
-                            c.save_cue();
-                            self.edit = None;
-                        }
-                    }
-                });
-            }
-        });
+        if kind == "image" {
+            self.lib_grid(ui, &files); // 썸네일 격자
+        } else {
+            egui::ScrollArea::vertical().id_salt("libfiles").show(ui, |ui| {                 for f in files.iter().take(300) {                     ui.horizontal(|ui| {                         ui.label(format!("{}{}", if f["video"] == true { "🎞 " } else { "" }, f["name"].as_str().unwrap_or("")));                         let url = f["url"].as_str().unwrap_or("").to_string();                         let name = f["name"].as_str().unwrap_or("").to_string();                         if kind == "image" {                             if ui.small_button(wp_core::i18n::tr("순서로")).clicked() {                                 let it = if f["video"] == true { json!({ "type": "video", "title": name, "file": url, "sound": true, "volume": 1.0, "loop": false, "endAction": "hold" }) } else { json!({ "type": "image", "title": name, "image": url }) };                                 let mut x = wp_core::core::new_item(it["type"].as_str().unwrap(), &name); wp_core::settings::merge_into(&mut x, &it);                                 self.add_to_cue(x);                             }                             if ui.small_button(wp_core::i18n::tr("배경으로")).clicked() {                                 let ty = if f["video"] == true { "video" } else { "image" };                                 self.core.lock().set_background_media(Some(json!({ "type": ty, "url": url, "label": name, "fit": "cover" })));                             }                         } else if ui.small_button("▶").on_hover_text(wp_core::i18n::tr("바로 재생 (조작 PC)")).clicked() {                             crate::music_ui::play_now(&url, &name);                         } else if ui.small_button(wp_core::i18n::tr("고른 순서 배경 음악")).clicked() {                             if let Some(i) = self.sel {                                 let mut c = self.core.lock();                                 c.remember_items();                                 if let Some(cue) = &mut c.cue { if let Some(it) = cue.items.get_mut(i) { it["music"] = json!(url); } }                                 c.save_cue();                                 self.edit = None;                             }                         }                     });                 }             });
+        }
         if ui.button(wp_core::i18n::tr("배경 미디어 끄기")).clicked() { self.core.lock().set_background_media(None); }
     }
 

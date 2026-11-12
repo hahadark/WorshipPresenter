@@ -11,3 +11,7 @@ license = "GPL-3.0-or-later"
 opt-level = 3
 lto = "thin"
 strip = true
+
+# [트랙 B] 개발 빌드에서도 의존 크레이트(그림 읽기·PPT 그리기 등)는 최적화 — 썸네일·그림 처리가 수십 배 느리던 것
+[profile.dev.package."*"]
+opt-level = 2

@@ -27,6 +27,9 @@ pub struct SysState {
     seq: u64,
     // 카메라
     cam_edit: Option<(String, Value)>,
+    /// 점검용: 그리기 판 자리 · 넣은 단계
+    canvas: Option<Rect>,
+    inject_step: usize,
 }
 
 pub static ST: Lazy<Mutex<SysState>> = Lazy::new(|| Mutex::new(SysState { pen_width: 0.006, spot_r: 0.18, ..Default::default() }));
@@ -280,6 +283,7 @@ impl App {
             let h = (w * th / tw).min(ui.available_height() - 8.0).max(100.0);
             let (resp, painter) = ui.allocate_painter(Vec2::new(h * tw / th, h), Sense::click_and_drag());
             let rect = resp.rect;
+            ST.lock().canvas = Some(rect);
             let pc = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
             let slide = live.as_ref().and_then(|l| l.deck.slides.get(l.deck.index));
             let ver = live.as_ref().map(|l| l.deck.passage["versionName"].as_str().unwrap_or("").to_string()).unwrap_or_default();
@@ -287,7 +291,23 @@ impl App {
             // 지금 그려진 것
             if let Some(sp) = d["spot"].as_object() {
                 let (x, y, r) = (sp["x"].as_f64().unwrap_or(0.5) as f32, sp["y"].as_f64().unwrap_or(0.5) as f32, sp["r"].as_f64().unwrap_or(0.18) as f32);
-                painter.rect_filled(rect, 0.0, Color32::from_black_alpha(120));
+                // 출력 화면처럼: 원 밖만 어둡게 (egui 에는 구멍 뚫린 도형이 없어 가로 띠로 나눠 칠한다)
+                let (cx, cy, rr) = (rect.left() + x * rect.width(), rect.top() + y * rect.height(), r * rect.height());
+                let dim = Color32::from_black_alpha(168);
+                let step = 2.0;
+                let mut yy = rect.top();
+                while yy < rect.bottom() {
+                    let y2 = (yy + step).min(rect.bottom());
+                    let dy = (yy + step / 2.0 - cy).abs();
+                    if dy >= rr {
+                        painter.rect_filled(Rect::from_min_max(Pos2::new(rect.left(), yy), Pos2::new(rect.right(), y2)), 0.0, dim);
+                    } else {
+                        let half = (rr * rr - dy * dy).sqrt();
+                        painter.rect_filled(Rect::from_min_max(Pos2::new(rect.left(), yy), Pos2::new((cx - half).max(rect.left()), y2)), 0.0, dim);
+                        painter.rect_filled(Rect::from_min_max(Pos2::new((cx + half).min(rect.right()), yy), Pos2::new(rect.right(), y2)), 0.0, dim);
+                    }
+                    yy = y2;
+                }
                 painter.circle_stroke(Pos2::new(rect.left() + x * rect.width(), rect.top() + y * rect.height()), r * rect.height(), Stroke::new(2.0, Color32::from_white_alpha(160)));
             }
             for s in d["strokes"].as_array().into_iter().flatten() {
@@ -401,5 +421,39 @@ impl App {
             }
         });
         ST.lock().cameras = open;
+    }
+}
+
+/// 점검용 (--draw-test): 그리기 판에 진짜 마우스 입력을 흉내 낸다 (eframe raw_input_hook → egui 의 보통 입력 처리)
+/// 30 프레임 기다린 뒤 대각선으로 한 줄 긋고, 강조 모드로 바꿔 한 번 누른다.
+pub fn inject(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    static ON: Lazy<bool> = Lazy::new(|| std::env::args().any(|a| a == "--draw-test"));
+    if !*ON {
+        return;
+    }
+    let mut st = ST.lock();
+    let Some(r) = st.canvas else { return };
+    let k = st.inject_step;
+    st.inject_step += 1;
+    let at = |fx: f32, fy: f32| Pos2::new(r.left() + fx * r.width(), r.top() + fy * r.height());
+    let btn = |pos: Pos2, pressed: bool| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let n = 16;
+    match k {
+        30 => raw.events.push(egui::Event::PointerMoved(at(0.15, 0.25))),
+        31 => raw.events.push(btn(at(0.15, 0.25), true)),
+        32..=47 => {
+            let t = (k - 31) as f32 / n as f32;
+            raw.events.push(egui::Event::PointerMoved(at(0.15 + 0.7 * t, 0.25 + 0.5 * t)));
+        }
+        48 => raw.events.push(btn(at(0.85, 0.75), false)),
+        55 => st.spot_mode = true,
+        60 => raw.events.push(egui::Event::PointerMoved(at(0.5, 0.5))),
+        61 => raw.events.push(btn(at(0.5, 0.5), true)),
+        62 => raw.events.push(btn(at(0.5, 0.5), false)),
+        63 => st.spot_mode = false,
+        _ => {}
+    }
+    if k < 70 {
+        ctx.request_repaint();
     }
 }
