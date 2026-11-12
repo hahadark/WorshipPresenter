@@ -6,6 +6,8 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 
 ## 지키는 규칙
 
+- **릴리스 정지 (2026-11-12 사용자 지시): Electron 판의 모든 기능을 옮길 때까지 릴리스·설치 파일·공개 저장소·GitHub 업로드를 하지 않는다.** 로컬 커밋만.
+
 - 커밋: `git -c user.name=hahadark -c user.email=29118505+hahadark@users.noreply.github.com commit …`, 끝에 `Co-Authored-By: Claude <모델명> <noreply@anthropic.com>`.
 - 빌드·릴리스·푸시·GitHub 저장소 만들기는 사용자가 시킬 때만. 커밋은 작업 단위마다.
 - Electron 판 저장소와 사용자의 실제 자료(`%APPDATA%\WorshipCue\data`)는 건드리지 않는다. Rust 판은 처음 실행할 때 그 자료를 **복사**(SQLite `VACUUM INTO`)해서 `%APPDATA%\WorshipPresenter-rs\data` 에서 쓴다.
