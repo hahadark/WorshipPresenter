@@ -153,6 +153,29 @@ impl Node {
             _ => {}
         }
     }
+    pub fn group(&self, p: Pane) -> Option<Node> {
+        match self {
+            Self::Split { a, b, .. } => a.group(p).or_else(|| b.group(p)),
+            n if n.contains(p) => Some(n.clone()),
+            _ => None,
+        }
+    }
+    pub fn rendered(&self, p: Pane) -> bool {
+        match self {
+            Self::Pane(x) => *x == p,
+            Self::Tabs { active, collapsed, .. } => *active == p && !collapsed,
+            Self::Split { a, b, .. } => a.rendered(p) || b.rendered(p),
+        }
+    }
+    pub fn folded(&self) -> bool {
+        matches!(self, Self::Tabs { collapsed: true, .. })
+    }
+    /// 접힌 경계는 저장 비율을 바꾸지 않는다. 펼치면 접기 전 비율을 쓴다.
+    pub fn resize_ratio(ratio: &mut f32, a: &Node, b: &Node, value: f32) {
+        if !a.folded() && !b.folded() && value.is_finite() {
+            *ratio = value.clamp(0.08, 0.92);
+        }
+    }
     fn valid(&self, seen: &mut Vec<Pane>, depth: usize) -> bool {
         if depth > 16 {
             return false;
@@ -183,6 +206,23 @@ impl Node {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Floating {
     pub pane: Pane,
+    #[serde(default)]
+    pub group: Option<Node>,
+    #[serde(default)]
+    pub position: Option<[f32; 2]>,
+    #[serde(default)]
+    pub size: Option<[f32; 2]>,
+}
+impl Floating {
+    pub fn node(&self) -> Node { self.group.clone().unwrap_or(Node::Pane(self.pane)) }
+    fn contains(&self, p: Pane) -> bool { self.node().contains(p) }
+    fn valid(&self, seen: &mut Vec<Pane>) -> bool {
+        let node = self.node();
+        !matches!(node, Node::Split { .. }) && node.contains(self.pane)
+            && node.valid(seen, 0)
+            && self.position.is_none_or(|v| v.iter().all(|x| x.is_finite()))
+            && self.size.is_none_or(|v| v.iter().all(|x| x.is_finite() && *x >= 100.0 && *x <= 20000.0))
+    }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Saved {
@@ -268,7 +308,7 @@ impl Workspace {
         n.as_ref().is_some_and(|n| n.valid(&mut seen, 0))
             && floating
                 .iter()
-                .all(|f| Node::Pane(f.pane).valid(&mut seen, 0))
+                .all(|f| f.valid(&mut seen))
     }
     pub fn load(settings: &Value) -> Self {
         let mut w = serde_json::from_value::<Self>(settings["rsWorkspace"].clone())
@@ -304,7 +344,7 @@ impl Workspace {
         {
             return;
         }
-        self.floating.retain(|f| f.pane != p);
+        self.remove_floating(p);
         self.layout = self.layout.take().and_then(|n| n.remove(p));
         if let Some(n) = &mut self.layout {
             n.insert(p, target, side)
@@ -312,7 +352,7 @@ impl Workspace {
     }
     pub fn visible(&self, p: Pane) -> bool {
         self.layout.as_ref().is_some_and(|n| n.contains(p))
-            || self.floating.iter().any(|f| f.pane == p)
+            || self.floating.iter().any(|f| f.contains(p))
     }
     pub fn toggle(&mut self, p: Pane) {
         if self.locked {
@@ -327,7 +367,7 @@ impl Workspace {
                 return;
             }
             self.layout = self.layout.take().and_then(|n| n.remove(p));
-            self.floating.retain(|f| f.pane != p)
+            self.remove_floating(p)
         } else {
             self.attach(p)
         }
@@ -336,7 +376,7 @@ impl Workspace {
         if self.locked {
             return;
         }
-        self.floating.retain(|f| f.pane != p);
+        self.remove_floating(p);
         if self.layout.as_ref().is_some_and(|n| n.contains(p)) {
             return;
         }
@@ -355,7 +395,59 @@ impl Workspace {
             return;
         }
         self.layout = self.layout.take().and_then(|n| n.remove(p));
-        self.floating.push(Floating { pane: p })
+        self.floating.push(Floating { pane: p, group: None, position: None, size: None })
+    }
+    fn remove_floating(&mut self, p: Pane) {
+        self.floating = self.floating.drain(..).filter_map(|mut f| {
+            if !f.contains(p) { return Some(f); }
+            let node = f.node().remove(p)?;
+            f.pane = match &node { Node::Pane(p) => *p, Node::Tabs { panes, .. } => panes[0], _ => unreachable!() };
+            f.group = Some(node);
+            Some(f)
+        }).collect();
+    }
+    pub fn group(&self, p: Pane) -> Option<Node> {
+        self.layout.as_ref().and_then(|n| n.group(p))
+            .or_else(|| self.floating.iter().find(|f| f.contains(p)).map(Floating::node))
+    }
+    pub fn float_group(&mut self, p: Pane) {
+        if self.locked { return; }
+        let Some(group) = self.layout.as_ref().and_then(|n| n.group(p)) else { return; };
+        if self.layout.as_ref().unwrap().count() <= group.count() { return; }
+        for tab in Pane::ALL.into_iter().filter(|t| group.contains(*t)) {
+            self.layout = self.layout.take().and_then(|n| n.remove(tab));
+        }
+        let group = match group { Node::Tabs { panes, active, .. } => Node::Tabs { panes, active, collapsed: false }, n => n };
+        self.floating.push(Floating { pane: p, group: Some(group), position: None, size: None });
+    }
+    pub fn attach_group(&mut self, p: Pane) {
+        if self.locked { return; }
+        let Some(i) = self.floating.iter().position(|f| f.contains(p)) else { return; };
+        let node = self.floating.remove(i).node();
+        self.layout = Some(match self.layout.take() {
+            Some(n) => Node::split(true, 0.65, n, node), None => node,
+        });
+    }
+    pub fn merge_group(&mut self, p: Pane, target: Pane) {
+        if self.locked || !self.visible(target) { return; }
+        let Some(group) = self.group(p) else { return; };
+        if group.contains(target) { return; }
+        let active = match &group { Node::Tabs { active, .. } => *active, _ => p };
+        let panes: Vec<_> = match group { Node::Tabs { panes, .. } => panes, _ => vec![p] };
+        for tab in &panes {
+            self.layout = self.layout.take().and_then(|n| n.remove(*tab));
+            self.remove_floating(*tab);
+        }
+        for tab in panes.into_iter().filter(|t| *t != active).chain(std::iter::once(active)) {
+            if let Some(n) = &mut self.layout { n.insert(tab, target, 4); }
+            for f in &mut self.floating {
+                if f.contains(target) { let mut n = f.node(); n.insert(tab, target, 4); f.group = Some(n); }
+            }
+        }
+    }
+    pub fn quick_rendered(&self) -> bool {
+        self.layout.as_ref().is_some_and(|n| n.rendered(Pane::Quick))
+            || self.floating.iter().any(|f| f.node().rendered(Pane::Quick))
     }
     pub fn save_as(&mut self, name: &str) {
         if name.trim().is_empty() || self.saved.len() >= 30 {
@@ -472,5 +564,80 @@ mod tests {
         w.delete(&b);
         w.select(&a);
         assert_eq!(w.active, a);
+    }
+
+    #[test]
+    fn workspace_group_float_merge_geometry() {
+        let mut w = Workspace::default();
+        let original = w.group(Pane::Quick).unwrap();
+        w.float_group(Pane::Quick);
+        assert_eq!(w.floating.len(), 1);
+        assert_eq!(w.floating[0].node(), original);
+        w.floating[0].position = Some([-800.0, 42.0]);
+        w.floating[0].size = Some([640.0, 480.0]);
+        w.save_as("창 배치");
+        assert_eq!(Workspace::load(&serde_json::json!({"rsWorkspace":w})), w);
+        w.merge_group(Pane::Quick, Pane::Live);
+        assert!(w.floating.is_empty());
+        assert!(w.group(Pane::Live).unwrap().contains(Pane::Library));
+        assert!(Workspace::valid_layout(&w.layout, &w.floating));
+        w.float_group(Pane::Live);
+        w.attach_group(Pane::Live);
+        assert!(w.floating.is_empty());
+        assert!(Workspace::valid_layout(&w.layout, &w.floating));
+    }
+    #[test]
+    fn workspace_fold_resize_and_quick_fallback() {
+        let mut a = Node::tabs(vec![Pane::Quick, Pane::Library]);
+        let b = Node::Pane(Pane::Live);
+        let mut ratio = 0.63;
+        assert!(a.rendered(Pane::Quick));
+        if let Node::Tabs { collapsed, .. } = &mut a { *collapsed = true; }
+        Node::resize_ratio(&mut ratio, &a, &b, 0.1);
+        assert_eq!(ratio, 0.63);
+        assert!(!a.rendered(Pane::Quick));
+        if let Node::Tabs { collapsed, .. } = &mut a { *collapsed = false; }
+        Node::resize_ratio(&mut ratio, &a, &b, 0.4);
+        assert_eq!(ratio, 0.4);
+        let mut w = Workspace::default();
+        assert!(w.quick_rendered());
+        w.float_group(Pane::Quick);
+        assert!(w.quick_rendered());
+        w.toggle(Pane::Quick);
+        assert!(!w.quick_rendered());
+        assert!(w.visible(Pane::Library));
+    }
+    #[test]
+    fn workspace_group_lock_and_legacy_floating() {
+        let mut w = Workspace::default();
+        w.float(Pane::Quick);
+        let legacy = serde_json::json!({"rsWorkspace": {"version":2,"active":"b-default","locked":false,"layout":w.layout,"saved":[],"floating":[{"pane":"Quick"}]}});
+        assert!(Workspace::load(&legacy).visible(Pane::Quick));
+        w.locked = true;
+        let old = w.clone();
+        w.float_group(Pane::Cue);
+        w.merge_group(Pane::Quick, Pane::Live);
+        w.attach_group(Pane::Quick);
+        assert_eq!(w, old);
+        w.locked = false;
+        w.merge_group(Pane::Live, Pane::Quick);
+        assert!(w.floating[0].node().contains(Pane::Live));
+        assert!(Workspace::valid_layout(&w.layout, &w.floating));
+    }
+
+    #[test]
+    fn workspace_group_merge_main_and_invalid_geometry() {
+        let mut w = Workspace::default();
+        w.merge_group(Pane::Quick, Pane::Preview);
+        let group = w.group(Pane::Preview).unwrap();
+        assert!(group.contains(Pane::Library));
+        assert!(group.contains(Pane::Media));
+        assert!(Workspace::valid_layout(&w.layout, &w.floating));
+        let before = w.clone();
+        w.merge_group(Pane::Quick, Pane::Library);
+        assert_eq!(w, before);
+        w.float_group(Pane::Quick);
+        w.floating[0].size = Some([-1.0, 400.0]);
+        assert_eq!(Workspace::load(&serde_json::json!({"rsWorkspace":w})), Workspace::default());
     }
 }
