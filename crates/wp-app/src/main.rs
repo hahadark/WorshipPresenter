@@ -5,6 +5,7 @@ mod app;
 mod hymns_ui; // [트랙 A]
 mod outwin;
 mod paint;
+mod paint_edit; // [트랙 A]
 mod trackb_ui; // [트랙 B]
 mod form; // [트랙 C]
 mod history_ui; // [트랙 C]

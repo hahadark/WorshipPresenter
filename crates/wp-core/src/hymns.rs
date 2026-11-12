@@ -618,19 +618,7 @@ pub fn build_slides(core: &Core, it: &Value, opts: &SplitOpts) -> Result<Vec<Val
     let cap = |k: usize| caps.get(k).cloned().unwrap_or_default();
     let list = |k: &str| meta[k].as_array().cloned().unwrap_or_default();
     let mut out: Vec<Value> = if !list("slides").is_empty() {
-        let bgs = list("layerBgs");
-        list("slides").iter().enumerate().map(|(k, img)| {
-            let mut s = json!({ "kind": "image", "image": img, "ref": title, "label": (k + 1).to_string(), "parts": [], "caption": cap(k) });
-            // PPT 요소를 꺼낸 슬라이드는 요소를 뺀 배경 그림을 쓴다
-            let e = &it["edits"][k.to_string()];
-            if e["pptBg"].as_bool().unwrap_or(false) {
-                if let Some(b) = bgs.get(k).and_then(|x| x.as_str()).filter(|x| !x.is_empty()) {
-                    s["thumb"] = img.clone();
-                    s["image"] = json!(b);
-                }
-            }
-            s
-        }).collect()
+        list("slides").iter().enumerate().map(|(k, img)| json!({ "kind": "image", "image": img, "ref": title, "label": (k + 1).to_string(), "parts": [], "caption": cap(k), "_o": k })).collect()
     } else if !list("scores").is_empty() {
         list("scores").iter().enumerate().map(|(k, img)| json!({ "kind": "score", "image": img, "bg": bg, "ref": title, "label": (k + 1).to_string(), "parts": [], "caption": cap(k) })).collect()
     } else if list("texts").iter().any(|t| t.as_array().is_some_and(|a| !a.is_empty())) {
@@ -645,13 +633,63 @@ pub fn build_slides(core: &Core, it: &Value, opts: &SplitOpts) -> Result<Vec<Val
     if let Some((a, b)) = it["range"].as_str().and_then(range_of) {
         out = out.into_iter().skip(a - 1).take(b + 1 - a).collect();
     }
+    // PPT 요소 따로 꺼내기 (Electron cue.js buildSlides + decorate): 키는 범위를 적용한 뒤의 슬라이드 번호
+    let bgs = list("layerBgs");
+    for (j, s) in out.iter_mut().enumerate() {
+        let o = s["_o"].as_u64().map(|x| x as usize).unwrap_or(j);
+        if let Some(m) = s.as_object_mut() { m.remove("_o"); }
+        let e = &it["edits"][j.to_string()];
+        let mut edit = merge_edit(&it["edits"], &j.to_string());
+        if e["pptBg"].as_bool().unwrap_or(false) {
+            match bgs.get(o).and_then(|x| x.as_str()).filter(|x| !x.is_empty()) {
+                Some(b) => {
+                    // 목록 썸네일은 원래 슬라이드 그림 (배경만이면 빈 칸처럼 보인다)
+                    s["thumb"] = s["image"].clone();
+                    s["image"] = json!(b);
+                }
+                None => {
+                    // 배경 그림이 없으면 원래 그림 그대로 + 꺼낸 요소는 빼고 (겹쳐 보이지 않게)
+                    s["pptBgMissing"] = json!(true);
+                    if let Some(items) = edit.as_mut().and_then(|x| x["items"].as_array_mut()) {
+                        items.retain(|x| !crate::pptx::layers::is_ppt_item(x["id"].as_str().unwrap_or("")));
+                    }
+                }
+            }
+        }
+        if let Some(ed) = edit.filter(|x| x.as_object().is_some_and(|o| !o.is_empty())) {
+            s["edit"] = ed;
+        }
+    }
     // 건너뛰기 (다 건너뛰면 첫 장만)
+
     let skip: Vec<i64> = it["skip"].as_array().into_iter().flatten().filter_map(|x| x.as_i64()).collect();
     if !skip.is_empty() {
         let kept: Vec<Value> = out.iter().enumerate().filter(|(k, _)| !skip.contains(&(*k as i64))).map(|(_, s)| s.clone()).collect();
         out = if kept.is_empty() { out.into_iter().take(1).collect() } else { kept };
     }
     Ok(out)
+}
+
+/// 공통('*') + 슬라이드별 편집 합치기 (Electron slides.js mergeEdit 과 같음)
+pub fn merge_edit(edits: &Value, key: &str) -> Option<Value> {
+    let a = edits.get("*").filter(|v| v.is_object());
+    let b = edits.get(key).filter(|v| v.is_object());
+    let mut o = match (a, b) {
+        (None, None) => return None,
+        (Some(x), None) | (None, Some(x)) => return Some(x.clone()),
+        (Some(a), Some(b)) => {
+            let mut o = a.clone();
+            for (k, v) in b.as_object().unwrap() { o[k] = v.clone(); }
+            o
+        }
+    };
+    let mut style = a.unwrap()["style"].as_object().cloned().unwrap_or_default();
+    for (k, v) in b.unwrap()["style"].as_object().cloned().unwrap_or_default() { style.insert(k, v); }
+    o["style"] = Value::Object(style);
+    let mut items = a.unwrap()["items"].as_array().cloned().unwrap_or_default();
+    items.extend(b.unwrap()["items"].as_array().cloned().unwrap_or_default());
+    o["items"] = json!(items);
+    Some(o)
 }
 
 /// 꺼낸 요소 정보 (layers.json) — 없으면 None
@@ -766,5 +804,27 @@ mod tests {
         let items = split_items(&json!({ "type": "hymn", "file": "x.pptx", "title": "전체" }), &parts);
         assert_eq!(items[0]["range"], "1-2");
         assert_eq!(items[1]["title"], "기도");
+    }
+}
+
+#[cfg(test)]
+mod timing_tests {
+    /// 출시 빌드로 첫 그리기 시간 재기: cargo test --release -p wp-core first_render_timing -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn first_render_timing() {
+        let src = std::env::var("WP_TIMING_FILE").unwrap_or_else(|_| format!(r"{}\WorshipCue\data\pasted\clip-20261110-210506.pptx", std::env::var("APPDATA").unwrap()));
+        let dir = std::env::temp_dir().join(format!("wp-timing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.pptx");
+        std::fs::copy(&src, &file).unwrap();
+        for (mode, tag) in [("direct", "direct-1st"), ("direct", "direct-2nd"), ("slides", "powerpoint")] {
+            let data = dir.join(tag);
+            let t0 = std::time::Instant::now();
+            let r = super::build_meta(&data, &file.to_string_lossy(), mode);
+            println!("{tag}: {:.2}s ok={} slides={}", t0.elapsed().as_secs_f32(), r.is_ok(), r.as_ref().ok().and_then(|m| m["slides"].as_array().map(|a| a.len())).unwrap_or(0));
+            if let Err(e) = r { println!("  오류: {e}"); }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

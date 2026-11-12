@@ -24,8 +24,26 @@ fn set<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, k: &str, v: T) {
 }
 
 /// 큐시트 아래 '찬송가 찾기' + 붙여 넣기 + 고른 PPT 순서의 도구
-pub fn search_box(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
+/// 어느 탭이든 늘 (Ctrl+V 붙여 넣기 받기)
+pub fn global(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     paste(app, ui, acts);
+}
+
+/// 왼쪽 '찬송가' 탭: 찬송가·교독문 PPT · 베들레헴 찾기, 붙여 넣기, 온라인에서 찾기
+pub fn tab(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
+    set(ui, OPEN, true);
+    search_box(app, ui, acts);
+}
+
+/// 찬송가 순서 편집칸 안의 접는 칸: PPT 요소 꺼내기 · 나누기
+pub fn ppt_box(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
+    if it["type"] != "hymn" || it["file"].as_str().is_none_or(|f| f.is_empty()) {
+        return;
+    }
+    egui::CollapsingHeader::new(RichText::new("PPT 도구 (요소 따로 꺼내기 · 자동으로 나누기)").color(Color32::from_rgb(0xf0, 0x9a, 0x4a))).id_salt("ppt-box").show(ui, |ui| ppt_tools(app, ui, i, it));
+}
+
+fn search_box(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     // 왼쪽 패널을 넓히지 않게: 지금 폭 안에서만
     let w = ui.available_width().max(200.0);
     ui.scope(|ui| {
@@ -37,10 +55,8 @@ pub fn search_box(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
 fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     let mut open: bool = get(ui, OPEN);
     ui.horizontal(|ui| {
-        if ui.selectable_label(open, RichText::new("찬송가·교독문 PPT 찾기").color(Color32::from_rgb(0xf0, 0x9a, 0x4a))).clicked() {
-            open = !open;
-            set(ui, OPEN, open);
-        }
+        ui.label(RichText::new("찬송가·교독문").strong().color(Color32::from_rgb(0xf0, 0x9a, 0x4a)));
+        open = true;
         if ui.small_button("붙여 넣기").on_hover_text("클립보드의 PowerPoint 슬라이드·그림을 새 순서로 (글은 Ctrl+V)").clicked() {
             grab_clipboard(app);
         }
@@ -66,12 +82,6 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             }
         }
     });
-    if let Some(i) = app.sel {
-        let it = app.core.lock().cue.as_ref().and_then(|c| c.items.get(i).cloned());
-        if let Some(it) = it.filter(|it| it["type"] == "hymn" && it["file"].as_str().is_some_and(|f| !f.is_empty())) {
-            ppt_tools(app, ui, i, &it);
-        }
-    }
     if !open {
         return;
     }
