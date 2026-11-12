@@ -52,6 +52,7 @@ pub struct App {
     pub(crate) monitor: usize,
     last_flush: Instant,
     pub(crate) focus_search: bool,
+    pub(crate) tb: crate::trackb_ui::TbState, // [트랙 B]
     /// 점검용: --search 글 · --send · --shot 파일 (몇 초 뒤 화면을 그림 파일로 저장하고 끝냄)
     test: Option<(Instant, Option<String>, bool, Option<String>, u8)>,
 }
@@ -113,7 +114,7 @@ impl App {
         let out = OutWin::new();
         let saved = core.lock().settings.get()["rsOutputMonitor"].as_u64().map(|x| x as usize);
         let monitor = saved.filter(|m| out.monitors.iter().any(|x| x.index == *m)).unwrap_or_else(|| out.default_monitor());
-        Self { core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args() }
+        Self { core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */ }
     }
 
     fn snap(&self) -> Snap {
@@ -674,12 +675,14 @@ impl eframe::App for App {
         let mut acts = vec![];
         let typing = ctx.egui_wants_keyboard_input();
         self.shortcuts(&ctx, &mut acts, typing);
+        self.trackb_shortcuts(&ctx); // [트랙 B]
         self.run_test(&ctx, &mut acts);
         let s = self.snap();
 
         egui::Panel::top("top").show(ui, |ui| {
             ui.add_space(4.0);
             self.top_bar(ui, &s, &mut acts);
+            self.trackb_toolbar(ui); // [트랙 B]
             ui.add_space(4.0);
         });
         egui::Panel::bottom("status").show(ui, |ui| {
@@ -734,6 +737,7 @@ impl eframe::App for App {
         egui::CentralPanel::default_margins().show(ui, |ui| {
             self.search_panel(ui, &s, &mut acts);
         });
+        self.trackb_windows(&ctx); // [트랙 B]
         let _ = &s.tpl_overlay;
 
         if !acts.is_empty() {
