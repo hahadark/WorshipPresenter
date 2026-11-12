@@ -28,3 +28,6 @@ unicode-normalization = "0.1.26"
 # [트랙 A] PPT 나누기 AI (오픈라우터)
 ureq = { version = "3.5.1", features = ["json"] }
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

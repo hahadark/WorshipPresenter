@@ -331,6 +331,7 @@ impl App {
             if ui.selectable_label(s.preview_mode, "미리보기 거쳐 송출").on_hover_text("끄면 누른 본문·순서를 바로 송출합니다").clicked() {
                 acts.push(Act::TogglePreviewMode);
             }
+            crate::tools_ui::menu_button(ui); // [트랙 D] 도구 창 (상단 메뉴 줄이 생기면 옮김)
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let running = self.out.running();
                 let btn = egui::Button::new(if running { "예배당 화면 끄기" } else { "예배당 화면 켜기" }).fill(if running { Color32::from_rgb(0x2e, 0x7d, 0x4f) } else { Color32::from_rgb(0x33, 0x38, 0x44) });
@@ -744,6 +745,8 @@ impl eframe::App for App {
         });
         self.trackb_windows(&ctx); // [트랙 B]
         let _ = &s.tpl_overlay;
+        crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
+        if crate::tools_ui::take_off_request() { self.out.close(); } // [트랙 D] 리모컨 '끄기' → 예배당 창도
 
         if !acts.is_empty() {
             self.apply(acts);

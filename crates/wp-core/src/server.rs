@@ -255,7 +255,8 @@ async fn host_check(State(core): State<Shared>, req: Request<Body>, next: Next) 
     res
 }
 
-pub fn router(core: Shared) -> Router {
+/// 출력 화면 길 (조작 서버와 내부망 출력이 같이 씀) // [트랙 D] router 에서 나눔
+pub fn output_routes(core: Shared) -> Router<Shared> {
     let web = core.lock().web_dir.clone();
     let (w1, w2, w3, w4) = (web.clone(), web.clone(), web.clone(), web.clone());
     let media = core.lock().media_dir.clone();
@@ -275,6 +276,12 @@ pub fn router(core: Shared) -> Router {
         .route("/api/live", get(|State(c): State<Shared>| async move { Json(c.lock().pres.live_state()) }))
         .route("/api/ack", post(ack))
         .route("/api/command", post(command))
+}
+
+pub fn router(core: Shared) -> Router {
+    output_routes(core.clone())
+        .merge(crate::remote::dock_routes()) // [트랙 D] OBS 도킹
+        .merge(crate::trigger::routes()) // [트랙 D] 스트림덱·외부 단추
         .layer(middleware::from_fn_with_state(core.clone(), host_check))
         .with_state(core)
 }
@@ -288,6 +295,7 @@ pub async fn serve(core: Shared) -> anyhow::Result<u16> {
             Ok(l) => {
                 core.lock().port = p;
                 let app = router(core.clone());
+                crate::remote::init(core.clone()); // [트랙 D] 리모컨·내부망 서버를 설정에 맞춰 켜고 끔
                 tokio::spawn(async move {
                     if let Err(e) = axum::serve(l, app).await {
                         log::error!("서버 오류: {e}");
