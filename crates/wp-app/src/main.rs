@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod hymns_ui; // [트랙 A]
 mod outwin;
 mod paint;
 
@@ -69,6 +70,7 @@ fn main() -> anyhow::Result<()> {
     let web = web_dir();
     let core = Core::open(data_dir.clone(), web.clone(), seed_db().as_deref())?;
     let shared = Arc::new(Mutex::new(core));
+    wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
 
     // 웹 서버 (출력 화면) — 따로 tokio 실행기
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;

@@ -424,6 +424,7 @@ impl App {
                 }
             }
         });
+        crate::hymns_ui::search_box(self, ui, acts); // [트랙 A]
         if let Some(i) = self.sel.filter(|i| *i < s.items.len()) {
             ui.horizontal(|ui| {
                 if ui.button("▲").clicked() { acts.push(Act::MoveItem(i, -1)) }
@@ -509,7 +510,7 @@ impl App {
                     });
                 }
                 "hymn" => {
-                    ui.label(RichText::new("찬송가·PPT 순서는 Rust 판 다음 단계에서 송출합니다. (기존 판 자료는 그대로 남아 있습니다)").color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                    changed |= crate::hymns_ui::editor(ui, e); // [트랙 A]
                 }
                 _ => {
                     ui.label(RichText::new("이 종류는 아직 Rust 판에서 고칠 수 없습니다.").color(Color32::GRAY));
