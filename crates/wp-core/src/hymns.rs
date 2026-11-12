@@ -166,6 +166,96 @@ pub fn cache_dirs(core: &Core) -> Vec<PathBuf> {
 
 static META: Lazy<Mutex<HashMap<String, Value>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
+pub const BUILDING: &str = "PPT 를 그림으로 만드는 중입니다… 끝나면 자동으로 다시 보입니다.";
+
+/// 만드는 중인 파일 (같은 파일을 두 번 만들지 않게)
+static PENDING: Lazy<Mutex<std::collections::HashSet<String>>> = Lazy::new(|| Mutex::new(Default::default()));
+/// 코어 (백그라운드 일이 끝나면 다시 잡으려고). main 에서 install 로 넣는다
+static SHARED: once_cell::sync::OnceCell<std::sync::Weak<parking_lot::Mutex<Core>>> = once_cell::sync::OnceCell::new();
+
+pub fn install(shared: &crate::core::Shared) {
+    let _ = SHARED.set(std::sync::Arc::downgrade(shared));
+}
+
+/// 그림 만들기 (PowerPoint 또는 직접 읽기) — 코어 잠금 없이 다른 스레드에서
+pub fn build_meta(data_dir: &Path, file: &str, render: &str) -> Result<Value, String> {
+    let lower = file.to_lowercase();
+    let xml = lower.ends_with(".pptx") || lower.ends_with(".ppsx");
+    let pp = has_powerpoint();
+    if xml && (!pp || render == "direct") {
+        return crate::pptx::build::build_cache(data_dir, file);
+    }
+    if !xml && render != "slides" {
+        if let Ok(m) = crate::pps::build_cache(data_dir, file) {
+            return Ok(m);
+        }
+    }
+    if pp {
+        return export_powerpoint(data_dir, file);
+    }
+    if xml { crate::pptx::build::build_cache(data_dir, file) } else { crate::pps::build_cache(data_dir, file) }
+}
+
+fn start_build(core: &Core, file: &str) {
+    let key = norm(file);
+    if !PENDING.lock().insert(key.clone()) {
+        return;
+    }
+    let data_dir = core.data_dir.clone();
+    let render = folder_render(core, file);
+    let file = file.to_string();
+    let tx = core.tx.clone();
+    std::thread::spawn(move || {
+        let r = build_meta(&data_dir, &file, &render);
+        PENDING.lock().remove(&key);
+        let Some(shared) = SHARED.get().and_then(|w| w.upgrade()) else { return };
+        let mut c = shared.lock();
+        match r {
+            Ok(m) => {
+                let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
+                META.lock().insert(stamp, with_captions(&c, m));
+                // 이 파일 순서를 보고 있었으면 미리보기를 다시
+                let pv = c.pres.preview.as_ref().and_then(|p| p.passage["cueIndex"].as_i64());
+                let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
+                let name = Path::new(&file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                if let Some(i) = want.filter(|i| pv.is_none() || pv == Some(*i as i64)) {
+                    c.preview_item(i);
+                }
+                c.notify(format!("'{name}' 슬라이드를 만들었습니다."), "ok");
+            }
+            Err(e) => c.notify(e, "error"),
+        }
+        let _ = tx.send(crate::core::Ev::Ui);
+    });
+}
+
+/// 등록 폴더의 읽는 방식: auto | slides(PowerPoint) | direct(PowerPoint 없이)
+pub fn folder_render(core: &Core, file: &str) -> String {
+    let f = norm(file);
+    for x in core.settings.get()["hymnFolders"].as_array().into_iter().flatten() {
+        let d = norm(x["path"].as_str().unwrap_or(""));
+        if !d.is_empty() && f.starts_with(&(d.trim_end_matches('\\').to_string() + "\\")) {
+            return x["render"].as_str().unwrap_or("auto").to_string();
+        }
+    }
+    "auto".into()
+}
+
+pub fn set_folder_render(core: &mut Core, dir: &str, render: &str) {
+    let (dir, render) = (dir.to_string(), render.to_string());
+    core.settings.update(|d| {
+        if let Some(a) = d["hymnFolders"].as_array_mut() {
+            for f in a.iter_mut() {
+                if f["path"].as_str() == Some(&dir) { f["render"] = json!(render); }
+            }
+        }
+    });
+}
+
+pub fn is_building(file: &str) -> bool {
+    PENDING.lock().contains(&norm(file))
+}
+
 fn file_stamp(file: &Path) -> String {
     std::fs::metadata(file)
         .map(|m| format!("{}|{:?}", m.len(), m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis())))
@@ -254,6 +344,11 @@ try {
 }
 "#;
 
+/// 캐시 폴더 이름: 파일 경로 · 크기 · 시각 · 방식
+pub fn cache_key(file: &str, tag: &str) -> String {
+    hex16(&format!("{}|{}|{tag}", norm(file), file_stamp(Path::new(file))))
+}
+
 fn hex16(s: &str) -> String {
     // 작은 FNV-1a 64비트 → 16자리 (캐시 폴더 이름. Electron 은 sha1 앞 16자리)
     let mut h: u64 = 0xcbf29ce484222325;
@@ -264,12 +359,12 @@ fn hex16(s: &str) -> String {
     format!("{:016x}", h)
 }
 
-fn export_powerpoint(core: &Core, file: &str) -> Result<Value, String> {
+fn export_powerpoint(data_dir: &Path, file: &str) -> Result<Value, String> {
     if !has_powerpoint() {
         return Err("이 PC 에 PowerPoint 가 없어 PPT 를 그림으로 만들 수 없습니다. (PowerPoint 없이 직접 그리기는 Rust 판 다음 작업)".into());
     }
-    let key = hex16(&format!("{}|{}|slides|rs1", norm(file), file_stamp(Path::new(file))));
-    let dir = core.data_dir.join("hymn-cache").join(&key);
+    let key = cache_key(file, "slides-rs1");
+    let dir = data_dir.join("hymn-cache").join(&key);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let script = dir.join("export.ps1");
     std::fs::write(&script, format!("\u{feff}{}", PS_EXPORT)).map_err(|e| e.to_string())?;
@@ -317,15 +412,22 @@ pub fn load(core: &Core, file: &str) -> Result<Value, String> {
     }
     let meta = match find_cached(core, file) {
         Some(m) => m,
-        None => export_powerpoint(core, file)?,
+        None => {
+            // 코어 잠금 밖에서 만든다: 이번에는 '만드는 중' 으로 돌려주고, 끝나면 알림 + 미리보기 다시
+            start_build(core, file);
+            return Err(BUILDING.into());
+        }
     };
-    let meta = with_captions(meta);
+    let mut meta = with_captions(core, meta);
+    if let Some(b) = layer_bgs(core, &meta) {
+        meta["layerBgs"] = json!(b);
+    }
     META.lock().insert(stamp, meta.clone());
     Ok(meta)
 }
 
 /// 슬라이드마다 OBS 자막(가사만)용 글자: PPT 안의 글자 (새찬송가 가사 DB 는 트랙 A 다음 작업)
-pub fn with_captions(mut meta: Value) -> Value {
+pub fn with_captions(core: &Core, mut meta: Value) -> Value {
     let own: Vec<String> = if meta["slides"].is_array() {
         meta["slideTexts"].as_array().into_iter().flatten().map(|t| t.as_str().unwrap_or("").to_string()).collect()
     } else {
@@ -336,8 +438,23 @@ pub fn with_captions(mut meta: Value) -> Value {
     let re = Regex::new(r"\n\s*\n").unwrap();
     if own.iter().any(|t| !t.trim().is_empty()) {
         meta["captions"] = json!(own.iter().map(|t| re.replace_all(t, "\n").trim().to_string()).collect::<Vec<_>>());
-    } else {
-        meta["captions"] = json!([]);
+        meta["captionSource"] = json!("PPT 안의 글자");
+        return meta;
+    }
+    meta["captions"] = json!([]);
+    meta["captionSource"] = json!("");
+    // 새찬송가 폴더의 악보 PPT: 베들레헴 새찬송가 가사 DB 를 슬라이드 수에 맞춰
+    let file = meta["file"].as_str().unwrap_or("").to_string();
+    let folder_name = core.settings.get()["hymnFolders"].as_array().into_iter().flatten()
+        .find(|x| { let d = norm(x["path"].as_str().unwrap_or("")); !d.is_empty() && norm(&file).starts_with(&(d.trim_end_matches('\\').to_string() + "\\")) })
+        .map(|x| format!("{} {}", x["name"].as_str().unwrap_or(""), x["path"].as_str().unwrap_or(""))).unwrap_or_default();
+    let n = meta["slides"].as_array().or(meta["scores"].as_array()).map(|a| a.len()).unwrap_or(0);
+    let num = meta["number"].as_i64().unwrap_or(0);
+    if folder_name.contains("새찬송가") && num > 0 && n > 0 {
+        if let Some((v, c)) = crate::hymnal::lyrics(core, num) {
+            meta["captions"] = json!(crate::hymnal::align_lyrics(&v, &c, n));
+            meta["captionSource"] = json!(format!("새찬송가 가사 DB ({num}장)"));
+        }
     }
     meta
 }
@@ -414,6 +531,22 @@ pub fn build_slides(core: &Core, it: &Value, opts: &SplitOpts) -> Result<Vec<Val
         out = if kept.is_empty() { out.into_iter().take(1).collect() } else { kept };
     }
     Ok(out)
+}
+
+/// 꺼낸 요소 정보 (layers.json) — 없으면 None
+pub fn read_layers(core: &Core, meta: &Value) -> Option<Value> {
+    let key = meta["key"].as_str()?;
+    let p = cache_path(core, key, "layers.json")?;
+    serde_json::from_str(std::fs::read_to_string(p).ok()?.trim_start_matches('\u{feff}')).ok()
+}
+
+/// 요소를 뺀 배경 그림 주소들 (슬라이드마다)
+pub fn layer_bgs(core: &Core, meta: &Value) -> Option<Vec<String>> {
+    let raw = read_layers(core, meta)?;
+    let key = meta["key"].as_str()?;
+    let bgs = raw["bgs"].as_array()?;
+    let n = meta["slides"].as_array().map(|a| a.len()).unwrap_or(0);
+    Some((0..n).map(|k| bgs.get(k).and_then(|b| b.as_str()).filter(|b| !b.is_empty()).map(|b| format!("/hymn/{key}/{b}")).unwrap_or_default()).collect())
 }
 
 /// /hymn/<key>/<file> → 캐시 파일 (우리 것 → Electron 판)
