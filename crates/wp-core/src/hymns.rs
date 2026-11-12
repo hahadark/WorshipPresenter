@@ -175,6 +175,7 @@ static SHARED: once_cell::sync::OnceCell<std::sync::Weak<parking_lot::Mutex<Core
 
 pub fn install(shared: &crate::core::Shared) {
     let _ = SHARED.set(std::sync::Arc::downgrade(shared));
+    crate::pptx::build::warm_fonts();
 }
 
 /// 그림 만들기 (PowerPoint 또는 직접 읽기) — 코어 잠금 없이 다른 스레드에서

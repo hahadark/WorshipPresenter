@@ -270,11 +270,11 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             let prep = {
                 let c = app.core.lock();
                 let ai = c.settings.get()["ai"].clone();
-                hymns::slide_texts(&c, &file).map(|t| (t, ai))
+                let key = c.ai_key(); // [트랙 D] DPAPI 로 암호화한 keyEnc 를 풀어 씀
+                hymns::slide_texts(&c, &file).map(|t| (t, ai, key))
             };
             match prep {
-                Ok((texts, ai)) => {
-                    let key = ai["key"].as_str().unwrap_or("").to_string();
+                Ok((texts, ai, key)) => {
                     let model = ai["model"].as_str().unwrap_or("").to_string();
                     let endpoint = ai["endpoint"].as_str().unwrap_or("").to_string();
                     let (it2, t2) = (it.clone(), title.clone());

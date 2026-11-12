@@ -104,6 +104,17 @@ static FONTDB: Lazy<Arc<resvg::usvg::fontdb::Database>> = Lazy::new(|| {
     Arc::new(db)
 });
 
+/// 시스템 글꼴 목록을 미리 읽어 둔다 (처음 그리기가 몇 초 늦어지지 않게, 시작할 때 백그라운드에서)
+pub fn warm_fonts() {
+    std::thread::Builder::new().name("font-warm".into()).spawn(|| {
+        let t0 = std::time::Instant::now();
+        let db = &*FONTDB;
+        // 맑은 고딕 파일도 한 번 열어 디스크 캐시에 올린다
+        let _ = crate::measure::text_width("가", 10.0, false, 0.0);
+        log::info!("글꼴 {}개 미리 읽음 ({:.1}초)", db.len(), t0.elapsed().as_secs_f32());
+    }).ok();
+}
+
 /// 시스템 글꼴 하나의 파일 내용 (조작 화면 egui 가 PPT 글꼴로 그릴 때). 이름은 '구세군체 Bold' 처럼 전체 이름도 받는다
 pub fn font_bytes(name: &str) -> Option<(Vec<u8>, u32)> {
     use resvg::usvg::fontdb::{Family, Query, Weight};
