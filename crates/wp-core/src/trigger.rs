@@ -70,6 +70,32 @@ pub fn send_cue_item(core: &mut Core, index: i64) -> Result<Value, String> {
     Ok(json!({ "index": index }))
 }
 
+/// LIVE와 열린 큐가 다르면 이동을 거부한다. 앞으로 음악 재생, 뒤로 음악 건너뛰기.
+pub fn advance_live_cue(core: &mut Core, dir: i64) -> Result<Value, String> {
+    let p = core.pres.live.as_ref().map(|l| &l.deck.passage).ok_or("송출 중인 큐시트 순서가 없습니다.")?;
+    let id = p["cueId"].as_str().filter(|id| !id.is_empty()).ok_or("송출 중인 큐시트 순서가 없습니다.")?;
+    let ci = p["cueIndex"].as_i64().filter(|i| *i >= 0).ok_or("송출 중인 큐시트 순서가 없습니다.")?;
+    let cue = core.cue.as_ref().filter(|c| c.id == id).ok_or("송출 중인 큐시트를 먼저 여세요.")?;
+    let n = cue.items.len() as i64;
+    let mut next = ci + dir;
+    while next >= 0 && next < n {
+        let audio = core.cue.as_ref().unwrap().items[next as usize]["type"] == "audio";
+        if !audio {
+            let mut deck = core.item_deck(next as usize)?;
+            if dir < 0 { deck.index = deck.slides.len().saturating_sub(1); }
+            core.pres.preview = Some(deck.clone());
+            core.send_deck(deck);
+            return Ok(json!({ "index": next }));
+        }
+        if dir > 0 {
+            let deck = core.item_deck(next as usize)?;
+            core.send_deck(deck);
+        }
+        next += dir;
+    }
+    Err("그 순서가 없습니다.".into())
+}
+
 /// 동작 실행. 아직 Rust 판에 없는 기능(타이머·무대 메시지·그리기·매크로·오버레이)은 알림
 pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result<Value, String> {
     match action {
@@ -81,11 +107,7 @@ pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result
         "bg" => core.toggle_bg(),
         "clear-all" => core.clear_all(),
         "cue-next" | "cue-prev" => {
-            let ci = core.pres.live.as_ref().filter(|l| !l.deck.passage["cueId"].as_str().unwrap_or("").is_empty()).and_then(|l| l.deck.passage["cueIndex"].as_i64()).unwrap_or(-1);
-            if ci < 0 {
-                return Err(crate::i18n::tr("송출 중인 큐시트 순서가 없습니다.").into());
-            }
-            return send_cue_item(core, ci + if action == "cue-next" { 1 } else { -1 });
+            return advance_live_cue(core, if action == "cue-next" { 1 } else { -1 });
         }
         // [트랙 B] 오버레이 · 타이머 · 무대 메시지 · 매크로
         "overlays" => core.toggle_overlays_off(),

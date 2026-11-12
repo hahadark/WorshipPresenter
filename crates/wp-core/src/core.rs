@@ -48,6 +48,8 @@ pub struct Core {
     pub settings: Settings,
     pub pres: Presentation,
     pub layers: Layers,
+    /// 화면을 바꾸지 않는 음악 재생 요청. 조작 화면이 한 번 소비한다.
+    pub pending_audio: Option<Value>,
     pub obs_hold: bool,
     pub obs_full: bool, // [트랙 C] OBS 자막에 '슬라이드 그대로'
     pub outputs: HashMap<u64, OutputClient>,
@@ -115,7 +117,7 @@ impl Core {
         let (tx, _) = broadcast::channel(256);
         let port = settings.get()["port"].as_u64().unwrap_or(37528) as u16;
         let mut c = Self {
-            data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), obs_hold: false, obs_full: false, // [트랙 C] obs_full
+            data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), pending_audio: None, obs_hold: false, obs_full: false, // [트랙 C] obs_full
            
             outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, port, b: Default::default(), flow: Default::default(), // [트랙 B] · [트랙 C] flow
         };
@@ -335,12 +337,13 @@ impl Core {
             (None, None)
         };
         let slides = if ty == "hymn" { crate::hymns::build_slides(self, &it, &opts)? } else { crate::slideedit::decorate(&it, slides::build_item(&it, passage.as_ref(), &opts), false) }; // [트랙 A] · [트랙 C] 슬라이드 편집 꾸미기
-        if slides.is_empty() { return Err(crate::i18n::tr("이 순서에 보일 슬라이드가 없습니다 (PPT 파일을 고르세요).").into()); } // [트랙 A]
-        let meta = p.unwrap_or_else(|| {
+        if slides.is_empty() && ty != "audio" { return Err(crate::i18n::tr("이 순서에 보일 슬라이드가 없습니다 (PPT 파일을 고르세요).").into()); } // [트랙 A]
+        let mut meta = p.unwrap_or_else(|| {
             let mut m = json!({ "title": it["title"], "versionId": "", "versionName": "", "book": null, "first": null, "last": null, "query": "", "tpl": null, "auto": null, "hideAfter": 0, "edgeHide": false });
             self.fill_item_meta(&mut m, i, &it);
             m
         });
+        if ty == "audio" { meta["audioItem"] = it; }
         Ok(Deck { passage: meta, slides, index: 0 })
     }
 
@@ -368,6 +371,9 @@ impl Core {
 
     // ---------------- LIVE ----------------
     pub fn send_preview(&mut self) {
+        if let Some(d) = self.pres.preview.clone() {
+            if self.request_audio(&d) { return; }
+        }
         // [트랙 B] '미리보기 거쳐 송출' 을 끈 채 두 번 눌러 송출하면 고르기(=송출)와 송출이 겹친다 → 방금(1.5초 안) 같은 것을 보냈으면 다시 보내지 않음
         if let (Some(p), Some(l)) = (&self.pres.preview, &self.pres.live) {
             if l.visible && l.deck.index == p.index && l.deck.slides.len() == p.slides.len() && l.deck.passage == p.passage && crate::util::now_ms() - l.sent_at < 1500 {
@@ -385,7 +391,18 @@ impl Core {
         self.emit(Ev::Ui);
     }
 
+    /// 음악 원본 항목을 조작 화면에 전달하며 LIVE·기록·레이어는 유지한다.
+    pub fn take_pending_audio(&mut self) -> Option<Value> { self.pending_audio.take() }
+
+    fn request_audio(&mut self, d: &Deck) -> bool {
+        if d.passage["itemType"] != "audio" { return false; }
+        self.pending_audio = Some(d.passage["audioItem"].clone());
+        self.emit(Ev::Ui);
+        true
+    }
+
     pub fn send_deck(&mut self, d: Deck) {
+        if self.request_audio(&d) { return; }
         self.layers.hide_bg = false;
         self.obs_hold = false;
         if self.pres.send_live(Some(d)) {
@@ -550,4 +567,115 @@ pub fn new_item(ty: &str, title: &str) -> Value {
         _ => {}
     }
     it
+}
+
+#[cfg(test)]
+mod live_fix_tests {
+    use super::*;
+    use crate::{db::Cue, trigger, remote};
+
+    // 기존 사용자 자료를 복사하지 않도록 빈 DB가 있는 고유 임시 폴더를 쓴다.
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-live-fix-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+    fn cue(id: &str, items: Vec<Value>) -> Cue {
+        Cue { id: id.into(), name: id.into(), service_date: String::new(), start_time: String::new(), items, memo: String::new(), pinned: false, template: false }
+    }
+    fn title(name: &str) -> Value { json!({"type":"title", "title":name}) }
+    fn audio() -> Value { json!({"type":"audio", "title":"배경음악", "file":"test.mp3", "volume":0.4, "loop":true, "fadeOnLeave":true}) }
+
+    #[test]
+    fn mismatched_cue_rejects_triggers_and_f6_f5() {
+        let mut c = core();
+        c.cue = Some(cue("A", vec![title("A0"), title("A1")]));
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        c.cue = Some(cue("B", vec![title("B0"), title("B1")]));
+        let before = c.pres.live_state();
+        let preview = c.pres.preview.as_ref().unwrap().passage.clone();
+        for action in ["cue-next", "cue-prev"] {
+            assert!(trigger::run(&mut c, action, &HashMap::new()).is_err());
+        }
+        c.step(1);
+        c.step(-1);
+        assert_eq!(c.pres.live_state(), before);
+        assert_eq!(c.pres.preview.as_ref().unwrap().passage, preview);
+        assert!(c.take_pending_audio().is_none());
+    }
+
+    #[test]
+    fn matching_cue_trigger_forward_and_backward_last_slide() {
+        let mut c = core();
+        c.cue = Some(cue("A", vec![json!({"type":"text", "title":"A0", "body":"첫 장\n---\n둘째 장"}), title("A1")]));
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        let n = c.pres.live.as_ref().unwrap().deck.slides.len();
+        assert!(n > 1);
+        trigger::run(&mut c, "cue-next", &HashMap::new()).unwrap();
+        assert_eq!(c.pres.live_state()["passage"]["cueIndex"], 1);
+        trigger::run(&mut c, "cue-prev", &HashMap::new()).unwrap();
+        assert_eq!(c.pres.live.as_ref().unwrap().deck.index, n - 1);
+    }
+
+    #[test]
+    fn audio_send_paths_preserve_screen_layers_and_history() {
+        let mut c = core();
+        c.cue = Some(cue("A", vec![title("화면"), audio()]));
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        c.layers.hide_bg = true;
+        c.layers.logo = true;
+        c.obs_hold = true;
+        let before = c.pres.live_state();
+        let history = c.settings.get()["history"].clone();
+        let payload = c.output_payload("main");
+        let mut rx = c.tx.subscribe();
+        trigger::send_cue_item(&mut c, 1).unwrap();
+        assert_eq!(c.take_pending_audio(), Some(audio()));
+        assert!(c.take_pending_audio().is_none());
+        c.send_preview();
+        assert_eq!(c.take_pending_audio(), Some(audio()));
+        assert_eq!(c.pres.live_state(), before);
+        assert_eq!(c.output_payload("main"), payload);
+        assert_eq!(c.settings.get()["history"], history);
+        while let Ok(e) = rx.try_recv() { assert!(!matches!(e, Ev::Live)); }
+    }
+
+    #[test]
+    fn f6_plays_audio_then_visual_and_f5_skips_audio() {
+        let mut c = core();
+        c.cue = Some(cue("A", vec![title("앞"), audio(), title("뒤")]));
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        c.step(1);
+        assert_eq!(c.pres.live_state()["passage"]["cueIndex"], 2);
+        assert_eq!(c.take_pending_audio(), Some(audio()));
+        c.step(-1);
+        assert_eq!(c.pres.live_state()["passage"]["cueIndex"], 0);
+        assert!(c.take_pending_audio().is_none());
+    }
+
+    #[test]
+    fn trailing_audio_keeps_visual_and_audio_without_live_stays_dark() {
+        let mut c = core();
+        c.cue = Some(cue("A", vec![title("화면"), audio()]));
+        trigger::send_cue_item(&mut c, 1).unwrap();
+        assert!(c.pres.live.is_none());
+        assert_eq!(c.take_pending_audio(), Some(audio()));
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        let before = c.pres.live_state();
+        c.step(1);
+        assert_eq!(c.pres.live_state(), before);
+        assert_eq!(c.take_pending_audio(), Some(audio()));
+    }
+
+    #[test]
+    fn remote_obs_full_matches_output_and_toggles_back() {
+        let mut c = core();
+        assert_eq!(remote::state_for(&c)["obs"]["full"], false);
+        for on in [true, false] {
+            remote::act(&mut c, &json!({"action":"obsFull", "on":on})).unwrap();
+            assert_eq!(remote::state_for(&c)["obs"]["full"], on);
+            assert_eq!(c.output_payload("overlay")["obsFull"], on);
+        }
+    }
 }

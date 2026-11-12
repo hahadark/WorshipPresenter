@@ -390,6 +390,8 @@ pub fn title_slide(page: &str, k: usize) -> Value {
 /// 큐시트 순서 하나 → 슬라이드 (성경은 passage 가 있어야 한다)
 pub fn build_item(it: &Value, passage: Option<&Value>, opts: &SplitOpts) -> Vec<Value> {
     let ty = s(it, "type");
+    // 음악은 화면이 아니므로 기본 제목카드를 만들지 않는다.
+    if ty == "audio" { return vec![]; }
     let title = s(it, "title");
     let mut slides: Vec<Value> = match ty {
         "bible" => passage.map(|p| build_bible(p, opts)).unwrap_or_default(),
@@ -452,6 +454,10 @@ pub fn build_item(it: &Value, passage: Option<&Value>, opts: &SplitOpts) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn audio_has_no_visual_fallback() {
+        assert!(build_item(&json!({"type":"audio", "title":"음악"}), None, &SplitOpts { mode: "count".into(), count: 1, templates: vec![] }).is_empty());
+    }
     #[test]
     fn lyrics() {
         let c = lyrics_chunks("[1절]\n주 하나님 지으신\n모든 세계\n\n[후렴]\n주님의 높은 이름을\n\n[2절]\n숲속이나");
