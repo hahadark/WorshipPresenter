@@ -22,6 +22,7 @@ pub mod library; // [트랙 B]
 pub mod overlays; // [트랙 B]
 pub mod songs; // [트랙 B]
 pub mod trackb; // [트랙 B]
+pub mod flow; // [트랙 C]
 pub mod templates; // [트랙 C]
 pub mod usage; // [트랙 C]
 // [트랙 D] 외부 연동·리모컨·내부망

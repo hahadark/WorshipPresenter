@@ -295,6 +295,10 @@ impl App {
         if on("cuePrev", "Ctrl+ArrowUp") { acts.push(Act::CuePreviewStep(-1)) }
         if on("toggleOutputWindow", "Ctrl+Shift+F") { acts.push(Act::OutputToggle) }
         if on("outputOff", "Escape") && self.out.running() { acts.push(Act::OutputToggle) }
+        // [트랙 C] 미리보기 앞뒤 절 · 장 처음
+        if on("previewPrevVerse", "Alt+ArrowLeft") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), -1) }
+        if on("previewNextVerse", "Alt+ArrowRight") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), 1) }
+        if on("previewChapterStart", "Ctrl+Home") { wp_core::flow::preview_chapter_start(&mut self.core.lock()) }
         if !typing {
             let pv = self.core.lock().pres.preview.as_ref().map(|p| (p.index, p.slides.len()));
             if let Some((i, n)) = pv {
@@ -523,6 +527,7 @@ impl App {
             }
             ui.label(RichText::new("메모 (무대 화면에 보임)").small());
             changed |= field(ui, e, "note", false, 1, "");
+            if it["type"] != "audio" { changed |= crate::flow_ui::item_fields(ui, e); } // [트랙 C] 자동 넘김·글자 숨김
         });
         if changed {
             acts.push(Act::UpdateItem(i, e.clone()));
