@@ -124,7 +124,7 @@ pub fn state_for(core: &Core) -> Value {
         // Rust 판은 조작 화면이 같은 프로그램이라 늘 열려 있음
         "control": true,
         "stage": { "message": core.b.stage.message, "timer": core.b.stage.timer_json() }, // [트랙 B]
-        "obs": { "pip": s["output"]["obsPip"].as_bool().unwrap_or(false), "full": false },
+        "obs": { "pip": s["output"]["obsPip"].as_bool().unwrap_or(false), "full": core.obs_full },
     })
 }
 
