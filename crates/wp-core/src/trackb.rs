@@ -505,3 +505,25 @@ mod tests_video {
         assert_eq!(c.video_payload()["offset"], 8.0);
     }
 }
+
+#[cfg(test)]
+mod tests_double_send {
+    // [트랙 B] 미리보기를 끈 채 두 번 눌러 송출해도 한 번만 송출 (기록 한 줄)
+    use crate::core::{new_item, Core};
+    #[test]
+    fn once() {
+        let dir = std::env::temp_dir().join(format!("wp-dbl-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir, None).unwrap();
+        c.settings.update(|d| d["previewMode"] = serde_json::json!(false));
+        c.new_cue("t").unwrap();
+        c.add_item(new_item("title", "예배로 부름"), None);
+        let h0 = c.settings.get()["history"].as_array().map(|a| a.len()).unwrap_or(0);
+        let v0 = c.pres.version;
+        c.preview_item(0); // 미리보기 끔 → 바로 송출
+        c.send_preview(); // 두 번 누름의 송출
+        assert_eq!(c.pres.version, v0 + 1);
+        assert_eq!(c.settings.get()["history"].as_array().unwrap().len(), h0 + 1);
+    }
+}
