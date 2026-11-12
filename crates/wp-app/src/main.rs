@@ -9,6 +9,7 @@ mod paint_edit; // [트랙 A]
 mod trackb_ui; // [트랙 B]
 mod lyrics_ui; // [트랙 B]
 mod music_ui; // [트랙 B]
+mod system_ui; // [트랙 B]
 mod form; // [트랙 C]
 mod history_ui; // [트랙 C]
 mod flow_ui; // [트랙 C]
@@ -82,11 +83,14 @@ fn fonts(ctx: &egui::Context) {
 
 fn main() -> anyhow::Result<()> {
     let data_dir = arg("--data").map(PathBuf::from).unwrap_or_else(|| dirs_data().join("WorshipPresenter-rs").join("data"));
+    let _ = std::fs::create_dir_all(&data_dir);
+    wp_core::logger::init(&data_dir); // [트랙 B] 파일 로그 (logs\날짜.log)
     let web = web_dir();
     let core = Core::open(data_dir.clone(), web.clone(), seed_db().as_deref())?;
     let shared = Arc::new(Mutex::new(core));
     wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
     wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
+    wp_core::sync::install(&shared); // [트랙 B] 여러 PC 동기화 · 하루 1회 백업
 
     // 웹 서버 (출력 화면) — 따로 tokio 실행기
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;

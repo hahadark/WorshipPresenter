@@ -92,3 +92,37 @@ mod tests {
         assert!(is_hex_color("#ffd479") && !is_hex_color("#xyz"));
     }
 }
+
+#[cfg(test)]
+mod sse_tests {
+    // [트랙 B] 출력 화면 접속(/events) → 그리면 'draw' 이벤트가 온다
+    use crate::core::Core;
+    use std::sync::Arc;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn draw_event_reaches_output() {
+        let dir = std::env::temp_dir().join(format!("wp-draw-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir, None).unwrap();
+        c.port = 47610 + (rand::random::<u16>() % 300);
+        let core = Arc::new(parking_lot::Mutex::new(c));
+        let port = crate::server::serve(core.clone()).await.unwrap();
+        let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        s.write_all(format!("GET /events?client=main HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: text/event-stream\r\n\r\n").as_bytes()).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        core.lock().draw_stroke(&serde_json::json!({ "id": "s1", "pts": [[0.1, 0.1], [0.5, 0.5]], "color": "#ffd60a" })).unwrap();
+        let mut buf = vec![0u8; 65536];
+        let mut got = String::new();
+        let t0 = std::time::Instant::now();
+        while t0.elapsed().as_secs() < 5 && !got.contains("event: draw") {
+            if let Ok(Ok(n)) = tokio::time::timeout(std::time::Duration::from_millis(500), s.read(&mut buf)).await {
+                got.push_str(&String::from_utf8_lossy(&buf[..n]));
+            }
+        }
+        assert!(got.contains("event: render"), "{got}");
+        assert!(got.contains("event: draw"), "{got}");
+        assert!(got.contains("#ffd60a"));
+    }
+}

@@ -391,6 +391,7 @@ impl Core {
         self.sync_video_state(); // [트랙 B]
         let Some(l) = &self.pres.live else { return };
         let p = l.deck.passage.clone();
+        log::info!(target: "live", "송출: {} [{}/{}]", p["itemTitle"].as_str().filter(|x| !x.is_empty()).or(p["title"].as_str()).unwrap_or(""), l.deck.index + 1, l.deck.slides.len()); // [트랙 B] 로그
         let cue_name = self.cue.as_ref().filter(|c| p["cueId"] == c.id.as_str()).map(|c| c.name.clone()).unwrap_or_default(); // [트랙 C]
         crate::usage::record(&self.store.db, &p, &cue_name); // [트랙 C] 사용 기록
         self.settings.update(|d| {
