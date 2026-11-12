@@ -87,6 +87,8 @@ fn main() -> anyhow::Result<()> {
     let shared = Arc::new(Mutex::new(core));
     wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
     wp_core::winkeys::start_global_shortcuts(shared.clone()); // [트랙 D] 전역 단축키
+    wp_core::updates::start_telemetry(shared.clone()); // [트랙 D] 익명 사용 통계 (디버그 빌드는 안 보냄)
+    if shared.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true) { wp_core::updates::check(&shared, false); } // [트랙 D] 새 버전 확인
     wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
 
     // 웹 서버 (출력 화면) — 따로 tokio 실행기

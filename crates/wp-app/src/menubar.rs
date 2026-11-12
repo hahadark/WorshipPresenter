@@ -62,6 +62,7 @@ pub fn menus() -> Vec<Menu> {
         ] },
         Menu { label: "도움말", items: vec![
             it("c:about", "정보 · 라이선스", ""),
+            it("d:update", "새 버전 확인", ""), // [트랙 D]
         ] },
     ]
 }
