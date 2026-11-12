@@ -75,6 +75,12 @@ pub fn menus() -> Vec<Menu> {
             it("b:logbundle", "로그 묶음 저장…", ""), // [트랙 B]
             it("b:logs", "로그 폴더 열기", ""), // [트랙 B]
             it("-", "-", ""),
+            it("a:help-manual", "사용 설명서", ""), // [트랙 A]
+            it("a:help-readme", "그림으로 보는 사용법 (README)", ""), // [트랙 A]
+            it("a:help-obs", "OBS 연결 안내", ""), // [트랙 A]
+            it("a:help-keys", "단축키 보기", ""), // [트랙 A]
+            it("a:help-news", "새 소식 (버전별 바뀐 점)", ""), // [트랙 A]
+            it("a:help-issue", "문제 알리기 · 건의", ""), // [트랙 A]
             it("c:about", "정보 · 라이선스", ""),
             it("d:update", "새 버전 확인", ""), // [트랙 D]
         ] },

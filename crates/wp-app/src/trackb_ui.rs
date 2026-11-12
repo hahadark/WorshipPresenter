@@ -448,7 +448,11 @@ impl App {
                 }
             });
             ui.horizontal_wrapped(|ui| {
-                for p in &presets { if ui.small_button(p["name"].as_str().unwrap_or("")).clicked() { self.core.lock().stage_pin_set(Some(p)); } }
+                for p in &presets {
+                    let r = ui.small_button(p["name"].as_str().unwrap_or(""));
+                    if r.clicked() { self.core.lock().stage_pin_set(Some(p)); }
+                    r.on_hover_text("오른쪽 클릭: 지우기").context_menu(|ui| { if ui.button("이 프리셋 지우기").clicked() { self.core.lock().delete_stage_preset(p["id"].as_str().unwrap_or("")); ui.close(); } }); // [트랙 A] deleteStagePreset
+                }
             });
             ui.separator();
             ui.horizontal(|ui| {

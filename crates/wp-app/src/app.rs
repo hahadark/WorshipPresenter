@@ -412,6 +412,7 @@ impl App {
                 });
                 let r = resp.response.interact(Sense::click_and_drag()); // [트랙 B] 끌어서 옮기기
                 self.cue_row_dnd(ui, &r, i); // [트랙 B]
+                crate::parity_ui::cue_row_menu(self, &r, i, it, s.items.len(), acts); // [트랙 A] 오른쪽 클릭 메뉴
                 if r.clicked() {
                     self.sel = Some(i);
                     self.edit = None;
@@ -434,6 +435,7 @@ impl App {
                     acts.push(Act::AddItem(ty, None));
                 }
             }
+            crate::parity_ui::add_buttons(ui, acts); // [트랙 A] 카메라 · 슬라이드쇼
         });
         if let Some(i) = self.sel.filter(|i| *i < s.items.len()) {
             ui.horizontal(|ui| {
@@ -454,6 +456,7 @@ impl App {
         if self.edit.as_ref().map(|e| &e.0) != Some(&key) {
             self.edit = Some((key.clone(), it.clone()));
         }
+        let cams = if it["type"] == "camera" { crate::parity_ui::known_cameras(&self.core.lock()) } else { vec![] }; // [트랙 A]
         let Some((_, e)) = &mut self.edit else { return };
         let mut changed = false;
         let mut field = |ui: &mut egui::Ui, e: &mut Value, k: &str, multi: bool, rows: usize, hint: &str| {
@@ -524,7 +527,7 @@ impl App {
                     changed |= crate::hymns_ui::editor(ui, e); // [트랙 A]
                 }
                 _ => {
-                    ui.label(RichText::new("이 종류는 아직 Rust 판에서 고칠 수 없습니다.").color(Color32::GRAY));
+                    changed |= crate::parity_ui::editor(ui, e, &cams); // [트랙 A] 카메라 · 슬라이드쇼 · 영상
                 }
             }
             ui.label(RichText::new("메모 (무대 화면에 보임)").small());
@@ -581,6 +584,7 @@ impl App {
                 for v in p["verses"].as_array().into_iter().flatten() {
                     let (c, n) = (v["chapter"].as_i64().unwrap_or(0), v["verse"].as_i64().unwrap_or(0));
                     let resp = ui.add(egui::Label::new(RichText::new(format!("{}:{}  {}", c, n, v["text"].as_str().unwrap_or("")))).sense(Sense::click()).wrap());
+                    crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", p["book"]["name"].as_str().unwrap_or(""), c, n), v["text"].as_str().unwrap_or("")); // [트랙 A]
                     if resp.clicked() { acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n)))) }
                     if resp.double_clicked() { acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n)))); acts.push(Act::SendPreview) }
                 }
@@ -590,6 +594,7 @@ impl App {
                 for v in rows {
                     let q = format!("{}{}:{}", v["bookShort"].as_str().unwrap_or(""), v["chapter"], v["verse"]);
                     let resp = ui.add(egui::Label::new(RichText::new(format!("{}  {}", v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or("")))).sense(Sense::click()).wrap());
+                    crate::parity_ui::verse_menu(&resp, v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or("")); // [트랙 A]
                     if resp.clicked() { acts.push(Act::PreviewRef(q.clone(), None)) }
                     if resp.double_clicked() { acts.push(Act::SendRef(q, None)) }
                 }
@@ -773,6 +778,7 @@ impl eframe::App for App {
         let _ = &s.tpl_overlay;
         crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
         crate::a_tools::show(self, &ctx, &mut acts); // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
+        crate::parity_ui::show(self, &ctx); // [트랙 A] 단축키 보기
         crate::trackd_ui::frame(self, &ctx); // [트랙 D] 주보 · 출력 설정 · OBS 창, 예배당 창 자동 켜기
         if crate::tools_ui::take_off_request() { self.out.close(); } // [트랙 D] 리모컨 '끄기' → 예배당 창도
 
