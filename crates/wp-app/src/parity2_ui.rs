@@ -26,11 +26,20 @@ static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
 pub fn shortcuts(app: &mut App, ctx: &egui::Context) {
     let st = json!({ "shortcuts": app.core.lock().settings.get()["shortcuts"].clone() });
     if crate::keys::pressed(ctx, &st, "openBooks", "Ctrl+B") {
-        let mut s = ST.lock();
-        s.books = !s.books;
+        ST.lock().books = true; // 닫기는 창의 X (한 프레임을 두 번 그려도 같은 결과)
     }
-    if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::V))) {
-        open_paste();
+    // Ctrl+Shift+V: egui 는 Ctrl+V 를 Key 가 아니라 Paste 이벤트로 준다 → Shift 가 눌린 Paste 면 이 창으로
+    let pasted = ctx.input(|i| if i.modifiers.shift { i.events.iter().find_map(|e| if let egui::Event::Paste(t) = e { Some(t.clone()) } else { None }) } else { None });
+    let focused = ctx.egui_wants_keyboard_input(); // 글 입력칸에 있을 때만 (단추 초점은 상관없음)
+    if let Some(t) = pasted.filter(|_| !focused) {
+        let mut s = ST.lock();
+        s.paste_text = t.trim_end().to_string();
+        if s.paste_as.is_empty() {
+            s.paste_as = "auto".into();
+        }
+        s.paste = true;
+    } else if !focused && ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::V))) {
+        open_paste(); // 클립보드에 글이 없을 때 (슬라이드·그림)
     }
 }
 
