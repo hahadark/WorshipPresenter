@@ -660,3 +660,25 @@ impl App {
         if v.playing { ui.ctx().request_repaint_after(std::time::Duration::from_millis(500)); }
     }
 }
+
+impl App {
+    /// 큐시트 순서 끌어서 옮기기: 끌기 시작하면 번호를 싣고, 놓은 줄 자리로 (실행 취소 됨)
+    pub(crate) fn cue_row_dnd(&mut self, ui: &egui::Ui, r: &egui::Response, i: usize) {
+        if r.drag_started() || r.dragged() {
+            r.dnd_set_drag_payload(i);
+        }
+        if let Some(from) = r.dnd_hover_payload::<usize>() {
+            if *from != i {
+                let y = if *from < i { r.rect.bottom() } else { r.rect.top() };
+                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(2.5, Color32::from_rgb(0x5b, 0x9c, 0xf6)));
+            }
+        }
+        if let Some(from) = r.dnd_release_payload::<usize>() {
+            if *from != i {
+                self.core.lock().move_item_to(*from, i);
+                self.sel = Some(i);
+                self.edit = None;
+            }
+        }
+    }
+}

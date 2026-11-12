@@ -233,6 +233,7 @@ impl App {
                     self.edit = None;
                 }
                 Act::UpdateItem(i, it) => {
+                    c.remember_typing(it["id"].as_str().unwrap_or("")); // [트랙 B] 실행 취소 묶음
                     if let Some(cue) = &mut c.cue {
                         if i < cue.items.len() {
                             cue.items[i] = it;
@@ -409,7 +410,8 @@ impl App {
                         });
                     });
                 });
-                let r = resp.response.interact(Sense::click());
+                let r = resp.response.interact(Sense::click_and_drag()); // [트랙 B] 끌어서 옮기기
+                self.cue_row_dnd(ui, &r, i); // [트랙 B]
                 if r.clicked() {
                     self.sel = Some(i);
                     self.edit = None;

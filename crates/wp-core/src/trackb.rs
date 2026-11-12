@@ -20,6 +20,8 @@ pub struct TrackB {
     pub fired: Vec<String>,
     /// 영상 키를 만든 LIVE version (같은 슬라이드면 이어서)
     pub video_for: Option<(u64, usize)>,
+    /// 편집칸 글 고치기 묶음 (실행 취소: 같은 순서를 이어서 치면 한 번에)
+    pub typing: Option<(String, std::time::Instant)>,
 }
 
 impl Core {
@@ -404,6 +406,17 @@ impl Core {
             None => false,
         }
     }
+    /// 편집칸에서 글을 고칠 때 (실행 취소 묶음): 다른 순서이거나 1.5초 넘게 쉬었다 치면 새 묶음
+    pub fn remember_typing(&mut self, item_id: &str) {
+        let fresh = match &self.b.typing {
+            Some((id, t)) => id != item_id || t.elapsed().as_millis() > 1500,
+            None => true,
+        };
+        if fresh {
+            self.remember_items();
+        }
+        self.b.typing = Some((item_id.to_string(), std::time::Instant::now()));
+    }
     /// 끌어서 순서 옮기기
     pub fn move_item_to(&mut self, from: usize, to: usize) {
         self.remember_items();
@@ -415,5 +428,38 @@ impl Core {
             }
         }
         self.save_cue();
+    }
+}
+
+#[cfg(test)]
+mod tests_typing {
+    use crate::core::{new_item, Core};
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-typing-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+    #[test]
+    fn typing_groups_and_drag() {
+        let mut c = core();
+        c.new_cue("시험").unwrap();
+        for t in ["가", "나", "다"] {
+            c.add_item(new_item("title", t), None);
+        }
+        // 같은 순서를 이어서 치면 한 묶음 → 실행 취소 한 번에 처음 글로
+        let id = c.cue.as_ref().unwrap().items[0]["id"].as_str().unwrap().to_string();
+        for s in ["가1", "가12", "가123"] {
+            c.remember_typing(&id);
+            c.cue.as_mut().unwrap().items[0]["title"] = serde_json::json!(s);
+        }
+        assert!(c.undo_items(false));
+        assert_eq!(c.cue.as_ref().unwrap().items[0]["title"], "가");
+        // 끌어서 옮기기: 0 → 2
+        c.move_item_to(0, 2);
+        let t: Vec<&str> = c.cue.as_ref().unwrap().items.iter().map(|x| x["title"].as_str().unwrap()).collect();
+        assert_eq!(t, ["나", "다", "가"]);
+        assert!(c.undo_items(false));
+        assert_eq!(c.cue.as_ref().unwrap().items[0]["title"], "가");
     }
 }
