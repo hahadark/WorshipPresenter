@@ -188,9 +188,10 @@ pub fn on_send(m: &mut Music, item: Option<&Value>) {
 impl App {
     /// 매 프레임: 송출이 바뀌었는지 보고 음악 동작 · 페이드 진행
     pub(crate) fn music_tick(&mut self, ctx: &egui::Context) {
-        let (key, item) = {
-            let c = self.core.lock();
-            match &c.pres.live {
+        let (key, item, audio) = {
+            let mut c = self.core.lock();
+            let audio = c.take_pending_audio();
+            let (key, item) = match &c.pres.live {
                 Some(l) => {
                     let ci = l.deck.passage["cueIndex"].as_i64().unwrap_or(-1);
                     let cid = l.deck.passage["cueId"].as_str().unwrap_or("").to_string();
@@ -198,7 +199,8 @@ impl App {
                     (Some((l.sent_at, cid, ci)), it)
                 }
                 None => (None, None),
-            }
+            };
+            (key, item, audio)
         };
         MUSIC.with_borrow_mut(|m| {
             if key.is_some() && key != m.last_live {
@@ -208,6 +210,10 @@ impl App {
                 if !first || item.is_some() {
                     on_send(m, item.as_ref());
                 }
+            }
+            // 음악 순서는 시각 LIVE를 바꾸지 않는다. 코어가 전달한 음악 명령만 소비한다.
+            if let Some(audio) = audio.as_ref() {
+                on_send(m, Some(audio));
             }
             m.tick();
             if m.playing() || m.fade.is_some() {

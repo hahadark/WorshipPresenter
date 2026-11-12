@@ -17,6 +17,7 @@ pub struct SysState {
     pub cameras: bool,
     diag_result: Value,
     note: String,
+    restore_busy: bool,
     // 그리기
     pen_color: usize,
     pen_width: f32,
@@ -27,6 +28,9 @@ pub struct SysState {
     seq: u64,
     // 카메라
     cam_edit: Option<(String, Value)>,
+    /// 점검용: 그리기 판 자리 · 넣은 단계
+    canvas: Option<Rect>,
+    inject_step: usize,
 }
 
 pub static ST: Lazy<Mutex<SysState>> = Lazy::new(|| Mutex::new(SysState { pen_width: 0.006, spot_r: 0.18, ..Default::default() }));
@@ -145,10 +149,14 @@ impl App {
             }
             ui.separator();
             ui.label(RichText::new(wp_core::i18n::tr("백업 (하루 한 번 자동 · 10일치 보관)")).strong());
+            let restore_busy = ST.lock().restore_busy;
+            if restore_busy {
+                ui.label(RichText::new("되돌리기 예약 파일을 복사하고 있습니다. 끝날 때까지 기다려 주세요.").color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+            }
             if info["restorePending"] == true {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(wp_core::i18n::tr("되돌리기 예약됨 — 프로그램을 다시 시작하면 적용됩니다.")).color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
-                    if ui.button(wp_core::i18n::tr("예약 취소")).clicked() { self.core.lock().cancel_restore(); }
+                    if ui.add_enabled(!restore_busy, egui::Button::new(wp_core::i18n::tr("예약 취소"))).clicked() { self.core.lock().cancel_restore(); }
                 });
             }
             ui.horizontal(|ui| {
@@ -174,9 +182,19 @@ impl App {
                 for b in &list {
                     ui.horizontal(|ui| {
                         ui.label(format!("{} · {:.1}MB{}", b["day"].as_str().unwrap_or(""), b["size"].as_f64().unwrap_or(0.0) / 1048576.0, if b["settings"].as_str().unwrap_or("").is_empty() { "" } else { wp_core::i18n::tr_s(" · 설정 포함") }));
-                        if ui.small_button(wp_core::i18n::tr("이 날로 되돌리기")).on_hover_text(wp_core::i18n::tr("다음 시작 때 이 백업으로 바꿉니다 (지금 것은 bible.pre-restore.db 로 남김)")).clicked() {
-                            let r = self.core.lock().restore_backup(b["day"].as_str().unwrap_or(""));
-                            note = match r { Ok(_) => "되돌리기를 예약했습니다. 프로그램을 다시 시작하세요.".into(), Err(e) => e.to_string() };
+                        if ui.add_enabled(!restore_busy && info["restorePending"] != true, egui::Button::new(wp_core::i18n::tr("이 날로 되돌리기")).small()).on_hover_text(wp_core::i18n::tr("다음 시작 때 이 백업으로 바꿉니다 (지금 것은 bible.pre-restore.db 로 남김)")).clicked() {
+                            // 큰 파일 복사는 별도 스레드에서. 복사 중 중복 예약과 취소는 막는다.
+                            let (dir, day, ctx2) = (self.data_dir.clone(), b["day"].as_str().unwrap_or("").to_string(), ui.ctx().clone());
+                            ST.lock().restore_busy = true;
+                            note = "되돌리기 예약하는 중…".into();
+                            std::thread::spawn(move || {
+                                let r = wp_core::sync::restore_files(&dir, &day);
+                                let mut state = ST.lock();
+                                state.note = match r { Ok(_) => format!("{day} 로 되돌리기를 예약했습니다. 프로그램을 다시 시작하세요."), Err(e) => e.to_string() };
+                                state.restore_busy = false;
+                                drop(state);
+                                ctx2.request_repaint();
+                            });
                         }
                     });
                 }
@@ -274,6 +292,7 @@ impl App {
             let h = (w * th / tw).min(ui.available_height() - 8.0).max(100.0);
             let (resp, painter) = ui.allocate_painter(Vec2::new(h * tw / th, h), Sense::click_and_drag());
             let rect = resp.rect;
+            ST.lock().canvas = Some(rect);
             let pc = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
             let slide = live.as_ref().and_then(|l| l.deck.slides.get(l.deck.index));
             let ver = live.as_ref().map(|l| l.deck.passage["versionName"].as_str().unwrap_or("").to_string()).unwrap_or_default();
@@ -281,7 +300,23 @@ impl App {
             // 지금 그려진 것
             if let Some(sp) = d["spot"].as_object() {
                 let (x, y, r) = (sp["x"].as_f64().unwrap_or(0.5) as f32, sp["y"].as_f64().unwrap_or(0.5) as f32, sp["r"].as_f64().unwrap_or(0.18) as f32);
-                painter.rect_filled(rect, 0.0, Color32::from_black_alpha(120));
+                // 출력 화면처럼: 원 밖만 어둡게 (egui 에는 구멍 뚫린 도형이 없어 가로 띠로 나눠 칠한다)
+                let (cx, cy, rr) = (rect.left() + x * rect.width(), rect.top() + y * rect.height(), r * rect.height());
+                let dim = Color32::from_black_alpha(168);
+                let step = 2.0;
+                let mut yy = rect.top();
+                while yy < rect.bottom() {
+                    let y2 = (yy + step).min(rect.bottom());
+                    let dy = (yy + step / 2.0 - cy).abs();
+                    if dy >= rr {
+                        painter.rect_filled(Rect::from_min_max(Pos2::new(rect.left(), yy), Pos2::new(rect.right(), y2)), 0.0, dim);
+                    } else {
+                        let half = (rr * rr - dy * dy).sqrt();
+                        painter.rect_filled(Rect::from_min_max(Pos2::new(rect.left(), yy), Pos2::new((cx - half).max(rect.left()), y2)), 0.0, dim);
+                        painter.rect_filled(Rect::from_min_max(Pos2::new((cx + half).min(rect.right()), yy), Pos2::new(rect.right(), y2)), 0.0, dim);
+                    }
+                    yy = y2;
+                }
                 painter.circle_stroke(Pos2::new(rect.left() + x * rect.width(), rect.top() + y * rect.height()), r * rect.height(), Stroke::new(2.0, Color32::from_white_alpha(160)));
             }
             for s in d["strokes"].as_array().into_iter().flatten() {
@@ -395,5 +430,39 @@ impl App {
             }
         });
         ST.lock().cameras = open;
+    }
+}
+
+/// 점검용 (--draw-test): 그리기 판에 진짜 마우스 입력을 흉내 낸다 (eframe raw_input_hook → egui 의 보통 입력 처리)
+/// 30 프레임 기다린 뒤 대각선으로 한 줄 긋고, 강조 모드로 바꿔 한 번 누른다.
+pub fn inject(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    static ON: Lazy<bool> = Lazy::new(|| std::env::args().any(|a| a == "--draw-test"));
+    if !*ON {
+        return;
+    }
+    let mut st = ST.lock();
+    let Some(r) = st.canvas else { return };
+    let k = st.inject_step;
+    st.inject_step += 1;
+    let at = |fx: f32, fy: f32| Pos2::new(r.left() + fx * r.width(), r.top() + fy * r.height());
+    let btn = |pos: Pos2, pressed: bool| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let n = 16;
+    match k {
+        30 => raw.events.push(egui::Event::PointerMoved(at(0.15, 0.25))),
+        31 => raw.events.push(btn(at(0.15, 0.25), true)),
+        32..=47 => {
+            let t = (k - 31) as f32 / n as f32;
+            raw.events.push(egui::Event::PointerMoved(at(0.15 + 0.7 * t, 0.25 + 0.5 * t)));
+        }
+        48 => raw.events.push(btn(at(0.85, 0.75), false)),
+        55 => st.spot_mode = true,
+        60 => raw.events.push(egui::Event::PointerMoved(at(0.5, 0.5))),
+        61 => raw.events.push(btn(at(0.5, 0.5), true)),
+        62 => raw.events.push(btn(at(0.5, 0.5), false)),
+        63 => st.spot_mode = false,
+        _ => {}
+    }
+    if k < 70 {
+        ctx.request_repaint();
     }
 }

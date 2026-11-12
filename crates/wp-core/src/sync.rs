@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 pub const SYNC_FILE: &str = "WorshipCue-sync.json";
 const KEEP_BACKUPS: usize = 10;
 
+// 큰 파일 작업은 코어 잠금과 분리한다. 중복 요청은 기다리지 않고 실패시킨다.
+static FILE_WORK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
 #[derive(Default, Clone)]
 pub struct SyncStatus {
     pub last_import: String,
@@ -324,15 +327,11 @@ impl Core {
         self.backup_now().map(Some)
     }
     pub fn restore_backup(&mut self, day: &str) -> Result<Value> {
-        let b = self.backups().into_iter().find(|x| x["day"] == day).context("그 날짜의 백업이 없습니다.")?;
-        std::fs::copy(b["db"].as_str().unwrap_or(""), self.data_dir.join("bible.restore.db"))?;
-        if let Some(st) = b["settings"].as_str().filter(|x| !x.is_empty()) {
-            std::fs::copy(st, self.data_dir.join("settings.restore.json"))?;
-        }
-        Ok(json!({ "day": day, "restartNeeded": true }))
+        restore_files(&self.data_dir, day)
     }
 
     pub fn cancel_restore(&mut self) {
+        let Some(_work) = FILE_WORK.try_lock() else { return };
         for f in ["bible.restore.db", "settings.restore.json"] {
             let _ = std::fs::remove_file(self.data_dir.join(f));
         }
@@ -423,12 +422,32 @@ mod tests {
         let n0 = b.store.list_cues().len();
         b.set_sync_dir(&share.to_string_lossy()).unwrap();
         assert_eq!(b.store.list_cues().len(), n0 + 1);
+        // 파일 작업 중 중복 요청은 코어 잠금을 기다리지 않고 즉시 돌아온다.
+        {
+            let _work = FILE_WORK.lock();
+            let started = std::time::Instant::now();
+            assert!(backup_files(&root.join("pc2")).is_err());
+            assert!(restore_files(&root.join("pc2"), "2026-11-12").is_err());
+            assert!(started.elapsed().as_millis() < 100);
+        }
+        // 열린 WAL 연결의 최신 내용도 별도 연결 백업에 들어간다.
+        b.store.db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE BackupProbe(v TEXT); INSERT INTO BackupProbe VALUES ('최신 WAL');").unwrap();
         // 백업 · 되돌리기 예약 · 취소
         let bk = b.backup_now().unwrap();
         assert_eq!(b.backups().len(), 1);
+        let saved = rusqlite::Connection::open(bk["db"].as_str().unwrap()).unwrap();
+        assert_eq!(saved.query_row("SELECT v FROM BackupProbe", [], |r| r.get::<_, String>(0)).unwrap(), "최신 WAL");
+        drop(saved);
+        let bad = root.join("broken");
+        std::fs::create_dir_all(&bad).unwrap();
+        std::fs::write(bad.join("bible.db"), b"not sqlite").unwrap();
+        assert!(backup_files(&bad).is_err());
+        assert!(backups_in(&bad).is_empty());
         assert!(b.backup_daily().unwrap().is_none());
         b.restore_backup(bk["day"].as_str().unwrap()).unwrap();
         assert!(b.restore_pending());
+        // 복사 중이거나 예약된 복원을 덮어쓰지 않는다.
+        assert!(restore_files(&root.join("pc2"), bk["day"].as_str().unwrap()).is_err());
         b.cancel_restore();
         assert!(!b.restore_pending());
         // 되돌리기 적용 (시작 전)
@@ -463,6 +482,7 @@ pub fn has_today(data_dir: &Path) -> bool {
 
 /// 백업 만들기: 따로 연 연결로 VACUUM INTO (코어 잠금 없이 — 프로그램이 멈추지 않게)
 pub fn backup_files(data_dir: &Path) -> Result<Value> {
+    let _work = FILE_WORK.try_lock().context("백업 또는 복원이 진행 중입니다.")?;
     let dir = data_dir.join("backups");
     std::fs::create_dir_all(&dir)?;
     let day = iso_now()[..10].to_string();
@@ -470,12 +490,17 @@ pub fn backup_files(data_dir: &Path) -> Result<Value> {
     let tmp = dir.join(format!("WorshipCue-{day}.db.tmp"));
     let _ = std::fs::remove_file(&tmp);
     let src = data_dir.join("bible.db");
-    let ok = rusqlite::Connection::open_with_flags(&src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .and_then(|c| c.execute("VACUUM INTO ?", [tmp.to_string_lossy().to_string()]))
-        .is_ok()
-        && std::fs::rename(&tmp, &out).is_ok();
-    if !ok {
-        std::fs::copy(&src, &out)?;
+    // WAL에 아직 남은 변경까지 포함한다. 실패한 경우 원본 DB 단순 복사로 대체하면 안 된다.
+    let result = (|| -> Result<()> {
+        let c = rusqlite::Connection::open_with_flags(&src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        c.busy_timeout(std::time::Duration::from_secs(5))?;
+        c.execute("VACUUM INTO ?", [tmp.to_string_lossy().to_string()])?;
+        std::fs::rename(&tmp, &out)?;
+        Ok(())
+    })();
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.context("일관된 SQLite 백업을 만들지 못했습니다."));
     }
     let st = data_dir.join("settings.json");
     if st.exists() {
@@ -490,4 +515,38 @@ pub fn backup_files(data_dir: &Path) -> Result<Value> {
     }
     log::info!("백업: {}", out.display());
     Ok(backups_in(data_dir).into_iter().next().unwrap_or(Value::Null))
+}
+
+/// 되돌리기 예약 (코어 잠금 없이 — 큰 파일 복사 동안 화면이 멈추지 않게). 임시 이름으로 복사한 뒤 바꿔 끼워, 도중에 끊겨도 반쪽 파일로 되돌리지 않는다
+pub fn restore_files(data_dir: &Path, day: &str) -> Result<Value> {
+    let _work = FILE_WORK.try_lock().context("백업 또는 복원이 진행 중입니다.")?;
+    let b = backups_in(data_dir).into_iter().find(|x| x["day"] == day).context("그 날짜의 백업이 없습니다.")?;
+    // 기존 예약이 있으면 덮어쓰지 않는다. 취소 후 새로 예약해야 DB와 설정이 뒤섞이지 않는다.
+    let pending = data_dir.join("bible.restore.db");
+    if pending.exists() {
+        bail!("이미 예약된 되돌리기가 있습니다. 먼저 예약을 취소하세요.");
+    }
+    let tmp = data_dir.join("bible.restore.db.tmp");
+    let settings_tmp = data_dir.join("settings.restore.json.tmp");
+    let settings_pending = data_dir.join("settings.restore.json");
+    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&settings_tmp);
+    std::fs::copy(b["db"].as_str().unwrap_or(""), &tmp)?;
+    // 설정을 먼저 준비하고 DB를 마지막에 게시한다. DB 파일이 예약 완료의 표시이기 때문이다.
+    if let Some(st) = b["settings"].as_str().filter(|x| !x.is_empty()) {
+        if let Err(e) = std::fs::copy(st, &settings_tmp).and_then(|_| std::fs::rename(&settings_tmp, &settings_pending)) {
+            let _ = std::fs::remove_file(&tmp);
+            let _ = std::fs::remove_file(&settings_tmp);
+            return Err(e.into());
+        }
+    } else {
+        let _ = std::fs::remove_file(&settings_pending);
+    }
+    if let Err(e) = std::fs::rename(&tmp, &pending) {
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&settings_pending);
+        return Err(e.into());
+    }
+    log::info!("되돌리기 예약: {day}");
+    Ok(json!({ "day": day, "restartNeeded": true }))
 }

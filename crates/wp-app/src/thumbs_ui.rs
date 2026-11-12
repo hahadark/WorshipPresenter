@@ -1,0 +1,181 @@
+//! [트랙 B] 라이브러리 그림·영상 썸네일 격자 (Electron library.js 의 lib-grid 처럼)
+//! 썸네일은 백그라운드 스레드 하나가 차례로 만들어 데이터 폴더 thumbs\ 에 캐시하고, 다 되면 화면을 다시 그린다.
+//! 화면에 보이는 칸만 요청한다 (ScrollArea::show_rows).
+
+use crate::app::App;
+use eframe::egui::{self, Color32, RichText, Sense, Stroke, Vec2};
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
+use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+
+#[derive(Default)]
+struct Thumbs {
+    queue: VecDeque<PathBuf>,
+    queued: HashSet<PathBuf>,
+    ready: HashMap<PathBuf, PathBuf>,
+    failed: HashMap<PathBuf, PathBuf>,
+    worker: bool,
+}
+
+static TH: Lazy<Mutex<Thumbs>> = Lazy::new(|| Mutex::new(Thumbs::default()));
+
+/// 썸네일 자리 (아직이면 만들 차례에 넣고 None)
+pub fn get(ctx: &egui::Context, data_dir: &Path, src: &Path) -> Option<PathBuf> {
+    let mut t = TH.lock();
+    let expected = wp_core::thumbs::thumb_path(data_dir, src)?;
+    if let Some(p) = t.ready.get(src) {
+        if *p == expected && p.exists() {
+            return Some(p.clone());
+        }
+        t.ready.remove(src);
+    }
+    if t.failed.get(src) == Some(&expected) {
+        return None;
+    }
+    t.failed.remove(src);
+    if let Some(p) = wp_core::thumbs::cached(data_dir, src) {
+        t.ready.insert(src.to_path_buf(), p.clone());
+        return Some(p);
+    }
+    if t.queued.insert(src.to_path_buf()) {
+        // 새로 보인 것을 먼저 (스크롤하면 지금 화면부터)
+        t.queue.push_front(src.to_path_buf());
+    }
+    if !t.worker {
+        t.worker = true;
+        let (ctx, dir) = (ctx.clone(), data_dir.to_path_buf());
+        std::thread::Builder::new()
+            .name("thumbs".into())
+            .spawn(move || loop {
+                let next = TH.lock().queue.pop_front();
+                let Some(src) = next else {
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    continue;
+                };
+                let r = wp_core::thumbs::make(&dir, &src);
+                let mut t = TH.lock();
+                t.queued.remove(&src);
+                match r {
+                    Ok(p) => {
+                        t.ready.insert(src, p);
+                    }
+                    Err(e) => {
+                        log::warn!("썸네일 실패 {}: {e}", src.display());
+                        if let Some(expected) = wp_core::thumbs::thumb_path(&dir, &src) {
+                            t.failed.insert(src, expected);
+                        }
+                    }
+                }
+                drop(t);
+                ctx.request_repaint();
+            })
+            .ok();
+    }
+    None
+}
+
+/// 지금 만들 차례에 남은 수 (점검용)
+pub fn pending() -> usize {
+    TH.lock().queue.len()
+}
+
+fn file_uri(p: &Path) -> String {
+    format!("file:///{}", p.to_string_lossy().replace('\\', "/").trim_start_matches('/'))
+}
+
+const CELL_W: f32 = 168.0;
+const IMG_H: f32 = CELL_W * 9.0 / 16.0;
+const ROW_H: f32 = IMG_H + 58.0;
+
+impl App {
+    /// 그림·영상 격자: 썸네일 · 이름 · [순서로] [배경] (LIVE 배경이면 빨간 테두리)
+    pub(crate) fn lib_grid(&mut self, ui: &mut egui::Ui, files: &[Value]) {
+        let ctx = ui.ctx().clone();
+        let live_url = self.core.lock().layers.media.as_ref().and_then(|m| m["url"].as_str().map(String::from)).unwrap_or_default();
+        let per_row = ((ui.available_width() + 8.0) / (CELL_W + 8.0)).floor().max(1.0) as usize;
+        let files: Vec<&Value> = files.iter().take(1000).collect();
+        let rows = files.len().div_ceil(per_row);
+        let mut act: Option<(&'static str, Value)> = None;
+        egui::ScrollArea::vertical().id_salt("libgrid").auto_shrink([false, false]).show_rows(ui, ROW_H, rows, |ui, range| {
+            for r in range {
+                ui.horizontal(|ui| {
+                    for f in files.iter().skip(r * per_row).take(per_row) {
+                        let path = PathBuf::from(f["path"].as_str().unwrap_or(""));
+                        let url = f["url"].as_str().unwrap_or("").to_string();
+                        let video = f["video"] == true;
+                        let on = !live_url.is_empty() && live_url == url;
+                        ui.vertical(|ui| {
+                            ui.set_width(CELL_W);
+                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(CELL_W, IMG_H), Sense::click());
+                            ui.painter().rect_filled(rect, 4.0, Color32::BLACK);
+                            match get(&ctx, &self.data_dir, &path) {
+                                Some(t) => {
+                                    // paint_at은 지정 사각형에 늘려 그리므로 실제 크기로 비율을 맞춘다.
+                                    let image = egui::Image::new(file_uri(&t));
+                                    if let Ok(poll) = image.load_for_size(ui.ctx(), rect.size()) {
+                                        if let Some(size) = poll.size().filter(|s| s.x > 0.0 && s.y > 0.0) {
+                                            let area = rect.shrink(1.0);
+                                            let scale = (area.width() / size.x).min(area.height() / size.y);
+                                            image.paint_at(ui, egui::Rect::from_center_size(area.center(), size * scale));
+                                        }
+                                    }
+                                }
+                                None => {
+                                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, if video { "🎞 영상" } else { "…" }, egui::FontId::proportional(14.0), Color32::GRAY);
+                                }
+                            }
+                            if video {
+                                ui.painter().text(rect.left_bottom() + Vec2::new(6.0, -6.0), egui::Align2::LEFT_BOTTOM, "🎞", egui::FontId::proportional(14.0), Color32::WHITE);
+                            }
+                            ui.painter().rect_stroke(rect, 4.0, if on { Stroke::new(2.5, Color32::from_rgb(0xe0, 0x3c, 0x3c)) } else if resp.hovered() { Stroke::new(1.5, Color32::from_rgb(0x5b, 0x9c, 0xf6)) } else { Stroke::new(1.0, Color32::from_gray(60)) }, egui::StrokeKind::Inside);
+                            let name = f["name"].as_str().unwrap_or("").to_string();
+                            if resp.double_clicked() {
+                                act = Some(("cue", (*f).clone()));
+                            }
+                            ui.add(egui::Label::new(RichText::new(if on { format!("● {name}") } else { name.clone() }).small().color(if on { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::LIGHT_GRAY })).truncate()).on_hover_text(f["path"].as_str().unwrap_or(""));
+                            ui.horizontal(|ui| {
+                                if ui.small_button(wp_core::i18n::tr("순서로")).on_hover_text(wp_core::i18n::tr("고른 순서 다음에 넣기 (두 번 눌러도)")).clicked() {
+                                    act = Some(("cue", (*f).clone()));
+                                }
+                                let bl = if on { wp_core::i18n::tr("배경 끄기") } else { wp_core::i18n::tr("배경으로") };
+                                if ui.small_button(bl).on_hover_text(wp_core::i18n::tr("지금 송출 화면의 배경으로 바로 (슬라이드와 따로)")).clicked() {
+                                    act = Some((if on { "bgoff" } else { "bg" }, (*f).clone()));
+                                }
+                            });
+                        });
+                    }
+                });
+                ui.add_space(4.0);
+            }
+        });
+        if files.is_empty() {
+            ui.label(RichText::new(wp_core::i18n::tr("찾는 그림·영상이 없습니다.")).color(Color32::GRAY));
+        }
+        if let Some((what, f)) = act {
+            let url = f["url"].as_str().unwrap_or("").to_string();
+            let name = f["name"].as_str().unwrap_or("").to_string();
+            let video = f["video"] == true;
+            match what {
+                "cue" => {
+                    let it = if video { json!({ "type": "video", "title": name, "file": url, "sound": true, "volume": 1.0, "loop": false, "endAction": "hold" }) } else { json!({ "type": "image", "title": name, "image": url }) };
+                    let mut x = wp_core::core::new_item(it["type"].as_str().unwrap(), &name);
+                    wp_core::settings::merge_into(&mut x, &it);
+                    self.add_lib_item(x);
+                }
+                "bg" => self.core.lock().set_background_media(Some(json!({ "type": if video { "video" } else { "image" }, "url": url, "label": name, "fit": "cover" }))),
+                _ => self.core.lock().set_background_media(None),
+            }
+        }
+    }
+
+    fn add_lib_item(&mut self, it: Value) {
+        let at = self.sel.map(|s| s + 1);
+        let mut c = self.core.lock();
+        c.add_item(it, at);
+        let n = c.cue.as_ref().map(|x| x.items.len()).unwrap_or(0);
+        self.sel = Some(at.unwrap_or(n.saturating_sub(1)).min(n.saturating_sub(1)));
+        self.edit = None;
+    }
+}

@@ -255,36 +255,11 @@ impl App {
         }
         ui.add(egui::TextEdit::singleline(&mut self.tb.lib_q).hint_text(wp_core::i18n::tr("파일 이름으로 찾기")));
         let files = self.core.lock().search_lib(&kind, &self.tb.lib_q, "");
-        egui::ScrollArea::vertical().id_salt("libfiles").show(ui, |ui| {
-            for f in files.iter().take(300) {
-                ui.horizontal(|ui| {
-                    ui.label(format!("{}{}", if f["video"] == true { "🎞 " } else { "" }, f["name"].as_str().unwrap_or("")));
-                    let url = f["url"].as_str().unwrap_or("").to_string();
-                    let name = f["name"].as_str().unwrap_or("").to_string();
-                    if kind == "image" {
-                        if ui.small_button(wp_core::i18n::tr("순서로")).clicked() {
-                            let it = if f["video"] == true { json!({ "type": "video", "title": name, "file": url, "sound": true, "volume": 1.0, "loop": false, "endAction": "hold" }) } else { json!({ "type": "image", "title": name, "image": url }) };
-                            let mut x = wp_core::core::new_item(it["type"].as_str().unwrap(), &name); wp_core::settings::merge_into(&mut x, &it);
-                            self.add_to_cue(x);
-                        }
-                        if ui.small_button(wp_core::i18n::tr("배경으로")).clicked() {
-                            let ty = if f["video"] == true { "video" } else { "image" };
-                            self.core.lock().set_background_media(Some(json!({ "type": ty, "url": url, "label": name, "fit": "cover" })));
-                        }
-                    } else if ui.small_button("▶").on_hover_text(wp_core::i18n::tr("바로 재생 (조작 PC)")).clicked() {
-                        crate::music_ui::play_now(&url, &name);
-                    } else if ui.small_button(wp_core::i18n::tr("고른 순서 배경 음악")).clicked() {
-                        if let Some(i) = self.sel {
-                            let mut c = self.core.lock();
-                            c.remember_items();
-                            if let Some(cue) = &mut c.cue { if let Some(it) = cue.items.get_mut(i) { it["music"] = json!(url); } }
-                            c.save_cue();
-                            self.edit = None;
-                        }
-                    }
-                });
-            }
-        });
+        if kind == "image" {
+            self.lib_grid(ui, &files); // 썸네일 격자
+        } else {
+            egui::ScrollArea::vertical().id_salt("libfiles").show(ui, |ui| {                 for f in files.iter().take(300) {                     ui.horizontal(|ui| {                         ui.label(format!("{}{}", if f["video"] == true { "🎞 " } else { "" }, f["name"].as_str().unwrap_or("")));                         let url = f["url"].as_str().unwrap_or("").to_string();                         let name = f["name"].as_str().unwrap_or("").to_string();                         if kind == "image" {                             if ui.small_button(wp_core::i18n::tr("순서로")).clicked() {                                 let it = if f["video"] == true { json!({ "type": "video", "title": name, "file": url, "sound": true, "volume": 1.0, "loop": false, "endAction": "hold" }) } else { json!({ "type": "image", "title": name, "image": url }) };                                 let mut x = wp_core::core::new_item(it["type"].as_str().unwrap(), &name); wp_core::settings::merge_into(&mut x, &it);                                 self.add_to_cue(x);                             }                             if ui.small_button(wp_core::i18n::tr("배경으로")).clicked() {                                 let ty = if f["video"] == true { "video" } else { "image" };                                 self.core.lock().set_background_media(Some(json!({ "type": ty, "url": url, "label": name, "fit": "cover" })));                             }                         } else if ui.small_button("▶").on_hover_text(wp_core::i18n::tr("바로 재생 (조작 PC)")).clicked() {                             crate::music_ui::play_now(&url, &name);                         } else if ui.small_button(wp_core::i18n::tr("고른 순서 배경 음악")).clicked() {                             if let Some(i) = self.sel {                                 let mut c = self.core.lock();                                 c.remember_items();                                 if let Some(cue) = &mut c.cue { if let Some(it) = cue.items.get_mut(i) { it["music"] = json!(url); } }                                 c.save_cue();                                 self.edit = None;                             }                         }                     });                 }             });
+        }
         if ui.button(wp_core::i18n::tr("배경 미디어 끄기")).clicked() { self.core.lock().set_background_media(None); }
     }
 
@@ -366,6 +341,12 @@ impl App {
                 }
             });
             ui.add(egui::TextEdit::multiline(&mut self.tb.msg_text).desired_rows(2).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("보일 글 ({이름} 같은 칸은 아래에서 채움)")));
+            // 틀 버튼뿐 아니라 직접 입력하거나 고친 칸도 즉시 반영하고 기존 입력값은 유지한다.
+            let fields = wp_core::overlays::template_fields(&self.tb.msg_text);
+            self.tb.msg_fields = fields.into_iter().map(|key| {
+                let value = self.tb.msg_fields.iter().find(|(k, _)| k == &key).map(|(_, v)| v.clone()).unwrap_or_default();
+                (key, value)
+            }).collect();
             for (k, v) in self.tb.msg_fields.iter_mut() {
                 ui.horizontal(|ui| { ui.label(k.as_str()); ui.text_edit_singleline(v); });
             }
@@ -554,6 +535,14 @@ impl App {
         let mut open = self.tb.cues;
         egui::Window::new(wp_core::i18n::tr("큐시트 관리")).open(&mut open).default_size([460.0, 460.0]).show(ctx, |ui| {
             let (cue, trash, times) = { let c = self.core.lock(); (c.cue.clone(), c.trash_list(), c.planned_times()) };
+            // 큐시트 없는 새 데이터 폴더에서도 가져오기를 시작할 수 있다.
+                    if ui.button(wp_core::i18n::tr("가져오기…")).clicked() {
+                        if let Some(p) = rfd::FileDialog::new().add_filter("큐시트", &["json"]).pick_file() {
+                            let r = self.core.lock().import_cue_file(&p);
+                            self.tb.note = match r { Ok(n) => format!("큐시트 {n}개를 가져왔습니다."), Err(e) => e.to_string() };
+                        }
+                    }
+
             if let Some(cue) = &cue {
                 let mut meta = json!({});
                 let mut ch = false;
@@ -574,12 +563,6 @@ impl App {
                     if ui.button(wp_core::i18n::tr("복제")).clicked() { self.tb.note = err(self.core.lock().duplicate_cue(&cue.id)); }
                     if ui.button(wp_core::i18n::tr("내보내기…")).clicked() {
                         if let Some(p) = rfd::FileDialog::new().set_file_name(format!("{}.wpcue.json", cue.name)).save_file() { self.tb.note = err(self.core.lock().export_cue_file(&p)); }
-                    }
-                    if ui.button(wp_core::i18n::tr("가져오기…")).clicked() {
-                        if let Some(p) = rfd::FileDialog::new().add_filter("큐시트", &["json"]).pick_file() {
-                            let r = self.core.lock().import_cue_file(&p);
-                            self.tb.note = match r { Ok(n) => format!("큐시트 {n}개를 가져왔습니다."), Err(e) => e.to_string() };
-                        }
                     }
                     if ui.button(RichText::new(wp_core::i18n::tr("휴지통으로")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() { self.tb.note = err(self.core.lock().trash_cue(&cue.id)); self.sel = None; self.edit = None; }
                 });
