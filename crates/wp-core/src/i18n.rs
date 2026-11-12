@@ -62,6 +62,15 @@ pub fn tr(s: &str) -> String {
     DICT.get(s).cloned().unwrap_or_else(|| s.to_string())
 }
 
+/// 자리가 있는 문구: tr_args("{1}장 · {2}", &[&a, &b]) — 사전은 Electron 처럼 {1} {2} 자리로 찾고, 자리를 채운다
+pub fn tr_args(template: &str, args: &[&dyn std::fmt::Display]) -> String {
+    let mut s = tr(template);
+    for (i, a) in args.iter().enumerate() {
+        s = s.replace(&format!("{{{}}}", i + 1), &a.to_string());
+    }
+    s
+}
+
 /// 출력 HTML 에 영어 번역 스크립트 넣기 (prefix = /shared/)
 pub fn with_lang(buf: Vec<u8>) -> Vec<u8> {
     if !is_en() {
@@ -88,6 +97,7 @@ mod tests {
         assert_eq!(tr("파일"), "File");
         assert_eq!(tr("새 버전"), "New version");
         assert_eq!(tr("홍길동"), "홍길동");
+        assert_eq!(tr_args("{1}장 없음", &[&3]), "{1}장 없음".replace("{1}", "3"));
         let h = String::from_utf8(with_lang(b"<html lang=\"ko\"><head></head>".to_vec())).unwrap();
         assert!(h.contains("data-lang=\"en\"") && h.contains("i18n-en.js"));
         set_lang("ko");
