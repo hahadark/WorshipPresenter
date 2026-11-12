@@ -792,6 +792,7 @@ impl eframe::App for App {
 impl Drop for App {
     fn drop(&mut self) {
         self.out.close();
+        wp_core::sync::on_exit(&mut self.core.lock()); // [트랙 B] 끝날 때 동기화 파일 쓰기
         self.core.lock().flush();
     }
 }

@@ -119,6 +119,7 @@ impl App {
         self.cues_window(ctx);
         self.lyrics_window(ctx);
         self.music_tick(ctx);
+        self.system_windows(ctx);
     }
 
     fn add_to_cue(&mut self, it: Value) {

@@ -1,0 +1,392 @@
+//! [트랙 B] 조작 화면 창: 여러 PC 동기화·백업 · 연결 점검·로그 묶음 · 화면에 그리기·강조 · 카메라 설정
+//! 메뉴 id: b:sync · b:diagnose · b:logbundle · b:logs · b:draw · b:cameras
+
+use crate::app::App;
+use crate::paint::{self, paint_slide};
+use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
+use serde_json::{json, Value};
+use wp_core::diagnose::Desktop;
+
+#[derive(Default)]
+pub struct SysState {
+    pub sync: bool,
+    pub diag: bool,
+    pub draw: bool,
+    pub cameras: bool,
+    diag_result: Value,
+    note: String,
+    // 그리기
+    pen_color: usize,
+    pen_width: f32,
+    spot_mode: bool,
+    spot_r: f32,
+    stroke_id: Option<String>,
+    stroke_pts: Vec<[f64; 2]>,
+    seq: u64,
+    // 카메라
+    cam_edit: Option<(String, Value)>,
+}
+
+pub static ST: Lazy<Mutex<SysState>> = Lazy::new(|| Mutex::new(SysState { pen_width: 0.006, spot_r: 0.18, ..Default::default() }));
+
+const COLORS: [(&str, &str); 6] = [("#ff3b30", "빨강"), ("#ffd60a", "노랑"), ("#34c759", "초록"), ("#0a84ff", "파랑"), ("#ffffff", "흰색"), ("#000000", "검정")];
+
+/// 메뉴에서 고른 트랙 B 항목 (처리했으면 true)
+pub fn handle_menu(app: &mut App, id: &str) -> bool {
+    let mut st = ST.lock();
+    match id {
+        "b:sync" => st.sync = true,
+        "b:diagnose" => {
+            st.diag = true;
+            st.diag_result = Value::Null;
+        }
+        "b:draw" => st.draw = true,
+        "b:cameras" => st.cameras = true,
+        "b:logs" => {
+            drop(st);
+            let d = wp_core::logger::dir(&app.data_dir);
+            let _ = std::fs::create_dir_all(&d);
+            let _ = std::process::Command::new("explorer").arg(d).spawn();
+        }
+        "b:logbundle" => {
+            drop(st);
+            app.save_log_bundle();
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn ago(iso: &str) -> String {
+    if iso.is_empty() { "없음".into() } else { iso.replace('T', " ").chars().take(19).collect::<String>() + " (UTC)" }
+}
+
+impl App {
+    fn desktop(&mut self) -> Desktop {
+        let running = self.out.running();
+        let m = self.out.monitors.iter().find(|m| m.index == self.monitor).cloned();
+        Desktop {
+            monitors: self.out.monitors.len(),
+            output_running: running,
+            output_monitor: m.as_ref().map(|m| format!("{} {}×{}", m.name, m.size.0, m.size.1)).unwrap_or_default(),
+            same_as_control: m.is_some_and(|m| m.primary),
+        }
+    }
+
+    pub(crate) fn save_log_bundle(&mut self) {
+        let d = self.desktop();
+        let (name, text) = wp_core::diagnose::log_bundle(&mut self.core.lock(), &d, 7);
+        let Some(p) = rfd::FileDialog::new().set_file_name(&name).add_filter("글", &["txt"]).save_file() else { return };
+        let r = std::fs::write(&p, text);
+        let mut c = self.core.lock();
+        match r {
+            Ok(_) => c.notify(format!("로그 묶음을 저장했습니다: {}", p.display()), "ok"),
+            Err(e) => c.notify(format!("로그 묶음 저장 실패: {e}"), "error"),
+        }
+    }
+
+    pub(crate) fn system_windows(&mut self, ctx: &egui::Context) {
+        // 점검용: --open-b sync,diagnose,draw,cameras
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            if let Some(v) = std::env::args().position(|x| x == "--open-b").and_then(|i| std::env::args().nth(i + 1)) {
+                for w in v.split(',') {
+                    handle_menu(self, &format!("b:{w}"));
+                }
+            }
+        });
+        self.sync_window(ctx);
+        self.diag_window(ctx);
+        self.draw_window(ctx);
+        self.cameras_window(ctx);
+    }
+
+    // ---------------- 여러 PC 동기화 · 백업 ----------------
+    fn sync_window(&mut self, ctx: &egui::Context) {
+        let mut open = ST.lock().sync;
+        if !open {
+            return;
+        }
+        egui::Window::new("여러 PC 동기화 · 백업").open(&mut open).default_size([540.0, 460.0]).show(ctx, |ui| {
+            let info = self.core.lock().sync_info();
+            ui.label(RichText::new("원드라이브 같은 동기화 폴더를 고르면 찬양 · 큐시트 · 오버레이를 그 폴더의 WorshipCue-sync.json 으로 주고받습니다 (기존 워십프리젠터와 같은 파일). 시작할 때 읽고, 바뀌면 1분 안에, 끝날 때 씁니다.").small());
+            ui.horizontal(|ui| {
+                let dir = info["dir"].as_str().unwrap_or("");
+                ui.label(if dir.is_empty() { RichText::new("동기화 꺼짐").color(Color32::GRAY) } else { RichText::new(format!("📁 {dir}")).strong() });
+            });
+            let mut note = String::new();
+            ui.horizontal(|ui| {
+                if ui.button("폴더 고르기…").clicked() {
+                    if let Some(d) = rfd::FileDialog::new().pick_folder() {
+                        let r = self.core.lock().set_sync_dir(&d.to_string_lossy());
+                        note = match r { Ok(_) => "동기화 폴더를 정하고 주고받았습니다.".into(), Err(e) => e.to_string() };
+                    }
+                }
+                if !info["dir"].as_str().unwrap_or("").is_empty() {
+                    if ui.button("지금 동기화").clicked() {
+                        let r = self.core.lock().sync_now();
+                        note = match r { Ok(v) => format!("받음: 찬양 {} · 큐시트 {} · 오버레이 {} / 보냄: 찬양 {} · 큐시트 {}", v["imported"]["songs"], v["imported"]["cues"], v["imported"]["overlays"], v["exported"]["songs"], v["exported"]["cues"]), Err(e) => e.to_string() };
+                    }
+                    if ui.button("동기화 끄기").clicked() {
+                        let _ = self.core.lock().set_sync_dir("");
+                    }
+                }
+            });
+            egui::Grid::new("syncinfo").num_columns(2).show(ui, |ui| {
+                ui.label("이 PC"); ui.label(info["host"].as_str().unwrap_or("")); ui.end_row();
+                ui.label("마지막으로 받음"); ui.label(ago(info["lastImport"].as_str().unwrap_or(""))); ui.end_row();
+                ui.label("마지막으로 보냄"); ui.label(ago(info["lastExport"].as_str().unwrap_or(""))); ui.end_row();
+                ui.label("동기화 파일을 쓴 PC"); ui.label(format!("{} {}", info["remoteHost"].as_str().unwrap_or(""), ago(info["remoteAt"].as_str().unwrap_or("")))); ui.end_row();
+            });
+            if let Some(e) = info["error"].as_str().filter(|x| !x.is_empty()) {
+                ui.label(RichText::new(e).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+            }
+            ui.separator();
+            ui.label(RichText::new("백업 (하루 한 번 자동 · 10일치 보관)").strong());
+            if info["restorePending"] == true {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("되돌리기 예약됨 — 프로그램을 다시 시작하면 적용됩니다.").color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                    if ui.button("예약 취소").clicked() { self.core.lock().cancel_restore(); }
+                });
+            }
+            ui.horizontal(|ui| {
+                if ui.button("지금 백업").clicked() {
+                    let r = self.core.lock().backup_now();
+                    note = match r { Ok(b) => format!("백업했습니다: {}", b["day"].as_str().unwrap_or("")), Err(e) => format!("백업 실패: {e}") };
+                }
+                if ui.button("백업 폴더 열기").clicked() {
+                    let d = self.core.lock().backup_dir();
+                    let _ = std::fs::create_dir_all(&d);
+                    let _ = std::process::Command::new("explorer").arg(d).spawn();
+                }
+            });
+            let list = self.core.lock().backups();
+            egui::ScrollArea::vertical().id_salt("backups").max_height(160.0).show(ui, |ui| {
+                for b in &list {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} · {:.1}MB{}", b["day"].as_str().unwrap_or(""), b["size"].as_f64().unwrap_or(0.0) / 1048576.0, if b["settings"].as_str().unwrap_or("").is_empty() { "" } else { " · 설정 포함" }));
+                        if ui.small_button("이 날로 되돌리기").on_hover_text("다음 시작 때 이 백업으로 바꿉니다 (지금 것은 bible.pre-restore.db 로 남김)").clicked() {
+                            let r = self.core.lock().restore_backup(b["day"].as_str().unwrap_or(""));
+                            note = match r { Ok(_) => "되돌리기를 예약했습니다. 프로그램을 다시 시작하세요.".into(), Err(e) => e.to_string() };
+                        }
+                    });
+                }
+                if list.is_empty() { ui.label(RichText::new("아직 백업이 없습니다.").color(Color32::GRAY)); }
+            });
+            if !note.is_empty() { ST.lock().note = note; }
+            let n = ST.lock().note.clone();
+            if !n.is_empty() { ui.label(RichText::new(n).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
+        });
+        ST.lock().sync = open;
+    }
+
+    // ---------------- 연결 점검 · 로그 ----------------
+    fn diag_window(&mut self, ctx: &egui::Context) {
+        let mut open = ST.lock().diag;
+        if !open {
+            return;
+        }
+        if ST.lock().diag_result.is_null() {
+            let d = self.desktop();
+            let r = wp_core::diagnose::diagnose(&mut self.core.lock(), &d);
+            ST.lock().diag_result = r;
+        }
+        egui::Window::new("연결 점검 (예배 전 점검)").open(&mut open).default_size([600.0, 560.0]).show(ctx, |ui| {
+            let r = ST.lock().diag_result.clone();
+            ui.horizontal(|ui| {
+                let (f, w) = (r["summary"]["fail"].as_u64().unwrap_or(0), r["summary"]["warn"].as_u64().unwrap_or(0));
+                let (t, c) = if f > 0 { (format!("문제 {f}곳 · 확인 {w}곳"), Color32::from_rgb(0xff, 0x6b, 0x6b)) } else if w > 0 { (format!("확인할 곳 {w}곳"), Color32::from_rgb(0xff, 0xb0, 0x4a)) } else { ("모두 괜찮습니다".into(), Color32::from_rgb(0x8a, 0xe0, 0xa8)) };
+                ui.label(RichText::new(t).strong().color(c));
+                if ui.button("다시 점검").clicked() { ST.lock().diag_result = Value::Null; }
+                if ui.button("로그 묶음 저장…").on_hover_text("문제를 알릴 때 보낼 글 파일 (열쇠·PIN·AI 키는 가림)").clicked() { self.save_log_bundle(); }
+                if ui.button("로그 폴더").clicked() { handle_menu(self, "b:logs"); }
+            });
+            ui.separator();
+            egui::ScrollArea::vertical().id_salt("diag").auto_shrink([false, false]).show(ui, |ui| {
+                for x in r["items"].as_array().into_iter().flatten() {
+                    let (mark, col) = match x["status"].as_str().unwrap_or("") {
+                        "ok" => ("✔", Color32::from_rgb(0x8a, 0xe0, 0xa8)),
+                        "warn" => ("!", Color32::from_rgb(0xff, 0xb0, 0x4a)),
+                        "fail" => ("✖", Color32::from_rgb(0xff, 0x6b, 0x6b)),
+                        _ => ("i", Color32::GRAY),
+                    };
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(mark).strong().color(col));
+                        ui.label(RichText::new(x["title"].as_str().unwrap_or("")).strong());
+                        ui.label(x["detail"].as_str().unwrap_or(""));
+                    });
+                    for f in x["fix"].as_array().into_iter().flatten().filter_map(|f| f.as_str()) {
+                        ui.label(RichText::new(format!("    · {f}")).small().color(Color32::LIGHT_GRAY));
+                    }
+                    ui.add_space(4.0);
+                }
+            });
+        });
+        ST.lock().diag = open;
+    }
+
+    // ---------------- 화면에 그리기 · 강조 ----------------
+    fn draw_window(&mut self, ctx: &egui::Context) {
+        let mut open = ST.lock().draw;
+        if !open {
+            return;
+        }
+        egui::Window::new("화면에 그리기 · 강조").open(&mut open).default_size([720.0, 500.0]).show(ctx, |ui| {
+            let mut st = ST.lock();
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut st.spot_mode, false, "펜");
+                ui.selectable_value(&mut st.spot_mode, true, "강조 (원 하나만 밝게)");
+                ui.separator();
+                for (k, (hex, name)) in COLORS.iter().enumerate() {
+                    let c = paint::parse_color(hex).unwrap_or(Color32::RED);
+                    let (r, resp) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::click());
+                    ui.painter().circle_filled(r.center(), 8.0, c);
+                    if st.pen_color == k { ui.painter().circle_stroke(r.center(), 10.0, Stroke::new(2.0, Color32::WHITE)); }
+                    if resp.on_hover_text(*name).clicked() { st.pen_color = k; }
+                }
+                ui.add(egui::Slider::new(&mut st.pen_width, 0.002..=0.03).text("굵기").show_value(false));
+                if st.spot_mode { ui.add(egui::Slider::new(&mut st.spot_r, 0.05..=0.5).text("원 크기").show_value(false)); }
+            });
+            drop(st);
+            ui.horizontal(|ui| {
+                if ui.button("되돌리기").clicked() { self.core.lock().draw_undo(); }
+                if ui.button("모두 지우기").clicked() { self.core.lock().draw_clear(); }
+                if ui.button("강조 끄기").clicked() { self.core.lock().draw_spot(None); }
+                ui.label(RichText::new("예배당 화면 · OBS 화면에 바로 보입니다 (무대 화면은 빼고)").small().color(Color32::GRAY));
+            });
+            // 바탕: 지금 LIVE 슬라이드
+            let (live, tpl, d, logo, hide_bg) = {
+                let c = self.core.lock();
+                (c.pres.live.clone(), c.template_for("main"), c.draw_json(), c.layers.logo, c.layers.hide_bg)
+            };
+            let tw = tpl["width"].as_f64().unwrap_or(1920.0) as f32;
+            let th = tpl["height"].as_f64().unwrap_or(1080.0) as f32;
+            let w = ui.available_width();
+            let h = (w * th / tw).min(ui.available_height() - 8.0).max(100.0);
+            let (resp, painter) = ui.allocate_painter(Vec2::new(h * tw / th, h), Sense::click_and_drag());
+            let rect = resp.rect;
+            let pc = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
+            let slide = live.as_ref().and_then(|l| l.deck.slides.get(l.deck.index));
+            let ver = live.as_ref().map(|l| l.deck.passage["versionName"].as_str().unwrap_or("").to_string()).unwrap_or_default();
+            paint_slide(ui, &pc, rect, slide, &tpl, &ver, live.as_ref().is_some_and(|l| l.visible), logo, hide_bg);
+            // 지금 그려진 것
+            if let Some(sp) = d["spot"].as_object() {
+                let (x, y, r) = (sp["x"].as_f64().unwrap_or(0.5) as f32, sp["y"].as_f64().unwrap_or(0.5) as f32, sp["r"].as_f64().unwrap_or(0.18) as f32);
+                painter.rect_filled(rect, 0.0, Color32::from_black_alpha(120));
+                painter.circle_stroke(Pos2::new(rect.left() + x * rect.width(), rect.top() + y * rect.height()), r * rect.height(), Stroke::new(2.0, Color32::from_white_alpha(160)));
+            }
+            for s in d["strokes"].as_array().into_iter().flatten() {
+                let col = s["color"].as_str().and_then(paint::parse_color).unwrap_or(Color32::RED).gamma_multiply(s["alpha"].as_f64().unwrap_or(1.0) as f32);
+                let pts: Vec<Pos2> = s["pts"].as_array().into_iter().flatten().map(|p| Pos2::new(rect.left() + p[0].as_f64().unwrap_or(0.0) as f32 * rect.width(), rect.top() + p[1].as_f64().unwrap_or(0.0) as f32 * rect.height())).collect();
+                let wpx = (s["width"].as_f64().unwrap_or(0.006) as f32 * rect.height()).max(1.0);
+                painter.add(egui::Shape::line(pts, Stroke::new(wpx, col)));
+            }
+            painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(90)), egui::StrokeKind::Outside);
+            // 입력
+            let to01 = |p: Pos2| [((p.x - rect.left()) / rect.width()) as f64, ((p.y - rect.top()) / rect.height()) as f64];
+            let mut st = ST.lock();
+            if st.spot_mode {
+                if let Some(p) = resp.interact_pointer_pos().filter(|_| resp.clicked() || resp.dragged()) {
+                    let q = to01(p);
+                    let r = st.spot_r as f64;
+                    drop(st);
+                    self.core.lock().draw_spot(Some((q[0], q[1], r)));
+                }
+            } else {
+                if resp.drag_started() {
+                    st.seq += 1;
+                    st.stroke_id = Some(format!("r{}-{}", wp_core::util::now_ms(), st.seq));
+                    st.stroke_pts.clear();
+                }
+                if resp.dragged() {
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        st.stroke_pts.push(to01(p));
+                        let s = json!({ "id": st.stroke_id, "pts": st.stroke_pts, "color": COLORS[st.pen_color].0, "width": st.pen_width, "alpha": 1.0 });
+                        drop(st);
+                        let _ = self.core.lock().draw_stroke(&s);
+                        st = ST.lock();
+                    }
+                }
+                if resp.drag_stopped() {
+                    st.stroke_id = None;
+                    st.stroke_pts.clear();
+                }
+            }
+        });
+        ST.lock().draw = open;
+    }
+
+    // ---------------- 카메라 설정 ----------------
+    fn cameras_window(&mut self, ctx: &egui::Context) {
+        let mut open = ST.lock().cameras;
+        if !open {
+            return;
+        }
+        egui::Window::new("카메라 설정").open(&mut open).default_size([520.0, 440.0]).show(ctx, |ui| {
+            ui.label(RichText::new("카메라(웹캠 · 캡처보드)마다 해상도 · 프레임 · 좌우 반전 · 밝기를 정합니다. 출력 화면이 카메라를 열 때 씁니다.").small());
+            // 설정에 있는 카메라 + 큐시트의 카메라 순서
+            let (saved, used) = {
+                let c = self.core.lock();
+                let saved = c.settings.get()["cameras"].as_object().cloned().unwrap_or_default();
+                let used: Vec<(String, String)> = c.cue.as_ref().map(|q| q.items.iter().filter(|it| it["type"] == "camera").filter_map(|it| it["deviceId"].as_str().filter(|x| !x.is_empty()).map(|d| (d.to_string(), it["label"].as_str().unwrap_or("").to_string()))).collect()).unwrap_or_default();
+                (saved, used)
+            };
+            let mut list: Vec<(String, String)> = saved.iter().map(|(k, v)| (k.clone(), v["label"].as_str().unwrap_or("").to_string())).collect();
+            for u in used { if !list.iter().any(|x| x.0 == u.0) { list.push(u); } }
+            if list.is_empty() {
+                ui.label(RichText::new("아직 카메라가 없습니다. 큐시트에 카메라 순서를 넣으면 여기에 나옵니다.").color(Color32::GRAY));
+            }
+            let mut st = ST.lock();
+            for (id, label) in &list {
+                let name = if label.is_empty() { format!("카메라 {}", &id[..id.len().min(8)]) } else { label.clone() };
+                if ui.selectable_label(st.cam_edit.as_ref().is_some_and(|e| &e.0 == id), format!("📷 {name}{}", if saved.contains_key(id) { " · 설정됨" } else { "" })).clicked() {
+                    let mut p = saved.get(id).cloned().unwrap_or(json!({ "label": label, "res": "auto", "fps": 0, "exact": false, "mirror": false, "brightness": 100, "contrast": 100, "saturation": 100 }));
+                    if p["label"].as_str().unwrap_or("").is_empty() { p["label"] = json!(label); }
+                    st.cam_edit = Some((id.clone(), p));
+                }
+            }
+            ui.separator();
+            let mut action: Option<(String, Option<Value>)> = None;
+            if let Some((id, p)) = &mut st.cam_edit {
+                egui::Grid::new("cam").num_columns(2).show(ui, |ui| {
+                    ui.label("해상도");
+                    let mut res = p["res"].as_str().unwrap_or("auto").to_string();
+                    egui::ComboBox::from_id_salt("cam-res").selected_text(if res == "auto" { "자동".into() } else { format!("{res}p") }).show_ui(ui, |ui| {
+                        for r in ["auto", "720", "1080", "1440", "2160"] { ui.selectable_value(&mut res, r.to_string(), if r == "auto" { "자동".into() } else { format!("{r}p") }); }
+                    });
+                    p["res"] = json!(res);
+                    ui.end_row();
+                    ui.label("프레임");
+                    let mut fps = p["fps"].as_i64().unwrap_or(0);
+                    egui::ComboBox::from_id_salt("cam-fps").selected_text(if fps == 0 { "자동".into() } else { format!("{fps}fps") }).show_ui(ui, |ui| {
+                        for f in [0, 24, 25, 30, 50, 60] { ui.selectable_value(&mut fps, f, if f == 0 { "자동".into() } else { format!("{f}fps") }); }
+                    });
+                    p["fps"] = json!(fps);
+                    ui.end_row();
+                    let mut b = |ui: &mut egui::Ui, k: &str, label: &str| { let mut v = p[k].as_bool().unwrap_or(false); ui.checkbox(&mut v, label); p[k] = json!(v); };
+                    ui.label(""); b(ui, "exact", "해상도·프레임을 꼭 맞춤 (안 되면 안 열림)"); ui.end_row();
+                    ui.label(""); b(ui, "mirror", "좌우 반전"); ui.end_row();
+                    for (k, label, lo, hi) in [("brightness", "밝기", 50, 200), ("contrast", "대비", 50, 200), ("saturation", "채도", 0, 200)] {
+                        ui.label(label);
+                        let mut v = p[k].as_i64().unwrap_or(100);
+                        ui.add(egui::Slider::new(&mut v, lo..=hi).suffix("%"));
+                        p[k] = json!(v);
+                        ui.end_row();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("저장").clicked() { action = Some((id.clone(), Some(p.clone()))); }
+                    if ui.button("기본값으로 (설정 지우기)").clicked() { action = Some((id.clone(), None)); }
+                });
+            }
+            if let Some((id, p)) = action {
+                if p.is_none() { st.cam_edit = None; }
+                drop(st);
+                self.core.lock().set_camera_prefs(&id, p.as_ref());
+            }
+        });
+        ST.lock().cameras = open;
+    }
+}

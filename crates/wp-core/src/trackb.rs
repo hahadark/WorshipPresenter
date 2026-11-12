@@ -22,6 +22,10 @@ pub struct TrackB {
     pub video_for: Option<(u64, usize)>,
     /// 편집칸 글 고치기 묶음 (실행 취소: 같은 순서를 이어서 치면 한 번에)
     pub typing: Option<(String, std::time::Instant)>,
+    /// 여러 PC 동기화 상태
+    pub sync: crate::sync::SyncStatus,
+    /// 화면에 그리기 · 강조
+    pub draw: crate::draw::Draw,
 }
 
 impl Core {

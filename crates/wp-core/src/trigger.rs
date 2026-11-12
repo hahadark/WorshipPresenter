@@ -103,9 +103,7 @@ pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result
             let key = q.get("id").or(q.get("name")).cloned().unwrap_or_default();
             core.run_macro(&key).map_err(|e| e.to_string())?;
         }
-        "draw-clear" => {
-            return Err(format!("'{action}' 동작은 아직 Rust 판에 없습니다 (준비 중)."));
-        }
+        "draw-clear" => core.draw_clear(), // [트랙 B]
         _ => return Err(format!("알 수 없는 동작: {action}")),
     }
     Ok(Value::Bool(true))

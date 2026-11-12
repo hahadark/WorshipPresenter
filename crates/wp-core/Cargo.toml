@@ -35,4 +35,4 @@ url = "2.5.8" # [트랙 A] 한글 도메인(홈페이지 주보 주소)
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_SystemInformation"] } # [트랙 B] 시간대
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_SystemInformation", "Win32_Storage_FileSystem"] } # [트랙 B] 시간대

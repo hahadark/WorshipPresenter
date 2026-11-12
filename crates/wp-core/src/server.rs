@@ -85,7 +85,8 @@ fn allowed_lib_file(core: &crate::core::Core, p: &str) -> Option<PathBuf> {
         }
     }
     let dropped = s["droppedFiles"].as_array().into_iter().flatten().any(|d| d.as_str().map(norm).as_deref() == Some(fp.as_str()) || d["path"].as_str().map(norm).as_deref() == Some(fp.as_str()));
-    let in_data = fp.starts_with(&norm(&core.data_dir.to_string_lossy()));
+    let dd = std::path::absolute(&core.data_dir).unwrap_or_else(|_| core.data_dir.clone()); // [트랙 B] --data 가 상대 경로여도
+    let in_data = fp.starts_with(&norm(&dd.to_string_lossy()));
     if dropped || in_data { Some(f) } else { None }
 }
 
@@ -181,8 +182,14 @@ async fn events(State(core): State<Shared>, Query(q): Query<HashMap<String, Stri
         yielder.send(Ok(Event::default().retry(std::time::Duration::from_millis(1000)).comment("hi"))).await;
         yielder.send(Ok(first)).await;
         yielder.send(Ok(Event::default().event("hello").data(json!({ "id": id }).to_string()))).await;
+        // [트랙 B] 그리기·강조: 접속하면 지금 것, 바뀌면 'draw' (무대 화면은 빼고)
+        if client != "stage" { let d = core.lock().draw_json(); if d["strokes"].as_array().is_some_and(|a| !a.is_empty()) || !d["spot"].is_null() { yielder.send(Ok(Event::default().event("draw").data(d.to_string()))).await; } }
         loop {
             match rx.recv().await {
+                Ok(Ev::Draw) if client != "stage" => { // [트랙 B]
+                    let d = core.lock().draw_json().to_string();
+                    if !yielder.send(Ok(Event::default().event("draw").data(d))).await { break; }
+                }
                 Ok(Ev::Live) => {
                     let ev = render_event(&core.lock(), &client);
                     if !yielder.send(Ok(ev)).await {

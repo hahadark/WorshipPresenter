@@ -25,6 +25,7 @@ pub fn menus() -> Vec<Menu> {
         Menu { label: "파일", items: vec![
             it("c:import-bible", "성경 번역본 가져오기…", ""),
             it("c:usage", "사용 기록 (저작권 보고)", ""),
+            it("b:sync", "여러 PC 동기화 · 백업", ""), // [트랙 B]
             it("-", "-", ""),
             it("c:settings", "설정", "Ctrl+,"),
         ] },
@@ -44,6 +45,7 @@ pub fn menus() -> Vec<Menu> {
             it("b:overlays", "오버레이 (시계 · 카운트다운 · 배너)", ""),
             it("b:stage", "무대 화면", ""),
             it("b:macros", "매크로 · 예약 실행", "Alt+1~9"),
+            it("b:draw", "화면에 그리기 · 강조", ""), // [트랙 B]
         ] },
         Menu { label: "보기", items: vec![
             it("c:templates", "출력 템플릿 편집", ""),
@@ -52,6 +54,7 @@ pub fn menus() -> Vec<Menu> {
         Menu { label: "도구", items: vec![
             it("b:songs", "찬양 라이브러리", ""),
             it("b:lib", "그림 · 음악 · 영상 라이브러리", ""),
+            it("b:cameras", "카메라 설정", ""), // [트랙 B]
             it("-", "-", ""),
             it("d:remote", "휴대폰 리모컨", ""),
             it("d:trigger", "스트림덱 · 외부 단추", ""),
@@ -64,6 +67,10 @@ pub fn menus() -> Vec<Menu> {
             it("a:preservice", "예배 전 화면 만들기", ""), // [트랙 A]
         ] },
         Menu { label: "도움말", items: vec![
+            it("b:diagnose", "연결 점검 (예배 전 점검)", ""), // [트랙 B]
+            it("b:logbundle", "로그 묶음 저장…", ""), // [트랙 B]
+            it("b:logs", "로그 폴더 열기", ""), // [트랙 B]
+            it("-", "-", ""),
             it("c:about", "정보 · 라이선스", ""),
         ] },
     ]
