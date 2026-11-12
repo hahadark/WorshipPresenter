@@ -58,11 +58,19 @@ impl Core {
         songs::save_arrangement(&self.store.db, id, name, order)
     }
     pub fn import_song_text(&mut self, text: &str, lines: usize) -> Result<Value> {
-        let list = songs::parse_song_text(text, "", lines);
+        let list = crate::songimport::parse_song_text(text, "", lines); // 되풀이를 찾아 [1절]·[후렴] (Electron 과 같게)
         if list.is_empty() {
             bail!("가사를 찾지 못했습니다. 첫 줄에 제목, 빈 줄 다음에 가사를 붙여 넣으세요 ('# 제목' 줄로 여러 곡).");
         }
         songs::save_imported(&self.store.db, &list)
+    }
+    /// 찬양 파일들 가져오기 (OpenLyrics · ChordPro · ProPresenter 6 · PPT · txt) → { saved, skipped, errors }
+    pub fn import_song_files(&mut self, files: &[PathBuf]) -> Result<Value> {
+        let (list, errors) = crate::songimport::parse_song_files(files);
+        let mut r = if list.is_empty() { json!({ "saved": 0, "skipped": 0 }) } else { songs::save_imported(&self.store.db, &list)? };
+        r["errors"] = json!(errors);
+        self.emit(Ev::Ui);
+        Ok(r)
     }
     /// 찬양 → 큐시트 순서 (songId 로 이어 둔다)
     pub fn song_item(&self, id: &str) -> Option<Value> {

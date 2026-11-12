@@ -199,6 +199,21 @@ impl App {
             });
         }
         ui.separator();
+        ui.horizontal(|ui| {
+            if ui.button("파일에서 가져오기…").on_hover_text("OpenLP(OpenLyrics .xml) · ChordPro(.cho) · ProPresenter 6(.pro6) · PowerPoint(.pptx .ppt .pps) · 글(.txt)").clicked() {
+                if let Some(fs) = rfd::FileDialog::new().add_filter("찬양 파일", &wp_core::songimport::SONG_EXT).pick_files() {
+                    let r = self.core.lock().import_song_files(&fs);
+                    self.tb.note = match r {
+                        Ok(v) => {
+                            let errs: Vec<String> = v["errors"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+                            format!("{}곡 저장 · 같은 제목 {}곡 건너뜀{}", v["saved"], v["skipped"], if errs.is_empty() { String::new() } else { format!(" · 못 읽음: {}", errs.join(" / ")) })
+                        }
+                        Err(e) => e.to_string(),
+                    };
+                }
+            }
+            ui.label(RichText::new("OpenLP · ChordPro · ProPresenter 6 · PPT · txt").small().color(Color32::GRAY));
+        });
         ui.collapsing("가사 붙여 넣어 가져오기 (여러 곡은 '# 제목' 줄로 나눔)", |ui| {
             ui.add(egui::TextEdit::multiline(&mut self.tb.import_text).desired_rows(5).desired_width(f32::INFINITY));
             if ui.button("가져오기").clicked() {
