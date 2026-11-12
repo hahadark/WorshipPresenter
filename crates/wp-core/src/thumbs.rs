@@ -22,7 +22,7 @@ fn fnv(s: &str) -> u64 {
 pub fn thumb_path(data_dir: &Path, src: &Path) -> Option<PathBuf> {
     let m = std::fs::metadata(src).ok()?;
     let mt = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
-    let key = format!("{}|{}|{}", src.to_string_lossy().to_lowercase(), m.len(), mt);
+    let key = format!("v2|{}|{}|{}", src.to_string_lossy().to_lowercase(), m.len(), mt); // v2: EXIF 방향 반영
     Some(data_dir.join("thumbs").join(format!("{:016x}.jpg", fnv(&key))))
 }
 
@@ -78,7 +78,12 @@ pub fn make(data_dir: &Path, src: &Path) -> Result<PathBuf> {
             }
         }
     } else {
-        let img = image::ImageReader::open(src)?.with_guessed_format()?.decode().context("그림을 읽지 못했습니다.")?;
+        // 사진기 세로 사진: EXIF 방향대로 돌린다 (출력 화면의 브라우저도 그렇게 보인다)
+        use image::ImageDecoder;
+        let mut dec = image::ImageReader::open(src)?.with_guessed_format()?.into_decoder().context("그림을 읽지 못했습니다.")?;
+        let orient = dec.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
+        let mut img = image::DynamicImage::from_decoder(dec).context("그림을 읽지 못했습니다.")?;
+        img.apply_orientation(orient);
         let t = img.thumbnail(THUMB_W, THUMB_H).to_rgb8();
         t.save_with_format(&tmp, image::ImageFormat::Jpeg)?;
     }
