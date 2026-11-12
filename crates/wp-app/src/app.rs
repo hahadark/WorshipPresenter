@@ -10,7 +10,7 @@ use wp_core::core::{new_item, Shared};
 use wp_core::db::{CueSummary, Version};
 use wp_core::presentation::{Deck, Live};
 
-enum Act {
+pub(crate) enum Act {
     Search(String),
     PreviewPassage(Value, String, Option<(i64, i64)>),
     PreviewRef(String, Option<(i64, i64)>),
@@ -40,23 +40,23 @@ enum Act {
 }
 
 pub struct App {
-    core: Shared,
-    web_dir: std::path::PathBuf,
-    data_dir: std::path::PathBuf,
-    search: String,
-    result: Value,
-    versions: Vec<Version>,
-    sel: Option<usize>,
-    edit: Option<(String, Value)>,
-    out: OutWin,
-    monitor: usize,
+    pub(crate) core: Shared,
+    pub(crate) web_dir: std::path::PathBuf,
+    pub(crate) data_dir: std::path::PathBuf,
+    pub(crate) search: String,
+    pub(crate) result: Value,
+    pub(crate) versions: Vec<Version>,
+    pub(crate) sel: Option<usize>,
+    pub(crate) edit: Option<(String, Value)>,
+    pub(crate) out: OutWin,
+    pub(crate) monitor: usize,
     last_flush: Instant,
-    focus_search: bool,
+    pub(crate) focus_search: bool,
     /// 점검용: --search 글 · --send · --shot 파일 (몇 초 뒤 화면을 그림 파일로 저장하고 끝냄)
     test: Option<(Instant, Option<String>, bool, Option<String>, u8)>,
 }
 
-struct Snap {
+pub(crate) struct Snap {
     preview: Option<Deck>,
     live: Option<Live>,
     cue_name: String,
