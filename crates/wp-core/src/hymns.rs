@@ -741,13 +741,8 @@ pub fn build_slides(core: &Core, it: &Value, opts: &SplitOpts) -> Result<Vec<Val
             s["edit"] = ed;
         }
     }
-    // 건너뛰기 (다 건너뛰면 첫 장만)
-
-    let skip: Vec<i64> = it["skip"].as_array().into_iter().flatten().filter_map(|x| x.as_i64()).collect();
-    if !skip.is_empty() {
-        let kept: Vec<Value> = out.iter().enumerate().filter(|(k, _)| !skip.contains(&(*k as i64))).map(|(_, s)| s.clone()).collect();
-        out = if kept.is_empty() { out.into_iter().take(1).collect() } else { kept };
-    }
+    // 공통 편집기로 원본 차례·덧붙인 카드·건너뛰기를 함께 처리한다.
+    let out = crate::slideedit::decorate(it, out, false);
     Ok(out)
 }
 

@@ -93,6 +93,9 @@ pub fn decorate(it: &Value, slides: Vec<Value>, with_skipped: bool) -> Vec<Value
         for s in out.iter_mut() {
             let key = s["ekey"].as_str().unwrap_or("").to_string();
             let Some(mut e) = merge_edit(&it["edits"], &key) else { continue };
+            if s["pptBgMissing"].as_bool().unwrap_or(false) {
+                if let Some(items) = e["items"].as_array_mut() { items.retain(|x| !crate::pptx::layers::is_ppt_item(x["id"].as_str().unwrap_or(""))); }
+            }
             if let Some(bg) = e["bg"].as_str().filter(|x| !x.is_empty()) {
                 s["bg"] = json!(bg);
             }
@@ -404,7 +407,15 @@ pub fn apply_op(it: &Value, op: &str, k: usize) -> (Value, Option<Value>) {
         let e = slide_op_edits(&it["edits"], op, k);
         set_or_remove(&mut it, "edits", e);
     } else if is_chunk(&ty) {
-        // 제목: 장(more) 단위는 넣기·지우기만
+        let pages = slides::title_pages(&it);
+        if (op == "del" && pages.len() <= 1) || k >= pages.len() || (op == "up" && k == 0) || (op == "down" && k + 1 >= pages.len()) { return (it, None); }
+        let text = slide_op(false, &pages.join("
+---
+"), op, k, "새 슬라이드");
+        let pages: Vec<String> = slides::text_chunks(&text, 0).into_iter().map(|c| c.text).collect();
+        set_title_pages(&mut it, &pages);
+        let e = slide_op_edits(&it["edits"], op, k);
+        set_or_remove(&mut it, "edits", e);
     } else {
         // 그 밖: 건너뛰기('skip') · 차례(slideOrder)
         match op {
@@ -417,6 +428,86 @@ pub fn apply_op(it: &Value, op: &str, k: usize) -> (Value, Option<Value>) {
         }
     }
     (it, None)
+}
+
+
+/// Electron fromTitlePages: 첫 장은 제목·부제, 나머지는 more 에 저장한다.
+fn set_title_pages(it: &mut Value, pages: &[String]) {
+    let pages: Vec<_> = pages.iter().map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+    let mut first = pages.first().copied().unwrap_or("제목").lines();
+    it["title"] = json!(first.next().unwrap_or("제목").trim());
+    it["subtitle"] = json!(first.collect::<Vec<_>>().join(" ").trim());
+    it["more"] = json!(pages.get(1..).unwrap_or_default().join("
+---
+"));
+}
+
+/// 제목 장·덧붙인 카드의 본문을 원래 Electron 필드에 반영한다.
+pub fn set_card_text(it: &mut Value, key: &str, text: &str) {
+    if let Some(id) = key.strip_prefix('x') {
+        if let Some(ex) = it["extra"].as_array_mut() {
+            if let Some(e) = ex.iter_mut().find(|e| e["id"].as_str() == Some(id)) { e["text"] = json!(text); }
+        }
+    } else if it["type"] == "title" {
+        let mut pages = slides::title_pages(it);
+        if let Some(p) = key.parse::<usize>().ok().and_then(|k| pages.get_mut(k)) { *p = text.into(); }
+        set_title_pages(it, &pages);
+    }
+}
+
+/// 보이는 슬라이드 키를 옮긴다. 덧붙임 at 는 바로 앞 원본 번호로 다시 계산한다.
+/// 글 덩어리의 편집도 함께 재번호화하며, 성경·부를 순서 지정 찬양은 원본처럼 막는다.
+pub fn move_slide(it: &Value, keys: &[String], from: usize, to: usize) -> Value {
+    let mut out = it.clone();
+    if from >= keys.len() || to >= keys.len() || from == to || it["type"] == "bible"
+        || (it["type"] == "song" && !it["order"].as_str().unwrap_or("").trim().is_empty()) { return out; }
+    let mut next = keys.to_vec();
+    if next.iter().enumerate().any(|(i, k)| next[..i].contains(k)) { return out; }
+    let moved = next.remove(from); next.insert(to, moved);
+    if is_chunk(it["type"].as_str().unwrap_or("")) {
+        let Some(perm) = next.iter().map(|k| k.parse::<usize>().ok()).collect::<Option<Vec<_>>>() else { return out };
+        let mut sorted = perm.clone(); sorted.sort();
+        if sorted.iter().enumerate().any(|(i,k)| i != *k) { return out; }
+        if it["type"] == "title" {
+            let pages = slides::title_pages(it);
+            if pages.len() != perm.len() { return out; }
+            set_title_pages(&mut out, &perm.iter().map(|k| pages[*k].clone()).collect::<Vec<_>>());
+        } else {
+            let song = it["type"] == "song";
+            let field = if song { "lyrics" } else { "body" };
+            let text = it[field].as_str().unwrap_or("");
+            if split_parts(song,text).iter().filter(|p| has_content(song,p)).count() != perm.len() { return out; }
+            out[field] = json!(reorder_chunks(song, text, &perm));
+        }
+        let mut edits = Map::new();
+        for (key, value) in it["edits"].as_object().into_iter().flatten() {
+            if let Ok(k) = key.parse::<usize>() {
+                if let Some(pos) = perm.iter().position(|v| *v == k) { edits.insert(pos.to_string(), value.clone()); }
+            } else { edits.insert(key.clone(), value.clone()); }
+        }
+        set_or_remove(&mut out, "edits", if edits.is_empty() { Value::Null } else { Value::Object(edits) });
+    } else {
+        let mut at: i64 = -1; let mut bases = vec![]; let mut extra = vec![];
+        for key in next {
+            if let Some(id) = key.strip_prefix('x') {
+                if let Some(e) = it["extra"].as_array().into_iter().flatten().find(|e| e["id"].as_str() == Some(id)) {
+                    let mut e = e.clone(); e["at"] = json!(at); extra.push(e);
+                }
+            } else if let Ok(base) = key.parse::<usize>() { at = base as i64; bases.push(base); }
+        }
+        set_or_remove(&mut out, "extra", if extra.is_empty() { Value::Null } else { json!(extra) });
+        let natural = bases.iter().enumerate().all(|(i,k)| i == *k);
+        set_or_remove(&mut out, "slideOrder", if natural { Value::Null } else { json!(bases) });
+    }
+    out
+}
+
+/// 요소를 화면 백분율로 이동. 크기와 나머지 속성은 그대로 보존한다.
+pub fn translate_item(item: &mut Value, dx: f64, dy: f64) {
+    for (key, delta) in [("x", dx), ("y", dy)] {
+        let value = item[key].as_f64().unwrap_or(0.0) + delta;
+        if value.is_finite() { item[key] = json!(value.clamp(-50.0, 150.0)); }
+    }
 }
 
 /// 원래 슬라이드 차례 바꾸기 (그 밖 종류): 보이는 차례에서 from → to
@@ -497,6 +588,64 @@ mod tests {
         let (a, b) = split_edits(&json!({ "0": {"a":1}, "3": {"b":1} }), 2);
         assert_eq!(a["0"], json!({"a":1}));
         assert_eq!(b["1"], json!({"b":1}));
+    }
+    #[test]
+    fn title_cards_roundtrip_and_last_page() {
+        let it = json!({"type":"title","title":"첫째","subtitle":"부제","more":"둘째\n설명","edits":{"0":{"bg":"#fff"},"1":{"hideMain":true}}});
+        let (added,_) = apply_op(&it,"add",0);
+        assert_eq!(slides::title_pages(&added),vec!["첫째\n부제","새 슬라이드","둘째\n설명"]);
+        assert_eq!(added["edits"]["2"],it["edits"]["1"]);
+        let (deleted,_) = apply_op(&added,"del",1);
+        assert_eq!(deleted,it);
+        let only = json!({"type":"title","title":"하나"});
+        assert_eq!(apply_op(&only,"del",0).0,only);
+        let mut edited=it.clone(); set_card_text(&mut edited,"1","바뀐 제목\n바뀐 부제");
+        assert_eq!(slides::title_pages(&edited)[1],"바뀐 제목\n바뀐 부제");
+    }
+    #[test]
+    fn drag_reorder_preserves_edits_and_extra_anchors() {
+        let it=json!({"type":"text","body":"a\n---\nb\n---\nc","edits":{"*":{"hideMain":true},"0":{"bg":"#fff"}}});
+        let keys=vec!["0".into(),"1".into(),"2".into()];
+        let moved=move_slide(&it,&keys,0,2);
+        assert_eq!(moved["body"],"b\n---\nc\n---\na");
+        assert_eq!(moved["edits"]["2"],it["edits"]["0"]);
+        assert_eq!(moved["edits"]["*"],it["edits"]["*"]);
+        let image=json!({"type":"image","extra":[{"id":"ab","at":0,"text":"카드"}],"edits":{"xab":{"hideMain":true}}});
+        let ks=vec!["0".into(),"xab".into(),"1".into()];
+        let mut moved=move_slide(&image,&ks,1,0);
+        assert_eq!(moved["extra"][0]["at"],-1);
+        set_card_text(&mut moved,"xab","새 내용");
+        assert_eq!(moved["extra"][0]["text"],"새 내용");
+        assert_eq!(moved["edits"],image["edits"]);
+        let mut bible=image.clone(); bible["type"]=json!("bible");
+        assert_eq!(move_slide(&bible,&ks,0,2),bible);
+    }
+    #[test]
+    fn element_properties_and_drag_are_electron_compatible() {
+        let mut item=json!({"id":"ab","type":"image","x":10,"y":20,"w":30,"h":40,"opacity":0.4,"crop":{"l":0.1,"t":0.2,"r":0.3,"b":0.1}});
+        translate_item(&mut item,5.0,-7.0);
+        assert_eq!(item["x"],15.0); assert_eq!(item["y"],13.0);
+        assert_eq!(item["w"],30); assert_eq!(item["opacity"],0.4);
+        let edit=normalize_edit(&json!({"items":[item,{"id":"cd","type":"text","font":"맑은 고딕","opacity":0.5}]})).unwrap();
+        assert_eq!(edit["items"][0]["crop"]["l"],0.1);
+        assert_eq!(edit["items"][1]["font"],"맑은 고딕");
+        assert_eq!(edit["items"][1]["opacity"],0.5);
+    }
+    #[test]
+    fn title_drag_and_ppt_missing_regression() {
+        let it=json!({"type":"title","title":"가","subtitle":"부제","more":"나","edits":{"0":{"bg":"#fff"}}});
+        let moved=move_slide(&it,&["0".into(),"1".into()],0,1);
+        assert_eq!(slides::title_pages(&moved),vec!["나","가\n부제"]);
+        assert_eq!(moved["edits"]["1"],it["edits"]["0"]);
+        assert_eq!(apply_op(&it,"up",0).0,it);
+        assert_eq!(apply_op(&it,"down",1).0,it);
+        let ppt=json!({"type":"hymn","slideOrder":[1,0],"extra":[{"id":"ab","at":1,"text":"추가"}],"edits":{"0":{"items":[{"id":"p0t0","type":"text"},{"id":"my0","type":"text"}]}}});
+        let slides=vec![json!({"kind":"image","pptBgMissing":true}),json!({"kind":"image"})];
+        let decorated=decorate(&ppt,slides,true);
+        assert_eq!(decorated[0]["base"],1); assert_eq!(decorated[1]["ekey"],"xab");
+        assert_eq!(decorated[2]["base"],0);
+        assert_eq!(decorated[2]["edit"]["items"].as_array().unwrap().len(),1);
+        assert_eq!(decorated[2]["edit"]["items"][0]["id"],"my0");
     }
     #[test]
     fn normalize() {
