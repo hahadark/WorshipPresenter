@@ -118,7 +118,7 @@ impl App {
         self.macros_window(ctx);
         self.cues_window(ctx);
         self.lyrics_window(ctx);
-        self.lyrics_window(ctx);
+        self.music_tick(ctx);
     }
 
     fn add_to_cue(&mut self, it: Value) {
@@ -267,6 +267,8 @@ impl App {
                             let ty = if f["video"] == true { "video" } else { "image" };
                             self.core.lock().set_background_media(Some(json!({ "type": ty, "url": url, "label": name, "fit": "cover" })));
                         }
+                    } else if ui.small_button("▶").on_hover_text("바로 재생 (조작 PC)").clicked() {
+                        crate::music_ui::play_now(&url, &name);
                     } else if ui.small_button("고른 순서 배경 음악").clicked() {
                         if let Some(i) = self.sel {
                             let mut c = self.core.lock();
@@ -625,6 +627,14 @@ mod tests {
 impl App {
     /// LIVE 영상 조작 줄 (영상 슬라이드를 송출 중일 때만): 재생·멈춤 · 처음부터 · ±10초 · 소리 크기 · 반복
     pub(crate) fn video_bar(&mut self, ui: &mut egui::Ui) {
+        // 음악 재생 줄 · 트랙 B 알림 (위 도구 줄이 메뉴로 바뀌어 여기에)
+        self.music_bar(ui);
+        if !self.tb.note.is_empty() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&self.tb.note).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                if ui.small_button("닫기").clicked() { self.tb.note.clear(); }
+            });
+        }
         let v = self.core.lock().b.video.clone();
         let Some(v) = v else { return };
         let mut act: Option<(&str, f64)> = None;
