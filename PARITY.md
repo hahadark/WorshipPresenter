@@ -119,7 +119,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | updateCueMeta · trashCues · restoreCues · purgeCues · duplicateCue · deleteCue | core.js | core/cues.rs · trackb.rs | 됨 | |
 | exportCues · importCues | core.js | core/cues.rs export · import · trackb.rs | 됨 | |
 | cueText (큐시트를 글로) | core.js | core/parity_a.rs cue_text · 순서 오른쪽 클릭 \"큐시트를 글로 복사\" | 됨 | 5차 |
-| 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | core/workspace.rs · app/workspace_ui.rs | 일부 | 패널 8개·기본 배치 4개·분할·탭 이동/합치기·개별 독립 창·접기·사용자 배치 관리·잠금 구현, 테스트 5개 통과. 남음: 탭 그룹 전체 띄우기/병합, 독립 창 위치·크기 저장, 하단 송출 줄 중복 정리, 패널별 세부 동등성 대조 |
+| 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | core/workspace.rs · app/workspace_ui.rs | 일부 | 패널 8개·기본 배치 4개·분할·탭 이동/합치기·개별 독립 창·접기·사용자 배치 관리·잠금 구현, 테스트 5개 통과. 그룹 전체 독립 창·병합, 독립 창 위치·크기 저장, 송출 줄 중복 정리까지 구현(테스트 9개). 남음: 실제 다중 모니터에서 창 복원 확인, 패널별 세부 동등성 대조 |
 
 ## 2. 웹 서버 경로 (server.js)
 | 경로 | Rust 위치 | 상태 | 메모 |
