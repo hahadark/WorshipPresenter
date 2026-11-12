@@ -1,100 +1,491 @@
-//! [트랙 D] 새 버전 확인 · 익명 사용 통계 (Electron 판 updater.js · telemetry.js)
-//! - 새 버전: GitHub 릴리스 API 의 latest 를 읽어 지금 버전과 비교만 한다. 내려받기·설치는 하지 않는다
-//!   (Rust 판은 아직 릴리스가 없어서 저장소 주소는 설정 updateRepo 로, 비어 있으면 확인하지 않음).
-//! - 사용 통계: 하루 한 번 { id, v, lang, os, build, kind } 를 보낸다. 설정 telemetry=false 면 안 보냄.
-//!   개발 실행(디버그 빌드)에서는 보내지 않는다 (WC_TELEMETRY_DEV 가 있으면 보냄).
-
+//! GitHub 릴리스 확인과 명시적 다운로드·설치 요청. 릴리스 정지 중에는 확인만 허용한다.
 use crate::core::{Ev, Shared};
-use serde_json::{json, Value};
-
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::{
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
+};
 pub const TELEMETRY_URL: &str = "https://worshipcue-usage.hahadark-media.workers.dev/ping";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// "v1.2.10" > "1.2.9" ?
+/// 미래 출시 승인 때만 이 코드 지점을 검토·변경한다. 환경변수/설정/빌드 유형으로 해제 불가.
+pub const RELEASE_HOLD: bool = true;
+pub const HOLD_REASON: &str =
+    "전체 기능 포팅 완료 전 릴리스 정지: 버전 확인만 가능하며 다운로드와 설치는 차단됩니다.";
+const TRUSTED_REPO: &str = "hahadark/WorshipPresenter-rs";
+fn hex(bytes: &[u8]) -> String { bytes.iter().map(|b|format!("{b:02x}")).collect() }
+const MAX_ASSET: u64 = 512 * 1024 * 1024;
+static BUSY: AtomicBool = AtomicBool::new(false);
+static CANCEL: AtomicBool = AtomicBool::new(false);
+static UPDATE: once_cell::sync::Lazy<parking_lot::Mutex<Value>> =
+    once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(json!({"state":"idle"})));
+static ASSET: once_cell::sync::Lazy<parking_lot::Mutex<Option<Asset>>> =
+    once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(None));
+static READY: once_cell::sync::Lazy<parking_lot::Mutex<Option<PathBuf>>> =
+    once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(None));
+struct Busy;
+impl Busy {
+    fn acquire() -> Result<Self, String> {
+        BUSY.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map(|_| Self)
+            .map_err(|_| "다른 업데이트 작업이 진행 중입니다.".into())
+    }
+}
+impl Drop for Busy {
+    fn drop(&mut self) {
+        BUSY.store(false, Ordering::SeqCst);
+    }
+}
+#[derive(Clone, Debug)]
+struct Asset {
+    url: String,
+    name: String,
+    size: u64,
+    hash: String,
+}
+fn gate() -> Result<(), String> {
+    if RELEASE_HOLD {
+        Err(HOLD_REASON.into())
+    } else {
+        Ok(())
+    }
+}
+fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .max_redirects(0)
+        .timeout_global(Some(std::time::Duration::from_secs(30)))
+        .build()
+        .new_agent()
+}
 pub fn newer(a: &str, b: &str) -> bool {
-    let p = |s: &str| -> Vec<u64> { s.trim().trim_start_matches('v').split(['.', '-']).take(3).map(|x| x.parse().unwrap_or(0)).collect() };
+    let p = |s: &str| -> Vec<u64> {
+        s.trim()
+            .trim_start_matches('v')
+            .split(['.', '-'])
+            .take(3)
+            .map(|x| x.parse().unwrap_or(0))
+            .collect()
+    };
     let (x, y) = (p(a), p(b));
     for i in 0..3 {
-        let (m, n) = (x.get(i).copied().unwrap_or(0), y.get(i).copied().unwrap_or(0));
+        let (m, n) = (
+            x.get(i).copied().unwrap_or(0),
+            y.get(i).copied().unwrap_or(0),
+        );
         if m != n {
             return m > n;
         }
     }
     false
 }
-
-/// 릴리스 JSON → 상태 ({ state: available|latest, version, notes, notesUrl, publishedAt, checkedAt })
 pub fn state_from_release(r: &Value, current: &str, now: i64) -> Result<Value, String> {
-    let tag = r["tag_name"].as_str().ok_or("릴리스 정보에 tag_name 이 없습니다.")?;
-    if newer(tag, current) {
-        Ok(json!({ "state": "available", "version": tag.trim_start_matches('v'), "checkedAt": now, "notes": r["body"].as_str().unwrap_or("").chars().take(6000).collect::<String>(), "notesUrl": r["html_url"], "publishedAt": r["published_at"] }))
-    } else {
-        Ok(json!({ "state": "latest", "checkedAt": now }))
+    let tag = r["tag_name"]
+        .as_str()
+        .ok_or("릴리스 정보에 tag_name이 없습니다.")?;
+    if r["draft"] == true || r["prerelease"] == true {
+        return Err("정식 릴리스가 아닙니다.".into());
     }
+    Ok(if newer(tag, current) {
+        json!({"state":"available","version":tag.trim_start_matches('v'),"checkedAt":now,"notes":r["body"].as_str().unwrap_or("").chars().take(6000).collect::<String>(),"notesUrl":r["html_url"],"publishedAt":r["published_at"]})
+    } else {
+        json!({"state":"latest","checkedAt":now})
+    })
 }
-
-static UPDATE: once_cell::sync::Lazy<parking_lot::Mutex<Value>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(json!({ "state": "idle", "current": VERSION })));
-
-/// 지금 업데이트 상태 (+ 건너뛰기 표시)
+fn safe_name(n: &str) -> bool {
+    !n.is_empty()
+        && n.len() < 160
+        && n.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+        && !n.contains("..")
+        && !n.ends_with('.')
+        && n.starts_with("WorshipPresenter-")
+        && n.ends_with("-setup.exe")
+}
+fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
+    if repo != TRUSTED_REPO {
+        return Err("승인된 Rust 릴리스 저장소가 아닙니다.".into());
+    }
+    let tag = r["tag_name"]
+        .as_str()
+        .filter(|t| {
+            !t.is_empty()
+                && t.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(&b))
+        })
+        .ok_or("잘못된 릴리스 태그")?;
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        _ => return Err("지원하지 않는 설치 아키텍처".into()),
+    };
+    let list = r["assets"].as_array().ok_or("설치 자산 없음")?;
+    let mut found = None;
+    for a in list {
+        let n = a["name"].as_str().unwrap_or("");
+        if !safe_name(n) || !n.contains(&format!("-windows-{arch}-")) {
+            continue;
+        }
+        let u = a["browser_download_url"]
+            .as_str()
+            .ok_or("다운로드 주소 없음")?;
+        let parsed = url::Url::parse(u).map_err(|e| e.to_string())?;
+        if parsed.scheme() != "https"
+            || parsed.host_str() != Some("github.com")
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.port().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+            || parsed.path() != format!("/{repo}/releases/download/{tag}/{n}")
+        {
+            return Err("신뢰할 수 없는 릴리스 자산 주소".into());
+        }
+        let hash=a["digest"].as_str().and_then(|s|s.strip_prefix("sha256:")).filter(|s|s.len()==64 && s.bytes().all(|b|b.is_ascii_hexdigit())).ok_or("신뢰 가능한 SHA-256 해시가 없습니다. GitHub 릴리스에 digest를 제공한 뒤 다시 확인하세요.")?;
+        let size = a["size"]
+            .as_u64()
+            .filter(|s| *s > 0 && *s <= MAX_ASSET)
+            .ok_or("설치 파일 크기 제한 초과 또는 잘못된 크기")?;
+        if found.is_some() {
+            return Err("설치 자산이 여러 개여서 안전하게 선택할 수 없습니다.".into());
+        }
+        found = Some(Asset {
+            url: u.into(),
+            name: n.into(),
+            size,
+            hash: hash.to_ascii_lowercase(),
+        });
+    }
+    found.ok_or("이 아키텍처용 Windows 설치 자산이 없습니다.".into())
+}
 pub fn status(settings: &Value) -> Value {
     let mut u = UPDATE.lock().clone();
     u["current"] = json!(VERSION);
-    let skip = settings["skipVersion"].as_str().unwrap_or("");
-    u["skipped"] = json!(!skip.is_empty() && u["version"].as_str() == Some(skip));
-    u["repo"] = json!(settings["updateRepo"].as_str().unwrap_or(""));
+    u["releaseHold"] = json!(RELEASE_HOLD);
+    u["holdReason"] = json!(HOLD_REASON);
+    u["canDownload"] = json!(
+        !RELEASE_HOLD && cfg!(windows) && ASSET.lock().is_some() && !BUSY.load(Ordering::SeqCst)
+    );
+    u["canInstall"] = json!(
+        !RELEASE_HOLD && cfg!(windows) && READY.lock().is_some() && !BUSY.load(Ordering::SeqCst)
+    );
+    u["skipped"] = json!(
+        settings["skipVersion"].as_str().filter(|s| !s.is_empty()) == u["version"].as_str()
+            && u["version"].is_string()
+    );
+    u["repo"] = settings["updateRepo"].clone();
     u
 }
-
-/// api 주소: 설정 updateRepo 가 "owner/name" 이면 GitHub, "http…" 면 그 주소 그대로 (시험용 가짜 서버)
 pub fn api_url(repo: &str) -> Option<String> {
     let r = repo.trim();
-    if r.is_empty() {
+    let parts: Vec<_> = r.split('/').collect();
+    if parts.len() != 2
+        || parts.iter().any(|p| {
+            p.is_empty()
+                || *p == "."
+                || *p == ".."
+                || !p
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+        })
+    {
         return None;
-    }
-    if r.starts_with("http://") || r.starts_with("https://") {
-        return Some(r.to_string());
     }
     Some(format!("https://api.github.com/repos/{r}/releases/latest"))
 }
-
 fn get_json(url: &str) -> Result<Value, String> {
-    let mut r = ureq::get(url).header("User-Agent", "WorshipPresenter-rs").header("Accept", "application/vnd.github+json").call().map_err(|e| format!("새 버전 확인 실패: {e}"))?;
-    r.body_mut().read_json().map_err(|e| e.to_string())
+    let mut r = agent()
+        .get(url)
+        .header("User-Agent", "WorshipPresenter-rs")
+        .header("Accept", "application/vnd.github+json")
+        .call()
+        .map_err(|e| format!("새 버전 확인 실패: {e}"))?;
+    let mut bytes = Vec::new();
+    r.body_mut()
+        .as_reader()
+        .take(1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("릴리스 응답이 너무 큽니다.".into());
+    }
+    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
-
-/// 새 버전 확인 (백그라운드). manual 이면 결과를 알림으로
 pub fn check(core: &Shared, manual: bool) {
-    let repo = core.lock().settings.get()["updateRepo"].as_str().unwrap_or("").to_string();
+    let repo = core.lock().settings.get()["updateRepo"]
+        .as_str()
+        .unwrap_or("")
+        .trim()
+        .to_string();
     let Some(url) = api_url(&repo) else {
         if manual {
-            core.lock().notify(crate::i18n::tr("새 버전 확인 주소(저장소)가 정해지지 않았습니다. Rust 판은 아직 릴리스 전입니다."), "warn");
+            core.lock().notify(
+                "올바른 GitHub owner/repo를 입력하세요. Rust 판은 아직 릴리스 전입니다.",
+                "warn",
+            );
         }
         return;
     };
-    *UPDATE.lock() = json!({ "state": "checking" });
+    let Ok(guard) = Busy::acquire() else {
+        return;
+    };
+    *UPDATE.lock() = json!({"state":"checking"});
+    *ASSET.lock() = None;
+    *READY.lock() = None;
     let sh = core.clone();
     std::thread::spawn(move || {
-        let r = get_json(&url).and_then(|j| state_from_release(&j, VERSION, crate::util::now_ms()));
-        let v = r.unwrap_or_else(|e| json!({ "state": "error", "error": e, "checkedAt": crate::util::now_ms() }));
-        *UPDATE.lock() = v.clone();
+        let _guard = guard;
+        let result = get_json(&url).and_then(|r| {
+            let mut s = state_from_release(&r, VERSION, crate::util::now_ms())?;
+            if s["state"] == "available" {
+                match asset_from_release(&r, &repo) {
+                    Ok(a) => *ASSET.lock() = Some(a),
+                    Err(e) => s["downloadError"] = json!(e),
+                }
+            }
+            Ok(s)
+        });
+        let s = result.unwrap_or_else(|e| json!({"state":"error","error":e}));
+        *UPDATE.lock() = s.clone();
         let mut c = sh.lock();
-        let skipped = c.settings.get()["skipVersion"].as_str() == v["version"].as_str();
-        if v["state"] == "available" && (!skipped || manual) {
-            c.notify(crate::i18n::tr_args("새 버전 {1} 이 나왔습니다 (도움말 → 새 버전)", &[&(v["version"].as_str().unwrap_or(""))]), "info");
+        let skipped = c.settings.get()["skipVersion"].as_str() == s["version"].as_str();
+        if s["state"] == "available" && (!skipped || manual) {
+            c.notify(
+                format!(
+                    "새 버전 {}이 나왔습니다 (도움말 → 새 버전)",
+                    s["version"].as_str().unwrap_or("")
+                ),
+                "info",
+            );
         } else if manual {
-            c.notify(if v["state"] == "latest" { "지금이 최신 버전입니다.".to_string() } else { v["error"].as_str().unwrap_or("확인 실패").to_string() }, if v["state"] == "error" { "warn" } else { "ok" });
+            c.notify(
+                if s["state"] == "latest" {
+                    "지금이 최신 버전입니다.".to_string()
+                } else {
+                    s["error"].as_str().unwrap_or("확인 실패").to_string()
+                },
+                "info",
+            );
         }
         c.emit(Ev::Ui);
     });
 }
-
+/// 리다이렉트는 HTTPS GitHub 자산 CDN으로만, 최대 3회. 자동 리다이렉트는 비활성화.
+fn response(url: &str) -> Result<ureq::http::Response<ureq::Body>, String> {
+    let mut u = url.to_string();
+    for _ in 0..4 {
+        let r = agent()
+            .get(&u)
+            .header("User-Agent", "WorshipPresenter-rs")
+            .header("Accept-Encoding", "identity")
+            .call()
+            .map_err(|e| e.to_string())?;
+        if r.status().is_redirection() {
+            let next = r
+                .headers()
+                .get("location")
+                .and_then(|h| h.to_str().ok())
+                .ok_or("리다이렉트 주소 없음")?;
+            let v = url::Url::parse(next).map_err(|e| e.to_string())?;
+            if v.scheme() != "https"
+                || !matches!(
+                    v.host_str(),
+                    Some("release-assets.githubusercontent.com" | "objects.githubusercontent.com")
+                )
+                || !v.username().is_empty()
+                || v.password().is_some()
+                || v.port().is_some()
+            {
+                return Err("신뢰할 수 없는 자산 리다이렉트".into());
+            }
+            u = next.into();
+            continue;
+        }
+        return Ok(r);
+    }
+    Err("리다이렉트 횟수 초과".into())
+}
+/// 임시 파일은 create_new, 성공 시에만 같은 디렉터리로 원자적 rename. 실패·취소 때 정리.
+fn cache_stream(
+    reader: &mut dyn Read,
+    a: &Asset,
+    dir: &Path,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64, bool),
+) -> Result<PathBuf, String> {
+    if !safe_name(&a.name) || a.size == 0 || a.size > MAX_ASSET {
+        return Err("잘못된 파일명 또는 크기".into());
+    }
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    if std::fs::symlink_metadata(dir)
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("캐시 디렉터리는 링크일 수 없습니다.".into());
+    }
+    let part = dir.join(format!("{}.part", rand::random::<u64>()));
+    let result = (|| {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&part)
+            .map_err(|e| e.to_string())?;
+        let mut hash = Sha256::new();
+        let mut total = 0u64;
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            if cancel.load(Ordering::SeqCst) {
+                return Err("다운로드 취소됨".into());
+            }
+            let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            total += n as u64;
+            if total > a.size || total > MAX_ASSET {
+                return Err("설치 파일 크기 제한 초과".into());
+            }
+            f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+            hash.update(&buf[..n]);
+            progress(total, false);
+        }
+        progress(total, true);
+        if total != a.size {
+            return Err("설치 파일이 불완전합니다.".into());
+        }
+        if hex(&hash.finalize()) != a.hash {
+            return Err("SHA-256 검증 실패: 설치 파일을 폐기했습니다.".into());
+        }
+        if cancel.load(Ordering::SeqCst) {
+            return Err("다운로드 취소됨".into());
+        }
+        f.sync_all().map_err(|e| e.to_string())?;
+        drop(f);
+        let target = dir.join(format!(
+            "{}-{}-{}",
+            &a.hash[..16],
+            rand::random::<u64>(),
+            a.name
+        ));
+        std::fs::rename(&part, &target).map_err(|e| e.to_string())?;
+        Ok(target)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(part);
+    }
+    result
+}
+pub fn download(core: &Shared) -> Result<(), String> {
+    gate()?;
+    if !cfg!(windows) {
+        return Err("Windows 설치판에서만 지원합니다.".into());
+    }
+    let guard = Busy::acquire()?;
+    let a = ASSET
+        .lock()
+        .clone()
+        .ok_or("검증 가능한 새 버전을 먼저 확인하세요.")?;
+    if core.lock().settings.get()["skipVersion"].as_str() == UPDATE.lock()["version"].as_str() {
+        return Err("건너뛴 버전입니다.".into());
+    }
+    let dir = core.lock().data_dir.join("update-cache");
+    CANCEL.store(false, Ordering::SeqCst);
+    *READY.lock() = None;
+    UPDATE.lock()["state"] = json!("downloading");
+    let sh = core.clone();
+    std::thread::spawn(move || {
+        let _guard = guard;
+        let result = response(&a.url).and_then(|mut r| {
+            cache_stream(
+                &mut r.body_mut().as_reader(),
+                &a,
+                &dir,
+                &CANCEL,
+                |n, verify| {
+                    let mut s = UPDATE.lock();
+                    s["state"] = json!(if verify { "verifying" } else { "downloading" });
+                    s["received"] = json!(n);
+                    s["total"] = json!(a.size);
+                    s["percent"] = json!(n * 100 / a.size);
+                },
+            )
+        });
+        let mut s = UPDATE.lock();
+        match result {
+            Ok(p) => {
+                *READY.lock() = Some(p);
+                s["state"] = json!("ready");
+                s["error"] = Value::Null;
+            }
+            Err(e) => {
+                s["state"] = json!(if CANCEL.load(Ordering::SeqCst) {
+                    "cancelled"
+                } else {
+                    "error"
+                });
+                s["error"] = json!(e);
+            }
+        }
+        drop(s);
+        sh.lock().emit(Ev::Ui);
+    });
+    Ok(())
+}
+pub fn cancel() {
+    CANCEL.store(true, Ordering::SeqCst);
+}
+/// 자동 종료 설치는 하지 않는다. UI의 명시 요청 때만, 디스크 파일을 재검증한 후 실행.
+pub fn install_now(core: &Shared) -> Result<(), String> {
+    gate()?;
+    let _guard = Busy::acquire()?;
+    if !cfg!(windows) || UPDATE.lock()["state"] != "ready" {
+        return Err("설치 준비 상태가 아닙니다.".into());
+    }
+    if core.lock().settings.get()["skipVersion"].as_str() == UPDATE.lock()["version"].as_str() {
+        return Err("건너뛴 버전은 설치하지 않습니다.".into());
+    }
+    let a = ASSET.lock().clone().ok_or("설치 메타데이터 없음")?;
+    let p = READY.lock().clone().ok_or("준비된 설치 파일 없음")?;
+    let m = std::fs::symlink_metadata(&p).map_err(|e| e.to_string())?;
+    if !m.is_file() || m.len() != a.size {
+        return Err("설치 파일 크기 또는 종류가 바뀌었습니다.".into());
+    }
+    let mut f = std::fs::File::open(&p).map_err(|e| e.to_string())?;
+    let mut h = Sha256::new();
+    let mut buf = [0u8; 65536];
+    let mut count = 0u64;
+    loop {
+        let n = f.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        count += n as u64;
+        if count > a.size {
+            return Err("설치 파일 크기가 바뀌었습니다.".into());
+        }
+        h.update(&buf[..n]);
+    }
+    if hex(&h.finalize()) != a.hash {
+        return Err("설치 직전 SHA-256 재검증 실패".into());
+    }
+    // 쉘 없이 인자 분리. 실제 릴리스 승인 전 gate가 이 경로 진입을 차단한다.
+    #[cfg(windows)]
+    std::process::Command::new(&p)
+        .arg("/S")
+        .spawn()
+        .map_err(|e| format!("설치 실행 실패: {e}"))?;
+    UPDATE.lock()["state"] = json!("installing");
+    core.lock().emit(Ev::Ui);
+    Ok(())
+}
 pub fn skip(core: &Shared) {
     let v = UPDATE.lock()["version"].as_str().unwrap_or("").to_string();
+    cancel();
     let mut c = core.lock();
     c.settings.update(|d| d["skipVersion"] = json!(v));
     c.emit(Ev::Ui);
 }
-
 pub fn unskip(core: &Shared) {
     let mut c = core.lock();
     c.settings.update(|d| d["skipVersion"] = json!(""));
@@ -215,4 +606,131 @@ mod tests {
         assert!(!due(&json!({ "telemetry": false }), "2026-11-12"));
         let _ = std::fs::remove_dir_all(dir);
     }
+}
+
+#[cfg(test)]
+mod updater_security_tests {
+    use super::*;
+    fn asset(bytes: &[u8]) -> Asset {
+        Asset {
+            url: String::new(),
+            name: "WorshipPresenter-1.0-windows-x64-setup.exe".into(),
+            size: bytes.len() as u64,
+            hash: hex(&Sha256::digest(bytes)),
+        }
+    }
+    fn dir() -> PathBuf {
+        std::env::temp_dir().join(format!("wp-update-test-{}", rand::random::<u64>()))
+    }
+    #[test]
+    fn release_hold_cannot_be_overridden() {
+        assert!(RELEASE_HOLD);
+        assert!(gate().is_err());
+    }
+    #[test]
+    fn untrusted_metadata_rejected() {
+        assert!(api_url("http://127.0.0.1:9").is_none());
+        assert!(api_url("evil/repo?x").is_none());
+        let a = asset(b"fixture");
+        let mut r = json!({"tag_name":"v1.0.0","assets":[{"name":a.name,"size":7,"digest":format!("sha256:{}",a.hash),"browser_download_url":format!("https://github.com/{}/releases/download/v1.0.0/{}",TRUSTED_REPO,a.name)}]});
+        assert!(asset_from_release(&r, TRUSTED_REPO).is_ok());
+        assert!(asset_from_release(&r, "evil/repo").is_err());
+        r["assets"][0]["digest"] = Value::Null;
+        assert!(
+            asset_from_release(&r, TRUSTED_REPO)
+                .unwrap_err()
+                .contains("SHA-256")
+        );
+        r["assets"][0]["name"] = json!("../bad.exe");
+        assert!(asset_from_release(&r, TRUSTED_REPO).is_err());
+    }
+    #[test]
+    fn atomic_cache_hash_size_cancel_cleanup() {
+        let d = dir();
+        let bytes = b"local fixture only";
+        let a = asset(bytes);
+        let cancel = AtomicBool::new(false);
+        let mut events = Vec::new();
+        let p = cache_stream(&mut &bytes[..], &a, &d, &cancel, |n, v| events.push((n, v))).unwrap();
+        assert_eq!(std::fs::read(p).unwrap(), bytes);
+        assert!(events.last().unwrap().1);
+        let baseline = std::fs::read_dir(&d).unwrap().count();
+        let mut bad = a.clone();
+        bad.hash = "0".repeat(64);
+        assert!(
+            cache_stream(&mut &bytes[..], &bad, &d, &cancel, |_, _| {})
+                .unwrap_err()
+                .contains("SHA-256")
+        );
+        bad = a.clone();
+        bad.size -= 1;
+        assert!(cache_stream(&mut &bytes[..], &bad, &d, &cancel, |_, _| {}).is_err());
+        assert!(cache_stream(&mut &bytes[..3], &a, &d, &cancel, |_, _| {}).is_err());
+        cancel.store(true, Ordering::SeqCst);
+        assert!(
+            cache_stream(&mut &bytes[..], &a, &d, &cancel, |_, _| {})
+                .unwrap_err()
+                .contains("취소")
+        );
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), baseline);
+        std::fs::remove_dir_all(d).unwrap();
+    }
+    #[test]
+    fn concurrent_work_rejected() {
+        let _guard = Busy::acquire().unwrap();
+        assert!(Busy::acquire().is_err());
+    }
+    #[test]
+    fn fake_server_stream_only() {
+        let bytes = b"fake local installer bytes, never executed";
+        let a = asset(bytes);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            s.set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                .unwrap();
+            let mut req = [0; 2048];
+            let _ = s.read(&mut req);
+            write!(
+                s,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            )
+            .unwrap();
+            s.write_all(bytes).unwrap();
+        });
+        let mut r = agent()
+            .get(format!("http://{addr}/fixture"))
+            .call()
+            .unwrap();
+        let d = dir();
+        let p = cache_stream(
+            &mut r.body_mut().as_reader(),
+            &a,
+            &d,
+            &AtomicBool::new(false),
+            |_, _| {},
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(p).unwrap(), bytes);
+        server.join().unwrap();
+        std::fs::remove_dir_all(d).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod transfer_edge_tests {
+ use super::*;
+ #[test] fn cancellation_during_stream_removes_partial(){
+  let bytes=vec![42u8;150000];let a=Asset{url:String::new(),name:"WorshipPresenter-test-windows-x64-setup.exe".into(),size:bytes.len() as u64,hash:hex(&Sha256::digest(&bytes))};
+  let d=std::env::temp_dir().join(format!("wp-cancel-{}",rand::random::<u64>()));let cancel=AtomicBool::new(false);
+  assert!(cache_stream(&mut &bytes[..],&a,&d,&cancel,|_,_|cancel.store(true,Ordering::SeqCst)).is_err());
+  assert_eq!(std::fs::read_dir(&d).unwrap().count(),0);std::fs::remove_dir_all(d).unwrap();
+ }
+ #[test] fn unsafe_redirect_never_followed(){
+  let l=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let addr=l.local_addr().unwrap();
+  let t=std::thread::spawn(move||{let(mut s,_)=l.accept().unwrap();s.set_read_timeout(Some(std::time::Duration::from_secs(3))).unwrap();let mut b=[0;2048];let _=s.read(&mut b);s.write_all(b"HTTP/1.1 302 Found\r\nLocation: http://example.invalid/installer.exe\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();});
+  assert!(response(&format!("http://{addr}/fixture")).unwrap_err().contains("신뢰"));t.join().unwrap();
+ }
 }
