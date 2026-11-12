@@ -59,6 +59,9 @@ pub fn menus() -> Vec<Menu> {
             it("d:lan", "내부망 출력 (다른 PC 의 OBS)", ""),
             it("d:obs", "OBS 원격 조작", ""), // [트랙 D]
             it("d:bulletin", "주보 → 큐시트", ""), // [트랙 D]
+            it("a:home", "홈페이지 주보 → 큐시트 · 광고", ""), // [트랙 A]
+            it("a:points", "설교 포인트 슬라이드", ""), // [트랙 A]
+            it("a:preservice", "예배 전 화면 만들기", ""), // [트랙 A]
         ] },
         Menu { label: "도움말", items: vec![
             it("c:about", "정보 · 라이선스", ""),

@@ -6,6 +6,7 @@ mod hymns_ui; // [트랙 A]
 mod outwin;
 mod paint;
 mod paint_edit; // [트랙 A]
+mod a_tools; // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
 mod trackb_ui; // [트랙 B]
 mod lyrics_ui; // [트랙 B]
 mod music_ui; // [트랙 B]
