@@ -56,6 +56,7 @@ pub struct Core {
     pub toast: Option<(String, &'static str, i64)>,
     pub port: u16,
     pub b: crate::trackb::TrackB, // [트랙 B]
+    pub flow: crate::flow::Flow, // [트랙 C] 자동 넘김·글자 자동 숨김
 }
 
 pub type Shared = Arc<Mutex<Core>>;
@@ -111,7 +112,7 @@ impl Core {
         let port = settings.get()["port"].as_u64().unwrap_or(37528) as u16;
         let mut c = Self {
             data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), obs_hold: false,
-            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, port, b: Default::default(), // [트랙 B]
+            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, port, b: Default::default(), flow: Default::default(), // [트랙 B] · [트랙 C] flow
         };
         c.trackb_init(); // [트랙 B]
         if c.version_id().is_empty() {
@@ -265,6 +266,7 @@ impl Core {
     /// 성경 본문을 미리보기로 (startAt: 이 절이 든 슬라이드부터)
     pub fn preview_passage(&mut self, passage: &Value, query: &str, start: Option<(i64, i64)>) {
         let opts = self.split_opts(None);
+        let passage = &crate::flow::with_parallel(self, passage.clone()); // [트랙 C] 병행 번역
         let slides = slides::build_bible(passage, &opts);
         let idx = start.map(|(c, v)| slides::index_of_verse(&slides, c, v)).unwrap_or(0);
         let p = self.passage_meta(passage, query, None);
@@ -302,6 +304,7 @@ impl Core {
         if sec >= 2.0 {
             p["auto"] = json!({ "sec": sec.round().min(3600.0), "loop": it["autoLoop"].as_bool().unwrap_or(false) });
         }
+        crate::flow::item_meta(p, it); // [트랙 C] hideAfter·edgeHide
     }
 
     /// 큐시트 순서 하나 → 슬라이드 (오류면 글)
@@ -319,7 +322,7 @@ impl Core {
                 if res["ok"] != json!(true) {
                     return Err(format!("{}: {}", r, res["error"].as_str().unwrap_or("본문을 찾지 못했습니다.")));
                 }
-                let pass = res["passage"].clone();
+                let pass = crate::flow::with_parallel(self, res["passage"].clone()); // [트랙 C] 병행 번역
                 let meta = self.passage_meta(&pass, r, Some((i, &it)));
                 (Some(pass), Some(meta))
             }
@@ -397,28 +400,7 @@ impl Core {
 
     /// 다음/이전 슬라이드. 순서의 끝이면 (설정 cueAdvance) 다음 순서를 바로 송출
     pub fn step(&mut self, d: i64) {
-        match self.pres.move_by(d) {
-            Move::Ok => { self.sync_video_state(); self.emit(Ev::Live) } // [트랙 B]
-            Move::NoLive => {}
-            Move::Edge(edge) => {
-                let advance = self.settings.get()["cueAdvance"].as_bool().unwrap_or(true);
-                let ci = self.pres.live.as_ref().map(|l| l.deck.passage["cueIndex"].as_i64().unwrap_or(-1)).unwrap_or(-1);
-                let n = self.cue.as_ref().map(|c| c.items.len() as i64).unwrap_or(0);
-                if advance && ci >= 0 {
-                    let next = ci + if edge == "end" { 1 } else { -1 };
-                    if next >= 0 && next < n {
-                        if let Ok(mut deck) = self.item_deck(next as usize) {
-                            if edge == "start" {
-                                deck.index = deck.slides.len().saturating_sub(1);
-                            }
-                            self.pres.preview = Some(deck.clone());
-                            self.send_deck(deck);
-                        }
-                    }
-                }
-            }
-        }
-        self.emit(Ev::Ui);
+        crate::flow::step(self, d); // [트랙 C] 자동 숨김 뒤 넘김 · 처음/끝 숨김 · 다음 순서 · 연속 탐색
     }
 
     pub fn goto_live(&mut self, i: usize) {

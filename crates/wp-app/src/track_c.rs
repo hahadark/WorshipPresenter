@@ -16,33 +16,48 @@ pub struct TrackC {
 
 /// 메뉴에서 고른 트랙 C 항목
 pub fn handle_menu(app: &mut App, id: &str) {
-    let t = &mut app.tc;
     match id {
-        "c:settings" => t.settings.open = true,
-        "c:templates" => t.templates.open = true,
-        "c:history" => t.history.open = true,
-        "c:usage" => t.history.usage_open = true,
-        "c:about" => t.history.about_open = true,
+        "c:settings" => app.tc.settings.open = true,
+        "c:templates" => app.tc.templates.open = true,
+        "c:history" => app.tc.history.open = true,
+        "c:usage" => app.tc.history.usage_open = true,
+        "c:about" => app.tc.history.about_open = true,
         "c:import-bible" => app.core.lock().notify("성경 번역본 가져오기는 다음 차례에 옮깁니다.", "warn"),
+        // 트랙 B 창 (예전 도구 줄)
+        "b:songs" => app.tb.songs = true,
+        "b:lib" => app.tb.lib = true,
+        "b:overlays" => app.tb.overlays = true,
+        "b:message" => app.tb.message = true,
+        "b:quick" => app.tb.quick = true,
+        "b:stage" => app.tb.stage = true,
+        "b:macros" => app.tb.macros = true,
+        "b:cues" => app.tb.cues = true,
+        "b:print" => app.print_cue(),
+        "b:undo" | "b:redo" => {
+            app.core.lock().undo_items(id == "b:redo");
+            app.edit = None;
+        }
+        // 트랙 D 도구 창 (예전 임시 도구 단추)
+        "d:remote" => crate::tools_ui::open(crate::tools_ui::Tool::Remote),
+        "d:trigger" => crate::tools_ui::open(crate::tools_ui::Tool::Trigger),
+        "d:devices" => crate::tools_ui::open(crate::tools_ui::Tool::Devices),
+        "d:lan" => crate::tools_ui::open(crate::tools_ui::Tool::Lan),
         _ => {}
     }
 }
 
 /// 상단 메뉴 줄 (top 패널 위). 다른 트랙 항목 id 는 돌려준다
-pub fn menu_bar(app: &mut App, ui: &mut egui::Ui) -> Option<&'static str> {
+pub fn menu_bar(app: &mut App, ui: &mut egui::Ui) {
     let picked = egui::Panel::top("menubar").show(ui, |ui| menubar::show(ui, &menubar::menus())).inner;
     if let Some(id) = picked {
-        if id.starts_with("c:") {
-            handle_menu(app, id);
-            return None;
-        }
+        handle_menu(app, id);
     }
-    picked
 }
 
 /// 창들 · 단축키 · 조작 화면 테마
 pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
-    if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::H))) {
+    let sc = serde_json::json!({ "shortcuts": app.core.lock().settings.get()["shortcuts"].clone() });
+    if crate::keys::pressed(ctx, &sc, "openHistory", "Ctrl+H") {
         app.tc.history.open = !app.tc.history.open;
     }
     if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::Comma))) {

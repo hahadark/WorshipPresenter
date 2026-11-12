@@ -70,7 +70,7 @@ impl App {
         c.check_schedule(now.0, &now.1, &now.2);
     }
 
-    fn print_cue(&mut self) {
+    pub(crate) fn print_cue(&mut self) { // [트랙 C] 메뉴에서 부름
         let r = self.core.lock().print_cue_file();
         match r {
             Ok(p) => { let _ = Command::new("explorer").arg(p).spawn(); }

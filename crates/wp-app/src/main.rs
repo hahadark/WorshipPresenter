@@ -9,6 +9,8 @@ mod paint_edit; // [트랙 A]
 mod trackb_ui; // [트랙 B]
 mod form; // [트랙 C]
 mod history_ui; // [트랙 C]
+mod flow_ui; // [트랙 C]
+mod keys; // [트랙 C]
 mod menubar; // [트랙 C]
 mod settings_ui; // [트랙 C]
 mod template_ui; // [트랙 C]
@@ -79,6 +81,7 @@ fn main() -> anyhow::Result<()> {
     let web = web_dir();
     let core = Core::open(data_dir.clone(), web.clone(), seed_db().as_deref())?;
     let shared = Arc::new(Mutex::new(core));
+    wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
     wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
 
     // 웹 서버 (출력 화면) — 따로 tokio 실행기
