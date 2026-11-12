@@ -195,3 +195,184 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+// ---------------- 송출할 때 (core.send_preview · send_deck 끝에서 부름) ----------------
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+
+/// 예배당 창을 켜 달라는 요청 (조작 화면이 프레임마다 가져감)
+static WANT_OUTPUT_ON: AtomicBool = AtomicBool::new(false);
+/// 자동 동작을 마지막으로 실행한 송출 (sentAt) — 같은 송출에서 두 번 돌지 않게
+static LAST_ACTIONS: AtomicI64 = AtomicI64::new(0);
+/// 조작 화면이 알려 주는 예배당 창 상태 (outputStatus.desktop)
+static DESKTOP: once_cell::sync::Lazy<parking_lot::Mutex<Value>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(Value::Null));
+
+pub fn take_output_on_request() -> bool {
+    WANT_OUTPUT_ON.swap(false, Ordering::SeqCst)
+}
+pub fn set_desktop_status(v: Value) {
+    *DESKTOP.lock() = v;
+}
+pub fn desktop_status() -> Value {
+    DESKTOP.lock().clone()
+}
+
+pub fn on_send(c: &mut Core) {
+    let Some(l) = c.pres.live.clone() else { return };
+    // 송출을 시작하면 예배당 모니터 창을 자동으로 켠다 (설정 output.autoOnSend)
+    let auto = c.settings.get()["output"]["autoOnSend"].as_bool().unwrap_or(true);
+    if auto && !DESKTOP.lock()["running"].as_bool().unwrap_or(false) {
+        WANT_OUTPUT_ON.store(true, Ordering::SeqCst);
+    }
+    // 큐시트 순서의 '송출할 때 자동으로' (item.actions)
+    let ci = l.deck.passage["cueIndex"].as_i64().unwrap_or(-1);
+    if ci < 0 || LAST_ACTIONS.swap(l.sent_at, Ordering::SeqCst) == l.sent_at {
+        return;
+    }
+    let it = c.cue.as_ref().and_then(|q| q.items.get(ci as usize)).cloned();
+    if let Some(it) = it {
+        if it["actions"].is_object() {
+            run_item_actions(c, &it["actions"], 0);
+        }
+    }
+}
+
+/// 예배당 창을 껐다 켰을 때: 끄면 OBS 도 숨김(설정 output.linkObs), 켜면 다시 보임
+pub fn output_toggled(c: &mut Core, before: bool, after: bool) {
+    let link = c.settings.get()["output"]["linkObs"].as_bool().unwrap_or(true);
+    let hold = if before && !after && link { Some(true) } else if !before && after { Some(false) } else { None };
+    if let Some(h) = hold {
+        if c.obs_hold != h {
+            c.obs_hold = h;
+            c.emit(Ev::Live);
+        }
+    }
+    c.emit(Ev::Outputs);
+}
+
+/// Electron 판 cue.js runActions 와 같은 칸 (음악 재생은 조작 화면 몫이라 뺌)
+pub fn run_item_actions(c: &mut Core, a: &Value, depth: u8) {
+    let s = |k: &str| a[k].as_str().unwrap_or("").to_string();
+    if !s("macro").is_empty() && depth < 2 {
+        let id = s("macro");
+        if let Err(e) = c.run_macro(&id) {
+            c.notify(format!("매크로: {e}"), "warn");
+        }
+    }
+    if let Some(m) = a["timer"].as_f64().filter(|x| *x > 0.0) {
+        let _ = c.stage_timer("start", m);
+    }
+    if !s("stageMsg").is_empty() {
+        c.stage_message(&s("stageMsg"));
+    } else if a["clearStage"].as_bool().unwrap_or(false) {
+        c.stage_message("");
+    }
+    if !s("logo").is_empty() {
+        c.layers.logo = s("logo") == "on";
+    }
+    if !s("bg").is_empty() {
+        c.layers.hide_bg = s("bg") == "hide";
+    }
+    if !s("ovOn").is_empty() {
+        let _ = c.toggle_overlay(&s("ovOn"), Some(true));
+    }
+    if s("ovOff") == "*" {
+        let on: Vec<String> = c.settings.get()["overlays"].as_array().into_iter().flatten().filter(|o| o["on"] == true && o["id"] != a["ovOn"]).filter_map(|o| o["id"].as_str().map(String::from)).collect();
+        for id in on {
+            let _ = c.toggle_overlay(&id, Some(false));
+        }
+    } else if !s("ovOff").is_empty() {
+        let _ = c.toggle_overlay(&s("ovOff"), Some(false));
+    }
+    match s("stagePin").as_str() {
+        "" => {}
+        "live" => c.stage_pin_set(None),
+        "order" => c.stage_pin_set(Some(&json!({ "mode": "order", "name": "순서표" }))),
+        p => c.stage_pin_set(Some(&json!({ "preset": p }))),
+    }
+    // 네트워크 쪽 (장비 · Companion · OBS) 은 백그라운드에서 — 송출이 멈추지 않게
+    let devices = c.settings.get()["devices"].clone();
+    let companion = c.settings.get()["companion"].clone();
+    let obs = crate::obs::conf_from(c.settings.get());
+    let devs: Vec<(String, String)> = a["dev"].as_array().into_iter().flatten().map(|x| (x["device"].as_str().unwrap_or("").to_string(), x["action"].as_str().unwrap_or("").to_string())).collect();
+    let comp = s("companion");
+    let mut obs_acts = vec![];
+    if !s("obsScene").is_empty() {
+        obs_acts.push(json!({ "action": "scene", "scene": s("obsScene") }));
+    }
+    if !s("obsStream").is_empty() {
+        obs_acts.push(json!({ "action": "stream", "on": s("obsStream") == "start" }));
+    }
+    if !s("obsRecord").is_empty() {
+        obs_acts.push(json!({ "action": "record", "on": s("obsRecord") == "start" }));
+    }
+    if devs.is_empty() && comp.is_empty() && obs_acts.is_empty() {
+        c.emit(Ev::Live);
+        c.emit(Ev::Ui);
+        return;
+    }
+    let sh = crate::hymns::shared();
+    std::thread::spawn(move || {
+        let mut errs = vec![];
+        for (d, act) in devs {
+            if let Err(e) = crate::devices::run(&devices, &d, &act) {
+                errs.push(format!("장비: {e}"));
+            }
+        }
+        if !comp.is_empty() {
+            if let Err(e) = crate::companion::press(&companion, &comp) {
+                errs.push(format!("Companion: {e}"));
+            }
+        }
+        for x in obs_acts {
+            if let Err(e) = crate::obs::action(&obs, &x) {
+                errs.push(e);
+            }
+        }
+        if let (Some(sh), false) = (sh, errs.is_empty()) {
+            sh.lock().notify(errs.join(" · "), "error");
+        }
+    });
+    c.emit(Ev::Live);
+    c.emit(Ev::Ui);
+}
+
+impl Core {
+    /// OBS 설정 저장 (비밀번호는 DPAPI 로)
+    pub fn set_obs(&mut self, enabled: bool, host: &str, port: u16, password: Option<&str>) {
+        let enc = password.map(|p| if p.is_empty() { String::new() } else { crate::dpapi::encrypt(p) });
+        let host = host.to_string();
+        self.settings.update(|d| {
+            if !d["obs"].is_object() {
+                d["obs"] = json!({});
+            }
+            d["obs"]["enabled"] = json!(enabled);
+            d["obs"]["host"] = json!(host);
+            d["obs"]["port"] = json!(port);
+            if let Some(e) = enc {
+                d["obs"]["passwordEnc"] = json!(e);
+                d["obs"]["password"] = json!("");
+            }
+        });
+        self.emit(Ev::Ui);
+    }
+}
+
+#[cfg(test)]
+mod actions_tests {
+    use super::*;
+    #[test]
+    fn link_obs_and_actions() {
+        let dir = std::env::temp_dir().join(format!("wp-trackd-a-{}", crate::util::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        drop(rusqlite::Connection::open(dir.join("bible.db")).unwrap());
+        let mut c = Core::open(dir.clone(), dir.join("web"), None).unwrap();
+        output_toggled(&mut c, true, false);
+        assert!(c.obs_hold);
+        output_toggled(&mut c, false, true);
+        assert!(!c.obs_hold);
+        run_item_actions(&mut c, &json!({ "logo": "on", "bg": "hide", "stageMsg": "마이크 켜기" }), 0);
+        assert!(c.layers.logo && c.layers.hide_bg);
+        assert_eq!(c.stage_payload()["message"], "마이크 켜기");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}

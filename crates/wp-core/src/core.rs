@@ -229,7 +229,7 @@ impl Core {
             .filter(|(_, c)| c.client != "control")
             .map(|(id, c)| json!({ "id": id, "output": c.client, "kind": c.kind, "connectedAt": c.connected_at, "ack": c.ack }))
             .collect();
-        json!({ "clients": list })
+        json!({ "clients": list, "desktop": crate::trackd::desktop_status() }) // [트랙 D] desktop
     }
 
     pub fn split_opts(&self, item: Option<&Value>) -> SplitOpts {
@@ -367,6 +367,7 @@ impl Core {
         self.obs_hold = false;
         if self.pres.send_live(None) {
             self.add_history();
+            crate::trackd::on_send(self); // [트랙 D] 예배당 창 자동 켜기 · 순서 자동 동작
             self.emit(Ev::Live);
         }
         self.emit(Ev::Ui);
@@ -377,6 +378,7 @@ impl Core {
         self.obs_hold = false;
         if self.pres.send_live(Some(d)) {
             self.add_history();
+            crate::trackd::on_send(self); // [트랙 D] 예배당 창 자동 켜기 · 순서 자동 동작
             self.emit(Ev::Live);
         }
         self.emit(Ev::Ui);
