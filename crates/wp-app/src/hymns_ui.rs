@@ -270,17 +270,22 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             let prep = {
                 let c = app.core.lock();
                 let ai = c.settings.get()["ai"].clone();
-                hymns::slide_texts(&c, &file).map(|t| (t, ai))
+                let key = c.ai_key(); // [트랙 D] DPAPI 로 암호화한 keyEnc 를 풀어 씀
+                let inp = wp_core::pptsheets::inputs(&c, &file).unwrap_or_default(); // [트랙 A] 글자 없는 PPT 는 모아보기 그림을 같이
+                hymns::slide_texts(&c, &file).map(|t| (t, ai, key, inp))
             };
             match prep {
-                Ok((texts, ai)) => {
-                    let key = ai["key"].as_str().unwrap_or("").to_string();
+                Ok((texts, ai, key, inp)) => {
                     let model = ai["model"].as_str().unwrap_or("").to_string();
                     let endpoint = ai["endpoint"].as_str().unwrap_or("").to_string();
                     let (it2, t2) = (it.clone(), title.clone());
                     app.core.lock().notify("AI 에게 나누기를 묻는 중…", "info");
                     hymns::run_bg(
-                        move || pptsplit::ask_split(&key, &model, &endpoint, &texts, &t2, "", &[]),
+                        move || {
+                            let blank = texts.iter().all(|t| t.trim().is_empty());
+                            let sheets = if blank { wp_core::pptsheets::build(&inp).map(|s| wp_core::pptsheets::as_data_urls(&s)).unwrap_or_default() } else { vec![] };
+                            pptsplit::ask_split(&key, &model, &endpoint, &texts, &t2, "", &sheets)
+                        },
                         move |c, r| match r {
                             Ok(v) => {
                                 let idx = c.cue.as_ref().and_then(|q| q.items.iter().position(|x| x["id"] == it2["id"]));
@@ -295,10 +300,26 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
                 Err(e) => app.core.lock().notify(e, "error"),
             }
         }
+        if ui.small_button("모아보기 그림 저장").on_hover_text("슬라이드 16장씩 번호를 붙인 그림 — 글자가 없는 PPT 를 채팅 AI 에 올릴 때").clicked() {
+            match wp_core::pptsheets::inputs(&app.core.lock(), &file) {
+                Ok(inp) => {
+                    app.core.lock().notify("모아보기 그림을 만드는 중…", "info");
+                    hymns::run_bg(move || wp_core::pptsheets::build(&inp), |c, r| match r.and_then(|s| wp_core::pptsheets::save(c, &s).map(|d| (d, s.len()))) {
+                        Ok((dir, n)) => {
+                            open_url(&dir.to_string_lossy());
+                            c.notify(format!("모아보기 그림 {n}장을 '{}' 에 저장했습니다. 채팅 AI 에 프롬프트와 함께 올리세요.", dir.display()), "ok");
+                        }
+                        Err(e) => c.notify(e, "error"),
+                    });
+                }
+                Err(e) => app.core.lock().notify(e, "error"),
+            }
+        }
         if ui.small_button("채팅 AI 프롬프트 복사").on_hover_text("ChatGPT·Claude·Gemini 에 붙여 넣고, 답을 아래 칸에 붙여 넣으세요").clicked() {
             let r = {
                 let c = app.core.lock();
-                hymns::slide_texts(&c, &file).and_then(|t| pptsplit::chat_prompt(&t, &title, "", 0))
+                // [트랙 A] 글자가 없는 PPT: 모아보기 그림 수를 프롬프트에 (그림은 '모아보기 저장' 으로)
+                hymns::slide_texts(&c, &file).and_then(|t| { let blank = t.iter().all(|x| x.trim().is_empty()); let n = if blank { t.len().div_ceil(if t.len() > 160 { 25 } else { 16 }) } else { 0 }; pptsplit::chat_prompt(&t, &title, "", n) })
             };
             match r {
                 Ok(p) => {

@@ -67,7 +67,7 @@ pub fn classify(sh: &Shape, pkg_has: &dyn Fn(&str) -> bool) -> &'static str {
         return "bg";
     }
     if ["table", "chart", "diagram", "graphic", "ole"].contains(&sh.kind.as_str()) {
-        return if (sh.kind == "chart" || sh.kind == "graphic") && sh.pic.is_none() { "skip" } else { "bg" };
+        return if (sh.kind == "chart" && sh.chart.is_none() || sh.kind == "graphic") && sh.pic.is_none() { "skip" } else { "bg" }; // [트랙 A] 읽은 차트는 배경에 그림
     }
     let has_text = sh.text.as_ref().is_some_and(|t| t.has_text);
     if has_text && sh.text.as_ref().is_some_and(|t| t.body.vert != "horz") {
@@ -103,6 +103,17 @@ static FONTDB: Lazy<Arc<resvg::usvg::fontdb::Database>> = Lazy::new(|| {
     db.set_sans_serif_family("Malgun Gothic");
     Arc::new(db)
 });
+
+/// 시스템 글꼴 목록을 미리 읽어 둔다 (처음 그리기가 몇 초 늦어지지 않게, 시작할 때 백그라운드에서)
+pub fn warm_fonts() {
+    std::thread::Builder::new().name("font-warm".into()).spawn(|| {
+        let t0 = std::time::Instant::now();
+        let db = &*FONTDB;
+        // 맑은 고딕 파일도 한 번 열어 디스크 캐시에 올린다
+        let _ = crate::measure::text_width("가", 10.0, false, 0.0);
+        log::info!("글꼴 {}개 미리 읽음 ({:.1}초)", db.len(), t0.elapsed().as_secs_f32());
+    }).ok();
+}
 
 /// 시스템 글꼴 하나의 파일 내용 (조작 화면 egui 가 PPT 글꼴로 그릴 때). 이름은 '구세군체 Bold' 처럼 전체 이름도 받는다
 pub fn font_bytes(name: &str) -> Option<(Vec<u8>, u32)> {
@@ -285,7 +296,16 @@ pub fn build_into(bytes: &[u8], dir: &Path) -> Result<Built, String> {
     if slides_out.is_empty() {
         return Err("슬라이드를 그리지 못했습니다.".into());
     }
-    let layers = json!({ "v": 4, "w": doc.w, "h": doc.h, "engine": "rs", "bgs": bgs, "slides": recs_all, "hide": {}, "texts": texts });
+    // [트랙 A] PowerPoint 로 배경 그림을 만들 때 숨길 도형 id (보이는 슬라이드 번호 → cNvPr id)
+    let mut hide = serde_json::Map::new();
+    for (k, recs) in recs_all.iter().enumerate() {
+        let mut ids: Vec<String> = recs.iter().filter_map(|r| r["id"].as_str().filter(|s| !s.is_empty()).map(String::from)).collect();
+        ids.dedup();
+        if !ids.is_empty() {
+            hide.insert((k + 1).to_string(), json!(ids));
+        }
+    }
+    let layers = json!({ "v": 4, "w": doc.w, "h": doc.h, "engine": "rs", "bgs": bgs, "slides": recs_all, "hide": hide, "texts": texts });
     std::fs::write(dir.join("layers.json"), layers.to_string()).map_err(|e| e.to_string())?;
     Ok(Built { w: doc.w, h: doc.h, slides: slides_out, texts })
 }

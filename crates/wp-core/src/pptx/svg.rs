@@ -347,6 +347,10 @@ pub fn shape_svg(sh: &Shape, cx: &mut Ctx) -> String {
             body.push_str(&geom(sh, &attrs.replace(&fill_attr(&sh.fill, &mut Ctx { embed: cx.embed, defs: String::new(), n: 0 }), "fill=\"none\"")));
         }
     }
+    // [트랙 A] 차트
+    if let Some(c) = &sh.chart {
+        body.push_str(&super::chart::chart_svg(c, sh.x, sh.y, sh.w, sh.h, &c.theme));
+    }
     if let Some(t) = sh.text.as_ref().filter(|t| t.has_text) {
         body.push_str(&text_svg(t, sh.x, sh.y, sh.w, sh.h));
     }

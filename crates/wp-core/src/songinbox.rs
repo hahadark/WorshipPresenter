@@ -191,3 +191,55 @@ mod tests {
         assert!(online_search_url("ftp://x", "a").is_err());
     }
 }
+
+#[cfg(test)]
+mod real_watch_tests {
+    //! 실제 폴더로 지켜보기 시험: cargo test -p wp-core real_inbox -- --ignored --nocapture
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    #[ignore]
+    fn real_inbox() {
+        let root = std::env::temp_dir().join(format!("wp-inbox-{}", std::process::id()));
+        let (data, dl, inbox) = (root.join("data"), root.join("Downloads"), root.join("찬양 PPT"));
+        for d in [&data, &dl] { std::fs::create_dir_all(d).unwrap(); }
+        std::fs::write(data.join("bible.db"), b"").unwrap(); // 빈 DB: 기존 자료를 복사해 오지 않게
+        let core = Core::open(data.clone(), root.join("web"), None).unwrap();
+        let shared: Shared = Arc::new(parking_lot::Mutex::new(core));
+        {
+            let mut c = shared.lock();
+            let (a, b) = (dl.to_string_lossy().to_string(), inbox.to_string_lossy().to_string());
+            c.settings.update(|d| { d["songDownloadDir"] = json!(a); d["songInboxDir"] = json!(b); });
+            c.new_cue("시험").unwrap();
+        }
+        // 지켜보기 전부터 있던 파일은 건드리지 않는다
+        std::fs::write(dl.join("예전 곡.pptx"), b"old").unwrap();
+        let st = arm(&shared).unwrap();
+        println!("지켜보기: {st}");
+        // 브라우저처럼: 받는 중(.crdownload) → 이름 바꿈
+        let src = std::env::var("WP_INBOX_PPTX").unwrap_or_else(|_| r"F:\aside\WorshipCue\tests\fixtures\chart-table.pptx".into());
+        std::fs::copy(&src, dl.join("주 사랑 (1).pptx.crdownload")).unwrap();
+        std::thread::sleep(Duration::from_millis(2000));
+        std::fs::rename(dl.join("주 사랑 (1).pptx.crdownload"), dl.join("주 사랑 (1).pptx")).unwrap();
+        let t0 = Instant::now();
+        let mut done = false;
+        while t0.elapsed() < Duration::from_secs(15) {
+            std::thread::sleep(Duration::from_millis(500));
+            let c = shared.lock();
+            if c.cue.as_ref().is_some_and(|q| !q.items.is_empty()) { done = true; break; }
+        }
+        disarm();
+        let c = shared.lock();
+        let items = c.cue.as_ref().map(|q| q.items.clone()).unwrap_or_default();
+        println!("{:.1}초 뒤 큐시트 순서: {}", t0.elapsed().as_secs_f32(), serde_json::to_string(&items).unwrap());
+        assert!(done, "받은 파일이 큐시트에 들어가지 않음");
+        assert!(inbox.join("주 사랑.pptx").is_file(), "찬양 PPT 폴더로 옮겨지지 않음");
+        assert!(!dl.join("주 사랑 (1).pptx").exists());
+        assert!(dl.join("예전 곡.pptx").exists(), "예전 파일을 옮김");
+        assert_eq!(items[0]["type"], "hymn");
+        assert!(c.settings.get()["hymnFolders"].as_array().unwrap().iter().any(|f| f["path"].as_str() == Some(&*inbox.to_string_lossy())));
+        drop(c);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
