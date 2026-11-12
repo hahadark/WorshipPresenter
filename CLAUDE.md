@@ -8,8 +8,9 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 
 - **릴리스 정지 (2026-11-12 사용자 지시): Electron 판의 모든 기능을 옮길 때까지 릴리스·설치 파일·공개 저장소·GitHub 업로드를 하지 않는다.** 로컬 커밋만.
 
-- 커밋: `git -c user.name=hahadark -c user.email=29118505+hahadark@users.noreply.github.com commit …`, 끝에 `Co-Authored-By: Claude <모델명> <noreply@anthropic.com>`.
-- 빌드·릴리스·푸시·GitHub 저장소 만들기는 사용자가 시킬 때만. 커밋은 작업 단위마다.
+- 커밋: `git -c user.name=hahadark -c user.email=29118505+hahadark@users.noreply.github.com commit …`. 공동 작성자 표기는 실제 작업 모델과 일치시킨다. 챗GPT가 만든 새 작업을 클로드 작업으로 표기하지 않는다.
+- **현재 작업은 사용자 지시로 챗GPT 구독 모델만 사용한다.** 다른 공급자나 별도 유료 API로 자동 전환하지 않는다.
+- 개발 빌드·로컬 테스트는 구현 검증의 일부로 진행한다. 출시 빌드·릴리스·설치 파일 생성·푸시·GitHub 저장소 생성은 금지 상태를 유지한다. 커밋은 작업 단위마다.
 - Electron 판 저장소와 사용자의 실제 자료(`%APPDATA%\WorshipCue\data`)는 건드리지 않는다. Rust 판은 처음 실행할 때 그 자료를 **복사**(SQLite `VACUUM INTO`)해서 `%APPDATA%\WorshipPresenter-rs\data` 에서 쓴다.
 - 점검은 `--data <임시 폴더>` 로. 사용자가 띄워 둔 프로그램을 끄지 않는다.
 - 저작권 있는 번역본·찬송가 자료(`data-personal/`)는 저장소에 넣지 않는다.
@@ -48,7 +49,15 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - 송출: 미리보기/LIVE, F5·F6·F9·F10·Space·PageUp/Down·Ctrl+↑↓·Ctrl+K·Ctrl+Shift+F, 글자 숨김·배경 끄기·로고·모두 지우기, 템플릿 고르기(예배당·OBS 자막), '미리보기 거쳐 송출' 끄기
 - 출력: 예배당 모니터 창(wp-output), OBS 주소 복사, 출력 연결 수 표시, `/api/ack`, 라이브러리 파일(Range)
 
-## 아직 (다음 단계 후보, 대략 중요한 차례)
+## 현재 통합 상태 (6차 진행 중)
+
+- 성경 번역본 분석·가져오기·삭제, 베들레헴 폴더 일괄 가져오기, EPUB 주석 가져오기·조회·삭제를 통합했다.
+- 찬송가·PPT, 라이브러리·그리기·백업, 템플릿·설정, 리모컨·장비 연동과 영어 화면은 각 트랙에서 구현되어 있으며 통합·회귀 검증 중이다.
+- 작업 트리별 미커밋 변경을 버리지 않는다. `git status`와 각 브랜치 로그를 확인하고 재개한다.
+- `PARITY.md`는 소스 대조 결과이며, '됨'이 실제 장비나 모든 UI 흐름의 실행 검증을 뜻하지 않는다. 검토에서 드러난 누락·오류를 반영해 갱신한다.
+- 현재 우선 검증: LIVE 큐와 열린 큐 불일치, 음악 순서의 화면 유지, 편집기 세부, 백업·썸네일, 업데이트 상태 기계. 실제 배포·설치 시험은 하지 않는다.
+
+## 최초 로드맵 (역사 기록, 현재 미구현 목록이 아님)
 
 1. **찬송가·PPT 순서(hymn)** — 사용자 큐시트에 가장 많다. 먼저 Electron 판 `hymn-cache` 의 SVG/PNG 를 다시 쓰고, 그 뒤 PPTX 를 Rust 로 직접 읽기 (Electron 판은 이음오피스 JS 엔진). 베들레헴 찬송가(hymnal)
 2. 찬양 라이브러리(Songs) · 가사 웹 찾기 · 곡 가져오기

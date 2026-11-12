@@ -92,7 +92,9 @@ fn allowed_lib_file(core: &crate::core::Core, p: &str) -> Option<PathBuf> {
         return None;
     }
     let f = std::fs::canonicalize(&candidate).ok()?;
-    if !f.is_file() { return None; }
+    if !f.is_file() || !(crate::library::is_image(&f) || crate::library::is_audio(&f) || crate::library::is_video(&f)) {
+        return None;
+    }
     let s = core.settings.get();
     for key in ["imageFolders", "audioFolders", "hymnFolders"] {
         for d in s[key].as_array().into_iter().flatten() {
@@ -136,11 +138,15 @@ async fn lib_file(State(core): State<Shared>, Query(q): Query<HashMap<String, St
             (StatusCode::PARTIAL_CONTENT, [(header::CONTENT_TYPE, ty.to_string()), (header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}")), (header::ACCEPT_RANGES, "bytes".into())], buf).into_response()
         }
         None => {
-            let mut buf = Vec::with_capacity(size as usize);
-            if fh.read_to_end(&mut buf).await.is_err() {
-                return status(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-            ([(header::CONTENT_TYPE, ty), (header::ACCEPT_RANGES, "bytes"), (header::CACHE_CONTROL, "max-age=60")], buf).into_response()
+            // 대용량 영상을 통째로 메모리에 올리지 않고 64KB씩 보낸다.
+            let chunks = futures_util::stream::try_unfold(fh, |mut file| async move {
+                let mut buf = vec![0u8; 64 * 1024];
+                let n = file.read(&mut buf).await?;
+                if n == 0 { return Ok::<_, std::io::Error>(None); }
+                buf.truncate(n);
+                Ok(Some((buf, file)))
+            });
+            ([(header::CONTENT_TYPE, ty.to_string()), (header::CONTENT_LENGTH, size.to_string()), (header::ACCEPT_RANGES, "bytes".into()), (header::CACHE_CONTROL, "max-age=60".into())], Body::from_stream(chunks)).into_response()
         }
     }
 }
@@ -344,7 +350,9 @@ mod file_boundary_tests {
         std::fs::create_dir_all(dir.join("data")).unwrap();
         std::fs::create_dir_all(dir.join("data-old")).unwrap();
         std::fs::write(dir.join("data/allowed.txt"), b"allowed").unwrap();
-        std::fs::write(dir.join("data-old/private.txt"), b"private").unwrap();
+        std::fs::write(dir.join("data/allowed.png"), b"allowed").unwrap();
+        std::fs::write(dir.join("data/settings.json"), b"{}").unwrap();
+        std::fs::write(dir.join("data-old/private.png"), b"private").unwrap();
         dir
     }
 
@@ -368,6 +376,35 @@ mod file_boundary_tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    #[tokio::test]
+    async fn media_stream_and_range_handle_large_start_safely() {
+        let dir = fixture();
+        let data = dir.join("data");
+        let file = data.join("allowed.png");
+        let bytes = vec![42u8; 160_000];
+        std::fs::write(&file, &bytes).unwrap();
+        drop(rusqlite::Connection::open(data.join("bible.db")).unwrap());
+        let core = crate::core::Core::open(data.clone(), data.join("web"), None).unwrap();
+        let shared = std::sync::Arc::new(parking_lot::Mutex::new(core));
+        let query = HashMap::from([("p".to_string(), file.to_string_lossy().into_owned())]);
+        let full = lib_file(State(shared.clone()), Query(query.clone()), HeaderMap::new()).await;
+        assert_eq!(full.status(), StatusCode::OK);
+        assert_eq!(full.headers()[header::CONTENT_LENGTH], "160000");
+        assert_eq!(axum::body::to_bytes(full.into_body(), 200_000).await.unwrap().as_ref(), bytes);
+        let mut headers = HeaderMap::new();
+        headers.insert(header::RANGE, HeaderValue::from_static("bytes=2-6"));
+        let range = lib_file(State(shared.clone()), Query(query.clone()), headers).await;
+        assert_eq!(range.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(range.headers()[header::CONTENT_RANGE], "bytes 2-6/160000");
+        assert_eq!(axum::body::to_bytes(range.into_body(), 100).await.unwrap().as_ref(), &[42u8; 5]);
+        let mut headers = HeaderMap::new();
+        headers.insert(header::RANGE, HeaderValue::from_static("bytes=18446744073709551615-"));
+        let invalid = lib_file(State(shared.clone()), Query(query), headers).await;
+        assert_eq!(invalid.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        drop(shared);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn library_paths_do_not_accept_a_sibling_with_same_prefix() {
         let dir = fixture();
@@ -375,12 +412,16 @@ mod file_boundary_tests {
         // 빈 DB를 먼저 만들어 사용자 자료를 복사하지 않는 독립 시험으로 고정한다.
         drop(rusqlite::Connection::open(data.join("bible.db")).unwrap());
         let mut core = crate::core::Core::open(data.clone(), data.join("web"), None).unwrap();
-        assert!(allowed_lib_file(&core, &data.join("allowed.txt").to_string_lossy()).is_some());
-        let private = dir.join("data-old/private.txt");
+        assert!(allowed_lib_file(&core, &data.join("allowed.png").to_string_lossy()).is_some());
+        assert!(allowed_lib_file(&core, &data.join("allowed.txt").to_string_lossy()).is_none());
+        assert!(allowed_lib_file(&core, &data.join("bible.db").to_string_lossy()).is_none());
+        assert!(allowed_lib_file(&core, &data.join("settings.json").to_string_lossy()).is_none());
+        let private = dir.join("data-old/private.png");
         assert!(allowed_lib_file(&core, &private.to_string_lossy()).is_none());
-        assert!(allowed_lib_file(&core, &data.join("../data-old/private.txt").to_string_lossy()).is_none());
-        core.settings.update(|s| s["droppedFiles"] = json!([private.to_string_lossy()]));
+        assert!(allowed_lib_file(&core, &data.join("../data-old/private.png").to_string_lossy()).is_none());
+        core.settings.update(|s| s["droppedFiles"] = json!([private.to_string_lossy(), data.join("settings.json").to_string_lossy()]));
         assert!(allowed_lib_file(&core, &private.to_string_lossy()).is_some());
+        assert!(allowed_lib_file(&core, &data.join("settings.json").to_string_lossy()).is_none());
         drop(core);
         std::fs::remove_dir_all(dir).unwrap();
     }
