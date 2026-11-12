@@ -21,8 +21,8 @@ fn fnv(s: &str) -> u64 {
 /// 캐시 파일 자리 (원본이 없으면 None)
 pub fn thumb_path(data_dir: &Path, src: &Path) -> Option<PathBuf> {
     let m = std::fs::metadata(src).ok()?;
-    let mt = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
-    let key = format!("v2|{}|{}|{}", src.to_string_lossy().to_lowercase(), m.len(), mt); // v2: EXIF 방향 반영
+    let mt = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos()).unwrap_or(0);
+    let key = format!("v3|{}|{}|{}", src.to_string_lossy().to_lowercase(), m.len(), mt); // 방향과 짧은 간격의 파일 수정 반영
     Some(data_dir.join("thumbs").join(format!("{:016x}.jpg", fnv(&key))))
 }
 
@@ -106,9 +106,13 @@ mod tests {
         assert_eq!((im.width(), im.height()), (320, 180));
         assert_eq!(cached(&dir, &src), Some(t.clone()));
         // 원본이 바뀌면 다른 자리
-        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::thread::sleep(std::time::Duration::from_millis(20));
         image::RgbImage::from_fn(800, 800, |_, _| image::Rgb([0, 0, 0])).save(&src).unwrap();
         assert!(cached(&dir, &src).is_none());
+        let square = make(&dir, &src).unwrap();
+        let portrait = image::open(square).unwrap();
+        assert_eq!((portrait.width(), portrait.height()), (180, 180));
+        std::fs::remove_dir_all(&dir).unwrap();
         assert!(thumb_path(&dir, &dir.join("없는 파일.png")).is_none());
     }
 }

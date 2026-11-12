@@ -17,6 +17,7 @@ pub struct SysState {
     pub cameras: bool,
     diag_result: Value,
     note: String,
+    restore_busy: bool,
     // 그리기
     pen_color: usize,
     pen_width: f32,
@@ -148,10 +149,14 @@ impl App {
             }
             ui.separator();
             ui.label(RichText::new(wp_core::i18n::tr("백업 (하루 한 번 자동 · 10일치 보관)")).strong());
+            let restore_busy = ST.lock().restore_busy;
+            if restore_busy {
+                ui.label(RichText::new("되돌리기 예약 파일을 복사하고 있습니다. 끝날 때까지 기다려 주세요.").color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+            }
             if info["restorePending"] == true {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(wp_core::i18n::tr("되돌리기 예약됨 — 프로그램을 다시 시작하면 적용됩니다.")).color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
-                    if ui.button(wp_core::i18n::tr("예약 취소")).clicked() { self.core.lock().cancel_restore(); }
+                    if ui.add_enabled(!restore_busy, egui::Button::new(wp_core::i18n::tr("예약 취소"))).clicked() { self.core.lock().cancel_restore(); }
                 });
             }
             ui.horizontal(|ui| {
@@ -177,13 +182,17 @@ impl App {
                 for b in &list {
                     ui.horizontal(|ui| {
                         ui.label(format!("{} · {:.1}MB{}", b["day"].as_str().unwrap_or(""), b["size"].as_f64().unwrap_or(0.0) / 1048576.0, if b["settings"].as_str().unwrap_or("").is_empty() { "" } else { " · 설정 포함" }));
-                        if ui.small_button(wp_core::i18n::tr("이 날로 되돌리기")).on_hover_text(wp_core::i18n::tr("다음 시작 때 이 백업으로 바꿉니다 (지금 것은 bible.pre-restore.db 로 남김)")).clicked() {
-// 큰 파일 복사는 따로 스레드에서 (화면이 멈추지 않게)
+                        if ui.add_enabled(!restore_busy && info["restorePending"] != true, egui::Button::new(wp_core::i18n::tr("이 날로 되돌리기")).small()).on_hover_text(wp_core::i18n::tr("다음 시작 때 이 백업으로 바꿉니다 (지금 것은 bible.pre-restore.db 로 남김)")).clicked() {
+                            // 큰 파일 복사는 별도 스레드에서. 복사 중 중복 예약과 취소는 막는다.
                             let (dir, day, ctx2) = (self.data_dir.clone(), b["day"].as_str().unwrap_or("").to_string(), ui.ctx().clone());
+                            ST.lock().restore_busy = true;
                             note = "되돌리기 예약하는 중…".into();
                             std::thread::spawn(move || {
                                 let r = wp_core::sync::restore_files(&dir, &day);
-                                ST.lock().note = match r { Ok(_) => format!("{day} 로 되돌리기를 예약했습니다. 프로그램을 다시 시작하세요."), Err(e) => e.to_string() };
+                                let mut state = ST.lock();
+                                state.note = match r { Ok(_) => format!("{day} 로 되돌리기를 예약했습니다. 프로그램을 다시 시작하세요."), Err(e) => e.to_string() };
+                                state.restore_busy = false;
+                                drop(state);
                                 ctx2.request_repaint();
                             });
                         }

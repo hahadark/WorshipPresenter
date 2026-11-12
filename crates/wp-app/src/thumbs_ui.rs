@@ -15,7 +15,7 @@ struct Thumbs {
     queue: VecDeque<PathBuf>,
     queued: HashSet<PathBuf>,
     ready: HashMap<PathBuf, PathBuf>,
-    failed: HashSet<PathBuf>,
+    failed: HashMap<PathBuf, PathBuf>,
     worker: bool,
 }
 
@@ -24,12 +24,17 @@ static TH: Lazy<Mutex<Thumbs>> = Lazy::new(|| Mutex::new(Thumbs::default()));
 /// 썸네일 자리 (아직이면 만들 차례에 넣고 None)
 pub fn get(ctx: &egui::Context, data_dir: &Path, src: &Path) -> Option<PathBuf> {
     let mut t = TH.lock();
+    let expected = wp_core::thumbs::thumb_path(data_dir, src)?;
     if let Some(p) = t.ready.get(src) {
-        return Some(p.clone());
+        if *p == expected && p.exists() {
+            return Some(p.clone());
+        }
+        t.ready.remove(src);
     }
-    if t.failed.contains(src) {
+    if t.failed.get(src) == Some(&expected) {
         return None;
     }
+    t.failed.remove(src);
     if let Some(p) = wp_core::thumbs::cached(data_dir, src) {
         t.ready.insert(src.to_path_buf(), p.clone());
         return Some(p);
@@ -58,7 +63,9 @@ pub fn get(ctx: &egui::Context, data_dir: &Path, src: &Path) -> Option<PathBuf> 
                     }
                     Err(e) => {
                         log::warn!("썸네일 실패 {}: {e}", src.display());
-                        t.failed.insert(src);
+                        if let Some(expected) = wp_core::thumbs::thumb_path(&dir, &src) {
+                            t.failed.insert(src, expected);
+                        }
                     }
                 }
                 drop(t);
@@ -105,7 +112,15 @@ impl App {
                             ui.painter().rect_filled(rect, 4.0, Color32::BLACK);
                             match get(&ctx, &self.data_dir, &path) {
                                 Some(t) => {
-                                    egui::Image::new(file_uri(&t)).maintain_aspect_ratio(true).fit_to_exact_size(rect.size()).paint_at(ui, rect.shrink(1.0));
+                                    // paint_at은 지정 사각형에 늘려 그리므로 실제 크기로 비율을 맞춘다.
+                                    let image = egui::Image::new(file_uri(&t));
+                                    if let Ok(poll) = image.load_for_size(ui.ctx(), rect.size()) {
+                                        if let Some(size) = poll.size().filter(|s| s.x > 0.0 && s.y > 0.0) {
+                                            let area = rect.shrink(1.0);
+                                            let scale = (area.width() / size.x).min(area.height() / size.y);
+                                            image.paint_at(ui, egui::Rect::from_center_size(area.center(), size * scale));
+                                        }
+                                    }
                                 }
                                 None => {
                                     ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, if video { "🎞 영상" } else { "…" }, egui::FontId::proportional(14.0), Color32::GRAY);
