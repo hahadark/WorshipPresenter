@@ -398,18 +398,23 @@ impl App {
     fn stage_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.stage;
         egui::Window::new(wp_core::i18n::tr("무대 화면")).open(&mut open).default_size([440.0, 360.0]).show(ctx, |ui| {
+            self.workspace_stage(ui);
+        });
+        self.tb.stage = open;
+    }
+
+    pub(crate) fn workspace_stage(&mut self, ui: &mut egui::Ui) {
             let (timer, port, presets) = { let c = self.core.lock(); (c.b.stage.timer_json(), c.port, c.settings.get()["stagePresets"].as_array().cloned().unwrap_or_default()) };
             let rem = timer["remaining"].as_i64().unwrap_or(0);
             ui.label(RichText::new(format!("타이머 {}{:02}:{:02} {}", if rem < 0 { "-" } else { "" }, rem.abs() / 60000, (rem.abs() / 1000) % 60, if timer["running"] == true { wp_core::i18n::tr_s("· 진행 중") } else if timer["duration"].as_i64().unwrap_or(0) > 0 { "· 멈춤" } else { "" })).size(20.0));
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.tb.timer_min).desired_width(50.0).hint_text(wp_core::i18n::tr("분")));
                 let m: f64 = self.tb.timer_min.parse().unwrap_or(30.0);
-                let mut c = self.core.lock();
-                if ui.button(wp_core::i18n::tr("시작")).clicked() { self.tb.note = err(c.stage_timer("start", m)); }
-                if ui.button(wp_core::i18n::tr("멈춤")).clicked() { let _ = c.stage_timer("pause", 0.0); }
-                if ui.button(wp_core::i18n::tr("계속")).clicked() { let _ = c.stage_timer("resume", 0.0); }
-                if ui.button(wp_core::i18n::tr("+1분")).clicked() { let _ = c.stage_timer("add", 1.0); }
-                if ui.button(wp_core::i18n::tr("지우기")).clicked() { let _ = c.stage_timer("reset", 0.0); }
+                if ui.button(wp_core::i18n::tr("시작")).clicked() { self.tb.note = err(self.core.lock().stage_timer("start", m)); }
+                if ui.button(wp_core::i18n::tr("멈춤")).clicked() { let _ = self.core.lock().stage_timer("pause", 0.0); }
+                if ui.button(wp_core::i18n::tr("계속")).clicked() { let _ = self.core.lock().stage_timer("resume", 0.0); }
+                if ui.button(wp_core::i18n::tr("+1분")).clicked() { let _ = self.core.lock().stage_timer("add", 1.0); }
+                if ui.button(wp_core::i18n::tr("지우기")).clicked() { let _ = self.core.lock().stage_timer("reset", 0.0); }
             });
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.tb.stage_msg).hint_text(wp_core::i18n::tr("무대 메시지 (설교자에게만)")));
@@ -419,9 +424,8 @@ impl App {
             ui.separator();
             ui.label(wp_core::i18n::tr("고정 (지금 슬라이드 대신 계속 보이기)"));
             ui.horizontal(|ui| {
-                let mut c = self.core.lock();
-                if ui.button(wp_core::i18n::tr("순서표")).clicked() { c.stage_pin_set(Some(&json!({ "mode": "order", "name": "순서표" }))); }
-                if ui.button(wp_core::i18n::tr("풀기")).clicked() { c.stage_pin_set(None); }
+                if ui.button(wp_core::i18n::tr("순서표")).clicked() { self.core.lock().stage_pin_set(Some(&json!({ "mode": "order", "name": "순서표" }))); }
+                if ui.button(wp_core::i18n::tr("풀기")).clicked() { self.core.lock().stage_pin_set(None); }
             });
             ui.add(egui::TextEdit::multiline(&mut self.tb.pin_text).desired_rows(2).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("고정할 글")));
             ui.horizontal(|ui| {
@@ -454,8 +458,6 @@ impl App {
                 }
                 ui.label(RichText::new(format!("http://127.0.0.1:{port}/outputs/stage")).small());
             });
-        });
-        self.tb.stage = open;
     }
 
     // ---------------- 매크로 ----------------
