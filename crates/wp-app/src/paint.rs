@@ -273,8 +273,17 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
             let label = if kind == "video" { "영상" } else { "카메라" };
             p.text(rect.center(), Align2::CENTER_CENTER, format!("{} · {}", label, s["ref"].as_str().unwrap_or("")), FontId::proportional((rect.height() * 0.06).max(10.0)), Color32::GRAY);
         }
-        "title" => paint_title(&p, rect, s, t, sc),
-        _ => paint_text(&p, rect, s, t, sc, version_name),
+        // [트랙 C] 글자 슬라이드 편집: 글상자 위치·꾸미기 · 본문 숨기기 · 덧붙인 글상자·그림·도형
+        _ => {
+            let ed = &s["edit"];
+            let te = if ed.is_object() { wp_core::slideedit::edited_template(t, ed) } else { t.clone() };
+            let items = ed["items"].as_array().cloned().unwrap_or_default();
+            if !items.is_empty() { crate::paint_edit::paint_items(ui, c, rect, &items, true); }
+            if !ed["hideMain"].as_bool().unwrap_or(false) {
+                if kind == "title" { paint_title(&p, rect, s, &te, sc) } else { paint_text(&p, rect, s, &te, sc, version_name) }
+            }
+            if !items.is_empty() { crate::paint_edit::paint_items(ui, c, rect, &items, false); }
+        }
     }
     // [트랙 A] 그림·악보·빈 화면 슬라이드의 편집 요소 (PPT 에서 꺼낸 글상자·그림·도형)
     if matches!(kind, "image" | "score" | "blank" | "video" | "camera") {
