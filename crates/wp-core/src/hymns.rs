@@ -806,3 +806,25 @@ mod tests {
         assert_eq!(items[1]["title"], "기도");
     }
 }
+
+#[cfg(test)]
+mod timing_tests {
+    /// 출시 빌드로 첫 그리기 시간 재기: cargo test --release -p wp-core first_render_timing -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn first_render_timing() {
+        let src = std::env::var("WP_TIMING_FILE").unwrap_or_else(|_| format!(r"{}\WorshipCue\data\pasted\clip-20261110-210506.pptx", std::env::var("APPDATA").unwrap()));
+        let dir = std::env::temp_dir().join(format!("wp-timing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.pptx");
+        std::fs::copy(&src, &file).unwrap();
+        for (mode, tag) in [("direct", "direct-1st"), ("direct", "direct-2nd"), ("slides", "powerpoint")] {
+            let data = dir.join(tag);
+            let t0 = std::time::Instant::now();
+            let r = super::build_meta(&data, &file.to_string_lossy(), mode);
+            println!("{tag}: {:.2}s ok={} slides={}", t0.elapsed().as_secs_f32(), r.is_ok(), r.as_ref().ok().and_then(|m| m["slides"].as_array().map(|a| a.len())).unwrap_or(0));
+            if let Err(e) = r { println!("  오류: {e}"); }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
