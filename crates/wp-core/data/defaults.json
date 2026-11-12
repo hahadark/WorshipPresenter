@@ -1,0 +1,707 @@
+{
+ "schema": 1,
+ "port": 37528,
+ "versionId": "",
+ "searchMode": "auto",
+ "split": {
+  "mode": "auto",
+  "count": 2
+ },
+ "navMode": "range",
+ "output": {
+  "enabled": false,
+  "displayId": null,
+  "cursorHidden": true,
+  "autoOnSend": true,
+  "linkObs": true,
+  "obsPip": false
+ },
+ "templates": [
+  {
+   "id": "worship",
+   "name": "일반 예배",
+   "preset": true,
+   "width": 1920,
+   "height": 1080,
+   "safeArea": 0,
+   "background": {
+    "type": "color",
+    "color": "#000000",
+    "image": "",
+    "imageFit": "cover",
+    "dim": 0,
+    "video": ""
+   },
+   "clearHidesBackground": false,
+   "font": {
+    "family": "'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+    "size": 72,
+    "minSize": 44,
+    "autoFit": true,
+    "weight": 500,
+    "color": "#ffffff",
+    "lineHeight": 1.5,
+    "letterSpacing": 0
+   },
+   "align": "center",
+   "valign": "middle",
+   "padding": {
+    "top": 120,
+    "right": 160,
+    "bottom": 120,
+    "left": 160
+   },
+   "verseNumbers": {
+    "show": true,
+    "color": "#9ec5ff",
+    "scale": 0.6
+   },
+   "verseBreak": false,
+   "reference": {
+    "show": true,
+    "position": "top",
+    "size": 44,
+    "color": "#ffd479",
+    "weight": 700,
+    "align": "center",
+    "mode": "slide",
+    "offset": 60
+   },
+   "versionLabel": {
+    "show": false,
+    "size": 28,
+    "color": "#bbbbbb"
+   },
+   "headings": {
+    "show": false,
+    "size": 36,
+    "color": "#cccccc"
+   },
+   "box": {
+    "enabled": false,
+    "color": "#000000",
+    "opacity": 0.6,
+    "radius": 16,
+    "padding": 32,
+    "gradient": ""
+   },
+   "stroke": {
+    "width": 0,
+    "color": "#000000"
+   },
+   "shadow": {
+    "enabled": true,
+    "blur": 8,
+    "x": 0,
+    "y": 3,
+    "color": "rgba(0,0,0,0.8)"
+   },
+   "animation": {
+    "type": "dissolve",
+    "duration": 400
+   },
+   "pptMode": "",
+   "logo": {
+    "show": false,
+    "image": "",
+    "position": "top-right",
+    "size": 120,
+    "opacity": 1,
+    "margin": 40
+   }
+  },
+  {
+   "id": "sermon-lower",
+   "name": "설교 송출 (하단 자막)",
+   "preset": true,
+   "width": 1920,
+   "height": 1080,
+   "safeArea": 0,
+   "background": {
+    "type": "transparent",
+    "color": "#000000",
+    "image": "",
+    "imageFit": "cover",
+    "dim": 0,
+    "video": ""
+   },
+   "clearHidesBackground": true,
+   "font": {
+    "family": "'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+    "size": 46,
+    "minSize": 34,
+    "autoFit": true,
+    "weight": 500,
+    "color": "#ffffff",
+    "lineHeight": 1.45,
+    "letterSpacing": 0
+   },
+   "align": "left",
+   "valign": "bottom",
+   "padding": {
+    "top": 640,
+    "right": 120,
+    "bottom": 70,
+    "left": 120
+   },
+   "verseNumbers": {
+    "show": true,
+    "color": "#9ec5ff",
+    "scale": 0.65
+   },
+   "verseBreak": false,
+   "reference": {
+    "show": true,
+    "position": "top",
+    "size": 34,
+    "color": "#ffd479",
+    "weight": 700,
+    "align": "left",
+    "mode": "slide",
+    "offset": 60
+   },
+   "versionLabel": {
+    "show": false,
+    "size": 28,
+    "color": "#bbbbbb"
+   },
+   "headings": {
+    "show": false,
+    "size": 36,
+    "color": "#cccccc"
+   },
+   "box": {
+    "enabled": true,
+    "color": "#000000",
+    "opacity": 0.65,
+    "radius": 14,
+    "padding": 30,
+    "gradient": ""
+   },
+   "stroke": {
+    "width": 0,
+    "color": "#000000"
+   },
+   "shadow": {
+    "enabled": false,
+    "blur": 8,
+    "x": 0,
+    "y": 3,
+    "color": "rgba(0,0,0,0.8)"
+   },
+   "animation": {
+    "type": "dissolve",
+    "duration": 400
+   },
+   "pptMode": "",
+   "logo": {
+    "show": false,
+    "image": "",
+    "position": "top-right",
+    "size": 120,
+    "opacity": 1,
+    "margin": 40
+   }
+  },
+  {
+   "id": "reading",
+   "name": "성경 봉독 (큰 글씨)",
+   "preset": true,
+   "width": 1920,
+   "height": 1080,
+   "safeArea": 0,
+   "background": {
+    "type": "color",
+    "color": "#000000",
+    "image": "",
+    "imageFit": "cover",
+    "dim": 0,
+    "video": ""
+   },
+   "clearHidesBackground": false,
+   "font": {
+    "family": "'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+    "size": 92,
+    "minSize": 64,
+    "autoFit": true,
+    "weight": 700,
+    "color": "#ffffff",
+    "lineHeight": 1.45,
+    "letterSpacing": 0
+   },
+   "align": "center",
+   "valign": "middle",
+   "padding": {
+    "top": 100,
+    "right": 120,
+    "bottom": 100,
+    "left": 120
+   },
+   "verseNumbers": {
+    "show": true,
+    "color": "#9ec5ff",
+    "scale": 0.6
+   },
+   "verseBreak": false,
+   "reference": {
+    "show": true,
+    "position": "top",
+    "size": 48,
+    "color": "#ffd479",
+    "weight": 700,
+    "align": "center",
+    "mode": "slide",
+    "offset": 60
+   },
+   "versionLabel": {
+    "show": false,
+    "size": 28,
+    "color": "#bbbbbb"
+   },
+   "headings": {
+    "show": false,
+    "size": 36,
+    "color": "#cccccc"
+   },
+   "box": {
+    "enabled": false,
+    "color": "#000000",
+    "opacity": 0.6,
+    "radius": 16,
+    "padding": 32,
+    "gradient": ""
+   },
+   "stroke": {
+    "width": 0,
+    "color": "#000000"
+   },
+   "shadow": {
+    "enabled": true,
+    "blur": 8,
+    "x": 0,
+    "y": 3,
+    "color": "rgba(0,0,0,0.8)"
+   },
+   "animation": {
+    "type": "dissolve",
+    "duration": 400
+   },
+   "pptMode": "",
+   "logo": {
+    "show": false,
+    "image": "",
+    "position": "top-right",
+    "size": 120,
+    "opacity": 1,
+    "margin": 40
+   }
+  },
+  {
+   "id": "overlay",
+   "name": "투명 출력 (OBS 자막)",
+   "preset": true,
+   "width": 1920,
+   "height": 1080,
+   "safeArea": 0,
+   "background": {
+    "type": "transparent",
+    "color": "#000000",
+    "image": "",
+    "imageFit": "cover",
+    "dim": 0,
+    "video": ""
+   },
+   "clearHidesBackground": true,
+   "font": {
+    "family": "'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+    "size": 44,
+    "minSize": 32,
+    "autoFit": true,
+    "weight": 700,
+    "color": "#ffffff",
+    "lineHeight": 1.4,
+    "letterSpacing": 0
+   },
+   "align": "center",
+   "valign": "bottom",
+   "padding": {
+    "top": 700,
+    "right": 160,
+    "bottom": 60,
+    "left": 160
+   },
+   "verseNumbers": {
+    "show": false,
+    "color": "#9ec5ff",
+    "scale": 0.6
+   },
+   "verseBreak": false,
+   "reference": {
+    "show": true,
+    "position": "bottom",
+    "size": 30,
+    "color": "#ffd479",
+    "weight": 700,
+    "align": "center",
+    "mode": "slide",
+    "offset": 60
+   },
+   "versionLabel": {
+    "show": false,
+    "size": 28,
+    "color": "#bbbbbb"
+   },
+   "headings": {
+    "show": false,
+    "size": 36,
+    "color": "#cccccc"
+   },
+   "box": {
+    "enabled": false,
+    "color": "#000000",
+    "opacity": 0.6,
+    "radius": 16,
+    "padding": 32,
+    "gradient": ""
+   },
+   "stroke": {
+    "width": 2,
+    "color": "#000000"
+   },
+   "shadow": {
+    "enabled": true,
+    "blur": 10,
+    "x": 0,
+    "y": 2,
+    "color": "rgba(0,0,0,0.9)"
+   },
+   "animation": {
+    "type": "dissolve",
+    "duration": 400
+   },
+   "pptMode": "",
+   "logo": {
+    "show": false,
+    "image": "",
+    "position": "top-right",
+    "size": 120,
+    "opacity": 1,
+    "margin": 40
+   }
+  },
+  {
+   "id": "overlay-lyrics",
+   "name": "찬송가·찬양 두 줄 (OBS 자막)",
+   "preset": true,
+   "width": 1920,
+   "height": 1080,
+   "safeArea": 0,
+   "background": {
+    "type": "transparent",
+    "color": "#000000",
+    "image": "",
+    "imageFit": "cover",
+    "dim": 0,
+    "video": ""
+   },
+   "clearHidesBackground": true,
+   "font": {
+    "family": "'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+    "size": 56,
+    "minSize": 38,
+    "autoFit": true,
+    "weight": 700,
+    "color": "#ffffff",
+    "lineHeight": 1.35,
+    "letterSpacing": 0
+   },
+   "align": "center",
+   "valign": "bottom",
+   "padding": {
+    "top": 740,
+    "right": 140,
+    "bottom": 56,
+    "left": 140
+   },
+   "verseNumbers": {
+    "show": false,
+    "color": "#9ec5ff",
+    "scale": 0.6
+   },
+   "verseBreak": false,
+   "reference": {
+    "show": false,
+    "position": "bottom",
+    "size": 28,
+    "color": "#ffd479",
+    "weight": 700,
+    "align": "center",
+    "mode": "slide",
+    "offset": 60
+   },
+   "versionLabel": {
+    "show": false,
+    "size": 28,
+    "color": "#bbbbbb"
+   },
+   "headings": {
+    "show": false,
+    "size": 36,
+    "color": "#cccccc"
+   },
+   "box": {
+    "enabled": true,
+    "color": "#000000",
+    "opacity": 0.42,
+    "radius": 14,
+    "padding": 24,
+    "gradient": ""
+   },
+   "stroke": {
+    "width": 0,
+    "color": "#000000"
+   },
+   "shadow": {
+    "enabled": true,
+    "blur": 8,
+    "x": 0,
+    "y": 2,
+    "color": "rgba(0,0,0,0.85)"
+   },
+   "animation": {
+    "type": "dissolve",
+    "duration": 400
+   },
+   "pptMode": "",
+   "logo": {
+    "show": false,
+    "image": "",
+    "position": "top-right",
+    "size": 120,
+    "opacity": 1,
+    "margin": 40
+   }
+  },
+  {
+   "id": "custom",
+   "name": "사용자 설정",
+   "preset": false,
+   "width": 1920,
+   "height": 1080,
+   "safeArea": 0,
+   "background": {
+    "type": "color",
+    "color": "#000000",
+    "image": "",
+    "imageFit": "cover",
+    "dim": 0,
+    "video": ""
+   },
+   "clearHidesBackground": false,
+   "font": {
+    "family": "'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+    "size": 72,
+    "minSize": 44,
+    "autoFit": true,
+    "weight": 500,
+    "color": "#ffffff",
+    "lineHeight": 1.5,
+    "letterSpacing": 0
+   },
+   "align": "center",
+   "valign": "middle",
+   "padding": {
+    "top": 120,
+    "right": 160,
+    "bottom": 120,
+    "left": 160
+   },
+   "verseNumbers": {
+    "show": true,
+    "color": "#9ec5ff",
+    "scale": 0.6
+   },
+   "verseBreak": false,
+   "reference": {
+    "show": true,
+    "position": "top",
+    "size": 44,
+    "color": "#ffd479",
+    "weight": 700,
+    "align": "center",
+    "mode": "slide",
+    "offset": 60
+   },
+   "versionLabel": {
+    "show": false,
+    "size": 28,
+    "color": "#bbbbbb"
+   },
+   "headings": {
+    "show": false,
+    "size": 36,
+    "color": "#cccccc"
+   },
+   "box": {
+    "enabled": false,
+    "color": "#000000",
+    "opacity": 0.6,
+    "radius": 16,
+    "padding": 32,
+    "gradient": ""
+   },
+   "stroke": {
+    "width": 0,
+    "color": "#000000"
+   },
+   "shadow": {
+    "enabled": true,
+    "blur": 8,
+    "x": 0,
+    "y": 3,
+    "color": "rgba(0,0,0,0.8)"
+   },
+   "animation": {
+    "type": "dissolve",
+    "duration": 400
+   },
+   "pptMode": "",
+   "logo": {
+    "show": false,
+    "image": "",
+    "position": "top-right",
+    "size": 120,
+    "opacity": 1,
+    "margin": 40
+   }
+  }
+ ],
+ "activeTemplates": {
+  "main": "worship",
+  "overlay": "overlay",
+  "overlayLyrics": "overlay-lyrics"
+ },
+ "shortcuts": {
+  "focusSearch": "Ctrl+K",
+  "sendNow": "Ctrl+Enter",
+  "prevSlide": "F5",
+  "nextSlide": "F6",
+  "sendPreview": "F9",
+  "toggleClear": "F10",
+  "openBooks": "Ctrl+B",
+  "openHistory": "Ctrl+H",
+  "previewPrevSlide": "PageUp",
+  "previewNextSlide": "PageDown",
+  "previewPrevVerse": "Alt+ArrowLeft",
+  "previewNextVerse": "Alt+ArrowRight",
+  "previewChapterStart": "Ctrl+Home",
+  "toggleOutputWindow": "Ctrl+Shift+F",
+  "outputOff": "Escape",
+  "cuePrev": "Ctrl+ArrowUp",
+  "cueNext": "Ctrl+ArrowDown",
+  "cueEdit": "F2",
+  "toggleEditor": "Ctrl+Shift+E",
+  "webLyrics": "Ctrl+L",
+  "quickText": "Ctrl+T",
+  "messages": "Ctrl+M",
+  "printCue": "Ctrl+P"
+ },
+ "globalShortcuts": false,
+ "reservedKeys": "",
+ "history": [],
+ "syncDir": "",
+ "guide": {
+  "bethlehemDone": false
+ },
+ "activeCueId": "",
+ "cueAdvance": true,
+ "cueEdgeHide": false,
+ "companion": {
+  "host": "127.0.0.1",
+  "port": 8000
+ },
+ "devices": [],
+ "imeAuto": true,
+ "macros": [],
+ "schedule": [],
+ "stagePresets": [],
+ "messageTemplates": [
+  {
+   "id": "mtnursery",
+   "name": "유아실 호출",
+   "text": "{이름} 어린이 부모님, 유아실로 와 주세요",
+   "seconds": 30
+  },
+  {
+   "id": "mtcar",
+   "name": "차량 이동",
+   "text": "{차번호} 차량을 옮겨 주세요",
+   "seconds": 30
+  },
+  {
+   "id": "mtmeal",
+   "name": "식사 안내",
+   "text": "예배 후 {장소}에서 함께 식사합니다",
+   "seconds": 0
+  }
+ ],
+ "skipVersion": "",
+ "obs": {
+  "enabled": false,
+  "host": "127.0.0.1",
+  "port": 4455,
+  "password": "",
+  "passwordEnc": ""
+ },
+ "hymnFolders": [],
+ "hymnBackground": "original",
+ "songSearchUrl": "https://cwy0675.tistory.com/search/{q}",
+ "songDownloadDir": "",
+ "imageFolders": [],
+ "ui": {
+  "theme": "dark",
+  "scale": 100
+ },
+ "droppedFiles": [],
+ "uiLang": "ko",
+ "telemetry": true,
+ "autoUpdate": true,
+ "cueTimes": false,
+ "cueTimesV2": true,
+ "cameras": {},
+ "triggerKey": "",
+ "parallelVersionId": "",
+ "audioFolders": [],
+ "overlays": [],
+ "home": {
+  "feedUrl": ""
+ },
+ "preService": {
+  "cardFolder": "",
+  "bundleDir": "",
+  "autoSec": 8
+ },
+ "ai": {
+  "model": "",
+  "keyEnc": "",
+  "key": ""
+ },
+ "remote": {
+  "enabled": false,
+  "pin": "",
+  "port": 37540
+ },
+ "lanOutput": {
+  "enabled": false,
+  "port": 37550,
+  "key": ""
+ },
+ "logoScreenImage": "",
+ "previewMode": true,
+ "dockLayout": "",
+ "workspaces": [],
+ "activeWorkspace": "b-default",
+ "dockLocked": false,
+ "bethlehemDir": "",
+ "songInboxDir": ""
+}

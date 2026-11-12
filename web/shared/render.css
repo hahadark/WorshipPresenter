@@ -1,0 +1,84 @@
+/* 공용 렌더링 스타일 */
+.bc-stage {
+  position: absolute; left: 0; top: 0;
+  transform-origin: 0 0;
+  overflow: hidden;
+  contain: layout paint;
+}
+.bc-bg, .bc-dim { position: absolute; inset: 0; transition: opacity var(--bc-fade, 300ms) ease; }
+.bc-area {
+  position: absolute;
+  display: flex; flex-direction: column;
+  transition: opacity var(--bc-fade, 300ms) ease;
+}
+.bc-block { box-sizing: border-box; max-width: 100%; position: relative; } /* 순서별 배경(.bc-slidebg, absolute) 위에 글자 */
+.bc-text {
+  word-break: keep-all;          /* 한국어는 어절 단위 줄바꿈 */
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.bc-ref { margin: 0 0 0.45em; line-height: 1.25; }
+.bc-text + .bc-ref { margin: 0.45em 0 0; }
+.bc-version { margin-top: 0.4em; line-height: 1.2; }
+.bc-heading { display: block; margin-bottom: 0.3em; line-height: 1.3; }
+.bc-verse.bc-break { display: block; }
+.bc-vn { vertical-align: 0.45em; margin-right: 0.25em; font-weight: 700; line-height: 0; }
+/* 왼쪽 정렬 + 내어쓰기: 절 번호 칸(오른쪽 맞춤) | 본문(왼쪽 맞춤) */
+.bc-hang { display: grid; align-items: baseline; text-align: left; }
+.bc-hn { text-align: right; font-weight: 700; white-space: nowrap; }
+.bc-ht { min-width: 0; }
+.bc-checker {
+  background-image:
+    linear-gradient(45deg, #2a2f38 25%, transparent 25%), linear-gradient(-45deg, #2a2f38 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2a2f38 75%), linear-gradient(-45deg, transparent 75%, #2a2f38 75%);
+  background-size: 64px 64px; background-position: 0 0, 0 32px, 32px -32px, -32px 0;
+  background-color: #1d2129;
+}
+.bc-measure { position: fixed; left: -200000px; top: 0; visibility: hidden; pointer-events: none; }
+.bc-measure .bc-stage { transform: none; }
+
+/* 큐시트 항목 종류 */
+.bc-pre { white-space: pre-line; }
+.bc-titlecard .bc-t1 { font-size: 1.3em; font-weight: 700; line-height: 1.3; }
+.bc-titlecard .bc-t2 { font-size: 0.62em; margin-top: 0.5em; line-height: 1.4; }
+.bc-imgslide { position: absolute; inset: 0; }
+.bc-imgslide img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.bc-blank { position: absolute; inset: 0; }
+.bc-blank.bc-black { background: #000; }
+
+/* 찬송가 악보 · 슬라이드 배경 */
+.bc-score { position: absolute; inset: 0; }
+.bc-score-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bc-score-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.bc-slidebg { position: absolute; }
+
+/* 오버레이 층: 슬라이드 위에 늘 겹쳐 보임 */
+.bc-ovl { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+.bc-ov { box-sizing: border-box; }
+
+/* 배경 영상 */
+.bc-bgvid, .bc-vid { pointer-events: none; }
+.bc-vlayer { position: absolute; inset: 0; transition: opacity 600ms ease; }
+.bc-vlayer video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* 로고 화면 · 배경 숨김 */
+.bc-logoscreen { position: absolute; inset: 0; z-index: 20; background: #000; display: flex; align-items: center; justify-content: center; transition: opacity 400ms ease; }
+.bc-logoscreen img { max-width: 45%; max-height: 55%; object-fit: contain; }
+.bc-stage.hide-bg .bc-bg, .bc-stage.hide-bg .bc-vlayer, .bc-stage.hide-bg .bc-slidebg { opacity: 0 !important; }
+.bc-bg, .bc-vlayer, .bc-slidebg { transition: opacity 400ms ease; }
+
+/* 슬라이드 편집: 덧붙인 글상자·그림·도형, 본문 숨기기 */
+.bc-eitem { pointer-events: none; }
+.bc-hidemain > .bc-block, .bc-hidemain > .bc-ref-fixed { visibility: hidden; }
+
+/* 두 언어: 병행 번역(성경) · 번역 줄(가사 '>') */
+.bc-par { display: block; font-size: .72em; opacity: .86; margin-top: .12em; font-weight: inherit; }
+.bc-line { display: block; }
+.bc-tr { display: block; font-size: .7em; opacity: .85; margin: .05em 0 .25em; }
+
+/* 카메라 배경 */
+.bc-cam-off { position: absolute; inset: 0; display: grid; place-items: center; color: #666; font-size: 40px; }
+
+/* 배경 미디어 층 (카메라·그림·영상) — 배경 지우기(숨김)와 함께 숨는다 */
+.bc-medialayer { position: absolute; inset: 0; overflow: hidden; transition: opacity 400ms ease; }
+.bc-stage.hide-bg .bc-medialayer { opacity: 0 !important; }
