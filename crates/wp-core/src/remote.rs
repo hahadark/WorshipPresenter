@@ -123,7 +123,7 @@ pub fn state_for(core: &Core) -> Value {
         "cue": core.cue.as_ref().map(|c| json!({ "name": c.name, "items": c.items.iter().map(|it| json!({ "title": it["title"], "type": it["type"] })).collect::<Vec<_>>() })),
         // Rust 판은 조작 화면이 같은 프로그램이라 늘 열려 있음
         "control": true,
-        "stage": { "message": "" },
+        "stage": { "message": core.b.stage.message, "timer": core.b.stage.timer_json() }, // [트랙 B]
         "obs": { "pip": s["output"]["obsPip"].as_bool().unwrap_or(false), "full": false },
     })
 }
@@ -147,7 +147,10 @@ pub fn act(core: &mut Core, a: &Value) -> Result<Value, String> {
             core.settings.update(|d| d["output"]["obsPip"] = json!(on));
             core.emit(Ev::Live);
         }
-        "message" | "timer" | "obsFull" => return Err("이 조작은 아직 Rust 판에 없습니다 (준비 중).".into()),
+        // [트랙 B] 무대 메시지 · 타이머 (리모컨 화면의 op: start·pause·resume·reset·add)
+        "message" => core.stage_message(a["text"].as_str().unwrap_or("")),
+        "timer" => core.stage_timer(a["op"].as_str().unwrap_or(""), a["minutes"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?,
+        "obsFull" => return Err("이 조작은 아직 Rust 판에 없습니다 (준비 중).".into()),
         _ => return Err("알 수 없는 조작입니다.".into()),
     }
     Ok(json!({ "ok": true }))
