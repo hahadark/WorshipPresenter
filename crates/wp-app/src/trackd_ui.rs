@@ -455,23 +455,23 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
         }
         "downloading" | "verifying" => {
             ui.label(if st["state"] == "verifying" {
-                "SHA-256 검증 중…"
+                wp_core::i18n::tr("SHA-256 검증 중…")
             } else {
-                "다운로드 중…"
+                wp_core::i18n::tr("다운로드 중…")
             });
             ui.add(
                 egui::ProgressBar::new(st["percent"].as_f64().unwrap_or(0.0) as f32 / 100.0)
                     .show_percentage(),
             );
-            ui.label(format!("{} / {} 바이트", st["received"], st["total"]));
-            if ui.button("다운로드 취소").clicked() {
+            ui.label(wp_core::i18n::tr_args("{1} / {2} 바이트", &[&st["received"], &st["total"]]));
+            if ui.button(wp_core::i18n::tr("다운로드 취소")).clicked() {
                 wp_core::updates::cancel();
             }
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
         "installing" => {
-            ui.label("설치 프로그램에 명시적 설치 요청을 전달했습니다.");
+            ui.label(wp_core::i18n::tr("설치 프로그램에 명시적 설치 요청을 전달했습니다."));
         }
         "latest" => {
             ui.label(
@@ -488,13 +488,13 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
         _ => {}
     }
     ui.separator();
-    if st["state"] == "ready" { ui.label("SHA-256 검증 완료. 설치 준비됨. 자동 설치하지 않습니다."); }
-    if st["state"] == "cancelled" { ui.label("다운로드를 취소했습니다."); }
+    if st["state"] == "ready" { ui.label(wp_core::i18n::tr("SHA-256 검증 완료. 설치 준비됨. 자동 설치하지 않습니다.")); }
+    if st["state"] == "cancelled" { ui.label(wp_core::i18n::tr("다운로드를 취소했습니다.")); }
     ui.horizontal(|ui| {
-        if ui.add_enabled(st["canDownload"] == true, egui::Button::new("검증하여 다운로드")).clicked() {
+        if ui.add_enabled(st["canDownload"] == true, egui::Button::new(wp_core::i18n::tr("검증하여 다운로드"))).clicked() {
             if let Err(e) = wp_core::updates::download(core) { core.lock().notify(e, "warn"); }
         }
-        if ui.add_enabled(st["canInstall"] == true, egui::Button::new("지금 설치 요청 (프로그램 종료)")).clicked() {
+        if ui.add_enabled(st["canInstall"] == true, egui::Button::new(wp_core::i18n::tr("지금 설치 요청 (프로그램 종료)"))).clicked() {
             match wp_core::updates::install_now(core) {
                 Ok(()) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
                 Err(e) => core.lock().notify(e, "warn"),
