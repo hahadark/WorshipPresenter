@@ -232,7 +232,14 @@ pub fn run_ps(script: &str, env: &[(&str, &str)]) -> Result<String, String> {
 
 /// 클립보드에 무엇이 있나: (슬라이드, 그림, 글)
 pub fn clipboard_info() -> (bool, bool, bool) {
-    let o = run_ps(PS_CLIP_INFO, &[]).unwrap_or_default();
+    // 다른 프로그램(PowerPoint)이 클립보드를 쥐고 있으면 잠깐 실패한다 → 몇 번 다시
+    let mut o = String::new();
+    for k in 0..4 {
+        match run_ps(PS_CLIP_INFO, &[]) {
+            Ok(s) if !s.trim().is_empty() => { o = s; break; }
+            _ => std::thread::sleep(std::time::Duration::from_millis(250 * (k + 1))),
+        }
+    }
     (o.contains("SLIDES"), o.contains("IMAGE"), o.contains("TEXT"))
 }
 
@@ -334,5 +341,59 @@ mod tests {
         }
         let p = clip_to_pptx(&buf.into_inner()).unwrap();
         assert!(looks_like_pptx(&p));
+    }
+}
+
+#[cfg(test)]
+mod real_clipboard_tests {
+    //! 실제 윈도우 클립보드로 시험 (사용자 클립보드를 덮어쓰니 따로 실행): cargo test -p wp-core real_clipboard -- --ignored --nocapture --test-threads=1
+    use super::*;
+
+    fn ps(script: &str) -> String {
+        run_ps(script, &[]).unwrap_or_else(|e| format!("ERR {e}"))
+    }
+
+    #[test]
+    #[ignore]
+    fn real_clipboard() {
+        let dir = std::env::temp_dir().join(format!("wp-clip-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 1) 글
+        ps("Set-Clipboard -Value \"요3:16`r`n롬8:28\"");
+        let (s, i, t) = clipboard_info();
+        println!("글: slides={s} image={i} text={t}");
+        assert!(t && !s);
+        let got = ps("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw");
+        let is_ref = |l: &str| crate::parser::looks_like_reference(l);
+        let (kind, items) = plan_text(&got, "", &is_ref).unwrap();
+        println!("  → {kind} {}개", items.len());
+        assert_eq!(items.len(), 2);
+        // 2) 그림
+        ps("Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b = New-Object Drawing.Bitmap 64,48; $g=[Drawing.Graphics]::FromImage($b); $g.Clear([Drawing.Color]::Red); [Windows.Forms.Clipboard]::SetImage($b)");
+        let (s, i, t) = clipboard_info();
+        println!("그림: slides={s} image={i} text={t}");
+        assert!(i);
+        let url = grab_image(&dir).unwrap();
+        println!("  → {url}");
+        assert!(dir.join("media").join(url.trim_start_matches("/media/")).is_file());
+        // 3) PowerPoint 슬라이드 (PowerPoint 가 있을 때만)
+        if crate::hymns::has_powerpoint() {
+            let fx = std::env::var("WP_CLIP_PPTX").unwrap_or_else(|_| r"F:\aside\WorshipCue\tests\fixtures\chart-table.pptx".into());
+            let r = run_ps(
+                "$pp = New-Object -ComObject PowerPoint.Application; $p = $pp.Presentations.Open($env:WP_F, $true, $false, $false); $p.Slides.Range(@(1,2)).Copy(); Start-Sleep -Milliseconds 800; $p.Close(); Write-Output COPIED",
+                &[("WP_F", &fx)],
+            );
+            println!("PowerPoint 복사: {r:?}");
+            let (s, _, _) = clipboard_info();
+            println!("슬라이드: slides={s}");
+            let t0 = std::time::Instant::now();
+            let (file, how) = grab_slides(&dir, false).unwrap();
+            println!("  → {} ({how}, {:.1}초)", file.display(), t0.elapsed().as_secs_f32());
+            let meta = crate::hymns::build_meta(&dir, &file.to_string_lossy(), "direct").unwrap();
+            let n = meta["slides"].as_array().map(|a| a.len()).unwrap_or(0);
+            println!("  → 그린 슬라이드 {n}장");
+            assert_eq!(n, 2);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
