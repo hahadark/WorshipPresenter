@@ -104,7 +104,7 @@ impl Core {
     /// 붙여 넣은 예배 순서 글 → 큐시트 (AI 없이 규칙으로)
     pub fn quick_make_cue(&mut self, text: &str) -> Result<Value, String> {
         if text.trim().is_empty() {
-            return Err("예배 순서를 붙여 넣으세요.".into());
+            return Err(crate::i18n::tr("예배 순서를 붙여 넣으세요.").into());
         }
         let plan = bulletin::parse_order_text(text, &|s| crate::parser::looks_like_reference(s));
         self.plan_to_saved_cue(&plan)
@@ -114,7 +114,7 @@ impl Core {
     pub fn chat_ai_import(&mut self, answer: &str) -> Result<Value, String> {
         let (plan, is_sample) = bulletin::parse_chat_answer(answer)?;
         if is_sample {
-            return Err("샘플 내용 그대로입니다. 주보를 첨부해 다시 만들어 달라고 하세요.".into());
+            return Err(crate::i18n::tr("샘플 내용 그대로입니다. 주보를 첨부해 다시 만들어 달라고 하세요.").into());
         }
         self.plan_to_saved_cue(&plan)
     }
@@ -134,14 +134,14 @@ pub fn ai_make_cue(shared: &crate::core::Shared, input: Input, extra: String) {
         (c.ai_key(), a["model"].as_str().unwrap_or("").to_string(), a["endpoint"].as_str().unwrap_or("").to_string())
     };
     let sh = shared.clone();
-    shared.lock().notify("AI 가 주보를 읽는 중…", "info");
+    shared.lock().notify(crate::i18n::tr("AI 가 주보를 읽는 중…"), "info");
     std::thread::spawn(move || {
         let r = bulletin::ask_ai(&key, &model, &endpoint, &input, &extra);
         let mut c = sh.lock();
         match r.and_then(|(plan, _usage, _m)| c.plan_to_saved_cue(&plan)) {
             Ok(v) => {
                 let w = v["warnings"].as_array().map(|a| a.len()).unwrap_or(0);
-                c.notify(format!("'{}' 큐시트를 만들었습니다 ({}개 순서{})", v["name"].as_str().unwrap_or(""), v["count"], if w > 0 { format!(", 확인할 것 {w}개") } else { String::new() }), "ok");
+                c.notify(crate::i18n::tr_args("'{1}' 큐시트를 만들었습니다 ({2}개 순서{3})", &[&(v["name"].as_str().unwrap_or("")), &(v["count"]), &(if w > 0 { format!(", 확인할 것 {w}개") } else { String::new() })]), "ok");
             }
             Err(e) => c.notify(e, "error"),
         }
@@ -151,7 +151,7 @@ pub fn ai_make_cue(shared: &crate::core::Shared, input: Input, extra: String) {
 /// 웹 주소를 기본 브라우저로 (http/https 만)
 pub fn open_link(url: &str) -> Result<(), String> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("웹 주소만 열 수 있습니다.".into());
+        return Err(crate::i18n::tr("웹 주소만 열 수 있습니다.").into());
     }
     open_with_shell(url)
 }
@@ -159,7 +159,7 @@ pub fn open_link(url: &str) -> Result<(), String> {
 /// 폴더·파일을 탐색기로
 pub fn open_path(p: &std::path::Path) -> Result<(), String> {
     if !p.exists() {
-        return Err("폴더를 찾을 수 없습니다.".into());
+        return Err(crate::i18n::tr("폴더를 찾을 수 없습니다.").into());
     }
     open_with_shell(&p.to_string_lossy())
 }
@@ -255,7 +255,7 @@ pub fn run_item_actions(c: &mut Core, a: &Value, depth: u8) {
     if !s("macro").is_empty() && depth < 2 {
         let id = s("macro");
         if let Err(e) = c.run_macro(&id) {
-            c.notify(format!("매크로: {e}"), "warn");
+            c.notify(crate::i18n::tr_args("매크로: {1}", &[&e]), "warn");
         }
     }
     if let Some(m) = a["timer"].as_f64().filter(|x| *x > 0.0) {

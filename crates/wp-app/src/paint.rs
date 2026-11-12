@@ -260,7 +260,7 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
             }
             let u = s["image"].as_str().unwrap_or("");
             if !draw_image(ui, c, rect, u, false) {
-                p.text(rect.center(), Align2::CENTER_CENTER, format!("그림: {}", s["ref"].as_str().unwrap_or("")), FontId::proportional((rect.height() * 0.06).max(10.0)), Color32::GRAY);
+                p.text(rect.center(), Align2::CENTER_CENTER, wp_core::i18n::tr_args("그림: {1}", &[&(s["ref"].as_str().unwrap_or(""))]), FontId::proportional((rect.height() * 0.06).max(10.0)), Color32::GRAY);
             }
         }
         "blank" => {
@@ -270,7 +270,7 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
         }
         "video" | "camera" => {
             p.rect_filled(rect, 0.0, Color32::from_rgb(10, 12, 16));
-            let label = if kind == "video" { "영상" } else { "카메라" };
+            let label = if kind == "video" { wp_core::i18n::tr_s("영상") } else { wp_core::i18n::tr_s("카메라") };
             p.text(rect.center(), Align2::CENTER_CENTER, format!("{} · {}", label, s["ref"].as_str().unwrap_or("")), FontId::proportional((rect.height() * 0.06).max(10.0)), Color32::GRAY);
         }
         // [트랙 C] 글자 슬라이드 편집: 글상자 위치·꾸미기 · 본문 숨기기 · 덧붙인 글상자·그림·도형

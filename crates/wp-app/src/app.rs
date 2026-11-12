@@ -204,7 +204,7 @@ impl App {
                 }
                 Act::NewCue => {
                     let name = format!("{} 예배", &wp_core::util::iso_now()[..10]);
-                    if let Err(e) = c.new_cue(&name) { c.notify(format!("새 큐시트 실패: {e}"), "error") }
+                    if let Err(e) = c.new_cue(&name) { c.notify(wp_core::i18n::tr_args("새 큐시트 실패: {1}", &[&e]), "error") }
                     self.sel = None;
                     self.edit = None;
                 }
@@ -341,14 +341,14 @@ impl App {
             }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let running = self.out.running();
-                let btn = egui::Button::new(if running { "예배당 화면 끄기" } else { "예배당 화면 켜기" }).fill(if running { Color32::from_rgb(0x2e, 0x7d, 0x4f) } else { Color32::from_rgb(0x33, 0x38, 0x44) });
+                let btn = egui::Button::new(if running { wp_core::i18n::tr_s("예배당 화면 끄기") } else { wp_core::i18n::tr_s("예배당 화면 켜기") }).fill(if running { Color32::from_rgb(0x2e, 0x7d, 0x4f) } else { Color32::from_rgb(0x33, 0x38, 0x44) });
                 if ui.add(btn).on_hover_text("Ctrl+Shift+F").clicked() {
                     acts.push(Act::OutputToggle);
                 }
-                let mname = self.out.monitors.iter().find(|m| m.index == self.monitor).map(|m| format!("{} {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { " (주)" } else { "" })).unwrap_or_else(|| "모니터".into());
+                let mname = self.out.monitors.iter().find(|m| m.index == self.monitor).map(|m| format!("{} {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s(" (주)") } else { "" })).unwrap_or_else(|| "모니터".into());
                 egui::ComboBox::from_id_salt("mon").selected_text(mname).show_ui(ui, |ui| {
                     for m in self.out.monitors.clone() {
-                        let t = format!("{} {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { " (주 모니터)" } else { "" });
+                        let t = format!("{} {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s(" (주 모니터)") } else { "" });
                         if ui.selectable_label(m.index == self.monitor, t).clicked() {
                             acts.push(Act::SetMonitor(m.index));
                         }
@@ -357,7 +357,7 @@ impl App {
                 ui.menu_button(wp_core::i18n::tr("OBS 주소"), |ui| {
                     for (label, path) in [("예배당 화면 그대로", "/outputs/main"), ("투명 자막", "/outputs/overlay"), ("무대 화면", "/outputs/stage")] {
                         let url = format!("http://127.0.0.1:{}{}", s.port, path);
-                        if ui.button(format!("{label}: {url}  (복사)")).clicked() {
+                        if ui.button(wp_core::i18n::tr_args("{1}: {2}  (복사)", &[&label, &url])).clicked() {
                             ui.ctx().copy_text(url);
                         }
                     }
@@ -590,7 +590,7 @@ impl App {
                 }
             } else {
                 let rows = r["results"].as_array().cloned().unwrap_or_default();
-                ui.label(RichText::new(format!("'{}' {}건{}", self.search.trim(), rows.len(), if r["truncated"] == json!(true) { " (더 있음)" } else { "" })).strong());
+                ui.label(RichText::new(wp_core::i18n::tr_args("'{1}' {2}건{3}", &[&(self.search.trim()), &(rows.len()), &(if r["truncated"] == json!(true) { wp_core::i18n::tr_s(" (더 있음)") } else { "" })])).strong());
                 for v in rows {
                     let q = format!("{}{}:{}", v["bookShort"].as_str().unwrap_or(""), v["chapter"], v["verse"]);
                     let resp = ui.add(egui::Label::new(RichText::new(format!("{}  {}", v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or("")))).sense(Sense::click()).wrap());
@@ -607,7 +607,7 @@ impl App {
         let is_live = live.is_some();
         ui.horizontal(|ui| {
             let col = if is_live { Color32::from_rgb(0xff, 0x6b, 0x6b) } else { Color32::from_rgb(0x8f, 0xb8, 0xff) };
-            ui.label(RichText::new(title).strong().color(col));
+            ui.label(RichText::new(wp_core::i18n::tr(title)).strong().color(col));
             if let Some(d) = deck {
                 let t = d.passage["itemTitle"].as_str().filter(|x| !x.is_empty()).or(d.passage["title"].as_str()).unwrap_or("");
                 ui.label(RichText::new(format!("{}  [{}/{}]", t, d.index + 1, d.slides.len())).color(Color32::LIGHT_GRAY));
@@ -710,7 +710,7 @@ impl eframe::App for App {
         egui::Panel::bottom("status").show(ui, |ui| {
             ui.horizontal(|ui| {
                 let n = |c: &str| s.outputs.iter().filter(|o| o.0 == c).count();
-                ui.label(RichText::new(format!("출력 연결  예배당 {} · OBS 자막 {} · 무대 {}", n("main"), n("overlay"), n("stage"))).small());
+                ui.label(RichText::new(wp_core::i18n::tr_args("출력 연결  예배당 {1} · OBS 자막 {2} · 무대 {3}", &[&(n("main")), &(n("overlay")), &(n("stage"))])).small());
                 ui.separator();
                 ui.label(RichText::new(format!("http://127.0.0.1:{}", s.port)).small().color(Color32::GRAY));
                 if !self.out.error.is_empty() {
@@ -765,7 +765,7 @@ impl eframe::App for App {
                 if ui.add(big("다음 F6 ▶")).clicked() { acts.push(Act::Step(1)) }
                 ui.separator();
                 let hidden = s.live.as_ref().is_some_and(|l| !l.visible);
-                if ui.add(big(if hidden { "글자 보이기 F10" } else { "글자 숨김 F10" }).selected(hidden)).clicked() { acts.push(Act::ToggleClear) }
+                if ui.add(big(if hidden { wp_core::i18n::tr_s("글자 보이기 F10") } else { wp_core::i18n::tr_s("글자 숨김 F10") }).selected(hidden)).clicked() { acts.push(Act::ToggleClear) }
                 if ui.add(big("배경 끄기").selected(s.hide_bg)).clicked() { acts.push(Act::ToggleBg) }
                 if ui.add(big("로고").selected(s.logo)).clicked() { acts.push(Act::ToggleLogo) }
                 if ui.add(big("모두 지우기")).clicked() { acts.push(Act::ClearAll) }

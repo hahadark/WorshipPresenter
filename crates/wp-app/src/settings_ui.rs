@@ -94,7 +94,7 @@ impl SettingsUi {
                         ch |= check(ui, &mut data, &["globalShortcuts"], "전역 단축키 (창이 안 보여도 F5·F6 등)");
                         ui.end_row();
                         let ws = wp_core::winkeys::status();
-                        ui.label("등록 상태");
+                        ui.label(wp_core::i18n::tr("등록 상태"));
                         let reg: Vec<String> = ws["registered"].as_array().into_iter().flatten().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect();
                         let fail: Vec<String> = ws["failed"].as_array().into_iter().flatten().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect();
                         ui.label(RichText::new(if !ws["available"].as_bool().unwrap_or(false) { "이 운영체제에서는 쓸 수 없음".to_string() } else if !ws["enabled"].as_bool().unwrap_or(false) { "꺼짐".to_string() } else { format!("등록 {}개{}{}", reg.len(), if fail.is_empty() { String::new() } else { format!(" · 다른 프로그램이 쓰는 키: {}", fail.join(", ")) }, if reg.is_empty() { String::new() } else { format!(" ({})", reg.join(", ")) }) }).small().color(if fail.is_empty() { Color32::GRAY } else { Color32::from_rgb(0xff, 0xb0, 0x4a) }));

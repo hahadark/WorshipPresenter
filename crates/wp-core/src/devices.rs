@@ -59,7 +59,7 @@ pub fn parse_x32(text: &str) -> Result<Vec<OscCmd>, String> {
             let num: u32 = m[2].parse().unwrap_or(0);
             let lim = match kind { "ch" => 32, "bus" => 16, "dca" => 8, "mtx" => 6, _ => 8 };
             if kind != "main" && (num == 0 || num > lim) {
-                return Err(format!("X32: '{raw}' — {kind} 번호는 1~{lim}"));
+                return Err(crate::i18n::tr_args("X32: '{1}' — {2} 번호는 1~{3}", &[&raw, &kind, &lim]));
             }
             let base = if kind == "main" { "/main/st".to_string() } else if kind == "dca" { format!("/dca/{num}") } else { format!("/{kind}/{num:02}") };
             let mix_on = if kind == "dca" { format!("{base}/on") } else { format!("{base}/mix/on") };
@@ -70,14 +70,14 @@ pub fn parse_x32(text: &str) -> Result<Vec<OscCmd>, String> {
                 _ => {
                     let v: f32 = m.get(4).and_then(|x| x.as_str().parse().ok()).unwrap_or(-1.0);
                     if !(0.0..=1.0).contains(&v) {
-                        return Err(format!("X32: '{raw}' — fader 는 0~1"));
+                        return Err(crate::i18n::tr_args("X32: '{1}' — fader 는 0~1", &[&raw]));
                     }
                     out.push(OscCmd { address: fader, args: vec![OscArg::F(v)], text: raw.into() });
                 }
             }
             continue;
         }
-        return Err(format!("X32: '{raw}' 를 알아듣지 못했습니다 (예: ch1 on · ch5 fader 0.75 · main off · scene 3)"));
+        return Err(crate::i18n::tr_args("X32: '{1}' 를 알아듣지 못했습니다 (예: ch1 on · ch5 fader 0.75 · main off · scene 3)", &[&raw]));
     }
     Ok(out)
 }
@@ -90,7 +90,7 @@ pub fn visca_command(action: &str) -> Result<Vec<u8>, String> {
     }
     match s.parse::<u32>() {
         Ok(n) if n <= 254 => Ok(vec![0x81, 0x01, 0x04, 0x3f, 0x02, n as u8, 0xff]),
-        _ => Err("PTZ: 프리셋 번호는 0~254 (또는 home)".into()),
+        _ => Err(crate::i18n::tr("PTZ: 프리셋 번호는 0~254 (또는 home)").into()),
     }
 }
 
@@ -136,10 +136,10 @@ pub fn run(devices: &Value, device: &str, action: &str) -> Result<Value, String>
     let packets: Vec<Vec<u8>> = match kind {
         "x32" => parse_x32(action)?.iter().map(|c| osc_message(&c.address, &c.args)).collect(),
         "visca" => vec![visca_packet(&visca_command(action)?, SEQ.fetch_add(1, Ordering::Relaxed), d["proto"].as_str().unwrap_or("sony"))],
-        _ => return Err("알 수 없는 장비 종류입니다.".into()),
+        _ => return Err(crate::i18n::tr("알 수 없는 장비 종류입니다.").into()),
     };
     if packets.is_empty() {
-        return Err("보낼 동작이 없습니다.".into());
+        return Err(crate::i18n::tr("보낼 동작이 없습니다.").into());
     }
     send_udp(host, port, &packets).map_err(|e| format!("{name}: 보내지 못했습니다 ({host}:{port}) — {e}"))?;
     log::info!("장비 '{name}': {}", action.chars().take(120).collect::<String>());
@@ -151,10 +151,10 @@ static ID_OK: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^[a-z0-9]{3,30}$").unw
 
 /// 설정 정리 (normalizeDevice)
 pub fn normalize_device(x: &Value) -> Result<Value, String> {
-    let kind = match x["kind"].as_str() { Some(k @ ("x32" | "visca")) => k, _ => return Err("장비 종류를 고르세요 (X32 · PTZ 카메라).".into()) };
+    let kind = match x["kind"].as_str() { Some(k @ ("x32" | "visca")) => k, _ => return Err(crate::i18n::tr("장비 종류를 고르세요 (X32 · PTZ 카메라).").into()) };
     let host = x["host"].as_str().unwrap_or("").trim().to_string();
     if !HOST_OK.is_match(&host) {
-        return Err("장비 IP 주소를 입력하세요 (예: 192.168.1.50).".into());
+        return Err(crate::i18n::tr("장비 IP 주소를 입력하세요 (예: 192.168.1.50).").into());
     }
     let name: String = x["name"].as_str().unwrap_or("").trim().chars().take(40).collect();
     let name = if name.is_empty() { if kind == "x32" { "X32".into() } else { "PTZ 카메라".to_string() } } else { name };

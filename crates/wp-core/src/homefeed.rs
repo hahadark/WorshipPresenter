@@ -25,10 +25,10 @@ fn arr(v: &Value) -> Vec<Value> {
 /// 받은 JSON → 정리된 주보 목록 (최신순)
 pub fn normalize_feed(o: &Value) -> Result<Value, String> {
     if !o.is_object() && !o.is_array() {
-        return Err("주보 자료가 JSON 이 아닙니다.".into());
+        return Err(crate::i18n::tr("주보 자료가 JSON 이 아닙니다.").into());
     }
     let list = if o.is_array() { arr(o) } else if o["bulletins"].is_array() { arr(&o["bulletins"]) } else if !o["date"].is_null() { vec![o.clone()] } else {
-        return Err("주보 자료에서 'bulletins' 를 찾지 못했습니다. 홈페이지의 주보 JSON 주소(예: …/bulletin/feed.json)인지 확인하세요.".into());
+        return Err(crate::i18n::tr("주보 자료에서 'bulletins' 를 찾지 못했습니다. 홈페이지의 주보 JSON 주소(예: …/bulletin/feed.json)인지 확인하세요.").into());
     };
     static DATE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap());
     let mut bulletins: Vec<Value> = list
@@ -53,7 +53,7 @@ pub fn normalize_feed(o: &Value) -> Result<Value, String> {
         .collect();
     bulletins.sort_by(|a, b| b["date"].as_str().unwrap_or("").cmp(a["date"].as_str().unwrap_or("")));
     if bulletins.is_empty() {
-        return Err("주보가 하나도 없습니다.".into());
+        return Err(crate::i18n::tr("주보가 하나도 없습니다.").into());
     }
     Ok(json!({ "church": s(&o["church"], 120), "updated": s(&o["updated"], 40), "bulletins": bulletins }))
 }
@@ -62,14 +62,14 @@ pub fn normalize_feed(o: &Value) -> Result<Value, String> {
 pub fn fetch_feed(url: &str) -> Result<Value, String> {
     let u: String = url.trim().chars().take(500).collect();
     if !(u.to_lowercase().starts_with("http://") || u.to_lowercase().starts_with("https://")) {
-        return Err("홈페이지 주보 주소를 넣으세요 (예: https://교회주소/bulletin/feed.json).".into());
+        return Err(crate::i18n::tr("홈페이지 주보 주소를 넣으세요 (예: https://교회주소/bulletin/feed.json).").into());
     }
     // 한글 도메인(구세군대구사랑교회.kr)은 퓨니코드로
     let u = url::Url::parse(&u).map(|x| x.to_string()).map_err(|_| format!("주소가 올바르지 않습니다: {u}"))?;
     let resp = ureq::get(&u).header("Accept", "application/json").config().http_status_as_error(false).build().call().map_err(|e| format!("홈페이지에 연결하지 못했습니다: {e}"))?;
     let st = resp.status().as_u16();
     if !(200..300).contains(&st) {
-        return Err(format!("홈페이지에서 주보를 받지 못했습니다 ({st})."));
+        return Err(crate::i18n::tr_args("홈페이지에서 주보를 받지 못했습니다 ({1}).", &[&st]));
     }
     let text = resp.into_body().read_to_string().map_err(|e| format!("홈페이지에서 주보를 받지 못했습니다: {e}"))?;
     let o: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|_| "받은 내용이 JSON 이 아닙니다. 주보 JSON 주소(…/bulletin/feed.json)인지 확인하세요.".to_string())?;
@@ -205,7 +205,7 @@ pub fn news_item(bulletin: &Value, news: &Value) -> Result<Value, String> {
     let b = normalize_feed(&json!({ "bulletins": [bulletin] }))?["bulletins"][0].clone();
     let body = news_body(&b, news);
     if body.trim().is_empty() {
-        return Err("넣을 광고가 없습니다. 하나 이상 고르세요.".into());
+        return Err(crate::i18n::tr("넣을 광고가 없습니다. 하나 이상 고르세요.").into());
     }
     Ok(json!({ "type": "text", "title": "교회 소식", "body": body, "note": format!("홈페이지 주보 {}", b["date"].as_str().unwrap_or("")).trim() }))
 }

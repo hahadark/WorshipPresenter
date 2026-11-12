@@ -55,7 +55,7 @@ fn sheet_svg(cells: &[(usize, Option<PathBuf>, String, bool)], cols: usize, tw: 
 pub fn build(slides: &[(Option<PathBuf>, String, bool)]) -> Result<Vec<(usize, usize, Vec<u8>)>, String> {
     let n = slides.len();
     if n == 0 {
-        return Err("슬라이드가 없습니다.".into());
+        return Err(crate::i18n::tr("슬라이드가 없습니다.").into());
     }
     let cols = if n > 160 { 5 } else { 4 };
     let per = cols * cols;

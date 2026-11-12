@@ -139,11 +139,11 @@ fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
                     Ok(bulletin::Input::Text(t)) => {
                         s.text = t;
                         s.file = None;
-                        s.msg = format!("✓ {} 에서 글을 꺼냈습니다.", p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default());
+                        s.msg = wp_core::i18n::tr_args("✓ {1} 에서 글을 꺼냈습니다.", &[&(p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default())]);
                     }
                     Ok(bulletin::Input::File { .. }) => {
                         s.file = Some(p.clone());
-                        s.msg = format!("{} 은(는) 글을 꺼낼 수 없어 AI 로 읽습니다.", p.display());
+                        s.msg = wp_core::i18n::tr_args("{1} 은(는) 글을 꺼낼 수 없어 AI 로 읽습니다.", &[&(p.display())]);
                     }
                     Err(e) => s.msg = format!("✗ {e}"),
                 }
@@ -182,7 +182,7 @@ fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
         ui.horizontal(|ui| {
             if ui.button(wp_core::i18n::tr("프롬프트 복사")).clicked() {
                 ui.ctx().copy_text(bulletin::chat_prompt(&s.extra));
-                s.msg = "✓ 프롬프트를 복사했습니다.".into();
+                s.msg = wp_core::i18n::tr("✓ 프롬프트를 복사했습니다.").into();
             }
             if ui.button(wp_core::i18n::tr("샘플 파일 저장…")).clicked() {
                 if let Some(p) = rfd::FileDialog::new().set_file_name(bulletin::SAMPLE_NAME).save_file() {
@@ -203,7 +203,7 @@ fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
     });
     ui.collapsing(wp_core::i18n::tr("AI 설정 (오픈라우터)"), |ui| {
         let st = core.lock().ai_settings();
-        ui.label(if st["hasKey"] == true { "키: 저장됨 (Windows 보호 기능으로 암호화)" } else { "키: 없음" });
+        ui.label(if st["hasKey"] == true { wp_core::i18n::tr_s("키: 저장됨 (Windows 보호 기능으로 암호화)") } else { wp_core::i18n::tr_s("키: 없음") });
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut s.key).password(true).hint_text("sk-or-…"));
             if ui.button(wp_core::i18n::tr("키 저장")).clicked() {
@@ -260,7 +260,7 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
         app.out.refresh_monitors();
     }
     for m in app.out.monitors.clone() {
-        let t = format!("{}  {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { "  (주 모니터 · 조작 화면)" } else { "" });
+        let t = format!("{}  {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s("  (주 모니터 · 조작 화면)") } else { "" });
         if ui.radio(app.monitor == m.index, t).clicked() {
             app.monitor = m.index;
             core.lock().settings.update(|d| d["rsOutputMonitor"] = json!(m.index));
@@ -272,9 +272,9 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
     }
     let running = app.out.running();
     let held = core.lock().obs_hold;
-    ui.label(format!("예배당 창: {}{}", if running { "켜짐" } else { "꺼짐" }, if held { " · OBS 화면 숨김 중" } else { "" }));
+    ui.label(wp_core::i18n::tr_args("예배당 창: {1}{2}", &[&(if running { wp_core::i18n::tr_s("켜짐") } else { wp_core::i18n::tr_s("꺼짐") }), &(if held { wp_core::i18n::tr_s(" · OBS 화면 숨김 중") } else { "" })]));
     ui.horizontal(|ui| {
-        if ui.button(if running { "예배당 창 끄기" } else { "예배당 창 켜기" }).clicked() {
+        if ui.button(if running { wp_core::i18n::tr_s("예배당 창 끄기") } else { wp_core::i18n::tr_s("예배당 창 켜기") }).clicked() {
             if running {
                 app.out.close();
             } else {
@@ -348,7 +348,7 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
     if let Some(e) = st["error"].as_str() {
         ui.label(RichText::new(format!("✗ {e}")).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
     } else if st["connected"] == true {
-        ui.label(RichText::new(format!("✓ 연결됨 · 지금 장면: {} · 방송 {} · 녹화 {}", st["scene"].as_str().unwrap_or(""), if st["streaming"] == true { "중" } else { "꺼짐" }, if st["recording"] == true { "중" } else { "꺼짐" })).color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+        ui.label(RichText::new(wp_core::i18n::tr_args("✓ 연결됨 · 지금 장면: {1} · 방송 {2} · 녹화 {3}", &[&(st["scene"].as_str().unwrap_or("")), &(if st["streaming"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") }), &(if st["recording"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") })])).color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
         let mut act = None;
         ui.horizontal_wrapped(|ui| {
             for sc in st["scenes"].as_array().into_iter().flatten().filter_map(|x| x.as_str()) {
@@ -360,10 +360,10 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
         ui.horizontal(|ui| {
             let streaming = st["streaming"] == true;
             let recording = st["recording"] == true;
-            if ui.button(if streaming { "방송 끝내기" } else { "방송 시작" }).clicked() {
+            if ui.button(if streaming { wp_core::i18n::tr_s("방송 끝내기") } else { wp_core::i18n::tr_s("방송 시작") }).clicked() {
                 act = Some(json!({ "action": "stream", "on": !streaming }));
             }
-            if ui.button(if recording { "녹화 끝내기" } else { "녹화 시작" }).clicked() {
+            if ui.button(if recording { wp_core::i18n::tr_s("녹화 끝내기") } else { wp_core::i18n::tr_s("녹화 시작") }).clicked() {
                 act = Some(json!({ "action": "record", "on": !recording }));
             }
         });
@@ -397,7 +397,7 @@ fn ime_on_focus(app: &App, ctx: &egui::Context) {
 }
 fn update_ui(ui: &mut egui::Ui, core: &Shared) {
     let st = wp_core::updates::status(core.lock().settings.get());
-    ui.label(format!("지금 버전: {}", st["current"].as_str().unwrap_or("")));
+    ui.label(wp_core::i18n::tr_args("지금 버전: {1}", &[&(st["current"].as_str().unwrap_or(""))]));
     match st["state"].as_str().unwrap_or("idle") {
         "checking" => {
             ui.horizontal(|ui| {
@@ -406,7 +406,7 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
             });
         }
         "available" => {
-            ui.label(RichText::new(format!("새 버전 {} 이 나왔습니다{}", st["version"].as_str().unwrap_or(""), if st["skipped"] == true { " (건너뛰기로 함)" } else { "" })).strong().color(Color32::from_rgb(0x8f, 0xb8, 0xff)));
+            ui.label(RichText::new(wp_core::i18n::tr_args("새 버전 {1} 이 나왔습니다{2}", &[&(st["version"].as_str().unwrap_or("")), &(if st["skipped"] == true { wp_core::i18n::tr_s(" (건너뛰기로 함)") } else { "" })])).strong().color(Color32::from_rgb(0x8f, 0xb8, 0xff)));
             egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                 ui.label(st["notes"].as_str().unwrap_or(""));
             });

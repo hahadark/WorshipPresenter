@@ -43,7 +43,7 @@ fn read_json(ws: &mut WebSocket<TcpStream>) -> Result<Value, String> {
         match ws.read().map_err(|e| format!("OBS 연결이 끊겼습니다: {e}"))? {
             Message::Text(t) => return serde_json::from_str(t.as_str()).map_err(|e| e.to_string()),
             Message::Binary(b) => return serde_json::from_slice(&b).map_err(|e| e.to_string()),
-            Message::Close(f) => return Err(format!("OBS 가 연결을 닫았습니다{}", f.map(|f| format!(" ({}: {})", u16::from(f.code), f.reason)).unwrap_or_default())),
+            Message::Close(f) => return Err(crate::i18n::tr_args("OBS 가 연결을 닫았습니다{1}", &[&(f.map(|f| format!(" ({}: {})", u16::from(f.code), f.reason)).unwrap_or_default())])),
             _ => {}
         }
     }
@@ -58,19 +58,19 @@ impl Conn {
         let (mut ws, _) = tungstenite::client::client_with_config(format!("ws://{addr}/"), tcp, None).map_err(|e| format!("OBS 웹소켓 연결 실패: {e}"))?;
         let hello = read_json(&mut ws)?;
         if hello["op"] != 0 {
-            return Err("OBS 웹소켓 응답이 이상합니다 (obs-websocket 5 가 필요합니다).".into());
+            return Err(crate::i18n::tr("OBS 웹소켓 응답이 이상합니다 (obs-websocket 5 가 필요합니다).").into());
         }
         let mut d = json!({ "rpcVersion": 1, "eventSubscriptions": 0 });
         if let Some(a) = hello["d"]["authentication"].as_object() {
             if c.password.is_empty() {
-                return Err("OBS 웹소켓 비밀번호를 넣으세요.".into());
+                return Err(crate::i18n::tr("OBS 웹소켓 비밀번호를 넣으세요.").into());
             }
             d["authentication"] = json!(auth_string(&c.password, a.get("salt").and_then(|x| x.as_str()).unwrap_or(""), a.get("challenge").and_then(|x| x.as_str()).unwrap_or("")));
         }
         ws.send(Message::text(json!({ "op": 1, "d": d }).to_string())).map_err(|e| e.to_string())?;
         let r = read_json(&mut ws).map_err(|e| if e.contains("4009") { "OBS 비밀번호가 맞지 않습니다.".to_string() } else { e })?;
         if r["op"] != 2 {
-            return Err("OBS 인증에 실패했습니다.".into());
+            return Err(crate::i18n::tr("OBS 인증에 실패했습니다.").into());
         }
         Ok(Self { ws, seq: 0 })
     }
@@ -127,7 +127,7 @@ pub fn action(c: &Conf, a: &Value) -> Result<Value, String> {
         "record" => {
             k.request(if a["on"].as_bool().unwrap_or(true) { "StartRecord" } else { "StopRecord" }, Value::Null)?;
         }
-        other => return Err(format!("모르는 OBS 동작: {other}")),
+        other => return Err(crate::i18n::tr_args("모르는 OBS 동작: {1}", &[&other])),
     }
     Ok(json!({ "ok": true }))
 }

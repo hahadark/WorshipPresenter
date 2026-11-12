@@ -167,7 +167,7 @@ pub fn clean_lyrics(raw: &str) -> String {
 /// 고른 곡의 가사 (네트워크)
 pub fn lyrics(site: &str, id: &str) -> Result<String, String> {
     if !SITES.iter().any(|x| x.0 == site) || id.is_empty() || id.len() > 12 || !id.bytes().all(|b| b.is_ascii_digit()) {
-        return Err("잘못된 곡입니다.".into());
+        return Err(crate::i18n::tr("잘못된 곡입니다.").into());
     }
     let url = match site {
         "bugs" => format!("https://music.bugs.co.kr/track/{id}"),
