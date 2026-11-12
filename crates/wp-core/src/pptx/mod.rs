@@ -4,6 +4,7 @@
 //! 그림 만들기는 svg.rs, 캐시·요소 꺼내기는 build.rs · layers.rs
 
 pub mod build;
+pub mod chart; // [트랙 A] 차트 기본 그리기
 pub mod layers;
 pub mod svg;
 
@@ -822,6 +823,7 @@ pub struct Shape {
     pub text: Option<TextBody>,
     pub pic: Option<Fill>,
     pub table: Option<Table>,
+    pub chart: Option<chart::Chart>,
 }
 
 #[derive(Clone, Debug)]
@@ -1147,6 +1149,7 @@ fn finish(s: &RawShape, ctx: &Ctx, pkg: &mut Pkg, chain: &[Levels], body_chain: 
         text: None,
         pic: None,
         table: None,
+        chart: None,
     };
     if sp_pr.is_some() {
         if let Some(p) = kid(sp_pr, "prstGeom") {
@@ -1199,6 +1202,14 @@ fn finish(s: &RawShape, ctx: &Ctx, pkg: &mut Pkg, chain: &[Levels], body_chain: 
             o.table = parse_table(kid(gd, "tbl"), &w, ctx, pkg, chain);
         } else if uri.ends_with("/chart") {
             o.kind = "chart".into();
+            // 차트 파트의 캐시 값으로 그린다
+            let rid = attr(kid(gd, "chart"), "id").unwrap_or("");
+            if let Some(xml) = pkg.rel_target(&ctx.part, rid).and_then(|t| pkg.text(&t)) {
+                o.chart = chart::parse(&xml).map(|mut c| {
+                    c.theme = (1..=6).filter_map(|i| ctx.theme.colors.get(&format!("accent{i}")).map(|h| format!("#{}", h.trim_start_matches('#')))).collect();
+                    c
+                });
+            }
         } else if uri.ends_with("/diagram") {
             o.kind = "diagram".into();
         } else if uri.contains("ole") {

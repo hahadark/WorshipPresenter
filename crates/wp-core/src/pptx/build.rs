@@ -67,7 +67,7 @@ pub fn classify(sh: &Shape, pkg_has: &dyn Fn(&str) -> bool) -> &'static str {
         return "bg";
     }
     if ["table", "chart", "diagram", "graphic", "ole"].contains(&sh.kind.as_str()) {
-        return if (sh.kind == "chart" || sh.kind == "graphic") && sh.pic.is_none() { "skip" } else { "bg" };
+        return if (sh.kind == "chart" && sh.chart.is_none() || sh.kind == "graphic") && sh.pic.is_none() { "skip" } else { "bg" }; // [트랙 A] 읽은 차트는 배경에 그림
     }
     let has_text = sh.text.as_ref().is_some_and(|t| t.has_text);
     if has_text && sh.text.as_ref().is_some_and(|t| t.body.vert != "horz") {
