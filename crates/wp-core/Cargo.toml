@@ -31,6 +31,7 @@ tungstenite = "0.30.0"
 unicode-normalization = "0.1.26"
 # [트랙 A] PPT 나누기 AI (오픈라우터)
 ureq = { version = "3.5.1", features = ["json"] }
+url = "2.5.8" # [트랙 A] 한글 도메인(홈페이지 주보 주소)
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
 [target."cfg(windows)".dependencies]
