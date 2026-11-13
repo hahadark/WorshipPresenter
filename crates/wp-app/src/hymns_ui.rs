@@ -188,6 +188,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 }
             });
         }
+        default_bg_row(app, ui);
     } else {
         let books = hymnal::books(&app.core.lock());
         if books.is_empty() {
@@ -223,6 +224,43 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     set(ui, Q, q);
     set(ui, RES, res);
     set(ui, SRC, src);
+}
+
+/// 찬송가 기본 배경 (settings.hymnBackground) — Electron 고르기 창의 '찬송가 폴더 · 기본 배경 설정' (cue.js 1478-1481 · 1556-1558)
+/// 원래 배경 · 흰 배경 · 템플릿 배경 · 지정한 이미지(다른 이미지로…). 순서의 '설정대로' 가 이 값을 따른다.
+fn default_bg_row(app: &mut App, ui: &mut egui::Ui) {
+    let cur = hymns::default_bg(&app.core.lock());
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(wp_core::i18n::tr("기본 배경")).small().color(Color32::GRAY)).on_hover_text(wp_core::i18n::tr("악보는 투명 그림이라 어떤 배경 위에도 겁쳐 보입니다. 악보 글씨가 검은색이라 밝은 배경을 권합니다. 순서마다 따로 바꿀 수도 있습니다 (편집칸의 '배경')."));
+        let custom = !matches!(cur.as_str(), "original" | "#ffffff" | "template");
+        let name = |v: &str| -> String {
+            match v {
+                "original" => wp_core::i18n::tr("찬송가 원래 배경"),
+                "#ffffff" => wp_core::i18n::tr("흰 배경 (악보가 가장 잘 보임)"),
+                "template" => wp_core::i18n::tr("템플릿 배경 (테마·빠른 설정의 배경)"),
+                _ => wp_core::i18n::tr("지정한 이미지"),
+            }
+        };
+        egui::ComboBox::from_id_salt("hymn-default-bg").selected_text(RichText::new(name(&cur)).small()).width(200.0).show_ui(ui, |ui| {
+            for v in ["original", "#ffffff", "template"] {
+                if ui.selectable_label(cur == v, name(v)).clicked() {
+                    hymns::set_default_bg(&mut app.core.lock(), v);
+                }
+            }
+            if custom {
+                ui.selectable_label(true, name(&cur)).on_hover_text(&cur);
+            }
+        });
+        if ui.small_button(wp_core::i18n::tr("다른 이미지로…")).on_hover_text(wp_core::i18n::tr("그림 파일을 데이터 폴더로 복사해 기본 배경으로")).clicked() {
+            if let Some(p) = rfd::FileDialog::new().add_filter("그림", &["png", "jpg", "jpeg", "webp", "gif"]).pick_file() {
+                let mut c = app.core.lock();
+                match hymns::set_default_bg_image(&mut c, &p) {
+                    Ok(_) => c.notify(wp_core::i18n::tr("찬송가 기본 배경을 바꿨습니다."), "ok"),
+                    Err(e) => c.notify(e, "error"),
+                }
+            }
+        }
+    });
 }
 
 fn open_url(url: &str) {
@@ -541,8 +579,10 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, core: &wp_core::core::Shared) ->
     ui.label(RichText::new(wp_core::i18n::tr("등록한 찬송가 폴더·붙여 넣은 슬라이드 폴더 안의 파일과 여기서 고른 파일이 열립니다")).small().color(Color32::GRAY));
     ui.label(RichText::new(wp_core::i18n::tr("배경 (악보 그림일 때)")).small());
     let mut bg = e["background"].as_str().unwrap_or("default").to_string();
+    // '설정대로' 에는 지금 기본 배경 이름을 같이 (cue.js hymnBgSel: "기본값 (원래 배경)")
+    let def = wp_core::i18n::tr_args("설정대로 ({1})", &[&wp_core::i18n::tr(hymns::default_bg_label(&hymns::default_bg(&core.lock())))]);
     ui.horizontal_wrapped(|ui| {
-        for (v, l) in [("default", "설정대로"), ("original", "파일 배경"), ("template", "템플릿 배경"), ("#ffffff", "흰색"), ("#000000", "검정")] {
+        for (v, l) in [("default", def.as_str()), ("original", "파일 배경"), ("template", "템플릿 배경"), ("#ffffff", "흰색"), ("#000000", "검정")] {
             if ui.radio_value(&mut bg, v.to_string(), l).changed() {
                 e["background"] = json!(bg.clone());
                 changed = true;

@@ -719,6 +719,42 @@ fn range_of(r: &str) -> Option<(usize, usize)> {
     Some((a.min(b), a.max(b)))
 }
 
+/// 기본 배경 설정(settings.hymnBackground) 값 → 사람이 읽는 이름 (cue.js hymnBgSel: 원래 배경·템플릿 배경·흰 배경·지정 이미지)
+pub fn default_bg_label(v: &str) -> &'static str {
+    match v {
+        "" | "original" => "원래 배경",
+        "template" => "템플릿 배경",
+        "#ffffff" => "흰 배경",
+        _ => "지정 이미지",
+    }
+}
+
+/// 지금 기본 배경 설정 값 (없으면 original — cue.js 와 같은 기본값)
+pub fn default_bg(core: &Core) -> String {
+    core.settings.get()["hymnBackground"].as_str().filter(|s| !s.is_empty()).unwrap_or("original").to_string()
+}
+
+/// 기본 배경 설정 바꾸기 (cue.js updateSettings {hymnBackground}): original | #ffffff | template | 그림 주소
+pub fn set_default_bg(core: &mut Core, v: &str) {
+    let v = v.to_string();
+    core.settings.update(|d| d["hymnBackground"] = json!(v));
+}
+
+/// 기본 배경을 지정 이미지로: 그림을 <데이터>/media/hymnbg-… 으로 복사해 '/media/…' 주소를 설정에 (Electron pickImage → POST /api/media → /media/… 와 같은 모양)
+pub fn set_default_bg_image(core: &mut Core, src: &Path) -> Result<String, String> {
+    if !crate::library::is_image(src) {
+        return Err(crate::i18n::tr("그림 파일(png·jpg·webp·gif)만 기본 배경으로 쓸 수 있습니다.").into());
+    }
+    let dir = core.data_dir.join("media");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "png".into());
+    let name = format!("hymnbg-{}.{ext}", crate::util::now_ms());
+    std::fs::copy(src, dir.join(&name)).map_err(|e| crate::i18n::tr_args("그림을 복사하지 못했습니다: {1}", &[&e]))?;
+    let url = format!("/media/{name}");
+    set_default_bg(core, &url);
+    Ok(url)
+}
+
 /// 찬송가 순서의 배경 (cue.js hymnBg)
 pub fn hymn_bg(core: &Core, it: &Value, meta: &Value) -> String {
     let mut b = it["background"].as_str().unwrap_or("default").to_string();
@@ -922,6 +958,12 @@ mod tests {
         assert_eq!(item_title(Some(10), "전능왕 오셔서"), "10장 전능왕 오셔서");
         assert_eq!(item_title(Some(13), "교독문 13 (시편 23편)"), "교독문 13 (시편 23편)");
         assert_eq!(item_title(None, "붙여 넣은 슬라이드"), "붙여 넣은 슬라이드");
+        // 기본 배경 이름 (cue.js hymnBgSel 의 { original: '원래 배경', template: '템플릿 배경', '#ffffff': '흰 배경' } || '지정 이미지')
+        assert_eq!(default_bg_label(""), "원래 배경");
+        assert_eq!(default_bg_label("original"), "원래 배경");
+        assert_eq!(default_bg_label("#ffffff"), "흰 배경");
+        assert_eq!(default_bg_label("template"), "템플릿 배경");
+        assert_eq!(default_bg_label("/media/hymnbg-1.png"), "지정 이미지");
         let it = new_hymn_item(&HymnFile { number: Some(10), title: "전능왕 오셔서".into(), name: "010 전능왕 오셔서".into(), folder: "새찬송가".into(), file: PathBuf::from(r"C:\h\010 전능왕 오셔서.pps") });
         assert_eq!(it["title"], "10장 전능왕 오셔서");
         assert_eq!(it["number"], 10);
@@ -966,6 +1008,41 @@ mod tests {
         let items = split_items(&json!({ "type": "hymn", "file": "x.pptx", "title": "전체" }), &parts);
         assert_eq!(items[0]["range"], "1-2");
         assert_eq!(items[1]["title"], "기도");
+    }
+}
+
+#[cfg(test)]
+mod default_bg_tests {
+    use super::*;
+    /// 기존 사용자 자료를 복사하지 않도록 뱈 DB 가 있는 고유 임시 폴더를 쓴다.
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-hymnbg-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+    #[test]
+    fn default_bg_setting_and_image() {
+        let mut c = core();
+        assert_eq!(default_bg(&c), "original"); // 없으면 original (cue.js `s.hymnBackground || 'original'`)
+        set_default_bg(&mut c, "#ffffff");
+        assert_eq!(c.settings.get()["hymnBackground"], "#ffffff");
+        // 순서의 '설정대로'(default) 는 이 값을 따른다 (hymn_bg)
+        assert_eq!(hymn_bg(&c, &json!({ "background": "default" }), &json!({ "background": "/hymn/k/bg.png" })), "#ffffff");
+        set_default_bg(&mut c, "original");
+        assert_eq!(hymn_bg(&c, &json!({}), &json!({ "background": "/hymn/k/bg.png" })), "/hymn/k/bg.png");
+        // 지정 이미지: media 폴더로 복사하고 /media/ 주소를 설정에
+        let src = c.data_dir.join("pick.png");
+        std::fs::write(&src, b"\x89PNG").unwrap();
+        let url = set_default_bg_image(&mut c, &src).unwrap();
+        assert!(url.starts_with("/media/hymnbg-") && url.ends_with(".png"));
+        assert!(c.data_dir.join("media").join(url.trim_start_matches("/media/")).is_file());
+        assert_eq!(default_bg(&c), url);
+        assert_eq!(default_bg_label(&default_bg(&c)), "지정 이미지");
+        let dir = c.data_dir.clone();
+        assert!(set_default_bg_image(&mut c, &dir.join("x.pptx")).is_err());
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 
