@@ -50,6 +50,9 @@ pub struct App {
     pub(crate) edit: Option<(String, Value)>,
     pub(crate) out: OutWin,
     pub(crate) monitor: usize,
+    editor_on: bool,
+    editor_reveal: bool,
+    views: MonitorViews,
     last_flush: Instant,
     pub(crate) focus_search: bool,
     pub(crate) tb: crate::trackb_ui::TbState, // [트랙 B]
@@ -69,6 +72,8 @@ pub(crate) struct Snap {
     templates: Vec<(String, String)>,
     pub(crate) tpl_main: Value,
     tpl_overlay: Value,
+    preview_main: Value,
+    preview_overlay: Value,
     active_main: String,
     active_overlay: String,
     version: String,
@@ -117,7 +122,7 @@ impl App {
         let saved = core.lock().settings.get()["rsOutputMonitor"].as_u64().map(|x| x as usize);
         let monitor = saved.filter(|m| out.monitors.iter().any(|x| x.index == *m)).unwrap_or_else(|| out.default_monitor());
         let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
-        Self { workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */ }
+        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */ }
     }
 
     fn snap(&self) -> Snap {
@@ -131,6 +136,8 @@ impl App {
             items: c.cue.as_ref().map(|x| x.items.clone()).unwrap_or_default(),
             cues: c.cues.clone(),
             templates: c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect(),
+            preview_main: c.template_for_deck("main", c.pres.preview.as_ref()),
+            preview_overlay: c.template_for_deck("overlay", c.pres.preview.as_ref()),
             tpl_main: c.template_for("main"),
             tpl_overlay: c.template_for("overlay"),
             active_main: s["activeTemplates"]["main"].as_str().unwrap_or("").to_string(),
@@ -302,6 +309,13 @@ impl App {
         if on("previewPrevVerse", "Alt+ArrowLeft") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), -1) }
         if on("previewNextVerse", "Alt+ArrowRight") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), 1) }
         if on("previewChapterStart", "Ctrl+Home") { wp_core::flow::preview_chapter_start(&mut self.core.lock()) }
+        if on("cueEdit", "F2") {
+            if let Some(i) = self.sel { self.show_item_editor(i); }
+        }
+        if on("toggleEditor", "Ctrl+Shift+E") {
+            self.editor_on = !self.editor_on;
+            if self.editor_on { self.editor_reveal = true; }
+        }
         if !typing {
             let pv = self.core.lock().pres.preview.as_ref().map(|p| (p.index, p.slides.len()));
             if let Some((i, n)) = pv {
@@ -449,8 +463,41 @@ impl App {
                 });
             });
             crate::hymns_ui::ppt_box(self, ui, i, &s.items[i]); // [트랙 A]
-            self.editor(ui, i, &s.items[i], acts);
+            if ui.button("편집칸 고치기 (F2)").clicked() { self.show_item_editor(i); }
         }
+    }
+
+    /// 우클릭 메뉴 등은 이 API로 선택과 본문 패널 노출을 함께 요청한다.
+    pub(crate) fn show_item_editor(&mut self, i: usize) {
+        self.sel = Some(i);
+        self.edit = None;
+        self.editor_on = true;
+        self.editor_reveal = true;
+    }
+
+    fn reveal_editor_panel(&mut self) {
+        use wp_core::workspace::Pane;
+        if !self.workspace.state.visible(Pane::Main) { self.workspace.state.toggle(Pane::Main); }
+        if let Some(n) = &mut self.workspace.state.layout { reveal_main(n); }
+        for f in &mut self.workspace.state.floating {
+            let mut n = f.node();
+            reveal_main(&mut n);
+            f.group = Some(n);
+        }
+    }
+
+    pub(crate) fn main_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+        ui.horizontal(|ui| {
+            ui.label(wp_core::i18n::tr("본문"));
+            ui.toggle_value(&mut self.editor_on, wp_core::i18n::tr("편집칸")).on_hover_text("F2 · Ctrl+Shift+E");
+        });
+        if self.editor_on {
+            if let Some(i) = self.sel.filter(|i| *i < s.items.len()) {
+                self.editor(ui, i, &s.items[i], acts);
+                ui.separator();
+            } else { ui.label(wp_core::i18n::tr("큐시트에서 순서를 먼저 고르세요.")); }
+        }
+        self.search_panel(ui, s, acts);
     }
 
     fn editor(&mut self, ui: &mut egui::Ui, i: usize, it: &Value, acts: &mut Vec<Act>) {
@@ -604,12 +651,14 @@ impl App {
         });
     }
 
-    pub(crate) fn deck_view(&self, ui: &mut egui::Ui, title: &str, deck: Option<&Deck>, tpl: &Value, live: Option<&Live>, s: &Snap, acts: &mut Vec<Act>) {
-        let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
-        let is_live = live.is_some();
+    pub(crate) fn deck_view(&mut self, ui: &mut egui::Ui, title: &str, deck: Option<&Deck>, is_live: bool, live: Option<&Live>, s: &Snap, acts: &mut Vec<Act>) {
+
         ui.horizontal(|ui| {
             let col = if is_live { Color32::from_rgb(0xff, 0x6b, 0x6b) } else { Color32::from_rgb(0x8f, 0xb8, 0xff) };
             ui.label(RichText::new(wp_core::i18n::tr(title)).strong().color(col));
+            let view = if is_live { &mut self.views.live_obs } else { &mut self.views.preview_obs };
+            ui.selectable_value(view, false, wp_core::i18n::tr("예배당"));
+            ui.selectable_value(view, true, "OBS");
             if let Some(d) = deck {
                 let t = d.passage["itemTitle"].as_str().filter(|x| !x.is_empty()).or(d.passage["title"].as_str()).unwrap_or("");
                 ui.label(RichText::new(format!("{}  [{}/{}]", t, d.index + 1, d.slides.len())).color(Color32::LIGHT_GRAY));
@@ -618,6 +667,11 @@ impl App {
                 if !l.visible { ui.label(RichText::new(wp_core::i18n::tr("글자 숨김")).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
             }
         });
+        let tpl = match (is_live, self.views.obs(is_live)) {
+            (true, false) => &s.tpl_main, (true, true) => &s.tpl_overlay,
+            (false, false) => &s.preview_main, (false, true) => &s.preview_overlay,
+        };
+        let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
         let w = ui.available_width();
         let tw = tpl["width"].as_f64().unwrap_or(1920.0) as f32;
         let th = tpl["height"].as_f64().unwrap_or(1080.0) as f32;
@@ -734,10 +788,14 @@ impl eframe::App for App {
                 });
             });
         });
+        if std::mem::take(&mut self.editor_reveal) { self.reveal_editor_panel(); }
         self.workspace_bar(ui);
         egui::CentralPanel::default_margins().show(ui, |ui| { self.workspace_content(ui, &s, &mut acts); });
+        if std::mem::take(&mut self.editor_reveal) {
+            self.reveal_editor_panel();
+            ctx.request_repaint();
+        }
         self.trackb_windows(&ctx); // [트랙 B]
-        let _ = &s.tpl_overlay;
         crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
         crate::a_tools::show(self, &ctx, &mut acts); // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
         crate::parity_ui::show(self, &ctx); // [트랙 A] 단축키 보기
@@ -813,3 +871,37 @@ impl Drop for App {
 #[cfg(test)]
 #[path = "ui_integration_tests.rs"]
 mod ui_integration_tests;
+/// 두 모니터의 보기 전환은 실제 송출 설정을 변경하지 않는다.
+#[derive(Default)]
+struct MonitorViews { preview_obs: bool, live_obs: bool }
+impl MonitorViews {
+    fn obs(&self, live: bool) -> bool { if live { self.live_obs } else { self.preview_obs } }
+}
+fn reveal_main(n: &mut wp_core::workspace::Node) {
+    use wp_core::workspace::{Node, Pane};
+    match n {
+        Node::Tabs { panes, active, collapsed } if panes.contains(&Pane::Main) => { *active = Pane::Main; *collapsed = false; }
+        Node::Split { a, b, .. } => { reveal_main(a); reveal_main(b); }
+        _ => {}
+    }
+}
+#[cfg(test)]
+mod preview_edit_tests {
+    use super::*;
+    #[test]
+    fn monitor_views_are_independent() {
+        let mut v = MonitorViews::default();
+        assert!(!v.obs(false) && !v.obs(true));
+        v.preview_obs = true;
+        assert!(v.obs(false) && !v.obs(true));
+        v.live_obs = true; v.preview_obs = false;
+        assert!(!v.obs(false) && v.obs(true));
+    }
+    #[test]
+    fn editor_reveals_inactive_collapsed_main_tab() {
+        use wp_core::workspace::{Node, Pane};
+        let mut n = Node::Tabs { panes: vec![Pane::Cue, Pane::Main], active: Pane::Cue, collapsed: true };
+        reveal_main(&mut n);
+        assert!(n.rendered(Pane::Main));
+    }
+}
