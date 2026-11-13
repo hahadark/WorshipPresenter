@@ -59,6 +59,7 @@ pub mod obs; // [트랙 D]
 pub mod winkeys; // [트랙 D]
 pub mod updates; // [트랙 D]
 pub mod i18n; // [트랙 D]
+pub mod actions; // 순서의 '⚡ 송출할 때 자동으로' 정규화·요약·매크로 저장
 
 pub mod workspace;
 
