@@ -487,17 +487,25 @@ impl App {
     }
 
     pub(crate) fn main_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-        ui.horizontal(|ui| {
-            ui.label(wp_core::i18n::tr("본문"));
-            ui.toggle_value(&mut self.editor_on, wp_core::i18n::tr("편집칸")).on_hover_text("F2 · Ctrl+Shift+E");
-        });
-        if self.editor_on {
-            if let Some(i) = self.sel.filter(|i| *i < s.items.len()) {
-                self.editor(ui, i, &s.items[i], acts);
-                ui.separator();
-            } else { ui.label(wp_core::i18n::tr("큐시트에서 순서를 먼저 고르세요.")); }
+        // 원본은 검색칸이 맨 위 도구줄에 있어 편집칸을 켜도 늘 보인다 → 검색칸을 먼저 그린다.
+        self.search_bar(ui, s, acts);
+        let selected = self.sel.filter(|i| *i < s.items.len());
+        if selected.is_some() {
+            ui.horizontal(|ui| {
+                ui.label(wp_core::i18n::tr("본문"));
+                ui.toggle_value(&mut self.editor_on, wp_core::i18n::tr("편집칸")).on_hover_text("F2 · Ctrl+Shift+E");
+            });
         }
-        self.search_panel(ui, s, acts);
+        // 원본처럼 순서를 골랐을 때만 편집칸을 보이고, 높이는 본문 패널의 절반 안쪽(control.css .cue-editor max-height 46%)으로 제한해 검색 결과가 가려지지 않게 한다.
+        if let (true, Some(i)) = (self.editor_on, selected) {
+            let h = (ui.available_height() * 0.46).max(160.0);
+            ui.allocate_ui(egui::vec2(ui.available_width(), h), |ui| {
+                ui.set_max_height(h);
+                self.editor(ui, i, &s.items[i], acts);
+            });
+            ui.separator();
+        }
+        self.search_results(ui, s, acts);
     }
 
     fn editor(&mut self, ui: &mut egui::Ui, i: usize, it: &Value, acts: &mut Vec<Act>) {
@@ -591,6 +599,12 @@ impl App {
     }
 
     pub(crate) fn search_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+        self.search_bar(ui, s, acts);
+        self.search_results(ui, s, acts);
+    }
+
+    /// 성경 검색칸 줄 (입력·송출·큐시트에 넣기)
+    pub(crate) fn search_bar(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         ui.horizontal(|ui| {
             let id = egui::Id::new("search-box");
             let r = ui.add(egui::TextEdit::singleline(&mut self.search).id(id).hint_text(wp_core::i18n::tr("장절(요3:16, 시 23) 또는 낱말 — Ctrl+K")).desired_width(ui.available_width() - 190.0).font(egui::TextStyle::Heading));
@@ -611,6 +625,10 @@ impl App {
                 acts.push(Act::AddItem("bible", Some(json!({ "title": "성경 봉독", "ref": self.search.trim(), "subtitle": title }))));
             }
         });
+    }
+
+    /// 성경 검색 결과 (장절 본문 또는 낱말 찾기 목록)
+    pub(crate) fn search_results(&mut self, ui: &mut egui::Ui, _s: &Snap, acts: &mut Vec<Act>) {
         let r = &self.result;
         egui::ScrollArea::vertical().id_salt("results").auto_shrink([false, false]).show(ui, |ui| {
             if r.is_null() {
