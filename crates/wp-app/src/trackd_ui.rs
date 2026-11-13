@@ -27,7 +27,8 @@ struct St {
     file: Option<std::path::PathBuf>,
     msg: String,
     obs_pw: String,
-    obs_status: Value,
+    /// OBS 창에서 누른 동작(장면·방송·녹화)이 실패한 글. 상태 자체는 `wp_core::obs::cached()` 가 한 출처
+    obs_err: String,
     obs_busy: bool,
 }
 
@@ -42,13 +43,36 @@ pub fn open(w: Win) {
 }
 
 /// 순서 편집칸(⚡ 송출할 때 자동으로)의 OBS 줄이 쓰는 상태: (설정에서 켬, 연결됨, 장면 목록).
-/// 장면 목록은 OBS 원격 조작 창에서 마지막으로 받아 둔 캐시 (Electron `BCObs.state()` 와 같은 역할)
+/// 출처는 `wp_core::obs::cached()` — 백그라운드 폴러(obs.enabled 면 10초마다)·OBS 창·자동 동작이 모두 같은 캐시를 쓴다
+/// (Electron `BCObs.state()` 와 같은 역할). OBS 창을 열지 않아도 장면 콤보가 채워진다.
 pub fn obs_state(settings: &Value) -> (bool, bool, Vec<String>) {
-    let s = ST.lock();
-    let enabled = settings["obs"]["enabled"].as_bool().unwrap_or(false);
-    let connected = s.obs_status["connected"].as_bool().unwrap_or(false);
-    let scenes = s.obs_status["scenes"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+    let k = wp_core::obs::cached();
+    let enabled = wp_core::obs::enabled(settings);
+    let connected = k["connected"].as_bool().unwrap_or(false);
+    let scenes = k["scenes"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
     (enabled, connected, scenes)
+}
+
+/// 조작 화면 상태줄용 OBS 한 줄: 설정에서 켰을 때만 Some((글, 경고인지)).
+/// Electron 상태줄의 방송/녹화/끊김 표시와 같은 역할 (obs.js `core 'obs'` 이벤트 → 상태줄)
+pub fn obs_status_line(settings: &Value) -> Option<(String, bool)> {
+    if !wp_core::obs::enabled(settings) {
+        return None;
+    }
+    let k = wp_core::obs::cached();
+    if k["connected"] != true {
+        // 아직 한 번도 확인하지 못했으면(at == 0) 확인 중, 아니면 끊김
+        return Some(if k["at"].as_i64().unwrap_or(0) == 0 { (wp_core::i18n::tr("OBS 확인 중…"), false) } else { (wp_core::i18n::tr("OBS 끊김"), true) });
+    }
+    let mut parts = vec![wp_core::i18n::tr("OBS 연결됨")];
+    if k["streaming"] == true {
+        let t = k["streamTime"].as_str().unwrap_or("");
+        parts.push(if t.len() >= 8 { wp_core::i18n::tr_args("방송 중 {1}", &[&&t[..8]]) } else { wp_core::i18n::tr("방송 중") });
+    }
+    if k["recording"] == true {
+        parts.push(wp_core::i18n::tr("녹화 중"));
+    }
+    Some((parts.join(" · "), false))
 }
 
 /// 장비(X32 · PTZ) 등록 창 (도구 → Companion·장비)
@@ -90,11 +114,13 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
             handle_menu(&format!("d:{w}"));
         }
     });
+    // OBS 상태 폴러 (한 번만 시작. obs.enabled 일 때만 네트워크를 쓴다)
+    wp_core::obs::start_poller(app.core.clone());
     if let Some((k, v)) = BG.lock().take() {
         let mut s = ST.lock();
         match k.as_str() {
             "obs" => {
-                s.obs_status = v;
+                s.obs_err = v["error"].as_str().unwrap_or("").to_string();
                 s.obs_busy = false;
             }
             _ => s.msg = v.as_str().unwrap_or("").to_string(),
@@ -305,17 +331,18 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
     });
 }
 
+/// OBS 창의 동작·연결 확인을 백그라운드에서 (코어 잠금 없이). 상태는 `obs::status` 가 캐시에 남기고, 동작 오류만 BG 로 돌려준다
 fn obs_bg(conf: wp_core::obs::Conf, then_act: Option<Value>) {
     ST.lock().obs_busy = true;
     std::thread::spawn(move || {
+        let mut err = String::new();
         if let Some(a) = then_act {
             if let Err(e) = wp_core::obs::action(&conf, &a) {
-                *BG.lock() = Some(("obs".into(), json!({ "error": e })));
-                return;
+                err = e;
             }
         }
-        let v = wp_core::obs::status(&conf).unwrap_or_else(|e| json!({ "error": e }));
-        *BG.lock() = Some(("obs".into(), v));
+        let _ = wp_core::obs::status(&conf);
+        *BG.lock() = Some(("obs".into(), json!({ "error": err })));
     });
 }
 
@@ -340,10 +367,12 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
             let pw = s.obs_pw.clone();
             core.lock().set_obs(en, &host, p, Some(&pw));
             s.obs_pw.clear();
+            wp_core::obs::kick();
         }
     });
     if changed {
         core.lock().set_obs(en, &host, p, None);
+        wp_core::obs::kick(); // 폴러가 새 설정으로 바로 한 번 확인
     }
     let conf = wp_core::obs::conf_from(core.lock().settings.get());
     let busy = s.obs_busy;
@@ -353,17 +382,26 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
         if busy {
             ui.spinner();
         }
+        if en {
+            ui.label(RichText::new(wp_core::i18n::tr_args("{1}초마다 자동으로 확인합니다", &[&wp_core::obs::POLL_SECS])).small().color(Color32::GRAY));
+        }
     });
     if check {
         drop(s);
         obs_bg(conf.clone(), None);
         s = ST.lock();
     }
-    let st = s.obs_status.clone();
+    // 상태는 폴러·동작·연결 확인이 모두 남기는 한 캐시에서 (순서 편집칸 장면 콤보와 같은 출처)
+    let st = wp_core::obs::cached();
+    if !s.obs_err.is_empty() {
+        ui.label(RichText::new(format!("✗ {}", s.obs_err)).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+    }
+    let at = st["at"].as_i64().unwrap_or(0);
+    let ago = if at > 0 { wp_core::i18n::tr_args(" ({1}초 전 확인)", &[&((wp_core::util::now_ms() - at).max(0) / 1000)]) } else { String::new() };
     if let Some(e) = st["error"].as_str() {
-        ui.label(RichText::new(format!("✗ {e}")).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+        ui.label(RichText::new(format!("✗ {e}{ago}")).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
     } else if st["connected"] == true {
-        ui.label(RichText::new(wp_core::i18n::tr_args("✓ 연결됨 · 지금 장면: {1} · 방송 {2} · 녹화 {3}", &[&(st["scene"].as_str().unwrap_or("")), &(if st["streaming"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") }), &(if st["recording"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") })])).color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+        ui.label(RichText::new(wp_core::i18n::tr_args("✓ 연결됨 · 지금 장면: {1} · 방송 {2} · 녹화 {3}", &[&(st["scene"].as_str().unwrap_or("")), &(if st["streaming"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") }), &(if st["recording"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") })]) + &ago).color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
         let mut act = None;
         ui.horizontal_wrapped(|ui| {
             for sc in st["scenes"].as_array().into_iter().flatten().filter_map(|x| x.as_str()) {
@@ -375,18 +413,26 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
         ui.horizontal(|ui| {
             let streaming = st["streaming"] == true;
             let recording = st["recording"] == true;
+            // Electron obspanel.js: 방송은 on 을 명시, 녹화는 on 없이(토글). 코어 action 이 지금 상태와 같으면 요청을 생략하므로
+            // 표시가 조금 오래됐어도 OBS 가 "output already active" 오류를 내지 않는다
             if ui.button(if streaming { wp_core::i18n::tr_s("방송 끝내기") } else { wp_core::i18n::tr_s("방송 시작") }).clicked() {
                 act = Some(json!({ "action": "stream", "on": !streaming }));
             }
             if ui.button(if recording { wp_core::i18n::tr_s("녹화 끝내기") } else { wp_core::i18n::tr_s("녹화 시작") }).clicked() {
-                act = Some(json!({ "action": "record", "on": !recording }));
+                act = Some(json!({ "action": "record" }));
             }
         });
         if let Some(a) = act {
+            s.obs_err.clear();
             drop(s);
             obs_bg(conf, Some(a));
             return;
         }
+    } else if en && at == 0 {
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label(wp_core::i18n::tr("OBS 확인 중…"));
+        });
     }
     ui.label(RichText::new(wp_core::i18n::tr("큐시트 순서의 '송출할 때 자동으로'(actions)에 obsScene · obsStream · obsRecord 를 두면 그 순서를 송출할 때 OBS 가 같이 움직입니다.")).small().color(Color32::GRAY));
 }
