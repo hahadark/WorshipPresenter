@@ -41,7 +41,7 @@ impl App {
             let c = self.core.lock();
             (
                 c.settings.templates(),
-                c.template_for(&slot),
+                c.template_for_deck(&slot, None),
                 c.settings.get().clone(),
             )
         };
@@ -167,6 +167,18 @@ impl App {
                     slides: wp_core::slides::build_bible(&p, &c.split_opts(item)),
                     index: deck.index,
                 }
+            } else if matches!(meta["itemType"].as_str(), Some("song" | "text" | "hymn" | "title")) {
+                let index = meta["cueIndex"].as_u64()? as usize;
+                let cue = c.cue.as_ref().filter(|q| meta["cueId"] == q.id)?;
+                if index >= cue.items.len() { return None; }
+                let mut rebuilt = c.item_deck(index).ok()?;
+                // 덱만 재구성한다. 재송출·사용 기록·자동 동작은 실행하지 않는다.
+                rebuilt.passage = meta.clone();
+                rebuilt.index = deck.index;
+                if let Some(key) = deck.slides.get(deck.index).and_then(|s| s["ekey"].as_str()) {
+                    if let Some(k) = rebuilt.slides.iter().position(|s| s["ekey"] == key) { rebuilt.index = k; }
+                }
+                rebuilt
             } else {
                 return None;
             };

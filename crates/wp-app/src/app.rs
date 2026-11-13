@@ -463,7 +463,7 @@ impl App {
                 });
             });
             crate::hymns_ui::ppt_box(self, ui, i, &s.items[i]); // [트랙 A]
-            if ui.button("편집칸 고치기 (F2)").clicked() { self.show_item_editor(i); }
+            if ui.button(wp_core::i18n::tr("편집칸 고치기 (F2)")).clicked() { self.show_item_editor(i); }
         }
     }
 
@@ -535,6 +535,7 @@ impl App {
                     changed |= field(ui, e, "lyrics", true, 12, "[1절]\n가사 첫 줄\n가사 둘째 줄\n\n[후렴]\n…");
                     ui.label(RichText::new(wp_core::i18n::tr("부를 순서 (예: 1 C 2 C)")).small());
                     changed |= field(ui, e, "order", false, 1, "비우면 가사 순서대로");
+                    changed |= crate::media_ui::song_arrangements(ui, &mut self.core.lock(), e);
                     let mut st = e["showTitle"].as_bool().unwrap_or(false);
                     if ui.checkbox(&mut st, wp_core::i18n::tr("곡 제목 보이기")).changed() { e["showTitle"] = json!(st); changed = true; }
                 }

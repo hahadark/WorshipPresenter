@@ -33,8 +33,7 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
             ui.close();
         }
         if ui.button(wp_core::i18n::tr("편집칸에서 고치기")).clicked() {
-            app.sel = Some(i);
-            app.edit = None;
+            app.show_item_editor(i);
             ui.close();
         }
         // 제목 바꾸기 (메뉴 안에서 바로)
