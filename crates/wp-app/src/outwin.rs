@@ -33,6 +33,10 @@ fn no_window(c: &mut Command) -> &mut Command {
 }
 
 impl OutWin {
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        Self { child: None, monitors: vec![], error: String::new() }
+    }
     pub fn new() -> Self {
         let mut o = Self { child: None, monitors: vec![], error: String::new() };
         o.refresh_monitors();
