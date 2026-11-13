@@ -40,7 +40,8 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | OBS 슬라이드 그대로 setObsView | core.js | core/themes.rs set_obs_view · 메뉴 c:obsfull | 됨 | |
 | 업데이트 updateStatus · updateAction | core.js | core/updates.rs check · download · cancel · install_now · skip · unskip · 메뉴 d:update | 일부 | 다운로드·SHA-256 검증·취소·명시 설치 코드 구현, 로컬 fixture 9개 테스트 통과. RELEASE_HOLD가 실제 다운로드·설치 차단. 실제 배포·설치 검증 보류 |
 | 내부망 출력 lanOutputInfo · newLanKey | core.js | core/lan.rs info · new_key · app tools_ui | 됨 | |
-| 카메라 설정 setCameraPrefs | core.js | core/cameras.rs · 메뉴 b:cameras | 됨 | |
+| 카메라 설정 setCameraPrefs | core.js | core/cameras.rs · 메뉴 b:cameras | 됨 | 설정 창에 '카메라 찾기'(연결된 카메라 이름)·미리보기 단추. 실제 장치 미검증 |
+| 연결된 카메라 실시간 목록 (getUserMedia+enumerateDevices) | library.js · cue.js | core/cameras.rs DeviceList · camhelper.rs /helper/cameras · app camscan.rs (wp-output --helper) | 됨 | 7차. 출력 창과 같은 WebView2 로 찾아야 deviceId 가 맞음(출력 render.js 는 deviceId exact 만 씀). 라이브러리 카메라 탭·편집칸·설정 창이 같은 목록. 가짜 POST 로 계약만 시험, 실제 카메라 미검증 |
 | 설정 바꾸기 updateSettings | core.js | app settings_ui.rs (설정을 직접) | 됨 | |
 | 단축키 setShortcuts | core.js | app settings_ui.rs · keys.rs | 됨 | 충돌 검사 포함 |
 | 모니터 getDisplays · setOutputWindow · toggleOutputWindow | core.js | app outwin.rs (monitors · open) · trackd_ui 출력 설정 | 됨 | |
@@ -152,7 +153,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 실행 취소 · 다시 | b:undo · b:redo | 됨 | 글 고치기 묶음 실행 취소 포함(remember_typing) |
 | 순서 넣기: 찬송가·PPT · 성경 · 찬양 · 웹 가사 · 공지 · 제목 · 이미지 · 빈 화면 | 큐시트 '넣기' 단추 · 찬송가 탭 · 라이브러리 · lyrics_ui | 됨 | |
 | 순서 넣기: 영상 · 음악 | 라이브러리 창 | 됨 | |
-| 순서 넣기: 카메라 · 슬라이드쇼 (+ 영상 편집칸) | app parity_ui.rs add_buttons · editor | 됨 | 5차. 카메라 기기는 설정·큐시트에 나온 것에서 고르거나 직접(비우면 기본 카메라) |
+| 순서 넣기: 카메라 · 슬라이드쇼 (+ 영상 편집칸) | app parity_ui.rs add_buttons · editor | 됨 | 5차. 카메라 기기는 연결된 카메라('카메라 찾기')·설정·큐시트에 나온 것에서 고르거나 직접(비우면 기본 카메라) |
 | 설교 포인트 · 예배 전 화면 | a:points · a:preservice | 됨 | |
 | 클립보드 붙여 넣기 · 종류 골라 붙여 넣기 | Ctrl+V · Ctrl+Shift+V 창 (app parity2_ui.rs) | 됨 | 6차: 알아서·성경·찬양·공지·제목 · 슬라이드 · 그림. UI 자동 점검으로 성경 2개 넣기 확인 |
 | 편집칸 · 슬라이드 편집 · 위/아래 · 복제 · 지우기 · 송출 | 큐시트 아래 단추 · c:slideedit · 순서 오른쪽 클릭 | 됨 | 5차 |
