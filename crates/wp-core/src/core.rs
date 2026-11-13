@@ -36,6 +36,8 @@ pub struct OutputClient {
 #[derive(Default, Clone)]
 pub struct Layers {
     pub hide_bg: bool,
+    /// '모두 지우기' 로 숨긴 배경인지 (Electron layers.bgByClear). 이것만 다음 송출 때 저절로 다시 보인다 — 손으로 끈 배경은 켤 때까지 그대로.
+    pub bg_by_clear: bool,
     pub logo: bool,
     pub media: Option<Value>,
 }
@@ -371,6 +373,14 @@ impl Core {
     }
 
     // ---------------- LIVE ----------------
+    /// Electron core.js unclearBg: '모두 지우기' 로 숨긴 배경만 되살린다 (송출 · 글자 다시 보이기 때)
+    pub fn unclear_bg(&mut self) {
+        if self.layers.bg_by_clear {
+            self.layers.hide_bg = false;
+            self.layers.bg_by_clear = false;
+        }
+    }
+
     pub fn send_preview(&mut self) {
         if let Some(d) = self.pres.preview.clone() {
             if self.request_audio(&d) { return; }
@@ -382,7 +392,7 @@ impl Core {
                 return;
             }
         }
-        self.layers.hide_bg = false;
+        self.unclear_bg();
         self.obs_hold = false;
         if self.pres.send_live(None) {
             self.add_history();
@@ -404,7 +414,7 @@ impl Core {
 
     pub fn send_deck(&mut self, d: Deck) {
         if self.request_audio(&d) { return; }
-        self.layers.hide_bg = false;
+        self.unclear_bg();
         self.obs_hold = false;
         if self.pres.send_live(Some(d)) {
             self.add_history();
@@ -446,7 +456,7 @@ impl Core {
     pub fn toggle_clear(&mut self) {
         self.pres.toggle();
         if self.pres.live.as_ref().is_some_and(|l| l.visible) {
-            self.layers.hide_bg = false;
+            self.unclear_bg();
         }
         self.emit(Ev::Live);
         self.emit(Ev::Ui);
@@ -459,16 +469,41 @@ impl Core {
     }
 
     pub fn toggle_bg(&mut self) {
-        self.layers.hide_bg = !self.layers.hide_bg;
+        self.set_bg_hidden(!self.layers.hide_bg);
+    }
+    /// 배경 끄기/켜기 (Electron toggleBackground). 직접 정한 배경은 다음 송출 때 되살리지 않는다 (bgByClear=false).
+    pub fn set_bg_hidden(&mut self, hide: bool) {
+        self.layers.hide_bg = hide;
+        self.layers.bg_by_clear = false;
         self.emit(Ev::Live);
         self.emit(Ev::Ui);
     }
 
     /// 모두 지우기: 글자 숨김 + 배경 숨김 + 로고 끔
+    /// (Electron core.js clearAll) 배경 숨김은 bgByClear 로 표시해 다음 송출 때만 되살린다.
+    /// + 송출 배경(카메라·그림·영상) 깔 + 켜진 오버레이 모두 깔(기억해 두고) + 재생 중 영상 일시정지 (음악은 조작 화면 몹)
     pub fn clear_all(&mut self) {
-        self.pres.clear();
-        self.layers.hide_bg = true;
+        if self.pres.live.as_ref().is_some_and(|l| l.visible) {
+            self.pres.clear();
+        }
+        if !self.layers.hide_bg {
+            self.layers.hide_bg = true;
+            self.layers.bg_by_clear = true;
+        }
         self.layers.logo = false;
+        self.layers.media = None;
+        let on: Vec<String> = self.settings.get()["overlays"].as_array().into_iter().flatten().filter(|o| o["on"] == true).filter_map(|o| o["id"].as_str().map(String::from)).collect();
+        if !on.is_empty() {
+            self.settings.update(|d| {
+                for id in &on {
+                    let _ = crate::overlays::toggle_overlay(d, id, Some(false));
+                }
+            });
+            self.b.saved_overlays = on;
+        }
+        if let Some(v) = self.b.video.as_mut().filter(|v| v.playing) {
+            let _ = v.control("pause", 0.0);
+        }
         self.emit(Ev::Live);
         self.emit(Ev::Ui);
     }
@@ -678,6 +713,66 @@ mod live_fix_tests {
             assert_eq!(remote::state_for(&c)["obs"]["full"], on);
             assert_eq!(c.output_payload("overlay")["obsFull"], on);
         }
+    }
+
+    /// 검토 1113-3 결함 2: '모두 지우기' 는 Electron clearAll 처럼 오버레이·송출 배경·영상까지 깔
+    #[test]
+    fn clear_all_turns_off_overlays_media_and_pauses_video() {
+        let mut c = core();
+        c.cue = Some(cue("A", vec![title("A0")]));
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        c.save_overlay(&json!({ "id": "clock1", "type": "clock" })).unwrap();
+        c.save_overlay(&json!({ "id": "banner1", "type": "banner", "text": "환영" })).unwrap();
+        c.toggle_overlay("clock1", Some(true)).unwrap();
+        c.toggle_overlay("banner1", Some(true)).unwrap();
+        c.layers.media = Some(json!({ "kind": "camera", "id": "cam1" }));
+        c.layers.logo = true;
+        c.b.video = Some(crate::library::Video::start("v1"));
+        assert!(c.b.video.as_ref().unwrap().playing);
+
+        c.clear_all();
+        assert!(!c.pres.live.as_ref().unwrap().visible, "글자 숨김");
+        assert!(c.layers.hide_bg && c.layers.bg_by_clear, "배경은 '모두 지우기' 로 숨김 표시");
+        assert!(!c.layers.logo);
+        assert!(c.layers.media.is_none(), "송출 배경(카메라) 끊김");
+        assert!(c.overlays().iter().all(|o| o["on"] == false), "오버레이 모두 깔");
+        assert_eq!(c.b.saved_overlays, vec!["clock1".to_string(), "banner1".to_string()], "켜져 있던 것을 기억");
+        assert!(!c.b.video.as_ref().unwrap().playing, "영상 일시정지 (소리가 계속 나지 않게)");
+        // 오버레이 다시 켜기(toggle_overlays_off 한 번 더) 는 기억해 둔 것을 되살린다
+        c.toggle_overlays_off();
+        assert!(c.overlays().iter().all(|o| o["on"] == true));
+        // 이미 손으로 끈 배경은 '모두 지우기' 가 bgByClear 로 바꾸지 않는다 (Electron: if (!hideBg) 만)
+        let mut c2 = core();
+        c2.set_bg_hidden(true);
+        c2.clear_all();
+        assert!(c2.layers.hide_bg && !c2.layers.bg_by_clear);
+    }
+
+    /// 검토 1113-3 결함 3: 손으로 끈 배경은 다음 송출에도 꺼진 채, '모두 지우기' 로 꺼진 배경만 다음 송출 때 복구 (Electron unclearBg)
+    #[test]
+    fn manual_bg_off_survives_send_but_clear_all_bg_returns() {
+        let mut c = core();
+        c.cue = Some(cue("A", vec![title("A0"), title("A1"), title("A2")]));
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        // 손으로 끈 배경 → 다음 순서 송출해도 꺼진 채
+        c.toggle_bg();
+        assert!(c.layers.hide_bg && !c.layers.bg_by_clear);
+        trigger::send_cue_item(&mut c, 1).unwrap();
+        assert!(c.layers.hide_bg, "직접 끈 배경은 송출해도 유지");
+        c.toggle_clear();
+        c.toggle_clear();
+        assert!(c.layers.hide_bg, "글자 다시 보여도 직접 끈 배경은 유지");
+        // 다시 켜고 '모두 지우기' → 다음 송출 때 배경 복구
+        c.toggle_bg();
+        assert!(!c.layers.hide_bg);
+        c.clear_all();
+        assert!(c.layers.hide_bg && c.layers.bg_by_clear);
+        trigger::send_cue_item(&mut c, 2).unwrap();
+        assert!(!c.layers.hide_bg && !c.layers.bg_by_clear, "'모두 지우기' 배경은 송출하면 돌아온다");
+        // 순서 자동 동작 bg:'hide' 도 직접 끈 것으로 취급 (Electron toggleBackground)
+        c.clear_all();
+        crate::trackd::run_item_actions(&mut c, &json!({ "bg": "hide" }), 0);
+        assert!(c.layers.hide_bg && !c.layers.bg_by_clear);
     }
 }
 

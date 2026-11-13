@@ -270,7 +270,9 @@ pub fn run_item_actions(c: &mut Core, a: &Value, depth: u8) {
         c.layers.logo = s("logo") == "on";
     }
     if !s("bg").is_empty() {
+        // Electron toggleBackground({on}) 과 같이 직접 정한 배경은 다음 송출 때 저절로 되살리지 않는다
         c.layers.hide_bg = s("bg") == "hide";
+        c.layers.bg_by_clear = false;
     }
     if !s("ovOn").is_empty() {
         let _ = c.toggle_overlay(&s("ovOn"), Some(true));
