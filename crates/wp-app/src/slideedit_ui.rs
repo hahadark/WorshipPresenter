@@ -16,6 +16,8 @@ pub struct SlideEditUi {
     /// 공통('*') 편집 중
     common: bool,
     drag_slide: Option<usize>,
+    #[cfg(test)]
+    pub(crate) observed: std::collections::BTreeMap<String, egui::Rect>,
 }
 
 fn edit_key(slide: &Value) -> String {
@@ -25,6 +27,8 @@ fn edit_key(slide: &Value) -> String {
 impl SlideEditUi {
     #[allow(clippy::too_many_arguments)]
     pub fn show(&mut self, ctx: &egui::Context, core: &Shared, sel: Option<usize>, web_dir: &std::path::Path, data_dir: &std::path::Path, acts: &mut Vec<Act>) {
+        #[cfg(test)]
+        self.observed.clear();
         if !self.open {
             return;
         }
@@ -82,6 +86,8 @@ impl SlideEditUi {
                         if skipped { txt = txt.strikethrough().color(Color32::GRAY); }
                         if s["edit"].is_object() { txt = txt.color(Color32::from_rgb(0x8f, 0xb8, 0xff)); }
                         let r = ui.add(egui::Button::selectable(k == self.k, txt).sense(Sense::click_and_drag()));
+                        #[cfg(test)]
+                        self.observed.insert(format!("slide-{k}"), r.rect);
                         if r.drag_started() { self.drag_slide = Some(k); }
                         if r.contains_pointer() && ui.input(|i| i.pointer.any_released()) {
                             if let Some(from) = self.drag_slide.take() {
@@ -95,7 +101,10 @@ impl SlideEditUi {
                         let base = s["base"].as_u64().map(|x| x as usize);
                         r.context_menu(|ui| {
                             let mut op = |name: &str, label: &str, ui: &mut egui::Ui| {
-                                if ui.button(wp_core::i18n::tr(label)).clicked() {
+                                let response = ui.button(wp_core::i18n::tr(label));
+                                #[cfg(test)]
+                                self.observed.insert(format!("op-{name}"), response.rect);
+                                if response.clicked() {
                                     let (a, b) = se::apply_op(&it, name, if chunk { src } else { base.unwrap_or(k) });
                                     new_it = Some(a);
                                     split_back = b;
@@ -158,6 +167,8 @@ impl SlideEditUi {
                         let v = |k: &str, d: f64| x[k].as_f64().unwrap_or(d) as f32;
                         let er = egui::Rect::from_min_size(rect.min + Vec2::new(v("x",0.0)*rect.width()/100.0,v("y",0.0)*rect.height()/100.0),Vec2::new(v("w",30.0)*rect.width()/100.0,v("h",20.0)*rect.height()/100.0));
                         let response = ui.interact(er.intersect(rect),ui.id().with(("se-element",&key,j)),Sense::drag());
+                        #[cfg(test)]
+                        self.observed.insert(format!("element-{j}"), response.rect);
                         if response.hovered() || response.dragged() { ui.painter().rect_stroke(er,0.0,egui::Stroke::new(1.0,Color32::LIGHT_BLUE),egui::StrokeKind::Inside); }
                         if response.dragged() {
                             let d=ui.input(|i| i.pointer.delta());

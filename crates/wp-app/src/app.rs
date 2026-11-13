@@ -809,3 +809,7 @@ impl Drop for App {
         self.core.lock().flush();
     }
 }
+
+#[cfg(test)]
+#[path = "ui_integration_tests.rs"]
+mod ui_integration_tests;

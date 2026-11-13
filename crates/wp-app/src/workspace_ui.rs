@@ -7,6 +7,8 @@ use wp_core::workspace::{Node, Pane, Workspace};
 pub struct WorkspaceUi {
     pub open: bool,
     pub state: Workspace,
+    #[cfg(test)]
+    pub(crate) observed: std::collections::BTreeMap<String, Rect>,
     name: String,
     persisted: Value,
     pending: Option<(Pane, Pane, u8)>,
@@ -21,6 +23,8 @@ impl WorkspaceUi {
         let persisted = serde_json::to_value(&state).unwrap();
         Self {
             open: false,
+            #[cfg(test)]
+            observed: Default::default(),
             state,
             name: String::new(),
             persisted,
@@ -101,6 +105,8 @@ impl App {
         self.workspace.open = open;
     }
     pub(crate) fn workspace_content(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+        #[cfg(test)]
+        self.workspace.observed.clear();
         // 송출 조작은 패널을 모두 숨겨도 접근할 수 있다.
         if !self.workspace.state.quick_rendered() {
             egui::Panel::bottom("workspace-controls")
@@ -323,6 +329,10 @@ impl App {
                                             Sense::click_and_drag()
                                         }),
                                 );
+                                #[cfg(test)]
+                                self.workspace.observed.insert(format!("tab-{tab:?}"), r.rect);
+                                #[cfg(test)]
+                                self.workspace.observed.insert(format!("pane-{tab:?}"), rect);
                                 if r.clicked() {
                                     *active = tab;
                                     *collapsed = false
