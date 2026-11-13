@@ -11,6 +11,7 @@ const RES: &str = "hymn-res";
 const OPEN: &str = "hymn-open";
 const SRC: &str = "hymn-src"; // ppt | beth
 const ANSWER: &str = "hymn-ai-answer";
+const CONFIRM: &str = "hymn-ppt-confirm"; // 다시 꺼내기·원래대로 확인 ("again:<순서 id>" | "off:<id>")
 
 fn id(k: &str) -> egui::Id {
     egui::Id::new(k)
@@ -252,32 +253,37 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
         if hymns::is_building(&file) {
             ui.label(RichText::new(wp_core::i18n::tr("그림 만드는 중…")).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
         }
-        if ui.small_button(wp_core::i18n::tr("요소 따로 꺼내기")).on_hover_text(wp_core::i18n::tr("PPT 의 글상자·그림·도형을 하나씩 꺼내 슬라이드 편집기에서 고칠 수 있게")).clicked() {
-            let mut c = app.core.lock();
-            let n = hymns::load(&c, &file).map(|m| m["slides"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
-            match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), false) {
-                Ok(l) => {
-                    let mut x = it.clone();
-                    let (sl, t, p, s) = hymns::apply_layers(&mut x, &l, n);
-                    if let Some(cue) = &mut c.cue {
-                        if i < cue.items.len() {
-                            cue.items[i] = x;
-                        }
-                    }
-                    c.save_cue();
-                    c.preview_item(i);
-                    if t + p + s > 0 {
-                        c.notify(wp_core::i18n::tr_args("슬라이드 {1}장에서 글상자 {2}개 · 그림 {3}개 · 도형 {4}개를 꺼냈습니다.", &[&sl, &t, &p, &s]), "ok");
-                    } else {
-                        c.notify(wp_core::i18n::tr("따로 꺼낼 요소를 찾지 못했습니다 (글이 그림으로 되어 있거나 돌린 요소)."), "warn");
+        // cue.js pptTextRow: 아직 안 꺼냈으면 '요소 따로 꺼내기' 하나, 꺼냈으면 'N장을 요소로 · 다시 꺼내기 · 원래대로' (+ 배경 그림이 없으면 '배경 다시 만들기')
+        // 다시 꺼내기·원래대로는 고친 PPT 글·그림이 사라지므로 Electron 처럼 묻고 진행한다 (confirm → 줄 아래 예/아니요)
+        let on = hymns::ppt_text_count(it);
+        let item_id = it["id"].as_str().unwrap_or("").to_string();
+        let mut confirm: String = get(ui, CONFIRM); // "again:<id>" | "off:<id>" | ""
+        if on == 0 {
+            if ui.small_button(wp_core::i18n::tr("요소 따로 꺼내기")).on_hover_text(wp_core::i18n::tr("PPT 의 글상자·그림·도형을 하나씩 꺼내 슬라이드 편집기에서 고칠 수 있게")).clicked() {
+                extract_layers(app, i, it);
+            }
+        } else {
+            let missing = hymns::layer_bgs_missing(&app.core.lock(), &file);
+            if missing {
+                ui.label(RichText::new(wp_core::i18n::tr("요소를 숨긴 배경 그림이 없습니다 (다른 PC · 캐시 지움)")).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+                if ui.small_button(wp_core::i18n::tr("배경 다시 만들기")).on_hover_text(wp_core::i18n::tr("요소를 숨긴 PPT 배경 그림만 다시 만듭니다 (고친 것은 그대로)")).clicked() {
+                    let mut c = app.core.lock();
+                    match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), true) {
+                        Ok(_) => { c.preview_item(i); c.notify(wp_core::i18n::tr("요소를 숨긴 PPT 배경 그림을 다시 만들었습니다."), "ok"); }
+                        Err(e) => { let k = if e == hymns::BUILDING { "info" } else { "error" }; c.notify(e, k); }
                     }
                 }
-                Err(e) => {
-                    let k = if e == hymns::BUILDING { "info" } else { "error" };
-                    c.notify(e, k);
-                }
+            } else {
+                ui.label(RichText::new(wp_core::i18n::tr_args("{1}장을 요소로", &[&on])).small().color(Color32::GRAY));
+            }
+            if ui.small_button(wp_core::i18n::tr("다시 꺼내기")).on_hover_text(wp_core::i18n::tr("PPT 에서 요소를 다시 꺼냄 (고친 PPT 글·그림은 원래대로)")).clicked() {
+                confirm = format!("again:{item_id}");
+            }
+            if ui.small_button(wp_core::i18n::tr("원래대로")).on_hover_text(wp_core::i18n::tr("꺼낸 요소를 뽑고 원래 PPT 그림으로")).clicked() {
+                confirm = format!("off:{item_id}");
             }
         }
+        set(ui, CONFIRM, confirm);
         if ui.small_button(wp_core::i18n::tr("자동으로 나누기")).on_hover_text(wp_core::i18n::tr("한 PPT 를 순서 이름·찬송 장·성경 장절로 여러 순서로 나눕니다 (AI 없이)")).clicked() {
             let mut c = app.core.lock();
             match hymns::slide_texts(&c, &file).and_then(|t| pptsplit::rule_split(&t, &title)) {
@@ -350,6 +356,39 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             }
         }
     });
+    // 확인 줄 (cue.js 의 confirm): 이 순서에 대한 것만
+    let confirm: String = get(ui, CONFIRM);
+    if let Some((kind, id)) = confirm.split_once(':').filter(|(_, id)| *id == it["id"].as_str().unwrap_or("")) {
+        let q = if kind == "again" {
+            "PPT 의 요소를 다시 꺼낼까요? 이 순서에서 고친 PPT 글·그림은 원래 PPT 대로 돌아갑니다 (덧붙인 글상자·그림은 그대로)."
+        } else {
+            "원래 PPT 그림으로 되돌릴까요? 꺼내서 고친 PPT 글·그림은 사라지고, 덧붙인 글상자·그림은 그대로 둡니다."
+        };
+        let (kind, _id) = (kind.to_string(), id.to_string());
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(wp_core::i18n::tr(q)).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+            if ui.small_button(wp_core::i18n::tr("예")).clicked() {
+                set(ui, CONFIRM, String::new());
+                if kind == "again" {
+                    extract_layers(app, i, it);
+                } else {
+                    let mut c = app.core.lock();
+                    let mut x = it.clone();
+                    if hymns::ppt_text_off(&mut x) {
+                        if let Some(cue) = &mut c.cue {
+                            if i < cue.items.len() { cue.items[i] = x; }
+                        }
+                        c.save_cue();
+                        c.preview_item(i);
+                    }
+                    c.notify(wp_core::i18n::tr("원래 PPT 그림으로 되돌렸습니다."), "ok");
+                }
+            }
+            if ui.small_button(wp_core::i18n::tr("아니요")).clicked() {
+                set(ui, CONFIRM, String::new());
+            }
+        });
+    }
     let mut ans: String = get(ui, ANSWER);
     ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
         let go = ui.small_button(wp_core::i18n::tr("나누기")).clicked();
@@ -366,6 +405,35 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
         }
     });
     set(ui, ANSWER, ans);
+}
+
+/// PPT 의 글상자·그림·도형을 꺼내 이 순서의 edits 에 (cue.js pptTextOn mode 'on'). 캐시가 없으면 백그라운드로 만들고 '만드는 중' 알림.
+fn extract_layers(app: &mut App, i: usize, it: &Value) {
+    let file = it["file"].as_str().unwrap_or("").to_string();
+    let mut c = app.core.lock();
+    let n = hymns::load(&c, &file).map(|m| m["slides"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
+    match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), false) {
+        Ok(l) => {
+            let mut x = it.clone();
+            let (sl, t, p, s) = hymns::apply_layers(&mut x, &l, n);
+            if let Some(cue) = &mut c.cue {
+                if i < cue.items.len() {
+                    cue.items[i] = x;
+                }
+            }
+            c.save_cue();
+            c.preview_item(i);
+            if t + p + s > 0 {
+                c.notify(wp_core::i18n::tr_args("슬라이드 {1}장에서 글상자 {2}개 · 그림 {3}개 · 도형 {4}개를 꺼냈습니다.", &[&sl, &t, &p, &s]), "ok");
+            } else {
+                c.notify(wp_core::i18n::tr("따로 꺼낼 요소를 찾지 못했습니다 (글이 그림으로 되어 있거나 돌린 요소)."), "warn");
+            }
+        }
+        Err(e) => {
+            let k = if e == hymns::BUILDING { "info" } else { "error" };
+            c.notify(e, k);
+        }
+    }
 }
 
 fn replace_with_parts(c: &mut wp_core::core::Core, i: usize, it: &Value, parts: &[pptsplit::Part]) {

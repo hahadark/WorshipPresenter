@@ -278,6 +278,7 @@ pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done
 
 /// PPT 요소 따로 꺼내기 (pptTextLayers): → { key, bgs, slides: [[편집기 항목…]] }
 /// 아직 꺼낸 적이 없으면 백그라운드로 만들고 BUILDING 을 돌려준다 (끝나면 알림)
+/// again=true: 캐시를 지우고 요소·배경 그림을 다시 만든다 (cue.js pptTextOn mode 'bg' — 순서의 edits 는 손대지 않는다). 꿝나면 이 파일을 보던 미리보기도 다시.
 pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool) -> Result<Value, String> {
     let meta = load(core, file)?;
     if !meta["layers"].as_bool().unwrap_or(false) && !file.to_lowercase().ends_with('x') {
@@ -297,6 +298,7 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
             let lk = format!("layers:{}", norm(file));
             if PENDING.lock().insert(lk.clone()) {
                 let (dd, f) = (core.data_dir.clone(), file.to_string());
+                let f2 = f.clone();
                 let by_pp = meta["mode"] == "slides" && has_powerpoint();
                 run_bg(move || {
                     let m = crate::pptx::build::build_cache(&dd, &f)?;
@@ -312,7 +314,16 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
                     PENDING.lock().remove(&lk);
                     META.lock().clear(); // layerBgs 를 다시 읽게
                     match r {
-                        Ok(_) => c.notify(crate::i18n::tr("PPT 요소를 꺼냈습니다. 다시 누르면 슬라이드 편집기에 들어갑니다."), "ok"),
+                        Ok(_) => {
+                            // 이 파일의 순서를 미리보기하고 있었으면 새 배경 그림으로 다시 (cue.js previewItem(i, {keepIndex}))
+                            let key = norm(&f2);
+                            let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
+                            let pv = c.pres.preview.as_ref().filter(|p| p.passage["cueId"] == cue_id.as_str()).and_then(|p| p.passage["cueIndex"].as_i64());
+                            let same = pv.and_then(|i| c.cue.as_ref().and_then(|q| q.items.get(i as usize)).map(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
+                            if let (Some(i), Some(true)) = (pv, same) { c.preview_item(i as usize); }
+                            let msg = if again { "요소를 숨긴 PPT 배경 그림을 다시 만들었습니다." } else { "PPT 요소를 꺼냈습니다. 다시 누르면 슬라이드 편집기에 들어갑니다." };
+                            c.notify(crate::i18n::tr(msg), "ok");
+                        }
                         Err(e) => c.notify(e, "error"),
                     }
                 });
@@ -384,6 +395,43 @@ pub fn apply_layers(it: &mut Value, layers: &Value, slide_count: usize) -> (usiz
         it["edits"] = Value::Object(edits);
     }
     (sl, t, p, s)
+}
+
+/// 이 순서에서 요소로 꺼낸 슬라이드 수 (cue.js pptTextCount): edits 값 중 pptBg 가 참인 것
+pub fn ppt_text_count(it: &Value) -> usize {
+    it["edits"].as_object().into_iter().flatten().filter(|(_, e)| e["pptBg"].as_bool().unwrap_or(false)).count()
+}
+
+/// 원래 PPT 그림으로 (cue.js pptTextOff): 꺼낸 요소(p\d+[tis]\d+)·pptBg 를 무고, 덧붙인 글상자·그림과 다른 편집(skip 등)은 그대로.
+/// 무언가 바뀜었으면 true.
+pub fn ppt_text_off(it: &mut Value) -> bool {
+    let Some(mut edits) = it["edits"].as_object().cloned() else { return false };
+    let mut changed = false;
+    for k in edits.keys().cloned().collect::<Vec<_>>() {
+        let Some(e) = edits.get_mut(&k) else { continue };
+        let Some(o) = e.as_object_mut() else { continue };
+        if o.remove("pptBg").is_some() { changed = true; }
+        if let Some(items) = o.get("items").and_then(|a| a.as_array()).cloned() {
+            let keep: Vec<Value> = items.iter().filter(|x| !crate::pptx::layers::is_ppt_item(x["id"].as_str().unwrap_or(""))).cloned().collect();
+            if keep.len() != items.len() { changed = true; }
+            if keep.is_empty() { o.remove("items"); } else { o.insert("items".into(), json!(keep)); }
+        }
+        if o.is_empty() { edits.remove(&k); }
+    }
+    if edits.is_empty() {
+        if let Some(o) = it.as_object_mut() { o.remove("edits"); }
+    } else {
+        it["edits"] = Value::Object(edits);
+    }
+    changed
+}
+
+/// 요소를 숨긴 배경 그림이 하나도 없는가 (cue.js pptTextRow 의 missing: 다른 PC·캐시 지움) — 꺼낸 순서에서만 의미 있다
+pub fn layer_bgs_missing(core: &Core, file: &str) -> bool {
+    match load(core, file) {
+        Ok(meta) => !meta["layerBgs"].as_array().is_some_and(|a| a.iter().any(|b| b.as_str().is_some_and(|s| !s.is_empty()))),
+        Err(_) => false,
+    }
 }
 
 pub fn is_building(file: &str) -> bool {
@@ -895,6 +943,25 @@ mod tests {
         assert_eq!(it["edits"]["0"]["pptBg"], true);
         let ids: Vec<&str> = it["edits"]["0"]["items"].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
         assert_eq!(ids, vec!["p1t0", "p1i1", "mine"]); // 꺼낸 것 + 사용자가 덧붙인 것 (예전에 꺼낸 것은 새로)
+        // 다시 꺼내기: 고친 PPT 글은 새 것으로 바뀜다 → UI 는 ppt_text_count > 0 이면 반드시 확인을 받는다 (cue.js pptTextOn again)
+        assert_eq!(ppt_text_count(&it), 1);
+        it["edits"]["0"]["items"][0]["text"] = json!("고친 글");
+        apply_layers(&mut it, &l, 3);
+        assert!(it["edits"]["0"]["items"][0]["text"].is_null());
+        // 원래대로 (pptTextOff): pptBg 와 p\d+ 요소만 무고 덧붙인 것·다른 편집은 그대로
+        it["edits"]["1"] = json!({ "pptBg": true, "items": [{ "id": "p2t0", "type": "text" }] });
+        it["edits"]["2"] = json!({ "skip": true });
+        assert!(ppt_text_off(&mut it));
+        assert_eq!(ppt_text_count(&it), 0);
+        let ids: Vec<&str> = it["edits"]["0"]["items"].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["mine"]);
+        assert!(it["edits"]["0"]["pptBg"].is_null());
+        assert!(it["edits"].get("1").is_none()); // 버젨 것만 남으면 키 자체를 지움
+        assert_eq!(it["edits"]["2"]["skip"], true);
+        assert!(!ppt_text_off(&mut it)); // 더 지울 것이 없으면 false
+        let mut none = json!({ "type": "hymn", "edits": { "0": { "pptBg": true, "items": [{ "id": "p1t0" }] } } });
+        assert!(ppt_text_off(&mut none));
+        assert!(none.get("edits").is_none()); // 전부 버져지면 edits 자체를 지움
         let parts = vec![crate::pptsplit::Part { a: 1, b: 2, name: "찬송".into(), kind: "hymn".into() }, crate::pptsplit::Part { a: 3, b: 3, name: "기도".into(), kind: "prayer".into() }];
         let items = split_items(&json!({ "type": "hymn", "file": "x.pptx", "title": "전체" }), &parts);
         assert_eq!(items[0]["range"], "1-2");
