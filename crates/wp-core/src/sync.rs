@@ -55,12 +55,21 @@ fn hash(s: &str) -> i32 {
     h
 }
 
-/// '최신' 비교: 원격 값이 있고 (로컬이 없거나) 글자 순서로 더 크면
+/// '최신' 비교 (Electron sync.js:82 `!local || remote > local`): 로컬에 값이 없거나(없음·빈 글) 원격이 글자 순서로 더 크면 원격이 이긴다.
+/// 오버레이는 양쪽 다 updatedAt 을 기록하지 않으므로(library.js saveOverlay) 같은 id 는 늘 원격 것으로 바뀐다 — Electron 과 같은 규칙.
 fn newer(remote: &str, local: Option<&str>) -> bool {
     match local {
         None => true,
+        Some("") => true,
         Some(l) => remote > l,
     }
+}
+
+/// 휴지통 표시 비교: 원격이 비어 있지 않고 로컬보다 뒤여야 한다.
+/// Electron 은 여기도 `newer` 를 쓰는데, 로컬 deleted_at 이 ''(지우지 않음) 이면 늘 참이 되어 지우지 않은 큐시트가 원격 것으로 매번 덮인다(Electron 쪽 결함).
+/// Rust 는 updated_at 비교로만 받아들이고, 휴지통 표시는 실제로 원격이 더 최근일 때만 따른다.
+fn newer_deleted(remote: &str, local: Option<&str>) -> bool {
+    !remote.is_empty() && remote > local.unwrap_or("")
 }
 
 fn s(v: &Value, k: &str) -> String {
@@ -206,7 +215,7 @@ impl Core {
                     Some((u, d)) => (Some(u.clone().unwrap_or_default()), Some(d.clone().unwrap_or_default())),
                     None => (None, None),
                 };
-                if !newer(&s(c, "updated_at"), lu.as_deref()) && !newer(&s(c, "deleted_at"), ld.as_deref()) {
+                if !newer(&s(c, "updated_at"), lu.as_deref()) && !newer_deleted(&s(c, "deleted_at"), ld.as_deref()) {
                     continue;
                 }
                 let items = match serde_json::from_str::<Value>(if s(c, "items").is_empty() { "[]" } else { c["items"].as_str().unwrap_or("[]") }) {
@@ -222,7 +231,8 @@ impl Core {
             }
             tx.commit()?;
         }
-        // 오버레이: id 별로 updatedAt 비교 (없으면 원격 것을 넣는다). 켜짐 여부는 이 PC 것
+        // 오버레이: id 별로 updatedAt 비교 (없으면 원격 것을 넣는다). 켜짐 여부는 이 PC 것.
+        // updatedAt 은 양쪽 다 기록하지 않으므로 실제로는 같은 id 가 늘 원격 것으로 바뀐다 (Electron sync.js:115 와 같음)
         if let Some(remote) = data["overlays"].as_array().filter(|a| !a.is_empty()).cloned() {
             self.settings.update(|d| {
                 let mut mine: Vec<Value> = d["overlays"].as_array().cloned().unwrap_or_default();
@@ -401,7 +411,41 @@ mod tests {
         // JS: let h=0; for (c of 'abc') h=(h*31+c.charCodeAt(0))|0 → 96354
         assert_eq!(hash("abc"), 96354);
         assert!(newer("2026-11-12", Some("2026-11-11")));
-        assert!(!newer("", Some("")));
+        assert!(!newer("2026-11-11", Some("2026-11-12")));
+        // Electron: 로컬이 비어 있으면 원격이 이긴다 (`!local`)
+        assert!(newer("", Some("")));
+        assert!(newer("", None));
+        // 휴지통 표시: 원격이 비어 있으면 '더 최근' 이 아니다 (지우지 않은 큐시트가 매번 덮이지 않게)
+        assert!(!newer_deleted("", Some("")));
+        assert!(newer_deleted("2026-11-12T00:00:00Z", Some("")));
+        assert!(!newer_deleted("2026-11-11T00:00:00Z", Some("2026-11-12T00:00:00Z")));
+    }
+
+    /// 검토 1113-5 결함 2: 오버레이 병합 — 같은 id 는 원격 것으로 갱신(켜짐은 로컬 유지), 큐시트는 로컬이 더 최신이면 덮지 않는다
+    #[test]
+    fn overlay_merge_takes_remote_and_keeps_local_on() {
+        let root = std::env::temp_dir().join(format!("wp-sync-ov-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        let share = root.join("share");
+        std::fs::create_dir_all(&share).unwrap();
+        let mut a = core(&root.join("pc1"));
+        a.save_overlay(&json!({ "id": "logo1", "type": "logo", "position": "top-left", "size": 100 })).unwrap();
+        a.toggle_overlay("logo1", Some(true)).unwrap();
+        a.new_cue("주일").unwrap();
+        let cue_id = a.cue.as_ref().unwrap().id.clone();
+        a.set_sync_dir(&share.to_string_lossy()).unwrap();
+        // PC 2 에는 같은 id 의 오버레이가 다른 위치로, 꺼진 채 있다
+        let mut b = core(&root.join("pc2"));
+        b.save_overlay(&json!({ "id": "logo1", "type": "logo", "position": "bottom-right", "size": 50 })).unwrap();
+        // PC 2 의 같은 큐시트는 더 나중에 고쳤다 → 원격이 덮지 않아야 한다
+        b.store.save_cue(&crate::db::Cue { id: cue_id.clone(), name: "주일 (PC2 수정)".into(), service_date: String::new(), start_time: String::new(), items: vec![], memo: String::new(), pinned: false, template: false }).unwrap();
+        b.store.db.execute("UPDATE Cuesheets SET updated_at = '9999-12-31T00:00:00.000Z' WHERE id = ?", [&cue_id]).unwrap();
+        let got = b.set_sync_dir(&share.to_string_lossy()).unwrap();
+        let _ = got;
+        let ov = b.overlays().into_iter().find(|o| o["id"] == "logo1").unwrap();
+        assert_eq!(ov["position"], "top-left", "같은 id 는 원격 것으로 바뀐다 (Electron: updatedAt 둘 다 없음 → 원격 승)");
+        assert_eq!(ov["size"].as_f64(), Some(100.0));
+        assert_eq!(ov["on"], false, "켜짐 여부는 이 PC 것");
+        assert_eq!(b.store.get_cue(&cue_id).unwrap().name, "주일 (PC2 수정)", "로컬이 더 최신인 큐시트는 덮지 않는다");
     }
 
     #[test]
