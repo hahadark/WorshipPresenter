@@ -35,6 +35,7 @@ fn live_visible(c: &Core) -> bool {
 
 /// 타이머 확인 (시험하려고 now 를 받는다)
 pub fn tick(c: &mut Core, now: i64) {
+    if c.finish_video_fade(now) { return; }
     let ver = c.pres.version;
     if ver != c.flow.seen {
         c.flow.seen = ver;

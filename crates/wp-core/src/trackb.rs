@@ -137,6 +137,28 @@ impl Core {
             }
         }
     }
+    /// 페이드 완료를 실제 코어 상태에 반영한다. 새 출력 연결도 숨김·정지 상태를 받는다.
+    pub(crate) fn finish_video_fade(&mut self, now: i64) -> bool {
+        let due = self.b.video.as_ref().and_then(|v| v.fade)
+            .is_some_and(|(at, ms)| now as f64 >= at as f64 + ms);
+        if !due { return false; }
+        let same_video = self.pres.live.as_ref().is_some_and(|l| {
+            self.b.video_for == Some((l.sent_at as u64, l.deck.index))
+                && l.deck.slides.get(l.deck.index).is_some_and(|s| s["kind"] == "video")
+        });
+        if !same_video {
+            if let Some(v) = &mut self.b.video { v.fade = None; }
+            return false;
+        }
+        if let Some(v) = &mut self.b.video {
+            let _ = v.control("stop", 0.0);
+            v.at = now;
+        }
+        self.pres.clear();
+        self.changed(true);
+        true
+    }
+
     pub fn video_payload(&self) -> Value {
         self.b.video.as_ref().map(|v| {
             let mut payload = v.payload();
@@ -535,5 +557,53 @@ mod tests_double_send {
         c.send_preview(); // 두 번 누름의 송출
         assert_eq!(c.pres.version, v0 + 1);
         assert_eq!(c.settings.get()["history"].as_array().unwrap().len(), h0 + 1);
+    }
+}
+
+
+#[cfg(test)]
+mod tests_fade_completion {
+    use super::*;
+    use crate::presentation::Deck;
+
+    fn video_core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-fade-final-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir, None).unwrap();
+        c.send_deck(Deck { passage: json!({"title":"시험 영상","itemType":"video"}), slides: vec![json!({"kind":"video","image":"/media/test.mp4","video":{"volume":1,"sound":true}})], index:0 });
+        c.b.video.as_mut().unwrap().fade = Some((1000, 3000.0));
+        c
+    }
+
+    #[test]
+    fn fade_timer_hides_actual_live_and_new_output_without_resending() {
+        let mut c = video_core();
+        let sent = c.pres.live.as_ref().unwrap().sent_at;
+        let history = c.settings.get()["history"].clone();
+        crate::flow::tick(&mut c, 3999);
+        assert!(c.pres.live.as_ref().unwrap().visible);
+        crate::flow::tick(&mut c, 4000);
+        assert!(!c.pres.live.as_ref().unwrap().visible);
+        assert_eq!(c.output_payload("main")["visible"], false);
+        assert_eq!(c.video_payload()["playing"], false);
+        assert_eq!(c.video_payload()["offset"], 0.0);
+        assert!(c.b.video.as_ref().unwrap().fade.is_none());
+        assert_eq!(c.pres.live.as_ref().unwrap().sent_at, sent);
+        assert_eq!(c.settings.get()["history"], history);
+        let version = c.pres.version;
+        crate::flow::tick(&mut c, 5000);
+        assert_eq!(c.pres.version, version);
+        let dir = c.data_dir.clone(); drop(c); let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn stale_fade_must_not_hide_a_new_title() {
+        let mut c = video_core();
+        c.send_deck(Deck { passage: json!({"title":"새 화면","itemType":"title"}), slides: vec![json!({"kind":"title","parts":[{"text":"새 화면"}]})], index:0 });
+        crate::flow::tick(&mut c, 5000);
+        assert!(c.pres.live.as_ref().unwrap().visible);
+        assert_eq!(c.pres.live.as_ref().unwrap().deck.passage["title"], "새 화면");
+        let dir = c.data_dir.clone(); drop(c); let _ = std::fs::remove_dir_all(dir);
     }
 }
