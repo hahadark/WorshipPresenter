@@ -18,8 +18,16 @@ use wp_core::i18n::tr;
 struct St {
     open: bool,
     macro_name: Option<String>,
+    scroll_once: bool,
 }
 static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
+
+/// 점검(--edit-actions)용: 자동 동작 구역을 펼친다/접는다
+pub fn set_open(open: bool) {
+    let mut s = ST.lock();
+    s.open = open;
+    s.scroll_once = open;
+}
 
 /// 장비 글 힌트 (Electron devicepanel.js HINT)
 fn dev_hint(kind: &str) -> String {
@@ -324,7 +332,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
                         .map_err(|e| format!("Companion: {e}"))
                 });
             }
-            ui.label(gray(tr("ATEM · PTZ · 조명 · 음향을 Companion 으로 (도구 → 스트림덱·외부 단추에서 주소)")));
+            ui.label(gray(tr("ATEM · PTZ · 조명 · 음향"))).on_hover_text(tr("ATEM · PTZ · 조명 · 음향을 Companion 으로 (도구 → 스트림덱·외부 단추에서 주소)"));
         });
         ui.end_row();
         // 장비 (X32 · PTZ) — devicepanel.js actionHtml
@@ -359,6 +367,9 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
             ui.end_row();
         }
     });
+    if std::mem::take(&mut st.scroll_once) {
+        ui.scroll_to_cursor(Some(egui::Align::BOTTOM)); // 점검(--edit-actions): 구역 끝(OBS · Companion · 장비)이 보이게 한 번 스크롤
+    }
     ch
 }
 

@@ -744,6 +744,14 @@ impl App {
             if let Some(q) = search { self.search = q.clone(); acts.push(Act::Search(q)); }
             if let Some(i) = std::env::args().position(|x| x == "--item").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()) { self.sel = Some(i); acts.push(Act::PreviewItem(i)); }
             if send { acts.push(Act::SendPreview); }
+            // 점검용 --edit-actions: 큐시트가 없으면 새로 만들고 제목 순서를 넣어 '⚡ 송출할 때 자동으로' 편집칸을 펼친다
+            if std::env::args().any(|x| x == "--edit-actions") {
+                if self.core.lock().cue.is_none() { acts.push(Act::NewCue); }
+                acts.push(Act::AddItem("title", Some(json!({ "title": "설교", "subtitle": "점검", "music": "/lib/file?p=C%3A%5Cmusic%5Cintro.mp3", "musicVolume": 0.6,
+                    "actions": { "timer": 40, "stageMsg": "설교 시작 — 휴대폰을 무음으로", "logo": "off", "bg": "show", "ovOff": "*", "stopMusic": true, "stagePin": "order", "obsScene": "설교", "obsRecord": "start", "companion": "1/0/2" } }))));
+                self.editor_on = true;
+                crate::actions_ui::set_open(true);
+            }
             self.test.as_mut().unwrap().4 = 1;
         } else if stage == 1 && el > 3.5 {
             if let Some(path) = shot.clone() {
