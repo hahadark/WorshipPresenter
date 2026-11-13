@@ -61,3 +61,6 @@ pub mod updates; // [트랙 D]
 pub mod i18n; // [트랙 D]
 
 pub mod workspace;
+
+#[cfg(test)]
+mod ui_fix_tests; // 조작 화면 결함 수정(검토 1113) 회귀 테스트
