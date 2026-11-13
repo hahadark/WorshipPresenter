@@ -474,18 +474,27 @@ impl App {
                         let mut c = self.core.lock();
                         if let Err(e) = c.run_macro(&id) { c.notify(e.to_string(), "warn"); }
                     }
-                    ui.label(RichText::new(actions_ko(&m["actions"])).small().color(Color32::GRAY));
+                    ui.label(RichText::new(actions_ko(&wp_core::overlays::macro_actions(m), m["music"].as_str().is_some_and(|x| !x.is_empty()))).small().color(Color32::GRAY));
                     if ui.small_button(wp_core::i18n::tr("지우기")).clicked() { self.core.lock().delete_macro(&id); }
                 });
             }
             ui.separator();
             ui.label(wp_core::i18n::tr("새 매크로: 지금 상태를 담기"));
             ui.horizontal(|ui| { ui.label(wp_core::i18n::tr("이름")); ui.text_edit_singleline(&mut self.tb.macro_name); });
-            ui.horizontal(|ui| { ui.label(wp_core::i18n::tr("메시지")); ui.text_edit_singleline(&mut self.tb.macro_msg); });
-            if ui.button(wp_core::i18n::tr("저장 (로고·배경·오버레이 상태 + 메시지)")).clicked() {
+            ui.horizontal(|ui| { ui.label(wp_core::i18n::tr("무대 메시지")); ui.text_edit_singleline(&mut self.tb.macro_msg); });
+            if ui.button(wp_core::i18n::tr("저장 (로고·배경·오버레이 상태 + 무대 메시지)")).clicked() {
                 let mut c = self.core.lock();
-                let on: Vec<Value> = c.overlays().into_iter().filter(|o| o["on"] == true).map(|o| o["id"].clone()).collect();
-                let m = json!({ "name": self.tb.macro_name, "actions": { "logo": c.layers.logo, "bgOff": c.layers.hide_bg, "overlayOn": on, "message": self.tb.macro_msg } });
+                // Electron 매크로는 순서의 '송출할 때 자동으로' 와 같은 칸: logo on|off · bg hide|show · ovOn(하나) · ovOff('*') · stageMsg
+                let on: Vec<String> = c.overlays().into_iter().filter(|o| o["on"] == true).filter_map(|o| o["id"].as_str().map(String::from)).collect();
+                let mut a = json!({ "logo": if c.layers.logo { "on" } else { "off" }, "bg": if c.layers.hide_bg { "hide" } else { "show" } });
+                match on.first() {
+                    Some(id) => a["ovOn"] = json!(id),
+                    None => a["ovOff"] = json!("*"),
+                }
+                if !self.tb.macro_msg.trim().is_empty() {
+                    a["stageMsg"] = json!(self.tb.macro_msg.trim());
+                }
+                let m = json!({ "name": self.tb.macro_name, "actions": a });
                 self.tb.note = err(c.save_macro(&m));
             }
             // 예약 실행: 요일·시각에 매크로 (시스템 시간대)
@@ -698,23 +707,26 @@ fn pos_ko(p: &str) -> String {
     }.to_string()
 }
 
-/// 매크로 동작 요약 (JSON 대신 사람이 읽는 글)
-fn actions_ko(a: &Value) -> String {
+/// 매크로 동작 요약 (Electron cue.js actSummary 와 같은 칸: 순서의 '송출할 때 자동으로')
+fn actions_ko(a: &Value, music: bool) -> String {
     let mut out: Vec<String> = vec![];
-    let b = |k: &str| a[k].as_bool();
-    if b("clearAll") == Some(true) { out.push("모두 지우기".into()); }
-    if b("hideText") == Some(true) { out.push("글자 숨김".into()); }
-    if let Some(x) = b("logo") { out.push(if x { wp_core::i18n::tr_s("로고 켜기") } else { wp_core::i18n::tr_s("로고 끄기") }.into()); }
-    if let Some(x) = b("bgOff") { out.push(if x { wp_core::i18n::tr_s("배경 끄기") } else { wp_core::i18n::tr_s("배경 켜기") }.into()); }
-    if b("overlaysOff") == Some(true) { out.push("오버레이 모두 끄기".into()); }
-    let n = |k: &str| a[k].as_array().map(|x| x.len()).unwrap_or(0);
-    if n("overlayOn") > 0 { out.push(format!("오버레이 {}개 켜기", n("overlayOn"))); }
-    if n("overlayOff") > 0 { out.push(format!("오버레이 {}개 끄기", n("overlayOff"))); }
-    if let Some(t) = a["message"].as_str().filter(|x| !x.is_empty()) { out.push(format!("메시지 '{}'", t.chars().take(16).collect::<String>())); }
-    if let Some(t) = a["stageMessage"].as_str().filter(|x| !x.is_empty()) { out.push(format!("무대 메시지 '{}'", t.chars().take(12).collect::<String>())); }
-    if let Some(m) = a["timer"].as_f64().filter(|x| *x > 0.0) { out.push(format!("타이머 {m}분")); }
-    if let Some(i) = a["cueItem"].as_u64() { out.push(format!("{}번 순서 송출", i + 1)); }
-    if a["stagePin"].is_object() { out.push("무대 화면 고정".into()); }
+    let s = |k: &str| a[k].as_str().unwrap_or("");
+    if music { out.push("배경 음악".into()); }
+    if let Some(m) = a["timer"].as_f64().filter(|x| *x > 0.0) { out.push(format!("⏱ 타이머 {m}분")); }
+    if !s("stageMsg").is_empty() { out.push(format!("무대 메시지 '{}'", s("stageMsg").chars().take(12).collect::<String>())); }
+    if a["clearStage"] == true { out.push("무대 메시지 지움".into()); }
+    match s("logo") { "on" => out.push(wp_core::i18n::tr_s("로고 켜기").into()), "off" => out.push(wp_core::i18n::tr_s("로고 끄기").into()), _ => {} }
+    match s("bg") { "hide" => out.push(wp_core::i18n::tr_s("배경 끄기").into()), "show" => out.push(wp_core::i18n::tr_s("배경 켜기").into()), _ => {} }
+    if !s("ovOn").is_empty() { out.push(format!("오버레이 켜기: {}", s("ovOn"))); }
+    if s("ovOff") == "*" { out.push("오버레이 모두 끄기".into()); } else if !s("ovOff").is_empty() { out.push(format!("오버레이 끄기: {}", s("ovOff"))); }
+    if a["stopMusic"] == true { out.push("음악 멈춤".into()); }
+    match s("stagePin") { "" => {}, "live" => out.push("무대 고정 풀기".into()), "order" => out.push("무대: 순서표".into()), p => out.push(format!("무대 고정: {p}")) }
+    if !s("macro").is_empty() { out.push(format!("매크로: {}", s("macro"))); }
+    if !s("companion").is_empty() { out.push(format!("Companion {}", s("companion"))); }
+    if let Some(n) = a["dev"].as_array().map(|x| x.len()).filter(|n| *n > 0) { out.push(format!("장비 {n}개")); }
+    if !s("obsScene").is_empty() { out.push(format!("OBS 장면: {}", s("obsScene"))); }
+    if !s("obsStream").is_empty() { out.push(format!("OBS 방송 {}", if s("obsStream") == "start" { "시작" } else { "끝" })); }
+    if !s("obsRecord").is_empty() { out.push(format!("OBS 녹화 {}", if s("obsRecord") == "start" { "시작" } else { "끝" })); }
     if out.is_empty() { "동작 없음".into() } else { out.join(" · ") }
 }
 
@@ -723,7 +735,10 @@ mod tests_ko {
     #[test]
     fn labels() {
         assert_eq!(super::pos_ko("top-left"), "왼쪽 위");
-        assert_eq!(super::actions_ko(&serde_json::json!({ "logo": false, "message": "홍길동 어린이 부모님" })), "로고 끄기 · 메시지 '홍길동 어린이 부모님'");
+        assert_eq!(super::actions_ko(&serde_json::json!({ "logo": "off", "stageMsg": "홍길동 어린이 부모님" }), false), "무대 메시지 '홍길동 어린이 부모님' · 로고 끄기");
+        // 예전 Rust 칸으로 저장된 매크로도 변환해 요약
+        let old = serde_json::json!({ "actions": { "logo": false, "bgOff": true } });
+        assert_eq!(super::actions_ko(&wp_core::overlays::macro_actions(&old), false), "로고 끄기 · 배경 끄기");
     }
 }
 

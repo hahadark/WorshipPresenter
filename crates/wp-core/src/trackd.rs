@@ -254,7 +254,7 @@ pub fn run_item_actions(c: &mut Core, a: &Value, depth: u8) {
     let s = |k: &str| a[k].as_str().unwrap_or("").to_string();
     if !s("macro").is_empty() && depth < 2 {
         let id = s("macro");
-        if let Err(e) = c.run_macro(&id) {
+        if let Err(e) = c.run_macro_depth(&id, depth) {
             c.notify(crate::i18n::tr_args("매크로: {1}", &[&e]), "warn");
         }
     }
