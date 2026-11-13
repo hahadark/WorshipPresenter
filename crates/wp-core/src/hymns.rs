@@ -216,10 +216,11 @@ fn start_build(core: &Core, file: &str) {
                 let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
                 META.lock().insert(stamp, with_captions(&c, m));
                 // 이 파일 순서를 보고 있었으면 미리보기를 다시
-                let pv = c.pres.preview.as_ref().and_then(|p| p.passage["cueIndex"].as_i64());
+                let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
+                let pv = c.pres.preview.as_ref().filter(|p| p.passage["cueId"] == cue_id.as_str()).and_then(|p| p.passage["cueIndex"].as_i64()); // 열린 큐시트의 미리보기만
                 let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
                 let name = Path::new(&file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-                if let Some(i) = want.filter(|i| pv.is_none() || pv == Some(*i as i64)) {
+                if let Some(i) = want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64)) {
                     c.preview_item(i);
                 }
                 c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");

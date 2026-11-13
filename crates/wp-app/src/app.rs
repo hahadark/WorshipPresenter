@@ -181,13 +181,8 @@ impl App {
                         c.send_preview();
                     }
                 }
-                Act::PreviewItem(i) => c.preview_item(i),
-                Act::SendItem(i) => {
-                    c.preview_item(i);
-                    if c.pres.preview.as_ref().is_some_and(|p| p.passage["cueIndex"] == json!(i)) {
-                        c.send_preview();
-                    }
-                }
+                Act::PreviewItem(i) => { c.preview_item(i); }
+                Act::SendItem(i) => { c.send_item(i); } // 미리보기 실패·다른 큐시트의 미리보기면 송출하지 않음 (Electron sendItem)
                 Act::SendPreview => c.send_preview(),
                 Act::PreviewIndex(i) => c.set_preview_index(i),
                 Act::LiveGoto(i) => c.goto_live(i),
@@ -249,7 +244,7 @@ impl App {
                         }
                     }
                     c.save_cue();
-                    let in_preview = c.pres.preview.as_ref().is_some_and(|p| p.passage["cueIndex"] == json!(i));
+                    let in_preview = c.preview_is_item(i); // 열린 큐시트의 이 순서를 보고 있을 때만 (cueId 도 비교)
                     if in_preview {
                         let idx = c.pres.preview.as_ref().map(|p| p.index).unwrap_or(0);
                         if let Ok(mut d) = c.item_deck(i) {

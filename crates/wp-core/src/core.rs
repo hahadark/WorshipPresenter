@@ -348,14 +348,40 @@ impl Core {
         Ok(Deck { passage: meta, slides, index: 0 })
     }
 
-    pub fn preview_item(&mut self, i: usize) {
+    /// 순서를 미리보기에 올린다. 실패(없는 PPT·틀린 장절·만드는 중)하면 알림만 내고 미리보기는 그대로 두며 false.
+    /// Electron `cue.js previewItem` 처럼 호출한 쪽이 돌려준 값으로 송출 여부를 정한다.
+    pub fn preview_item(&mut self, i: usize) -> bool {
         match self.item_deck(i) {
             Ok(d) => {
                 self.pres.preview = Some(d);
                 self.after_preview();
+                true
             }
-            Err(e) => self.notify(e, "warn"),
+            Err(e) => {
+                self.notify(e, "warn");
+                false
+            }
         }
+    }
+
+    /// 순서를 두 번 눌러 송출 (Electron `cue.js sendItem`: `if (await previewItem(i)) await app.sendPreview()`).
+    /// 미리보기가 실패하면 송출하지 않는다 — 전에 올려 둔 다른 큐시트·다른 내용의 미리보기가 LIVE 로 나가는 것을 막는다.
+    /// 보조로 미리보기의 cueId·cueIndex 가 지금 큐시트의 이 순서와 같은지도 확인한다.
+    pub fn send_item(&mut self, i: usize) -> bool {
+        if !self.preview_item(i) { return false; }
+        if !self.preview_is_item(i) {
+            self.notify(crate::i18n::tr("미리보기가 이 순서가 아니어서 송출하지 않았습니다."), "warn");
+            return false;
+        }
+        self.send_preview();
+        true
+    }
+
+    /// 미리보기가 '열린 큐시트의 i 번 순서' 인지 (cueId 와 cueIndex 모두 비교)
+    pub fn preview_is_item(&self, i: usize) -> bool {
+        let Some(p) = self.pres.preview.as_ref() else { return false };
+        let cue_id = self.cue.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        p.passage["cueIndex"] == json!(i) && p.passage["cueId"] == json!(cue_id)
     }
 
     fn after_preview(&mut self) {
