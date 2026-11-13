@@ -439,11 +439,8 @@ impl App {
         match p {
             Pane::Cue => self.workspace_cue(ui, s, acts),
             Pane::Main => self.search_panel(ui, s, acts),
-            Pane::Quick => {
-                self.workspace_controls(ui, s, acts);
-                self.trackb_toolbar(ui);
-            }
-            Pane::Library => self.songs_panel(ui),
+            Pane::Quick => self.quick_panel(ui, s, acts),
+            Pane::Library => self.library_tabs_panel(ui, acts),
             Pane::Stage => self.workspace_stage(ui),
             Pane::Media => {
                 self.media_panel(ui);
