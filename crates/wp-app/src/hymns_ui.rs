@@ -446,7 +446,7 @@ fn paste(app: &mut App, ui: &egui::Ui, acts: &mut Vec<Act>) {
 }
 
 /// 찬송가 순서 편집칸 (파일 · 번호 · 배경 · 범위 · OBS 가사) → 바뀌었으면 true
-pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
+pub fn editor(ui: &mut egui::Ui, e: &mut Value, core: &wp_core::core::Shared) -> bool {
     let mut changed = false;
     let file = e["file"].as_str().unwrap_or("").to_string();
     ui.label(RichText::new(wp_core::i18n::tr("PPT 파일")).small());
@@ -456,6 +456,9 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
         if ui.button(wp_core::i18n::tr("고르기…")).clicked() {
             if let Some(p) = rfd::FileDialog::new().add_filter("PPT", &["pptx", "ppsx", "ppt", "pps"]).pick_file() {
                 let (num, title, _) = hymns::parse_name(&p);
+                // 등록 폴더 밖의 파일도 열리게 — Electron 은 폴더 밖 파일을 끌어다 놓기(addDroppedFiles → settings.droppedFiles)로만 받고
+                // hymns.js isAllowed 가 그것을 허용한다. 고르기 창으로 고른 파일도 같은 목록에 넣어 is_allowed 가 거부하지 않게 한다.
+                core.lock().add_dropped_files(std::slice::from_ref(&p));
                 e["file"] = json!(p.to_string_lossy());
                 e["number"] = json!(num.unwrap_or(0));
                 if e["title"].as_str().is_none_or(|t| t.is_empty() || t == "찬송") {
@@ -465,7 +468,7 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
             }
         }
     });
-    ui.label(RichText::new(wp_core::i18n::tr("등록한 찬송가 폴더·붙여 넣은 슬라이드 폴더 안의 파일만 열립니다")).small().color(Color32::GRAY));
+    ui.label(RichText::new(wp_core::i18n::tr("등록한 찬송가 폴더·붙여 넣은 슬라이드 폴더 안의 파일과 여기서 고른 파일이 열립니다")).small().color(Color32::GRAY));
     ui.label(RichText::new(wp_core::i18n::tr("배경 (악보 그림일 때)")).small());
     let mut bg = e["background"].as_str().unwrap_or("default").to_string();
     ui.horizontal_wrapped(|ui| {

@@ -1,4 +1,4 @@
-//! 조작 화면 결함 수정(검토 1113) 회귀 테스트 — 송출 가드 · 순서 자동 동작 저장 형식
+//! 조작 화면 결함 수정(검토 1113) 회귀 테스트 — 송출 가드 · 고르기로 고른 폴더 밖 PPT · 순서 자동 동작 저장 형식
 use crate::core::Core;
 use crate::db::Cue;
 use serde_json::{json, Value};
@@ -49,6 +49,19 @@ fn preview_is_item_compares_cue_id_and_index() {
     // 다른 큐시트로 바꾸면 같은 번호라도 아니다
     c.cue = Some(cue("B", vec![title("B0"), title("B1")]));
     assert!(!c.preview_is_item(1));
+}
+
+/// 고르기… 로 고른 등록 폴더 밖 PPT 는 Electron 처럼 droppedFiles 에 넣어야 is_allowed 가 연다 (검토 1113 찬송가 2번)
+#[test]
+fn picked_ppt_outside_folders_allowed_after_add_dropped_files() {
+    let mut c = core();
+    let p = std::path::PathBuf::from(r"Z:\바탕화면\임시 광고.pptx");
+    let f = p.to_string_lossy().to_string();
+    assert!(!crate::hymns::is_allowed(&c, &f), "등록 폴더 밖 파일은 원래 거부");
+    c.add_dropped_files(std::slice::from_ref(&p));
+    assert!(crate::hymns::is_allowed(&c, &f));
+    // 대소문자·슬래시 차이도 norm 으로 같게 본다
+    assert!(crate::hymns::is_allowed(&c, &f.replace('\\', "/").to_uppercase()));
 }
 
 #[test]

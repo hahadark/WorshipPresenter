@@ -580,7 +580,7 @@ impl App {
                     });
                 }
                 "hymn" => {
-                    changed |= crate::hymns_ui::editor(ui, e); // [트랙 A]
+                    changed |= crate::hymns_ui::editor(ui, e, &self.core); // [트랙 A]
                 }
                 _ => {
                     changed |= crate::parity_ui::editor(ui, e, &cams); // [트랙 A] 카메라 · 슬라이드쇼 · 영상
