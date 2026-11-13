@@ -574,13 +574,7 @@ impl App {
                     for (i, it) in cue.items.iter().enumerate() {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(times.get(i).cloned().unwrap_or_default()).monospace());
-                            let mut d = it["duration"].as_f64().unwrap_or(0.0);
-                            if ui.add(egui::DragValue::new(&mut d).range(0.0..=240.0).suffix(wp_core::i18n::tr("분"))).changed() {
-                                let mut c = self.core.lock();
-                                c.remember_items();
-                                if let Some(cc) = &mut c.cue { if let Some(x) = cc.items.get_mut(i) { x["duration"] = json!(d); } }
-                                c.save_cue();
-                            }
+                            duration_editor(self, ui, i, it);
                             ui.label(it["title"].as_str().unwrap_or(""));
                             if i > 0 && ui.small_button(wp_core::i18n::tr("맨 위로")).clicked() { self.core.lock().move_item_to(i, 0); }
                         });
@@ -717,5 +711,42 @@ mod tests_ko {
     fn labels() {
         assert_eq!(super::pos_ko("top-left"), "왼쪽 위");
         assert_eq!(super::actions_ko(&serde_json::json!({ "logo": false, "message": "홍길동 어린이 부모님" })), "로고 끄기 · 메시지 '홍길동 어린이 부모님'");
+    }
+}
+
+/// 관리창과 순서 우클릭 메뉴가 함께 쓰는 예정 시간 편집. 예약/auto 등은 건드리지 않는다.
+pub(crate) fn duration_editor(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
+    let mut minutes = it["duration"].as_f64().or_else(|| it["duration"].as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0);
+    if ui.add(egui::DragValue::new(&mut minutes).range(0.0..=600.0).max_decimals(0).speed(1.0).suffix(wp_core::i18n::tr("분"))).changed() {
+        let mut c = app.core.lock();
+        // 프레임 도중 큐/순서가 바뀌었다면 다른 항목에 쓰지 않는다.
+        if !c.cue.as_ref().and_then(|q| q.items.get(i)).is_some_and(|x| x["id"] == it["id"]) { return; }
+        c.remember_items();
+        if let Some(x) = c.cue.as_mut().and_then(|q| q.items.get_mut(i)) { set_duration(x, minutes); }
+        c.save_cue();
+        // 같은 프레임의 이전 스냅샷으로 편집칸이 duration을 되돌리지 않게 갱신한다.
+        app.edit = c.cue.as_ref().and_then(|q| q.items.get(i)).map(|x| (x["id"].as_str().unwrap_or("").to_string(), x.clone()));
+    }
+}
+
+fn set_duration(it: &mut Value, minutes: f64) {
+    // Electron itemAction('duration')와 같은 정수 분 범위.
+    it["duration"] = json!(if minutes.is_finite() { minutes.clamp(0.0, 600.0).trunc() as u64 } else { 0 });
+}
+
+#[cfg(test)]
+mod cue_duration_tests {
+    use super::*;
+
+    #[test]
+    fn duration_matches_electron_limits_and_preserves_metadata() {
+        let original = json!({"id":"i1", "type":"hymn", "duration":"5", "auto":{"sec":8,"loop":true}, "schedule":{"time":"11:00"}, "range":"2-7", "note":"진행 메모"});
+        for (input, expected) in [(-1.0, 0), (0.0, 0), (12.9, 12), (600.0, 600), (900.0, 600), (f64::NAN, 0)] {
+            let mut item = original.clone();
+            set_duration(&mut item, input);
+            assert_eq!(item["duration"], json!(expected));
+            item["duration"] = original["duration"].clone();
+            assert_eq!(item, original);
+        }
     }
 }

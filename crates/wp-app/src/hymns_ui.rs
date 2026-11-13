@@ -35,12 +35,30 @@ pub fn tab(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     search_box(app, ui, acts);
 }
 
+/// 실제 PPT 파일을 가진 순서만 기존 나누기 도구를 열 수 있다 (베들레헴 제외).
+pub(crate) fn can_open_ppt_tools(it: &Value) -> bool {
+    it["type"] == "hymn" && it["file"].as_str().is_some_and(|f| !f.trim().is_empty())
+}
+
+/// 실행하지 않고 기존 PPT 도구 칸을 펼친다. API 호출은 해당 단추를 누를 때만 한다.
+pub(crate) fn open_ppt_tools(ctx: &egui::Context, it: &Value) {
+    ctx.data_mut(|d| d.insert_temp(id("ppt-tools-request"), it["id"].as_str().unwrap_or("").to_string()));
+}
+
 /// 찬송가 순서 편집칸 안의 접는 칸: PPT 요소 꺼내기 · 나누기
 pub fn ppt_box(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
-    if it["type"] != "hymn" || it["file"].as_str().is_none_or(|f| f.is_empty()) {
+    if !can_open_ppt_tools(it) {
         return;
     }
-    egui::CollapsingHeader::new(RichText::new(wp_core::i18n::tr("PPT 도구 (요소 따로 꺼내기 · 자동으로 나누기)")).color(Color32::from_rgb(0xf0, 0x9a, 0x4a))).id_salt("ppt-box").show(ui, |ui| ppt_tools(app, ui, i, it));
+    let requested = ui.data_mut(|d| {
+        let key = id("ppt-tools-request");
+        let matches = d.get_temp::<String>(key).is_some_and(|v| v == it["id"].as_str().unwrap_or(""));
+        if matches { d.remove::<String>(key); }
+        matches
+    });
+    let response = egui::CollapsingHeader::new(RichText::new(wp_core::i18n::tr("PPT 도구 (요소 따로 꺼내기 · 자동으로 나누기)")).color(Color32::from_rgb(0xf0, 0x9a, 0x4a)))
+        .id_salt("ppt-box").open(requested.then_some(true)).show(ui, |ui| ppt_tools(app, ui, i, it));
+    if requested { response.header_response.scroll_to_me(Some(egui::Align::Center)); }
 }
 
 fn search_box(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
@@ -471,4 +489,24 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value) -> bool {
         changed = true;
     }
     changed
+}
+
+#[cfg(test)]
+mod cue_ppt_menu_tests {
+    use super::*;
+
+    #[test]
+    fn only_file_backed_hymns_enable_split_entry() {
+        assert!(can_open_ppt_tools(&json!({"type":"hymn", "file":"C:/test.pptx"})));
+        for item in [json!({"type":"hymn", "hymnal":true}), json!({"type":"hymn","file":" "}), json!({"type":"song","file":"C:/test.pptx"}), json!({"type":"audio"})] {
+            assert!(!can_open_ppt_tools(&item));
+        }
+    }
+
+    #[test]
+    fn split_entry_only_requests_existing_tools_for_target_item() {
+        let ctx = egui::Context::default();
+        open_ppt_tools(&ctx, &json!({"id":"ppt-target"}));
+        assert_eq!(ctx.data(|d| d.get_temp::<String>(id("ppt-tools-request"))), Some("ppt-target".into()));
+    }
 }

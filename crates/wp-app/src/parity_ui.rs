@@ -54,6 +54,19 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
                 }
             });
         }
+        // Electron처럼 진행 시계가 켜진 경우에만 예정 시간을 편집한다.
+        let times_on = app.core.lock().settings.get()["cueTimes"] == true;
+        if times_on {
+            ui.menu_button(wp_core::i18n::tr("예정 시간…"), |ui| {
+                crate::trackb_ui::duration_editor(app, ui, i, it);
+            });
+        }
+        if ui.add_enabled(crate::hymns_ui::can_open_ppt_tools(it), egui::Button::new(wp_core::i18n::tr("여러 순서로 나누기…"))).clicked() {
+            app.sel = Some(i);
+            app.edit = None;
+            crate::hymns_ui::open_ppt_tools(ui.ctx(), it);
+            ui.close();
+        }
         ui.separator();
         if it["type"] == "song" && ui.button(wp_core::i18n::tr("찬양 라이브러리에 저장")).clicked() {
             let s = json!({ "id": it["songId"].as_str().unwrap_or(""), "title": it["title"], "lyrics": it["lyrics"], "credit": it["credit"].as_str().unwrap_or(""), "order": it["order"].as_str().unwrap_or("") });
