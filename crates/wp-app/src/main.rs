@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod panel_ui;
 mod workspace_ui;
 mod hymns_ui; // [트랙 A]
 mod outwin;
