@@ -26,6 +26,8 @@ pub struct TrackB {
     pub sync: crate::sync::SyncStatus,
     /// 화면에 그리기 · 강조
     pub draw: crate::draw::Draw,
+    /// 연결된 카메라 실시간 목록 (출력 창 도우미가 보낸 마지막 결과)
+    pub cams: crate::cameras::DeviceList,
 }
 
 impl Core {

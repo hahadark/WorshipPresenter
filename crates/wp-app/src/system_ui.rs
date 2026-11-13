@@ -368,27 +368,29 @@ impl App {
         }
         egui::Window::new(wp_core::i18n::tr("카메라 설정")).open(&mut open).default_size([520.0, 440.0]).show(ctx, |ui| {
             ui.label(RichText::new(wp_core::i18n::tr("카메라(웹캠 · 캡처보드)마다 해상도 · 프레임 · 좌우 반전 · 밝기를 정합니다. 출력 화면이 카메라를 열 때 씁니다.")).small());
-            // 설정에 있는 카메라 + 큐시트의 카메라 순서
-            let (saved, used) = {
+            // 화면 셋 공용 목록(camscan): 연결된 카메라 → 설정에 있는 카메라 → 큐시트의 카메라 순서
+            crate::camscan::scan_bar(ui, &self.core);
+            let (saved, list) = {
                 let c = self.core.lock();
-                let saved = c.settings.get()["cameras"].as_object().cloned().unwrap_or_default();
-                let used: Vec<(String, String)> = c.cue.as_ref().map(|q| q.items.iter().filter(|it| it["type"] == "camera").filter_map(|it| it["deviceId"].as_str().filter(|x| !x.is_empty()).map(|d| (d.to_string(), it["label"].as_str().unwrap_or("").to_string()))).collect()).unwrap_or_default();
-                (saved, used)
+                (c.settings.get()["cameras"].as_object().cloned().unwrap_or_default(), crate::camscan::choices(&c))
             };
-            let mut list: Vec<(String, String)> = saved.iter().map(|(k, v)| (k.clone(), v["label"].as_str().unwrap_or("").to_string())).collect();
-            for u in used { if !list.iter().any(|x| x.0 == u.0) { list.push(u); } }
             if list.is_empty() {
-                ui.label(RichText::new(wp_core::i18n::tr("아직 카메라가 없습니다. 큐시트에 카메라 순서를 넣으면 여기에 나옵니다.")).color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("아직 카메라가 없습니다. '카메라 찾기'를 누르거나 큐시트에 카메라 순서를 넣으면 여기에 나옵니다.")).color(Color32::GRAY));
             }
             let mut st = ST.lock();
-            for (id, label) in &list {
-                let name = if label.is_empty() { format!("카메라 {}", &id[..id.len().min(8)]) } else { label.clone() };
-                if ui.selectable_label(st.cam_edit.as_ref().is_some_and(|e| &e.0 == id), format!("📷 {name}{}", if saved.contains_key(id) { wp_core::i18n::tr_s(" · 설정됨") } else { "" })).clicked() {
-                    let mut p = saved.get(id).cloned().unwrap_or(json!({ "label": label, "res": "auto", "fps": 0, "exact": false, "mirror": false, "brightness": 100, "contrast": 100, "saturation": 100 }));
-                    if p["label"].as_str().unwrap_or("").is_empty() { p["label"] = json!(label); }
-                    st.cam_edit = Some((id.clone(), p));
-                }
+            let mut preview: Option<(String, String)> = None;
+            for c in &list {
+                let (id, label) = (&c.device_id, &c.label);
+                ui.horizontal(|ui| {
+                    if ui.selectable_label(st.cam_edit.as_ref().is_some_and(|e| &e.0 == id), crate::camscan::display_name(c)).clicked() {
+                        let mut p = saved.get(id).cloned().unwrap_or(json!({ "label": label, "res": "auto", "fps": 0, "exact": false, "mirror": false, "brightness": 100, "contrast": 100, "saturation": 100 }));
+                        if p["label"].as_str().unwrap_or("").is_empty() { p["label"] = json!(label); }
+                        st.cam_edit = Some((id.clone(), p));
+                    }
+                    if ui.small_button(wp_core::i18n::tr("미리보기")).clicked() { preview = Some((id.clone(), label.clone())); }
+                });
             }
+            if let Some((id, label)) = preview { crate::camscan::preview(&self.core, &id, &label); }
             ui.separator();
             let mut action: Option<(String, Option<Value>)> = None;
             if let Some((id, p)) = &mut st.cam_edit {

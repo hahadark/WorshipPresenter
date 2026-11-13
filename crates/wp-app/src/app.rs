@@ -513,7 +513,10 @@ impl App {
         if self.edit.as_ref().map(|e| &e.0) != Some(&key) {
             self.edit = Some((key.clone(), it.clone()));
         }
-        let cams = if it["type"] == "camera" { crate::parity_ui::known_cameras(&self.core.lock()) } else { vec![] }; // [트랙 A]
+        let cams = if it["type"] == "camera" { crate::camscan::known_cameras(&self.core.lock()) } else { vec![] }; // 연결된 카메라 포함 (화면 셋 공용 목록)
+        if it["type"] == "camera" {
+            crate::camscan::scan_bar(ui, &self.core);
+        }
         let Some((_, e)) = &mut self.edit else { return };
         let mut changed = false;
         let mut field = |ui: &mut egui::Ui, e: &mut Value, k: &str, multi: bool, rows: usize, hint: &str| {
@@ -882,6 +885,7 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         self.out.close();
+        crate::camscan::kill_all(); // 내가 띄운 카메라 도우미·미리보기 창만
         wp_core::sync::on_exit(&mut self.core.lock()); // [트랙 B] 끝날 때 동기화 파일 쓰기
         self.core.lock().flush();
     }

@@ -6,6 +6,7 @@ mod panel_ui;
 mod workspace_ui;
 mod hymns_ui; // [트랙 A]
 mod outwin;
+mod camscan; // 카메라 찾기·미리보기 (wp-output 도우미)
 mod paint;
 mod paint_edit; // [트랙 A]
 mod a_tools; // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보

@@ -16,19 +16,19 @@ pub struct OutWin {
     pub error: String,
 }
 
-fn exe() -> std::path::PathBuf {
+pub(crate) fn exe() -> std::path::PathBuf {
     let me = std::env::current_exe().unwrap_or_default();
     let dir = me.parent().map(|p| p.to_path_buf()).unwrap_or_default();
     dir.join(if cfg!(windows) { "wp-output.exe" } else { "wp-output" })
 }
 
 #[cfg(windows)]
-fn no_window(c: &mut Command) -> &mut Command {
+pub(crate) fn no_window(c: &mut Command) -> &mut Command {
     use std::os::windows::process::CommandExt;
     c.creation_flags(0x0800_0000) // CREATE_NO_WINDOW
 }
 #[cfg(not(windows))]
-fn no_window(c: &mut Command) -> &mut Command {
+pub(crate) fn no_window(c: &mut Command) -> &mut Command {
     c
 }
 

@@ -33,6 +33,7 @@ pub mod draw; // [트랙 B]
 pub mod logger; // [트랙 B]
 pub mod diagnose; // [트랙 B]
 pub mod cameras; // [트랙 B]
+pub mod camhelper; // 카메라 찾기·미리보기 도우미 페이지
 pub mod thumbs; // [트랙 B]
 pub mod overlays; // [트랙 B]
 pub mod songs; // [트랙 B]
