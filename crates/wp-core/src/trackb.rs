@@ -592,6 +592,45 @@ mod tests_fade_completion {
 }
 
 #[cfg(test)]
+mod tests_message_expiry {
+    //! 검토 1113-3 결함 4: 초를 정한 회중 메시지는 만료되면 지워지고 출력에 새 render(Ev::Live) 가 가야 한다
+    use crate::core::{Core, Ev};
+    use crate::util::now_ms;
+
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-msg-{}-{}", now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+
+    #[test]
+    fn timed_message_expires_with_live_event() {
+        let mut c = core();
+        c.show_message("유아실 홍길동 부모님", &["main".into(), "overlay".into()], 10).unwrap();
+        let until = c.b.message.as_ref().unwrap().until;
+        assert_eq!(c.output_payload("main")["overlays"].as_array().unwrap().iter().filter(|o| o["id"] == "wpmessage").count(), 1);
+        let mut rx = c.tx.subscribe();
+        // 아직 시간 안: 그대로
+        crate::flow::tick(&mut c, until - 1);
+        assert!(c.b.message.is_some());
+        assert!(rx.try_recv().is_err(), "만료 전에는 이벤트가 없어야 함");
+        // 만료: 지워지고 Ev::Live
+        crate::flow::tick(&mut c, until + 1);
+        assert!(c.b.message.is_none(), "만료된 메시지는 지워야 함");
+        let mut live = false;
+        while let Ok(e) = rx.try_recv() { if matches!(e, Ev::Live) { live = true; } }
+        assert!(live, "만료 시 출력에 새 render 를 보내야 함");
+        assert_eq!(c.output_payload("main")["overlays"].as_array().unwrap().iter().filter(|o| o["id"] == "wpmessage").count(), 0);
+        // 시간을 안 정한 메시지(0초)는 지우기 전까지 남는다
+        c.show_message("계속", &["main".into()], 0).unwrap();
+        crate::flow::tick(&mut c, now_ms() + 86_400_000);
+        assert!(c.b.message.is_some());
+        let dir = c.data_dir.clone(); drop(c); let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
 mod tests_macro {
     //! 검토 1113-3 결함 1: 매크로는 Electron 과 같은 칸(순서의 '송출할 때 자동으로')으로 저장·실행
     use crate::core::Core;
