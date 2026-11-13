@@ -36,6 +36,12 @@ impl Core {
         if let Err(e) = songs::ensure_schema(&self.store.db) {
             log::error!("Songs 테이블: {e}");
         }
+        // 예전 Rust 칸으로 저장된 매크로 → Electron 칸 (순서의 '송출할 때 자동으로' 와 같은 형식)
+        let mut n = 0;
+        self.settings.update(|d| n = overlays::migrate_macros(d));
+        if n > 0 {
+            log::info!("매크로 {n}개를 Electron 형식으로 바꿈");
+        }
     }
 
     fn changed(&mut self, live: bool) {
@@ -278,9 +284,23 @@ impl Core {
         self.b.stage.message = text.chars().take(300).collect();
         self.changed(true);
     }
-    pub fn stage_pin_set(&mut self, p: Option<&Value>) {
-        self.b.stage.set_pin(p);
+    /// 무대 화면 고정 (Electron core.js stagePinSet): {mode:'order'|'text', text, name} · {preset: id}(settings.stagePresets 에서 찾음) · None(지금 화면으로).
+    /// 프리셋을 못 찾으면 고정을 바꾸지 않고 오류.
+    pub fn stage_pin_set(&mut self, p: Option<&Value>) -> Result<()> {
+        let preset = p.and_then(|p| p["preset"].as_str()).filter(|x| !x.is_empty()).map(String::from);
+        let resolved = match &preset {
+            Some(id) => {
+                let found = self.settings.get()["stagePresets"].as_array().and_then(|l| l.iter().find(|x| x["id"] == id.as_str()).cloned());
+                match found {
+                    Some(x) => Some(x),
+                    None => bail!("무대 화면 프리셋을 찾을 수 없습니다."),
+                }
+            }
+            None => p.cloned(),
+        };
+        self.b.stage.set_pin(resolved.as_ref());
         self.changed(true);
+        Ok(())
     }
     pub fn save_stage_preset(&mut self, p: &Value) -> Result<String> {
         let mut out = Ok(String::new());
@@ -309,55 +329,30 @@ impl Core {
         self.settings.update(|d| overlays::delete_macro(d, id));
         self.emit(Ev::Ui);
     }
-    /// 매크로 실행 (이름 또는 id). 자동 동작(item.actions)도 같은 틀로
+    /// 매크로 실행 (이름 또는 id) — 매크로 창 · Alt+1~9 · 예약 · 외부 단추 /api/trigger/macro
     pub fn run_macro(&mut self, key: &str) -> Result<()> {
-        let m = self.settings.get()["macros"].as_array().and_then(|l| l.iter().find(|x| x["id"] == key || x["name"] == key).cloned());
-        let Some(m) = m else { bail!("매크로를 찾을 수 없습니다: {key}") };
-        self.run_actions(&m["actions"])?;
-        self.notify(crate::i18n::tr_args("매크로 실행: {1}", &[&(m["name"].as_str().unwrap_or(""))]), "ok");
-        Ok(())
+        self.run_macro_depth(key, 0)
     }
-    pub fn run_actions(&mut self, a: &Value) -> Result<()> {
-        let flag = |k: &str| a[k].as_bool().unwrap_or(false);
-        if flag("clearAll") {
-            self.clear_all();
+    /// Electron macropanel.js run + cue.js runActions: 매크로의 actions 는 순서의 '송출할 때 자동으로' 와 같은 칸이라
+    /// 같은 실행기(trackd::run_item_actions)를 쓴다. depth: 매크로 안의 매크로는 한 번까지(depth > 1 이면 실행 안 함).
+    /// music · musicVolume 은 조작 화면이 틀어 주도록 pending_audio 에 담는다 (순서의 배경 음악과 같은 길).
+    pub fn run_macro_depth(&mut self, key: &str, depth: u8) -> Result<()> {
+        let m = self.settings.get()["macros"].as_array().and_then(|l| l.iter().find(|x| x["id"] == key || x["name"] == key.trim()).cloned());
+        let Some(m) = m else { bail!("매크로를 찾을 수 없습니다: {key}") };
+        if depth > 1 {
+            return Ok(());
         }
-        if flag("hideText") {
-            self.pres.clear();
+        let name = m["name"].as_str().unwrap_or("").to_string();
+        let actions = overlays::macro_actions(&m);
+        let music = m["music"].as_str().unwrap_or("");
+        if !music.is_empty() {
+            self.pending_audio = Some(json!({ "title": name, "music": music, "musicVolume": m["musicVolume"].as_f64().unwrap_or(0.8) }));
+        } else if actions["stopMusic"] == true {
+            self.pending_audio = Some(json!({ "title": name, "actions": { "stopMusic": true } }));
         }
-        if let Some(b) = a["logo"].as_bool() {
-            self.layers.logo = b;
-        }
-        if let Some(b) = a["bgOff"].as_bool() {
-            self.layers.hide_bg = b;
-        }
-        if flag("overlaysOff") {
-            self.toggle_overlays_off();
-        }
-        for (k, on) in [("overlayOn", true), ("overlayOff", false)] {
-            for id in a[k].as_array().into_iter().flatten().filter_map(|x| x.as_str()) {
-                let _ = self.toggle_overlay(id, Some(on));
-            }
-        }
-        if let Some(t) = a["message"].as_str().filter(|x| !x.is_empty()) {
-            self.show_message(t, &["main".into(), "overlay".into()], a["messageSeconds"].as_i64().unwrap_or(30))?;
-        }
-        if let Some(t) = a["stageMessage"].as_str() {
-            self.stage_message(t);
-        }
-        if let Some(m) = a["timer"].as_f64().filter(|x| *x > 0.0) {
-            self.stage_timer("start", m)?;
-        }
-        if let Some(i) = a["cueItem"].as_u64() {
-            if let Ok(d) = self.item_deck(i as usize) {
-                self.pres.preview = Some(d.clone());
-                self.send_deck(d);
-            }
-        }
-        if let Some(sm) = a["stagePin"].as_object() {
-            self.stage_pin_set(Some(&Value::Object(sm.clone())));
-        }
-        self.changed(true);
+        crate::trackd::run_item_actions(self, &actions, depth + 1);
+        log::info!("매크로 '{name}'");
+        self.notify(crate::i18n::tr_args("매크로 실행: {1}", &[&name]), "ok");
         Ok(())
     }
     /// 30초마다 부름: 예약 실행
@@ -607,5 +602,141 @@ mod tests_fade_completion {
         assert!(c.pres.live.as_ref().unwrap().visible);
         assert_eq!(c.pres.live.as_ref().unwrap().deck.passage["title"], "새 화면");
         let dir = c.data_dir.clone(); drop(c); let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod tests_message_expiry {
+    //! 검토 1113-3 결함 4: 초를 정한 회중 메시지는 만료되면 지워지고 출력에 새 render(Ev::Live) 가 가야 한다
+    use crate::core::{Core, Ev};
+    use crate::util::now_ms;
+
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-msg-{}-{}", now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+
+    #[test]
+    fn timed_message_expires_with_live_event() {
+        let mut c = core();
+        c.show_message("유아실 홍길동 부모님", &["main".into(), "overlay".into()], 10).unwrap();
+        let until = c.b.message.as_ref().unwrap().until;
+        assert_eq!(c.output_payload("main")["overlays"].as_array().unwrap().iter().filter(|o| o["id"] == "wpmessage").count(), 1);
+        let mut rx = c.tx.subscribe();
+        // 아직 시간 안: 그대로
+        crate::flow::tick(&mut c, until - 1);
+        assert!(c.b.message.is_some());
+        assert!(rx.try_recv().is_err(), "만료 전에는 이벤트가 없어야 함");
+        // 만료: 지워지고 Ev::Live
+        crate::flow::tick(&mut c, until + 1);
+        assert!(c.b.message.is_none(), "만료된 메시지는 지워야 함");
+        let mut live = false;
+        while let Ok(e) = rx.try_recv() { if matches!(e, Ev::Live) { live = true; } }
+        assert!(live, "만료 시 출력에 새 render 를 보내야 함");
+        assert_eq!(c.output_payload("main")["overlays"].as_array().unwrap().iter().filter(|o| o["id"] == "wpmessage").count(), 0);
+        // 시간을 안 정한 메시지(0초)는 지우기 전까지 남는다
+        c.show_message("계속", &["main".into()], 0).unwrap();
+        crate::flow::tick(&mut c, now_ms() + 86_400_000);
+        assert!(c.b.message.is_some());
+        let dir = c.data_dir.clone(); drop(c); let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod tests_macro {
+    //! 검토 1113-3 결함 1: 매크로는 Electron 과 같은 칸(순서의 '송출할 때 자동으로')으로 저장·실행
+    use crate::core::Core;
+    use serde_json::json;
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-macro-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+
+    #[test]
+    fn electron_macro_runs_through_item_actions() {
+        let mut c = core();
+        let ov = c.save_overlay(&json!({ "id": "clock1", "type": "clock" })).unwrap();
+        assert_eq!(ov["on"], false);
+        c.layers.logo = true;
+        // Electron 에서 복사해 온 매크로 (core.js saveMacro 가 저장하는 모양 그대로)
+        c.settings.update(|d| d["macros"] = json!([{ "id": "mc1", "name": "예배 시작", "color": "", "actions": { "logo": "off", "bg": "hide", "stageMsg": "환영합니다", "ovOn": "clock1", "timer": 5, "stagePin": "order" } }]));
+        c.run_macro("예배 시작").unwrap();
+        assert!(!c.layers.logo, "logo:'off' 가 적용돼야 함");
+        assert!(c.layers.hide_bg, "bg:'hide' 가 적용돼야 함");
+        assert_eq!(c.b.stage.message, "환영합니다");
+        assert!(c.b.stage.timer.running);
+        assert_eq!(c.overlays()[0]["on"], true, "ovOn 이 적용돼야 함");
+        assert_eq!(c.b.stage.pin.as_ref().unwrap()["mode"], "order");
+        assert!(c.take_pending_audio().is_none());
+        // id 로도 찾는다
+        c.run_macro("mc1").unwrap();
+        assert!(c.run_macro("없는 매크로").is_err());
+    }
+
+    #[test]
+    fn macro_music_goes_to_pending_audio_and_nested_depth_limited() {
+        let mut c = core();
+        c.settings.update(|d| {
+            d["macros"] = json!([
+                { "id": "mcmusic", "name": "음악", "actions": {}, "music": "/media/a.mp3", "musicVolume": 0.5 },
+                { "id": "mcnest1", "name": "겹1", "actions": { "macro": "mcnest2", "logo": "on" } },
+                { "id": "mcnest2", "name": "겹2", "actions": { "macro": "mcnest1", "stageMsg": "둘" } },
+            ])
+        });
+        c.run_macro("mcmusic").unwrap();
+        let a = c.take_pending_audio().unwrap();
+        assert_eq!(a["music"], "/media/a.mp3");
+        assert_eq!(a["musicVolume"], 0.5);
+        // 매크로 안의 매크로는 한 번까지 (Electron macropanel.js depth > 1 이면 실행 안 함) — 무한 반복하지 않는다
+        c.run_macro("mcnest1").unwrap();
+        assert!(c.layers.logo);
+        assert_eq!(c.b.stage.message, "둘");
+    }
+
+    #[test]
+    fn save_macro_normalizes_like_electron_and_converts_legacy() {
+        let mut c = core();
+        // Electron 칸: 범위·형식 정리 (timer 240 상한, 모르는 칸 버림)
+        let id = c.save_macro(&json!({ "name": "  정리  ", "actions": { "timer": 999, "logo": "on", "bg": "maybe", "junk": 1, "ovOff": "*" }, "startup": true })).unwrap();
+        let m = c.settings.get()["macros"][0].clone();
+        assert_eq!(m["id"], id.as_str());
+        assert_eq!(m["name"], "정리");
+        assert_eq!(m["actions"], json!({ "timer": 240, "logo": "on", "ovOff": "*" }));
+        assert_eq!(m["startup"], true);
+        // 예전 Rust 칸으로 저장 요청 → Electron 칸으로 바꿔 저장
+        c.save_macro(&json!({ "id": "mcold1", "name": "옛것", "actions": { "logo": false, "bgOff": true, "overlaysOff": true, "stageMessage": "안내", "stagePin": { "mode": "order" } } })).unwrap();
+        let m = c.settings.get()["macros"][1].clone();
+        assert_eq!(m["actions"], json!({ "logo": "off", "bg": "hide", "ovOff": "*", "stageMsg": "안내", "stagePin": "order" }));
+        // startup 은 하나만
+        c.save_macro(&json!({ "name": "둘째 시작", "actions": { "logo": "off" }, "startup": true })).unwrap();
+        let l = c.settings.get()["macros"].clone();
+        assert_eq!(l[0]["startup"], false);
+        assert_eq!(l[2]["startup"], true);
+        // Electron 매크로에 없는 동작(회중 메시지)만 있으면 저장 거부 (Electron: '매크로에 넣을 동작이 없습니다')
+        assert!(c.save_macro(&json!({ "name": "빈", "actions": { "message": "글" } })).is_err());
+        assert!(c.save_macro(&json!({ "name": "", "actions": { "logo": "on" } })).is_err());
+    }
+
+    #[test]
+    fn legacy_macros_migrated_on_open() {
+        let dir = std::env::temp_dir().join(format!("wp-macro-mig-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        std::fs::write(dir.join("settings.json"), serde_json::to_vec(&json!({ "macros": [
+            { "id": "mcleg", "name": "옛", "actions": { "logo": true, "overlayOn": ["o1"], "timer": 3 } },
+            { "id": "mcnew", "name": "새", "actions": { "logo": "off" } },
+        ] })).unwrap()).unwrap();
+        let c = Core::open(dir.clone(), dir, None).unwrap();
+        let l = c.settings.get()["macros"].clone();
+        assert_eq!(l[0]["actions"], json!({ "logo": "on", "ovOn": "o1", "timer": 3 }));
+        assert_eq!(l[1]["actions"], json!({ "logo": "off" }), "Electron 칸은 그대로");
+        // 실행도 된다
+        let mut c = c;
+        c.run_macro("mcleg").unwrap();
+        assert!(c.layers.logo);
     }
 }

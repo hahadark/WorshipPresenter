@@ -244,24 +244,177 @@ pub fn save_stage_preset(settings: &mut Value, p: &Value) -> Result<String> {
 }
 
 // ---------------- 매크로 · 예약 ----------------
-/// 매크로: { id, name, color, actions: { logo, clearAll, hideText, bgOff, overlaysOff, overlayOn:[id], overlayOff:[id], message, stageMessage, timer(분), cueItem } }
+/// 순서의 '송출할 때 자동으로'(actions) 정리 — Electron cues.js normalizeItem(71~89줄) 과 같은 칸·범위.
+/// 칸: timer(분, 1~240) · stageMsg · clearStage · logo on|off · bg hide|show · ovOn · ovOff(id | '*') · stopMusic · companion
+///     · stagePin(live | order | 프리셋 id) · macro(id) · dev[{device, action}] · obsScene · obsStream start|stop · obsRecord start|stop
+pub fn normalize_actions(a: &Value) -> Value {
+    let mut act = serde_json::Map::new();
+    let Some(a) = a.as_object() else { return Value::Object(act) };
+    let a = Value::Object(a.clone());
+    let s = |k: &str, n: usize| cut(&a[k], n);
+    let tm = a["timer"].as_f64().unwrap_or(0.0).round() as i64;
+    if tm > 0 {
+        act.insert("timer".into(), json!(tm.min(240)));
+    }
+    if !s("stageMsg", 200).is_empty() {
+        act.insert("stageMsg".into(), json!(s("stageMsg", 200)));
+    }
+    if a["logo"] == "on" || a["logo"] == "off" {
+        act.insert("logo".into(), a["logo"].clone());
+    }
+    if a["bg"] == "hide" || a["bg"] == "show" {
+        act.insert("bg".into(), a["bg"].clone());
+    }
+    for k in ["ovOn", "ovOff"] {
+        if !s(k, 60).is_empty() {
+            act.insert(k.into(), json!(s(k, 60)));
+        }
+    }
+    for k in ["stopMusic", "clearStage"] {
+        if a[k].as_bool() == Some(true) || a[k].as_str().is_some_and(|x| !x.is_empty()) || a[k].as_i64().is_some_and(|x| x != 0) {
+            act.insert(k.into(), json!(true));
+        }
+    }
+    if !s("companion", 400).is_empty() {
+        let loc: Vec<String> = crate::companion::parse_locations(&s("companion", 400)).iter().map(|l| format!("{}/{}/{}", l.page, l.row, l.col)).collect();
+        if !loc.is_empty() {
+            act.insert("companion".into(), json!(loc.join(", ")));
+        }
+    }
+    if !s("stagePin", 40).is_empty() {
+        act.insert("stagePin".into(), json!(s("stagePin", 40)));
+    }
+    if let Some(m) = ok_id(&a["macro"], 3).filter(|x| x.len() <= 30 && !x.contains('-')) {
+        act.insert("macro".into(), json!(m));
+    }
+    let dev: Vec<Value> = a["dev"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|x| ok_id(&x["device"], 3).is_some_and(|d| d.len() <= 30 && !d.contains('-')) && !cut(&x["action"], 300).trim().is_empty())
+        .take(8)
+        .map(|x| json!({ "device": x["device"], "action": cut(&x["action"], 300).trim() }))
+        .collect();
+    if !dev.is_empty() {
+        act.insert("dev".into(), json!(dev));
+    }
+    if !s("obsScene", 120).is_empty() {
+        act.insert("obsScene".into(), json!(s("obsScene", 120)));
+    }
+    for k in ["obsStream", "obsRecord"] {
+        if a[k] == "start" || a[k] == "stop" {
+            act.insert(k.into(), a[k].clone());
+        }
+    }
+    Value::Object(act)
+}
+
+/// 예전 Rust 판(2026-11-12) 매크로 칸 → Electron 칸. Electron 칸이 이미 있으면 그대로.
+/// 옮길 수 있는 것: logo(bool)·bgOff(bool)·overlaysOff·overlayOn[0]·overlayOff[0]·stageMessage·timer·stagePin{mode:'order'}.
+/// 옮길 수 없는 것(clearAll·hideText·message·cueItem·stagePin{mode:'text'}) 은 버린다 (Electron 매크로에 없는 동작).
+pub fn legacy_actions(a: &Value) -> Value {
+    let Some(o) = a.as_object() else { return a.clone() };
+    let legacy = ["clearAll", "hideText", "bgOff", "overlaysOff", "overlayOn", "overlayOff", "message", "messageSeconds", "stageMessage", "cueItem"];
+    let is_legacy = o.keys().any(|k| legacy.contains(&k.as_str())) || a["logo"].is_boolean() || a["stagePin"].is_object();
+    if !is_legacy {
+        return a.clone();
+    }
+    let mut n = serde_json::Map::new();
+    if let Some(b) = a["logo"].as_bool() {
+        n.insert("logo".into(), json!(if b { "on" } else { "off" }));
+    } else if a["logo"].is_string() {
+        n.insert("logo".into(), a["logo"].clone());
+    }
+    if let Some(b) = a["bgOff"].as_bool() {
+        n.insert("bg".into(), json!(if b { "hide" } else { "show" }));
+    } else if a["bg"].is_string() {
+        n.insert("bg".into(), a["bg"].clone());
+    }
+    if a["overlaysOff"].as_bool() == Some(true) {
+        n.insert("ovOff".into(), json!("*"));
+    } else if let Some(id) = a["overlayOff"].as_array().and_then(|l| l.first()).and_then(|x| x.as_str()) {
+        n.insert("ovOff".into(), json!(id));
+    }
+    if let Some(id) = a["overlayOn"].as_array().and_then(|l| l.first()).and_then(|x| x.as_str()) {
+        n.insert("ovOn".into(), json!(id));
+    }
+    if let Some(t) = a["stageMessage"].as_str().filter(|x| !x.is_empty()) {
+        n.insert("stageMsg".into(), json!(t));
+    } else if a["stageMessage"].as_str() == Some("") {
+        n.insert("clearStage".into(), json!(true));
+    }
+    if a["timer"].as_f64().is_some_and(|x| x > 0.0) {
+        n.insert("timer".into(), a["timer"].clone());
+    }
+    if a["stagePin"]["mode"] == "order" {
+        n.insert("stagePin".into(), json!("order"));
+    }
+    // Electron 칸이 섞여 있으면 그대로 넘긴다
+    for (k, v) in o {
+        if !legacy.contains(&k.as_str()) && k != "logo" && k != "stagePin" && !n.contains_key(k) {
+            n.insert(k.clone(), v.clone());
+        }
+    }
+    Value::Object(n)
+}
+
+/// 매크로 하나의 실행할 actions (예전 칸이면 변환) — 실행·요약이 모두 이것을 쓴다
+pub fn macro_actions(m: &Value) -> Value {
+    normalize_actions(&legacy_actions(&m["actions"]))
+}
+
+/// 매크로 목록 읽을 때: 예전 Rust 칸으로 저장된 것을 Electron 칸으로 고쳐 둔다. 고친 개수.
+pub fn migrate_macros(settings: &mut Value) -> usize {
+    let mut n = 0;
+    if let Some(l) = settings["macros"].as_array_mut() {
+        for m in l.iter_mut() {
+            let conv = legacy_actions(&m["actions"]);
+            if conv != m["actions"] {
+                m["actions"] = normalize_actions(&conv);
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// 매크로 저장 — Electron core.js saveMacro 와 같게: { id, name, color, actions(순서의 '송출할 때 자동으로' 칸), music, musicVolume, startup }
+/// 같은 id 는 자리를 지키며 고치고, startup 은 하나만. 최대 40개.
 pub fn save_macro(settings: &mut Value, m: &Value) -> Result<String> {
     let name = cut(&m["name"], 40).trim().to_string();
     if name.is_empty() {
-        bail!("매크로 이름을 쓰세요.");
+        bail!("매크로 이름을 입력하세요.");
     }
-    let id = ok_id(&m["id"], 3).unwrap_or_else(|| short_id("m"));
+    let actions = macro_actions(m);
+    let music = cut(&m["music"], 1500);
+    if actions.as_object().is_some_and(|o| o.is_empty()) && music.is_empty() {
+        bail!("매크로에 넣을 동작이 없습니다. 순서의 ⚡ 송출할 때 자동으로 에서 동작을 정한 뒤 저장하세요.");
+    }
+    let id = ok_id(&m["id"], 3).filter(|x| x.len() <= 30 && !x.contains('-')).unwrap_or_else(|| short_id("mc"));
+    let color = m["color"].as_str().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit())).unwrap_or("");
+    let startup = m["startup"].as_bool() == Some(true);
+    let mut one = json!({ "id": id, "name": name, "color": color, "actions": actions });
+    if !music.is_empty() {
+        one["music"] = json!(music);
+        one["musicVolume"] = json!(clampf(&m["musicVolume"], 0.8, 0.0, 1.0));
+    }
+    if startup {
+        one["startup"] = json!(true);
+    }
     if !settings["macros"].is_array() {
         settings["macros"] = json!([]);
     }
-    let mut v = m.clone();
-    v["id"] = json!(id);
-    v["name"] = json!(name);
     let l = settings["macros"].as_array_mut().unwrap();
-    match l.iter().position(|x| x["id"] == id.as_str()) {
-        Some(i) => l[i] = v,
-        None => l.push(v),
+    if startup {
+        for x in l.iter_mut() {
+            x["startup"] = json!(false);
+        }
     }
+    match l.iter().position(|x| x["id"] == id.as_str()) {
+        Some(i) => l[i] = one,
+        None => l.push(one),
+    }
+    l.truncate(40);
     Ok(id)
 }
 

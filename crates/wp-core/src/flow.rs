@@ -29,12 +29,23 @@ pub fn install(core: &Shared) {
     });
 }
 
+/// 초를 정한 회중 메시지가 만료되면 지우고 출력에 새 render 를 보낸다 (Electron core.js showMessage 의 setTimeout → message=null; emit('live')).
+/// 출력 웹은 until 을 보지 않으므로 여기서 알려야 띠가 사라진다.
+pub fn expire_message(c: &mut Core, now: i64) {
+    if c.b.message.as_ref().is_some_and(|m| m.until > 0 && now > m.until) {
+        c.b.message = None;
+        c.emit(Ev::Live);
+        c.emit(Ev::Ui);
+    }
+}
+
 fn live_visible(c: &Core) -> bool {
     c.pres.live.as_ref().is_some_and(|l| l.visible)
 }
 
 /// 타이머 확인 (시험하려고 now 를 받는다)
 pub fn tick(c: &mut Core, now: i64) {
+    expire_message(c, now);
     if c.finish_video_fade(now) { return; }
     let ver = c.pres.version;
     if ver != c.flow.seen {
