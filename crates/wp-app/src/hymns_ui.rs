@@ -11,6 +11,7 @@ const RES: &str = "hymn-res";
 const OPEN: &str = "hymn-open";
 const SRC: &str = "hymn-src"; // ppt | beth
 const ANSWER: &str = "hymn-ai-answer";
+const CONFIRM: &str = "hymn-ppt-confirm"; // 다시 꺼내기·원래대로 확인 ("again:<순서 id>" | "off:<id>")
 
 fn id(k: &str) -> egui::Id {
     egui::Id::new(k)
@@ -187,6 +188,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 }
             });
         }
+        default_bg_row(app, ui);
     } else {
         let books = hymnal::books(&app.core.lock());
         if books.is_empty() {
@@ -205,7 +207,9 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             };
             if ui.selectable_label(false, t).on_hover_text(wp_core::i18n::tr("눌러서 큐시트에 넣기")).clicked() {
                 if src == "ppt" {
-                    acts.push(Act::AddItem("hymn", Some(json!({ "title": h["title"], "file": h["file"], "number": h["number"].as_i64().unwrap_or(0), "background": "default", "obsLyrics": "" }))));
+                    // 제목은 "10장 전능왕 오셔서" (cue.js 1527) · 번호 없으면 null
+                    let num = h["number"].as_i64();
+                    acts.push(Act::AddItem("hymn", Some(json!({ "title": hymns::item_title(num, h["title"].as_str().unwrap_or("")), "file": h["file"], "number": num, "background": "default", "obsLyrics": "" }))));
                 } else {
                     let r = hymnal::get(&app.core.lock(), h["book"].as_str().unwrap_or(""), h["number"].as_i64().unwrap_or(0));
                     match r {
@@ -220,6 +224,43 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     set(ui, Q, q);
     set(ui, RES, res);
     set(ui, SRC, src);
+}
+
+/// 찬송가 기본 배경 (settings.hymnBackground) — Electron 고르기 창의 '찬송가 폴더 · 기본 배경 설정' (cue.js 1478-1481 · 1556-1558)
+/// 원래 배경 · 흰 배경 · 템플릿 배경 · 지정한 이미지(다른 이미지로…). 순서의 '설정대로' 가 이 값을 따른다.
+fn default_bg_row(app: &mut App, ui: &mut egui::Ui) {
+    let cur = hymns::default_bg(&app.core.lock());
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(wp_core::i18n::tr("기본 배경")).small().color(Color32::GRAY)).on_hover_text(wp_core::i18n::tr("악보는 투명 그림이라 어떤 배경 위에도 겁쳐 보입니다. 악보 글씨가 검은색이라 밝은 배경을 권합니다. 순서마다 따로 바꿀 수도 있습니다 (편집칸의 '배경')."));
+        let custom = !matches!(cur.as_str(), "original" | "#ffffff" | "template");
+        let name = |v: &str| -> String {
+            match v {
+                "original" => wp_core::i18n::tr("찬송가 원래 배경"),
+                "#ffffff" => wp_core::i18n::tr("흰 배경 (악보가 가장 잘 보임)"),
+                "template" => wp_core::i18n::tr("템플릿 배경 (테마·빠른 설정의 배경)"),
+                _ => wp_core::i18n::tr("지정한 이미지"),
+            }
+        };
+        egui::ComboBox::from_id_salt("hymn-default-bg").selected_text(RichText::new(name(&cur)).small()).width(200.0).show_ui(ui, |ui| {
+            for v in ["original", "#ffffff", "template"] {
+                if ui.selectable_label(cur == v, name(v)).clicked() {
+                    hymns::set_default_bg(&mut app.core.lock(), v);
+                }
+            }
+            if custom {
+                ui.selectable_label(true, name(&cur)).on_hover_text(&cur);
+            }
+        });
+        if ui.small_button(wp_core::i18n::tr("다른 이미지로…")).on_hover_text(wp_core::i18n::tr("그림 파일을 데이터 폴더로 복사해 기본 배경으로")).clicked() {
+            if let Some(p) = rfd::FileDialog::new().add_filter("그림", &["png", "jpg", "jpeg", "webp", "gif"]).pick_file() {
+                let mut c = app.core.lock();
+                match hymns::set_default_bg_image(&mut c, &p) {
+                    Ok(_) => c.notify(wp_core::i18n::tr("찬송가 기본 배경을 바꿨습니다."), "ok"),
+                    Err(e) => c.notify(e, "error"),
+                }
+            }
+        }
+    });
 }
 
 fn open_url(url: &str) {
@@ -250,32 +291,37 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
         if hymns::is_building(&file) {
             ui.label(RichText::new(wp_core::i18n::tr("그림 만드는 중…")).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
         }
-        if ui.small_button(wp_core::i18n::tr("요소 따로 꺼내기")).on_hover_text(wp_core::i18n::tr("PPT 의 글상자·그림·도형을 하나씩 꺼내 슬라이드 편집기에서 고칠 수 있게")).clicked() {
-            let mut c = app.core.lock();
-            let n = hymns::load(&c, &file).map(|m| m["slides"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
-            match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), false) {
-                Ok(l) => {
-                    let mut x = it.clone();
-                    let (sl, t, p, s) = hymns::apply_layers(&mut x, &l, n);
-                    if let Some(cue) = &mut c.cue {
-                        if i < cue.items.len() {
-                            cue.items[i] = x;
-                        }
-                    }
-                    c.save_cue();
-                    c.preview_item(i);
-                    if t + p + s > 0 {
-                        c.notify(wp_core::i18n::tr_args("슬라이드 {1}장에서 글상자 {2}개 · 그림 {3}개 · 도형 {4}개를 꺼냈습니다.", &[&sl, &t, &p, &s]), "ok");
-                    } else {
-                        c.notify(wp_core::i18n::tr("따로 꺼낼 요소를 찾지 못했습니다 (글이 그림으로 되어 있거나 돌린 요소)."), "warn");
+        // cue.js pptTextRow: 아직 안 꺼냈으면 '요소 따로 꺼내기' 하나, 꺼냈으면 'N장을 요소로 · 다시 꺼내기 · 원래대로' (+ 배경 그림이 없으면 '배경 다시 만들기')
+        // 다시 꺼내기·원래대로는 고친 PPT 글·그림이 사라지므로 Electron 처럼 묻고 진행한다 (confirm → 줄 아래 예/아니요)
+        let on = hymns::ppt_text_count(it);
+        let item_id = it["id"].as_str().unwrap_or("").to_string();
+        let mut confirm: String = get(ui, CONFIRM); // "again:<id>" | "off:<id>" | ""
+        if on == 0 {
+            if ui.small_button(wp_core::i18n::tr("요소 따로 꺼내기")).on_hover_text(wp_core::i18n::tr("PPT 의 글상자·그림·도형을 하나씩 꺼내 슬라이드 편집기에서 고칠 수 있게")).clicked() {
+                extract_layers(app, i, it);
+            }
+        } else {
+            let missing = hymns::layer_bgs_missing(&app.core.lock(), &file);
+            if missing {
+                ui.label(RichText::new(wp_core::i18n::tr("요소를 숨긴 배경 그림이 없습니다 (다른 PC · 캐시 지움)")).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+                if ui.small_button(wp_core::i18n::tr("배경 다시 만들기")).on_hover_text(wp_core::i18n::tr("요소를 숨긴 PPT 배경 그림만 다시 만듭니다 (고친 것은 그대로)")).clicked() {
+                    let mut c = app.core.lock();
+                    match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), true) {
+                        Ok(_) => { c.preview_item(i); c.notify(wp_core::i18n::tr("요소를 숨긴 PPT 배경 그림을 다시 만들었습니다."), "ok"); }
+                        Err(e) => { let k = if e == hymns::BUILDING { "info" } else { "error" }; c.notify(e, k); }
                     }
                 }
-                Err(e) => {
-                    let k = if e == hymns::BUILDING { "info" } else { "error" };
-                    c.notify(e, k);
-                }
+            } else {
+                ui.label(RichText::new(wp_core::i18n::tr_args("{1}장을 요소로", &[&on])).small().color(Color32::GRAY));
+            }
+            if ui.small_button(wp_core::i18n::tr("다시 꺼내기")).on_hover_text(wp_core::i18n::tr("PPT 에서 요소를 다시 꺼냄 (고친 PPT 글·그림은 원래대로)")).clicked() {
+                confirm = format!("again:{item_id}");
+            }
+            if ui.small_button(wp_core::i18n::tr("원래대로")).on_hover_text(wp_core::i18n::tr("꺼낸 요소를 뽑고 원래 PPT 그림으로")).clicked() {
+                confirm = format!("off:{item_id}");
             }
         }
+        set(ui, CONFIRM, confirm);
         if ui.small_button(wp_core::i18n::tr("자동으로 나누기")).on_hover_text(wp_core::i18n::tr("한 PPT 를 순서 이름·찬송 장·성경 장절로 여러 순서로 나눕니다 (AI 없이)")).clicked() {
             let mut c = app.core.lock();
             match hymns::slide_texts(&c, &file).and_then(|t| pptsplit::rule_split(&t, &title)) {
@@ -348,6 +394,39 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             }
         }
     });
+    // 확인 줄 (cue.js 의 confirm): 이 순서에 대한 것만
+    let confirm: String = get(ui, CONFIRM);
+    if let Some((kind, id)) = confirm.split_once(':').filter(|(_, id)| *id == it["id"].as_str().unwrap_or("")) {
+        let q = if kind == "again" {
+            "PPT 의 요소를 다시 꺼낼까요? 이 순서에서 고친 PPT 글·그림은 원래 PPT 대로 돌아갑니다 (덧붙인 글상자·그림은 그대로)."
+        } else {
+            "원래 PPT 그림으로 되돌릴까요? 꺼내서 고친 PPT 글·그림은 사라지고, 덧붙인 글상자·그림은 그대로 둡니다."
+        };
+        let (kind, _id) = (kind.to_string(), id.to_string());
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(wp_core::i18n::tr(q)).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+            if ui.small_button(wp_core::i18n::tr("예")).clicked() {
+                set(ui, CONFIRM, String::new());
+                if kind == "again" {
+                    extract_layers(app, i, it);
+                } else {
+                    let mut c = app.core.lock();
+                    let mut x = it.clone();
+                    if hymns::ppt_text_off(&mut x) {
+                        if let Some(cue) = &mut c.cue {
+                            if i < cue.items.len() { cue.items[i] = x; }
+                        }
+                        c.save_cue();
+                        c.preview_item(i);
+                    }
+                    c.notify(wp_core::i18n::tr("원래 PPT 그림으로 되돌렸습니다."), "ok");
+                }
+            }
+            if ui.small_button(wp_core::i18n::tr("아니요")).clicked() {
+                set(ui, CONFIRM, String::new());
+            }
+        });
+    }
     let mut ans: String = get(ui, ANSWER);
     ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
         let go = ui.small_button(wp_core::i18n::tr("나누기")).clicked();
@@ -364,6 +443,35 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
         }
     });
     set(ui, ANSWER, ans);
+}
+
+/// PPT 의 글상자·그림·도형을 꺼내 이 순서의 edits 에 (cue.js pptTextOn mode 'on'). 캐시가 없으면 백그라운드로 만들고 '만드는 중' 알림.
+fn extract_layers(app: &mut App, i: usize, it: &Value) {
+    let file = it["file"].as_str().unwrap_or("").to_string();
+    let mut c = app.core.lock();
+    let n = hymns::load(&c, &file).map(|m| m["slides"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
+    match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), false) {
+        Ok(l) => {
+            let mut x = it.clone();
+            let (sl, t, p, s) = hymns::apply_layers(&mut x, &l, n);
+            if let Some(cue) = &mut c.cue {
+                if i < cue.items.len() {
+                    cue.items[i] = x;
+                }
+            }
+            c.save_cue();
+            c.preview_item(i);
+            if t + p + s > 0 {
+                c.notify(wp_core::i18n::tr_args("슬라이드 {1}장에서 글상자 {2}개 · 그림 {3}개 · 도형 {4}개를 꺼냈습니다.", &[&sl, &t, &p, &s]), "ok");
+            } else {
+                c.notify(wp_core::i18n::tr("따로 꺼낼 요소를 찾지 못했습니다 (글이 그림으로 되어 있거나 돌린 요소)."), "warn");
+            }
+        }
+        Err(e) => {
+            let k = if e == hymns::BUILDING { "info" } else { "error" };
+            c.notify(e, k);
+        }
+    }
 }
 
 fn replace_with_parts(c: &mut wp_core::core::Core, i: usize, it: &Value, parts: &[pptsplit::Part]) {
@@ -460,9 +568,9 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, core: &wp_core::core::Shared) ->
                 // hymns.js isAllowed 가 그것을 허용한다. 고르기 창으로 고른 파일도 같은 목록에 넣어 is_allowed 가 거부하지 않게 한다.
                 core.lock().add_dropped_files(std::slice::from_ref(&p));
                 e["file"] = json!(p.to_string_lossy());
-                e["number"] = json!(num.unwrap_or(0));
+                e["number"] = json!(num);
                 if e["title"].as_str().is_none_or(|t| t.is_empty() || t == "찬송") {
-                    e["title"] = json!(title);
+                    e["title"] = json!(hymns::item_title(num, &title));
                 }
                 changed = true;
             }
@@ -471,8 +579,10 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, core: &wp_core::core::Shared) ->
     ui.label(RichText::new(wp_core::i18n::tr("등록한 찬송가 폴더·붙여 넣은 슬라이드 폴더 안의 파일과 여기서 고른 파일이 열립니다")).small().color(Color32::GRAY));
     ui.label(RichText::new(wp_core::i18n::tr("배경 (악보 그림일 때)")).small());
     let mut bg = e["background"].as_str().unwrap_or("default").to_string();
+    // '설정대로' 에는 지금 기본 배경 이름을 같이 (cue.js hymnBgSel: "기본값 (원래 배경)")
+    let def = wp_core::i18n::tr_args("설정대로 ({1})", &[&wp_core::i18n::tr(hymns::default_bg_label(&hymns::default_bg(&core.lock())))]);
     ui.horizontal_wrapped(|ui| {
-        for (v, l) in [("default", "설정대로"), ("original", "파일 배경"), ("template", "템플릿 배경"), ("#ffffff", "흰색"), ("#000000", "검정")] {
+        for (v, l) in [("default", def.as_str()), ("original", "파일 배경"), ("template", "템플릿 배경"), ("#ffffff", "흰색"), ("#000000", "검정")] {
             if ui.radio_value(&mut bg, v.to_string(), l).changed() {
                 e["background"] = json!(bg.clone());
                 changed = true;

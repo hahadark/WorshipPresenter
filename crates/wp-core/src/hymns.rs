@@ -197,6 +197,67 @@ pub fn build_meta(data_dir: &Path, file: &str, render: &str) -> Result<Value, St
     if xml { crate::pptx::build::build_cache(data_dir, file) } else { crate::pps::build_cache(data_dir, file) }
 }
 
+/// 꿝에서 F6/F5 로 넘어갈 순서가 아직 그림을 안 만든 PPT 일 때 기억해 두는 것.
+/// Electron `cue.js onCueNext` 는 `previewItem` 이 `loadHymn` 을 기다린 뒤 송출하므로 처음 열는 PPT 라도 못 초 뒤 자동으로 다음 순서가 나간다.
+/// Rust 는 만들기를 기다리지 않고(코어 잠금) BUILDING 을 돌려주므로, 요청을 기억해 두고 만들기가 꿝나면 이어서 송출한다.
+/// 그 사이 다른 송출·넘김이 있었거나(version) 다른 큐시트를 열었으면 버린다 (Electron `if (app.state.live.version !== version) return`).
+struct Deferred {
+    key: String,
+    cue_id: String,
+    index: usize,
+    dir: i64,
+    version: u64,
+}
+static DEFERRED: Lazy<Mutex<Option<Deferred>>> = Lazy::new(|| Mutex::new(None));
+
+/// index 순서가 만드는 중인 PPT 면 '꿝나면 이어서 송출' 을 기억하고 true
+pub fn defer_advance(core: &Core, index: usize, dir: i64) -> bool {
+    let Some(cue) = core.cue.as_ref() else { return false };
+    let Some(it) = cue.items.get(index) else { return false };
+    let Some(file) = it["file"].as_str().filter(|_| it["type"] == "hymn") else { return false };
+    if !is_building(file) {
+        return false;
+    }
+    *DEFERRED.lock() = Some(Deferred { key: norm(file), cue_id: cue.id.clone(), index, dir, version: core.pres.version });
+    true
+}
+
+/// 기억한 넘김이 이 파일이고 아직 유효하면 꺼내서 돌려준다 (다른 파일이면 그대로 둠)
+fn take_deferred(key: &str, cue_id: &str, version: u64) -> Option<(usize, i64)> {
+    let mut g = DEFERRED.lock();
+    if g.as_ref().is_some_and(|d| d.key == key) {
+        let d = g.take().unwrap();
+        return (d.cue_id == cue_id && d.version == version).then_some((d.index, d.dir));
+    }
+    None
+}
+
+/// 만들기가 실패했을 때: 이 파일에 기억한 넘김은 버린다
+fn clear_deferred(key: &str) {
+    let mut g = DEFERRED.lock();
+    if g.as_ref().is_some_and(|d| d.key == key) {
+        *g = None;
+    }
+}
+
+/// 만들기가 꿝났을 때: 기억한 넘김이 있으면 이어서 송출 (trigger::advance_live_cue 의 송출 분기와 같게) → 송출했으면 true
+fn finish_deferred(c: &mut Core, key: &str) -> bool {
+    let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
+    let Some((index, dir)) = take_deferred(key, &cue_id, c.pres.version) else { return false };
+    match c.item_deck(index) {
+        Ok(mut deck) => {
+            if dir < 0 { deck.index = deck.slides.len().saturating_sub(1); }
+            c.pres.preview = Some(deck.clone());
+            c.send_deck(deck);
+            true
+        }
+        Err(e) => {
+            c.notify(e, "warn");
+            false
+        }
+    }
+}
+
 fn start_build(core: &Core, file: &str) {
     let key = norm(file);
     if !PENDING.lock().insert(key.clone()) {
@@ -215,17 +276,25 @@ fn start_build(core: &Core, file: &str) {
             Ok(m) => {
                 let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
                 META.lock().insert(stamp, with_captions(&c, m));
-                // 이 파일 순서를 보고 있었으면 미리보기를 다시
-                let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
-                let pv = c.pres.preview.as_ref().filter(|p| p.passage["cueId"] == cue_id.as_str()).and_then(|p| p.passage["cueIndex"].as_i64()); // 열린 큐시트의 미리보기만
-                let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
                 let name = Path::new(&file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-                if let Some(i) = want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64)) {
-                    c.preview_item(i);
+                if finish_deferred(&mut c, &key) {
+                    // 꿝에서 F6/F5 로 기다리던 다음 순서를 이어서 송출했다 (Electron onCueNext 와 같은 결과)
+                    c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들어 다음 순서로 넘어갔습니다.", &[&name]), "ok");
+                } else {
+                    // 이 파일 순서를 보고 있었으면 미리보기를 다시
+                    let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
+                    let pv = c.pres.preview.as_ref().filter(|p| p.passage["cueId"] == cue_id.as_str()).and_then(|p| p.passage["cueIndex"].as_i64()); // 열린 큐시트의 미리보기만
+                    let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
+                    if let Some(i) = want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64)) {
+                        c.preview_item(i);
+                    }
+                    c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");
                 }
-                c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");
             }
-            Err(e) => c.notify(e, "error"),
+            Err(e) => {
+                clear_deferred(&key);
+                c.notify(e, "error");
+            }
         }
         let _ = tx.send(crate::core::Ev::Ui);
     });
@@ -278,6 +347,7 @@ pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done
 
 /// PPT 요소 따로 꺼내기 (pptTextLayers): → { key, bgs, slides: [[편집기 항목…]] }
 /// 아직 꺼낸 적이 없으면 백그라운드로 만들고 BUILDING 을 돌려준다 (끝나면 알림)
+/// again=true: 캐시를 지우고 요소·배경 그림을 다시 만든다 (cue.js pptTextOn mode 'bg' — 순서의 edits 는 손대지 않는다). 꿝나면 이 파일을 보던 미리보기도 다시.
 pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool) -> Result<Value, String> {
     let meta = load(core, file)?;
     if !meta["layers"].as_bool().unwrap_or(false) && !file.to_lowercase().ends_with('x') {
@@ -297,6 +367,7 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
             let lk = format!("layers:{}", norm(file));
             if PENDING.lock().insert(lk.clone()) {
                 let (dd, f) = (core.data_dir.clone(), file.to_string());
+                let f2 = f.clone();
                 let by_pp = meta["mode"] == "slides" && has_powerpoint();
                 run_bg(move || {
                     let m = crate::pptx::build::build_cache(&dd, &f)?;
@@ -312,7 +383,16 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
                     PENDING.lock().remove(&lk);
                     META.lock().clear(); // layerBgs 를 다시 읽게
                     match r {
-                        Ok(_) => c.notify(crate::i18n::tr("PPT 요소를 꺼냈습니다. 다시 누르면 슬라이드 편집기에 들어갑니다."), "ok"),
+                        Ok(_) => {
+                            // 이 파일의 순서를 미리보기하고 있었으면 새 배경 그림으로 다시 (cue.js previewItem(i, {keepIndex}))
+                            let key = norm(&f2);
+                            let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
+                            let pv = c.pres.preview.as_ref().filter(|p| p.passage["cueId"] == cue_id.as_str()).and_then(|p| p.passage["cueIndex"].as_i64());
+                            let same = pv.and_then(|i| c.cue.as_ref().and_then(|q| q.items.get(i as usize)).map(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
+                            if let (Some(i), Some(true)) = (pv, same) { c.preview_item(i as usize); }
+                            let msg = if again { "요소를 숨긴 PPT 배경 그림을 다시 만들었습니다." } else { "PPT 요소를 꺼냈습니다. 다시 누르면 슬라이드 편집기에 들어갑니다." };
+                            c.notify(crate::i18n::tr(msg), "ok");
+                        }
                         Err(e) => c.notify(e, "error"),
                     }
                 });
@@ -384,6 +464,43 @@ pub fn apply_layers(it: &mut Value, layers: &Value, slide_count: usize) -> (usiz
         it["edits"] = Value::Object(edits);
     }
     (sl, t, p, s)
+}
+
+/// 이 순서에서 요소로 꺼낸 슬라이드 수 (cue.js pptTextCount): edits 값 중 pptBg 가 참인 것
+pub fn ppt_text_count(it: &Value) -> usize {
+    it["edits"].as_object().into_iter().flatten().filter(|(_, e)| e["pptBg"].as_bool().unwrap_or(false)).count()
+}
+
+/// 원래 PPT 그림으로 (cue.js pptTextOff): 꺼낸 요소(p\d+[tis]\d+)·pptBg 를 무고, 덧붙인 글상자·그림과 다른 편집(skip 등)은 그대로.
+/// 무언가 바뀜었으면 true.
+pub fn ppt_text_off(it: &mut Value) -> bool {
+    let Some(mut edits) = it["edits"].as_object().cloned() else { return false };
+    let mut changed = false;
+    for k in edits.keys().cloned().collect::<Vec<_>>() {
+        let Some(e) = edits.get_mut(&k) else { continue };
+        let Some(o) = e.as_object_mut() else { continue };
+        if o.remove("pptBg").is_some() { changed = true; }
+        if let Some(items) = o.get("items").and_then(|a| a.as_array()).cloned() {
+            let keep: Vec<Value> = items.iter().filter(|x| !crate::pptx::layers::is_ppt_item(x["id"].as_str().unwrap_or(""))).cloned().collect();
+            if keep.len() != items.len() { changed = true; }
+            if keep.is_empty() { o.remove("items"); } else { o.insert("items".into(), json!(keep)); }
+        }
+        if o.is_empty() { edits.remove(&k); }
+    }
+    if edits.is_empty() {
+        if let Some(o) = it.as_object_mut() { o.remove("edits"); }
+    } else {
+        it["edits"] = Value::Object(edits);
+    }
+    changed
+}
+
+/// 요소를 숨긴 배경 그림이 하나도 없는가 (cue.js pptTextRow 의 missing: 다른 PC·캐시 지움) — 꺼낸 순서에서만 의미 있다
+pub fn layer_bgs_missing(core: &Core, file: &str) -> bool {
+    match load(core, file) {
+        Ok(meta) => !meta["layerBgs"].as_array().is_some_and(|a| a.iter().any(|b| b.as_str().is_some_and(|s| !s.is_empty()))),
+        Err(_) => false,
+    }
 }
 
 pub fn is_building(file: &str) -> bool {
@@ -671,6 +788,42 @@ fn range_of(r: &str) -> Option<(usize, usize)> {
     Some((a.min(b), a.max(b)))
 }
 
+/// 기본 배경 설정(settings.hymnBackground) 값 → 사람이 읽는 이름 (cue.js hymnBgSel: 원래 배경·템플릿 배경·흰 배경·지정 이미지)
+pub fn default_bg_label(v: &str) -> &'static str {
+    match v {
+        "" | "original" => "원래 배경",
+        "template" => "템플릿 배경",
+        "#ffffff" => "흰 배경",
+        _ => "지정 이미지",
+    }
+}
+
+/// 지금 기본 배경 설정 값 (없으면 original — cue.js 와 같은 기본값)
+pub fn default_bg(core: &Core) -> String {
+    core.settings.get()["hymnBackground"].as_str().filter(|s| !s.is_empty()).unwrap_or("original").to_string()
+}
+
+/// 기본 배경 설정 바꾸기 (cue.js updateSettings {hymnBackground}): original | #ffffff | template | 그림 주소
+pub fn set_default_bg(core: &mut Core, v: &str) {
+    let v = v.to_string();
+    core.settings.update(|d| d["hymnBackground"] = json!(v));
+}
+
+/// 기본 배경을 지정 이미지로: 그림을 <데이터>/media/hymnbg-… 으로 복사해 '/media/…' 주소를 설정에 (Electron pickImage → POST /api/media → /media/… 와 같은 모양)
+pub fn set_default_bg_image(core: &mut Core, src: &Path) -> Result<String, String> {
+    if !crate::library::is_image(src) {
+        return Err(crate::i18n::tr("그림 파일(png·jpg·webp·gif)만 기본 배경으로 쓸 수 있습니다.").into());
+    }
+    let dir = core.data_dir.join("media");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "png".into());
+    let name = format!("hymnbg-{}.{ext}", crate::util::now_ms());
+    std::fs::copy(src, dir.join(&name)).map_err(|e| crate::i18n::tr_args("그림을 복사하지 못했습니다: {1}", &[&e]))?;
+    let url = format!("/media/{name}");
+    set_default_bg(core, &url);
+    Ok(url)
+}
+
 /// 찬송가 순서의 배경 (cue.js hymnBg)
 pub fn hymn_bg(core: &Core, it: &Value, meta: &Value) -> String {
     let mut b = it["background"].as_str().unwrap_or("default").to_string();
@@ -844,10 +997,19 @@ pub fn b64(data: &[u8]) -> String {
 }
 
 /// 큐시트에 넣을 찬송가 순서
+/// 큐시트 순서 제목 (cue.js openHymnPicker 1527·1533): 번호가 있고 교독문이 아니면 "10장 전능왕 오셔서"
+/// — 무대 화면·인쇄·사용 기록·'큐시트를 글로' 에 Electron 과 같은 제목이 나오게.
+pub fn item_title(number: Option<i64>, title: &str) -> String {
+    match number {
+        Some(n) if !title.starts_with("교독문") => format!("{n}장 {title}"),
+        _ => title.to_string(),
+    }
+}
+
 pub fn new_hymn_item(h: &HymnFile) -> Value {
-    let mut it = crate::core::new_item("hymn", &h.title);
+    let mut it = crate::core::new_item("hymn", &item_title(h.number, &h.title));
     it["file"] = json!(h.file.to_string_lossy());
-    it["number"] = json!(h.number.unwrap_or(0));
+    it["number"] = json!(h.number); // 없으면 null (Electron 과 같음. 표시 쪽은 n > 0 으로 거른다)
     it["background"] = json!("default");
     it["obsLyrics"] = json!("");
     it
@@ -861,6 +1023,21 @@ mod tests {
         assert_eq!(parse_name(Path::new("010 전능왕 오셔서.pps")), (Some(10), "전능왕 오셔서".into(), "010 전능왕 오셔서".into()));
         assert_eq!(parse_name(Path::new("교독문 13 (시편 23편).pptx")).0, Some(13));
         assert_eq!(parse_name(Path::new("clip-20261110.pptx")).0, None);
+        // 순서 제목 'N장 ' 접두어 (cue.js 1527): 교독문은 번호가 있어도 그대로, 번호 없으면 그대로
+        assert_eq!(item_title(Some(10), "전능왕 오셔서"), "10장 전능왕 오셔서");
+        assert_eq!(item_title(Some(13), "교독문 13 (시편 23편)"), "교독문 13 (시편 23편)");
+        assert_eq!(item_title(None, "붙여 넣은 슬라이드"), "붙여 넣은 슬라이드");
+        // 기본 배경 이름 (cue.js hymnBgSel 의 { original: '원래 배경', template: '템플릿 배경', '#ffffff': '흰 배경' } || '지정 이미지')
+        assert_eq!(default_bg_label(""), "원래 배경");
+        assert_eq!(default_bg_label("original"), "원래 배경");
+        assert_eq!(default_bg_label("#ffffff"), "흰 배경");
+        assert_eq!(default_bg_label("template"), "템플릿 배경");
+        assert_eq!(default_bg_label("/media/hymnbg-1.png"), "지정 이미지");
+        let it = new_hymn_item(&HymnFile { number: Some(10), title: "전능왕 오셔서".into(), name: "010 전능왕 오셔서".into(), folder: "새찬송가".into(), file: PathBuf::from(r"C:\h\010 전능왕 오셔서.pps") });
+        assert_eq!(it["title"], "10장 전능왕 오셔서");
+        assert_eq!(it["number"], 10);
+        let it = new_hymn_item(&HymnFile { number: None, title: "clip".into(), name: "clip".into(), folder: String::new(), file: PathBuf::from(r"C:\h\clip.pptx") });
+        assert!(it["number"].is_null());
         assert_eq!(range_of("5-9"), Some((5, 9)));
         assert_eq!(range_of(" 3 "), Some((3, 3)));
         assert_eq!(range_of("x"), None);
@@ -877,10 +1054,113 @@ mod tests {
         assert_eq!(it["edits"]["0"]["pptBg"], true);
         let ids: Vec<&str> = it["edits"]["0"]["items"].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
         assert_eq!(ids, vec!["p1t0", "p1i1", "mine"]); // 꺼낸 것 + 사용자가 덧붙인 것 (예전에 꺼낸 것은 새로)
+        // 다시 꺼내기: 고친 PPT 글은 새 것으로 바뀜다 → UI 는 ppt_text_count > 0 이면 반드시 확인을 받는다 (cue.js pptTextOn again)
+        assert_eq!(ppt_text_count(&it), 1);
+        it["edits"]["0"]["items"][0]["text"] = json!("고친 글");
+        apply_layers(&mut it, &l, 3);
+        assert!(it["edits"]["0"]["items"][0]["text"].is_null());
+        // 원래대로 (pptTextOff): pptBg 와 p\d+ 요소만 무고 덧붙인 것·다른 편집은 그대로
+        it["edits"]["1"] = json!({ "pptBg": true, "items": [{ "id": "p2t0", "type": "text" }] });
+        it["edits"]["2"] = json!({ "skip": true });
+        assert!(ppt_text_off(&mut it));
+        assert_eq!(ppt_text_count(&it), 0);
+        let ids: Vec<&str> = it["edits"]["0"]["items"].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["mine"]);
+        assert!(it["edits"]["0"]["pptBg"].is_null());
+        assert!(it["edits"].get("1").is_none()); // 버젨 것만 남으면 키 자체를 지움
+        assert_eq!(it["edits"]["2"]["skip"], true);
+        assert!(!ppt_text_off(&mut it)); // 더 지울 것이 없으면 false
+        let mut none = json!({ "type": "hymn", "edits": { "0": { "pptBg": true, "items": [{ "id": "p1t0" }] } } });
+        assert!(ppt_text_off(&mut none));
+        assert!(none.get("edits").is_none()); // 전부 버져지면 edits 자체를 지움
         let parts = vec![crate::pptsplit::Part { a: 1, b: 2, name: "찬송".into(), kind: "hymn".into() }, crate::pptsplit::Part { a: 3, b: 3, name: "기도".into(), kind: "prayer".into() }];
         let items = split_items(&json!({ "type": "hymn", "file": "x.pptx", "title": "전체" }), &parts);
         assert_eq!(items[0]["range"], "1-2");
         assert_eq!(items[1]["title"], "기도");
+    }
+}
+
+#[cfg(test)]
+mod default_bg_tests {
+    use super::*;
+    /// 기존 사용자 자료를 복사하지 않도록 뱈 DB 가 있는 고유 임시 폴더를 쓴다.
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-hymnbg-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+    #[test]
+    fn default_bg_setting_and_image() {
+        let mut c = core();
+        assert_eq!(default_bg(&c), "original"); // 없으면 original (cue.js `s.hymnBackground || 'original'`)
+        set_default_bg(&mut c, "#ffffff");
+        assert_eq!(c.settings.get()["hymnBackground"], "#ffffff");
+        // 순서의 '설정대로'(default) 는 이 값을 따른다 (hymn_bg)
+        assert_eq!(hymn_bg(&c, &json!({ "background": "default" }), &json!({ "background": "/hymn/k/bg.png" })), "#ffffff");
+        set_default_bg(&mut c, "original");
+        assert_eq!(hymn_bg(&c, &json!({}), &json!({ "background": "/hymn/k/bg.png" })), "/hymn/k/bg.png");
+        // 지정 이미지: media 폴더로 복사하고 /media/ 주소를 설정에
+        let src = c.data_dir.join("pick.png");
+        std::fs::write(&src, b"\x89PNG").unwrap();
+        let url = set_default_bg_image(&mut c, &src).unwrap();
+        assert!(url.starts_with("/media/hymnbg-") && url.ends_with(".png"));
+        assert!(c.data_dir.join("media").join(url.trim_start_matches("/media/")).is_file());
+        assert_eq!(default_bg(&c), url);
+        assert_eq!(default_bg_label(&default_bg(&c)), "지정 이미지");
+        let dir = c.data_dir.clone();
+        assert!(set_default_bg_image(&mut c, &dir.join("x.pptx")).is_err());
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod deferred_tests {
+    use super::*;
+    use crate::db::Cue;
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-hymndefer-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+    /// 꿝에서 F6 → 만드는 중인 PPT: 기억해 두고, 큐시트·송출 version 이 그대로일 때만 이어서 송출 (cue.js onCueNext)
+    #[test]
+    fn defer_advance_until_built() {
+        let mut c = core();
+        let file = r"C:\hymn-defer-test\010 전능왕.pptx";
+        c.cue = Some(Cue { id: "q1".into(), name: "q1".into(), service_date: String::new(), start_time: String::new(), items: vec![json!({ "type": "title", "title": "예배" }), json!({ "type": "hymn", "title": "10장 전능왕", "file": file })], memo: String::new(), pinned: false, template: false });
+        // 만드는 중이 아니면 기억하지 않는다 (그냥 오류로)
+        assert!(!defer_advance(&c, 1, 1));
+        assert!(!defer_advance(&c, 0, 1)); // 찬송가가 아닌 순서
+        PENDING.lock().insert(norm(file));
+        assert!(defer_advance(&c, 1, 1));
+        let key = norm(file);
+        // 다른 파일의 만들기가 꿝나도 건들지 않는다
+        assert_eq!(take_deferred("c:\\other.pptx", "q1", c.pres.version), None);
+        assert!(DEFERRED.lock().is_some());
+        // 그 사이 다른 송출(version 바뀜)이 있었으면 버린다
+        assert_eq!(take_deferred(&key, "q1", c.pres.version + 1), None);
+        assert!(DEFERRED.lock().is_none());
+        // 다른 큐시트를 열었으면 버린다
+        assert!(defer_advance(&c, 1, -1));
+        assert_eq!(take_deferred(&key, "q2", c.pres.version), None);
+        // 그대로면 순서·방향을 돌려준다
+        assert!(defer_advance(&c, 1, -1));
+        assert_eq!(take_deferred(&key, "q1", c.pres.version), Some((1, -1)));
+        // finish_deferred: 파일을 열 수 없으면 송출하지 않고 경고만 (예전 미리보기가 나가지 않게)
+        assert!(defer_advance(&c, 1, 1));
+        assert!(!finish_deferred(&mut c, &key));
+        assert!(c.pres.live.is_none());
+        // 만들기 실패 → 기억도 버림
+        assert!(defer_advance(&c, 1, 1));
+        clear_deferred(&key);
+        assert!(DEFERRED.lock().is_none());
+        PENDING.lock().remove(&key);
+        let dir = c.data_dir.clone();
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 

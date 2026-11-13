@@ -81,7 +81,15 @@ pub fn advance_live_cue(core: &mut Core, dir: i64) -> Result<Value, String> {
     while next >= 0 && next < n {
         let audio = core.cue.as_ref().unwrap().items[next as usize]["type"] == "audio";
         if !audio {
-            let mut deck = core.item_deck(next as usize)?;
+            let mut deck = match core.item_deck(next as usize) {
+                Ok(d) => d,
+                // [찬송가] 아직 그림을 안 만든 PPT 면 만들기가 꿝나면 이어서 송출 (Electron onCueNext 는 loadHymn 을 기다린 뒤 송출)
+                Err(e) if e == crate::hymns::BUILDING && crate::hymns::defer_advance(core, next as usize, dir) => {
+                    core.notify(crate::i18n::tr("다음 순서의 PPT 를 그림으로 만드는 중입니다… 꿝나면 이어서 송출합니다."), "info");
+                    return Ok(json!({ "index": next, "deferred": true }));
+                }
+                Err(e) => return Err(e),
+            };
             if dir < 0 { deck.index = deck.slides.len().saturating_sub(1); }
             core.pres.preview = Some(deck.clone());
             core.send_deck(deck);
