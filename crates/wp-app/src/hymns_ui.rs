@@ -205,7 +205,9 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             };
             if ui.selectable_label(false, t).on_hover_text(wp_core::i18n::tr("눌러서 큐시트에 넣기")).clicked() {
                 if src == "ppt" {
-                    acts.push(Act::AddItem("hymn", Some(json!({ "title": h["title"], "file": h["file"], "number": h["number"].as_i64().unwrap_or(0), "background": "default", "obsLyrics": "" }))));
+                    // 제목은 "10장 전능왕 오셔서" (cue.js 1527) · 번호 없으면 null
+                    let num = h["number"].as_i64();
+                    acts.push(Act::AddItem("hymn", Some(json!({ "title": hymns::item_title(num, h["title"].as_str().unwrap_or("")), "file": h["file"], "number": num, "background": "default", "obsLyrics": "" }))));
                 } else {
                     let r = hymnal::get(&app.core.lock(), h["book"].as_str().unwrap_or(""), h["number"].as_i64().unwrap_or(0));
                     match r {
@@ -460,9 +462,9 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, core: &wp_core::core::Shared) ->
                 // hymns.js isAllowed 가 그것을 허용한다. 고르기 창으로 고른 파일도 같은 목록에 넣어 is_allowed 가 거부하지 않게 한다.
                 core.lock().add_dropped_files(std::slice::from_ref(&p));
                 e["file"] = json!(p.to_string_lossy());
-                e["number"] = json!(num.unwrap_or(0));
+                e["number"] = json!(num);
                 if e["title"].as_str().is_none_or(|t| t.is_empty() || t == "찬송") {
-                    e["title"] = json!(title);
+                    e["title"] = json!(hymns::item_title(num, &title));
                 }
                 changed = true;
             }

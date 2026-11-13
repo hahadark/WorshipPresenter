@@ -844,10 +844,19 @@ pub fn b64(data: &[u8]) -> String {
 }
 
 /// 큐시트에 넣을 찬송가 순서
+/// 큐시트 순서 제목 (cue.js openHymnPicker 1527·1533): 번호가 있고 교독문이 아니면 "10장 전능왕 오셔서"
+/// — 무대 화면·인쇄·사용 기록·'큐시트를 글로' 에 Electron 과 같은 제목이 나오게.
+pub fn item_title(number: Option<i64>, title: &str) -> String {
+    match number {
+        Some(n) if !title.starts_with("교독문") => format!("{n}장 {title}"),
+        _ => title.to_string(),
+    }
+}
+
 pub fn new_hymn_item(h: &HymnFile) -> Value {
-    let mut it = crate::core::new_item("hymn", &h.title);
+    let mut it = crate::core::new_item("hymn", &item_title(h.number, &h.title));
     it["file"] = json!(h.file.to_string_lossy());
-    it["number"] = json!(h.number.unwrap_or(0));
+    it["number"] = json!(h.number); // 없으면 null (Electron 과 같음. 표시 쪽은 n > 0 으로 거른다)
     it["background"] = json!("default");
     it["obsLyrics"] = json!("");
     it
@@ -861,6 +870,15 @@ mod tests {
         assert_eq!(parse_name(Path::new("010 전능왕 오셔서.pps")), (Some(10), "전능왕 오셔서".into(), "010 전능왕 오셔서".into()));
         assert_eq!(parse_name(Path::new("교독문 13 (시편 23편).pptx")).0, Some(13));
         assert_eq!(parse_name(Path::new("clip-20261110.pptx")).0, None);
+        // 순서 제목 'N장 ' 접두어 (cue.js 1527): 교독문은 번호가 있어도 그대로, 번호 없으면 그대로
+        assert_eq!(item_title(Some(10), "전능왕 오셔서"), "10장 전능왕 오셔서");
+        assert_eq!(item_title(Some(13), "교독문 13 (시편 23편)"), "교독문 13 (시편 23편)");
+        assert_eq!(item_title(None, "붙여 넣은 슬라이드"), "붙여 넣은 슬라이드");
+        let it = new_hymn_item(&HymnFile { number: Some(10), title: "전능왕 오셔서".into(), name: "010 전능왕 오셔서".into(), folder: "새찬송가".into(), file: PathBuf::from(r"C:\h\010 전능왕 오셔서.pps") });
+        assert_eq!(it["title"], "10장 전능왕 오셔서");
+        assert_eq!(it["number"], 10);
+        let it = new_hymn_item(&HymnFile { number: None, title: "clip".into(), name: "clip".into(), folder: String::new(), file: PathBuf::from(r"C:\h\clip.pptx") });
+        assert!(it["number"].is_null());
         assert_eq!(range_of("5-9"), Some((5, 9)));
         assert_eq!(range_of(" 3 "), Some((3, 3)));
         assert_eq!(range_of("x"), None);
