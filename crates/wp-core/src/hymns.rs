@@ -199,7 +199,7 @@ pub fn build_meta(data_dir: &Path, file: &str, render: &str) -> Result<Value, St
 
 /// 꿝에서 F6/F5 로 넘어갈 순서가 아직 그림을 안 만든 PPT 일 때 기억해 두는 것.
 /// Electron `cue.js onCueNext` 는 `previewItem` 이 `loadHymn` 을 기다린 뒤 송출하므로 처음 열는 PPT 라도 못 초 뒤 자동으로 다음 순서가 나간다.
-/// Rust 는 만들기를 기다리지 않고(코어 잠금) BUILDING 을 돌려주므로, 요청을 기억해 두고 만들기가 꿝나면 이어서 송출한다.
+/// Rust 는 만들기를 기다리지 않고(코어 잠금) BUILDING 을 돌려주므로, 요청을 기억해 두고 만들기가 끝나면 이어서 송출한다.
 /// 그 사이 다른 송출·넘김이 있었거나(version) 다른 큐시트를 열었으면 버린다 (Electron `if (app.state.live.version !== version) return`).
 struct Deferred {
     key: String,
@@ -210,7 +210,7 @@ struct Deferred {
 }
 static DEFERRED: Lazy<Mutex<Option<Deferred>>> = Lazy::new(|| Mutex::new(None));
 
-/// index 순서가 만드는 중인 PPT 면 '꿝나면 이어서 송출' 을 기억하고 true
+/// index 순서가 만드는 중인 PPT 면 '끝나면 이어서 송출' 을 기억하고 true
 pub fn defer_advance(core: &Core, index: usize, dir: i64) -> bool {
     let Some(cue) = core.cue.as_ref() else { return false };
     let Some(it) = cue.items.get(index) else { return false };
@@ -347,7 +347,7 @@ pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done
 
 /// PPT 요소 따로 꺼내기 (pptTextLayers): → { key, bgs, slides: [[편집기 항목…]] }
 /// 아직 꺼낸 적이 없으면 백그라운드로 만들고 BUILDING 을 돌려준다 (끝나면 알림)
-/// again=true: 캐시를 지우고 요소·배경 그림을 다시 만든다 (cue.js pptTextOn mode 'bg' — 순서의 edits 는 손대지 않는다). 꿝나면 이 파일을 보던 미리보기도 다시.
+/// again=true: 캐시를 지우고 요소·배경 그림을 다시 만든다 (cue.js pptTextOn mode 'bg' — 순서의 edits 는 손대지 않는다). 끝나면 이 파일을 보던 미리보기도 다시.
 pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool) -> Result<Value, String> {
     let meta = load(core, file)?;
     if !meta["layers"].as_bool().unwrap_or(false) && !file.to_lowercase().ends_with('x') {

@@ -231,7 +231,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
 fn default_bg_row(app: &mut App, ui: &mut egui::Ui) {
     let cur = hymns::default_bg(&app.core.lock());
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(wp_core::i18n::tr("기본 배경")).small().color(Color32::GRAY)).on_hover_text(wp_core::i18n::tr("악보는 투명 그림이라 어떤 배경 위에도 겁쳐 보입니다. 악보 글씨가 검은색이라 밝은 배경을 권합니다. 순서마다 따로 바꿀 수도 있습니다 (편집칸의 '배경')."));
+        ui.label(RichText::new(wp_core::i18n::tr("기본 배경")).small().color(Color32::GRAY)).on_hover_text(wp_core::i18n::tr("악보는 투명 그림이라 어떤 배경 위에도 겹쳐 보입니다. 악보 글씨가 검은색이라 밝은 배경을 권합니다. 순서마다 따로 바꿀 수도 있습니다 (편집칸의 '배경')."));
         let custom = !matches!(cur.as_str(), "original" | "#ffffff" | "template");
         let name = |v: &str| -> String {
             match v {
