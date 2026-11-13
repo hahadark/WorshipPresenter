@@ -71,11 +71,19 @@ impl App {
     fn desktop(&mut self) -> Desktop {
         let running = self.out.running();
         let m = self.out.monitors.iter().find(|m| m.index == self.monitor).cloned();
+        // OBS 원격 조작 상태는 OBS 원격 조작 창이 마지막으로 받아 둔 캠시만 쓴다 (연결 점검이 OBS 에 직접 붙지 않게).
+        // 연결된 것이 확인된 때만 캠시를 넘기고, 그 외에는 Null(미확인) 로 두어 '확인해 보세요' 경고가 나오게 한다.
+        let obs_ws = {
+            let settings = self.core.lock().settings.get().clone();
+            let (enabled, connected, _) = crate::trackd_ui::obs_state(&settings);
+            if enabled && connected { json!({ "connected": true }) } else { Value::Null }
+        };
         Desktop {
             monitors: self.out.monitors.len(),
             output_running: running,
             output_monitor: m.as_ref().map(|m| format!("{} {}×{}", m.name, m.size.0, m.size.1)).unwrap_or_default(),
             same_as_control: m.is_some_and(|m| m.primary),
+            obs_ws,
         }
     }
 
