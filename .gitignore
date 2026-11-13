@@ -1,3 +1,9 @@
 /target
 *.png.tmp
 /tmp
+
+# 개인 성경·찬송가 자료와 SQLite 실행 자료는 커밋하지 않는다.
+/data-personal/
+*.db
+*.db-wal
+*.db-shm
