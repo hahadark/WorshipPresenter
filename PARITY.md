@@ -22,7 +22,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 병행 번역 parallelVerses | core.js | core/flow.rs with_parallel | 됨 | text2 |
 | 책·장 구조 getStructure · getChapter · getRange · getBooks | core.js:518-531 | core/db.rs get_structure · get_chapter · resolve_ranges · books.rs · app/parity2_ui.rs | 됨 | 6차 UI 자동 점검에서 Ctrl+B → 시편 23 송출 확인 |
 | 이웃 절 adjacentVerse | core.js:525 | core/db.rs adjacent_verse · flow.rs preview_adjacent_verse | 됨 | Alt+←→ |
-| 미리보기 previewReference · setPreview · setPreviewIndex | core.js:533-535 | core.rs preview_passage · preview_item · set_preview_index | 됨 | |
+| 미리보기 previewReference · setPreview · setPreviewIndex | core.js:533-535 | core.rs preview_passage · preview_item · set_preview_index · template_for_deck | 됨 | 11-13: 미리보기가 LIVE 템플릿을 쓰던 결함 수정(순서별 템플릿·OBS 가사 자동 선택), 미리보기·LIVE 각각 예배당/OBS 보기 전환. 회귀 테스트 5개 |
 | 송출 sendLive (자동 켜기·사용 기록·기록) | core.js:538 | core.rs send_preview · trackd.rs on_send · usage.rs record | 됨 | |
 | 다음/이전 nextSlide · previousSlide · gotoSlide | core.js:560-572 | core.rs step · goto_live · flow.rs step | 됨 | 순서 끝에서 다음 순서로 |
 | 연속 탐색 extendLive | core.js:573 | core/flow.rs extend_live | 됨 | navMode continuous |
@@ -101,13 +101,13 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | deleteStagePreset | core.js | core/parity_a.rs delete_stage_preset · 무대 창 프리셋 오른쪽 클릭 | 됨 | 5차 |
 | 매크로 saveMacro · deleteMacro · runMacro · saveSchedule | core.js | core/trackb.rs · schedule.rs | 됨 | |
 | 회중 메시지 showMessage · clearMessage · saveMessageTemplate · deleteMessageTemplate | core.js | core/trackb.rs | 됨 | |
-| 영상 videoControl · videoEnded | core.js | core/trackb.rs video_control · video_ended | 됨 | 실제 재생 확인은 트랙 B |
+| 영상 videoControl · videoEnded | core.js · media.js | core/trackb.rs video_control · video_ended · finish_video_fade · app/media_ui.rs | 됨 | 11-13: 미디어 패널 영상·음악 탭, 큐시트를 바꾸지 않는 즉시 송출·재생, 정지·페이드아웃·위치·전체/남은 시간. 페이드가 끝나면 코어가 LIVE 를 정지·숨김으로 맞춤(테스트 2개). 영상 길이는 ffprobe 가 있을 때만 표시. 실제 출력 화면의 소리·페이드는 미검증 |
 | 오버레이 listOverlays · saveOverlay · deleteOverlay · toggleOverlay | core.js | core/trackb.rs · overlays.rs | 됨 | |
 
 ### 찬양 라이브러리 · 라이브러리 폴더
 | 기능 | Electron 위치 | Rust 위치 | 상태 | 메모 |
 |---|---|---|---|---|
-| listSongs · getSong · saveSong · saveSongArrangement · deleteSong | core.js · library.js | core/songs.rs · trackb.rs | 됨 | |
+| listSongs · getSong · saveSong · saveSongArrangement · deleteSong | core.js · library.js · cue.js:719-737 | core/songs.rs · trackb.rs · app/media_ui.rs song_arrangements | 됨 | 11-13: 저장한 부를 순서 선택·적용·이름 붙여 저장·삭제 UI(라이브러리·큐시트 편집칸). 큐시트→라이브러리 저장이 order 키로 보내 기본 순서를 지우던 결함 수정 |
 | importSongs · parseSongText · saveImportedSongs | core.js · songimport.js | core/songimport.rs (OpenLyrics · ChordPro · ProPresenter · PPT) · songs.rs | 됨 | |
 | 웹 가사 lyricsSearch · lyricsGet · lyricsArrange | core.js · lyricsweb.js | core/lyricsweb.rs · app lyrics_ui.rs | 됨 | |
 | listLibFolders · addLibFolder · removeLibFolder · searchLibFiles | core.js | core/library.rs · trackb.rs · thumbs.rs · app/thumbs_ui.rs | 됨 | 그림·영상 썸네일 격자, 백그라운드 캐시·EXIF 방향 적용. 영상 썸네일은 ffmpeg 필요 |
@@ -119,7 +119,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | updateCueMeta · trashCues · restoreCues · purgeCues · duplicateCue · deleteCue | core.js | core/cues.rs · trackb.rs | 됨 | |
 | exportCues · importCues | core.js | core/cues.rs export · import · trackb.rs | 됨 | |
 | cueText (큐시트를 글로) | core.js | core/parity_a.rs cue_text · 순서 오른쪽 클릭 \"큐시트를 글로 복사\" | 됨 | 5차 |
-| 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | core/workspace.rs · app/workspace_ui.rs | 일부 | 패널 8개·기본 배치 4개·분할·탭 이동/합치기·개별 독립 창·접기·사용자 배치 관리·잠금 구현, 테스트 5개 통과. 그룹 전체 독립 창·병합, 독립 창 위치·크기 저장, 송출 줄 중복 정리까지 구현(테스트 9개). 남음: 실제 다중 모니터에서 창 복원 확인, 패널별 세부 동등성 대조 |
+| 작업공간·독 saveWorkspaces · setActiveWorkspace · saveDockLayout | core.js · dock.js | core/workspace.rs · app/workspace_ui.rs · panel_ui.rs · media_ui.rs | 됨 | 패널 8개·기본 배치 4개·분할·탭 이동/합치기·그룹 독립 창·접기·사용자 배치 관리·잠금·독립 창 위치 저장. 11-13: 본문 패널 편집칸(F2·Ctrl+Shift+E·우클릭), 빠른 설정(예배당·OBS 성경·OBS 찬송가 대상, 템플릿·분할·탐색·기본 디자인), 라이브러리 7탭, 미디어 패널 원본 내용으로 보완. 합성 입력 테스트로 탭 끌기·잠금·저장 복원 확인. 실제 다중 모니터 창 복원은 미검증 |
 
 ## 2. 웹 서버 경로 (server.js)
 | 경로 | Rust 위치 | 상태 | 메모 |
@@ -152,13 +152,13 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | 실행 취소 · 다시 | b:undo · b:redo | 됨 | 글 고치기 묶음 실행 취소 포함(remember_typing) |
 | 순서 넣기: 찬송가·PPT · 성경 · 찬양 · 웹 가사 · 공지 · 제목 · 이미지 · 빈 화면 | 큐시트 '넣기' 단추 · 찬송가 탭 · 라이브러리 · lyrics_ui | 됨 | |
 | 순서 넣기: 영상 · 음악 | 라이브러리 창 | 됨 | |
-| 순서 넣기: 카메라 · 슬라이드쇼 (+ 영상 편집칸) | app parity_ui.rs add_buttons · editor | 됨 | 5차. 카메라 기기는 설정·큐시트에 나온 것에서 고르거나 직접(비우면 기본 카메라) |
+| 순서 넣기: 카메라 · 슬라이드쇼 (+ 영상 편집칸) | app parity_ui.rs add_buttons · editor | 일부 | 5차. 카메라 기기는 설정·큐시트에 나온 것에서 고르거나 직접(비우면 기본 카메라). 연결된 카메라 실시간 목록·미리보기는 11-13 구현 중 |
 | 설교 포인트 · 예배 전 화면 | a:points · a:preservice | 됨 | |
 | 클립보드 붙여 넣기 · 종류 골라 붙여 넣기 | Ctrl+V · Ctrl+Shift+V 창 (app parity2_ui.rs) | 됨 | 6차: 알아서·성경·찬양·공지·제목 · 슬라이드 · 그림. UI 자동 점검으로 성경 2개 넣기 확인 |
 | 편집칸 · 슬라이드 편집 · 위/아래 · 복제 · 지우기 · 송출 | 큐시트 아래 단추 · c:slideedit · 순서 오른쪽 클릭 | 됨 | 5차 |
 | 송출 메뉴 (다음·이전·다음 순서 미리보기·즉석 자막·회중 메시지·화면 지우기·음악 멈춤·모두 지우기) | 송출 단추 줄 · 단축키 · b:quick · b:message · music_ui | 됨 | |
 | OBS · 송출 배경 · OBS 자막 모양 · 보조 화면 · 무대 화면 창 | d:obs · b:lib · c:obsfull/obspip · 예배당 화면 켜기 · b:stage | 됨 | |
-| 보기: 패널 · 작업공간 · 패널 잠그기 | app/workspace_ui.rs | 일부 | 위 작업공간 항목의 남은 기능 참고 |
+| 보기: 패널 · 작업공간 · 패널 잠그기 | app/workspace_ui.rs | 됨 | 위 작업공간 항목 참고 |
 | 보기: 조작 화면 테마 · 글자 크기 | 설정 → 조작 화면 | 됨 | |
 | 보기: Language · 언어 | 설정(uiLang) · core/i18n.rs · data/en.json | 일부 | 기존 화면과 주석·성경책·붙여넣기 창 번역 통합. 새 편집기·작업공간·업데이트 문구의 추가 점검 필요 |
 | 도구: 라이브러리 · 오버레이 · 템플릿 · 미디어 · 무대 타이머 · 매크로 · OBS · 장비 · 리모컨 · 스트림덱 | b:* · c:templates · d:* | 됨 | |
@@ -169,7 +169,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 ### 오른쪽 클릭 메뉴 (ctxmenu.js)
 | 항목 | Rust 위치 | 상태 | 메모 |
 |---|---|---|---|
-| 큐시트 순서: 미리보기 · 송출 · 편집 · 제목 바꾸기 · 예정 시간 · 찬양 라이브러리에 저장 · 나누기 · 위/아래/맨위/맨아래 · 복제 · 지우기 | app parity_ui.rs cue_row_menu | 일부 | 5차. 예정 시간은 큐시트 관리 창, PPT 나누기는 편집칸 \"PPT 도구\" 에 (메뉴엔 없음) |
+| 큐시트 순서: 미리보기 · 송출 · 편집 · 제목 바꾸기 · 예정 시간 · 찬양 라이브러리에 저장 · 나누기 · 위/아래/맨위/맨아래 · 복제 · 지우기 | app parity_ui.rs cue_row_menu | 됨 | 11-13: 예정 시간(진행 시계 켜진 경우, 0~600분)·PPT 나누기(파일 있는 찬송가만, 기존 PPT 도구 열기) 추가, 편집은 본문 패널 편집칸을 엶. 테스트 3개 |
 | 슬라이드(미리보기·LIVE): 바로 송출 · 이 슬라이드 편집 · 새 슬라이드 · 복제 · 구역 나누기 | app slideedit_ui (편집기 안) · parity2_ui.rs slide_menu (썸네일) | 됨 | 6차: 바로 송출 · 새 슬라이드 · 복제 · 구역 나누기 · 건너뛰기 / LIVE: 여기로 · 글자 숨김. UI 자동 점검으로 건너뛰기 확인 |
 | 성경 결과: 이 본문을 큐시트에 넣기 · 장절·본문 복사 | '큐시트에 넣기' 단추 · parity_ui.rs verse_menu (오른쪽 클릭) | 됨 | 5차 |
 | 화면: 글자 숨김 · 음악 멈춤 · 모두 지우기 · 송출 배경 · 미리보기 끄기 · 무대 창 · 송출 기록 · 그린 것 지우기 | 단추 줄 · 메뉴 | 됨 | 메뉴로 |
@@ -260,3 +260,10 @@ README 의 큰 기능(성경·찬양·찬송가 PPT·공지·영상·카메라·
 - 전체 테스트: 앱 7개, 코어 130개 통과 (13개는 실제 파일·외부 환경용으로 제외).
 - 개발 빌드 성공. 별도 점검 자료에서 성경(요 3:16-18)과 찬양 순서 송출, /api/live·/outputs/main 응답 확인.
 - 통합: 주석·베들레헴 일괄 가져오기, 편집기 세부, 썸네일·백업, LIVE 큐 불일치·음악 계약, 출력 파일 경계, 업데이트 상태 기계(배포 정지 게이트), 작업공간 v2, 새 창 영어 문구.
+
+## 2026-11-13 검증 (챗GPT → 클로드 전환 시점)
+- 전체 테스트: 앱 19개, 코어 141개 통과(13개는 실제 파일·외부 환경용으로 제외). 개발 빌드 성공.
+- 새 합성 입력 테스트(egui `run_pass` 에 실제 포인터 이벤트, 실제 위젯 좌표 사용): 제목 장 우클릭 추가 → 끌어서 순서 바꾸기 → DB 저장, 요소 끌어 옮기기 → x·y 저장, 작업공간 탭 끌기 → 잠금 시 막힘 → 설정 저장 뒤 다시 열어 복원. 3개 모두 통과.
+- 컴퓨터 화면 제어 도구로 실제 창을 누르는 검증은 키 입력 단계에서 도구가 두 번 멈춰 중단했다. 같은 방식을 반복하지 않고 위 합성 입력 테스트로 바꿨다. 실제 마우스·키보드로 누른 검증은 아님.
+- 독립 소스 검토로 찾은 패널 차이 5건(미리보기 템플릿, 본문 패널 편집 경로, 빠른 설정·라이브러리 구성, 미디어 즉시 송출·정지·페이드, 저장한 부를 순서)을 고쳐 통합했다. 근거는 `docs/2026-11-13-panel-parity.md`.
+- 미검증: 실제 다중 모니터에서 독립 창 복원, 실제 출력 화면의 영상 소리·페이드, 실제 카메라 장치.
