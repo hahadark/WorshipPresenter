@@ -269,6 +269,11 @@ async fn command(State(core): State<Shared>, headers: HeaderMap, Json(b): Json<V
     // 출력 화면이 부르는 명령: 영상 끝남
     match b["cmd"].as_str() {
         Some("videoEnded") => { core.lock().video_ended(b["args"]["key"].as_str().unwrap_or(""), b["args"]["duration"].as_f64()); Json(json!({ "ok": true, "result": null })).into_response() } // [트랙 B]
+        // 카메라 도우미(/helper/cameras)가 보낸 장치 목록: 일회용 토큰·개수·길이를 검사한다 (cameras::parse_devices)
+        Some("cameraDevices") => match core.lock().receive_camera_devices(&b["args"]) {
+            Ok(n) => Json(json!({ "ok": true, "result": { "count": n } })).into_response(),
+            Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": e }))).into_response(),
+        },
         _ => Json(json!({ "ok": false, "error": "조작 명령은 Rust 판 조작 화면에서만 합니다." })).into_response(),
     }
 }
@@ -313,6 +318,7 @@ pub fn router(core: Shared) -> Router {
     output_routes(core.clone())
         .merge(crate::remote::dock_routes()) // [트랙 D] OBS 도킹
         .merge(crate::trigger::routes()) // [트랙 D] 스트림덱·외부 단추
+        .merge(crate::camhelper::routes()) // 카메라 찾기·미리보기 도우미 (조작 PC 전용)
         .layer(middleware::from_fn_with_state(core.clone(), host_check))
         .with_state(core)
 }
@@ -424,5 +430,81 @@ mod file_boundary_tests {
         assert!(allowed_lib_file(&core, &data.join("settings.json").to_string_lossy()).is_none());
         drop(core);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+
+#[cfg(test)]
+mod camera_command_tests {
+    use super::*;
+
+    /// 사용자 자료를 건드리지 않는 임시 코어 (빈 DB 를 먼저 만들어 자동 복사를 막는다)
+    fn temp_core() -> (Shared, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("wp-cam-cmd-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        drop(rusqlite::Connection::open(dir.join("bible.db")).unwrap());
+        let core = crate::core::Core::open(dir.clone(), dir.join("web"), None).unwrap();
+        (std::sync::Arc::new(parking_lot::Mutex::new(core)), dir)
+    }
+
+    /// 실제 HTTP 로 가짜 도우미 POST 를 보내 계약(헤더·토큰·검증·저장)을 시험한다. 카메라는 켜지 않는다.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn camera_devices_contract_over_http() {
+        let (core, dir) = temp_core();
+        let l = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        core.lock().port = port;
+        let app = router(core.clone());
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        let base = format!("http://127.0.0.1:{port}");
+        let post = move |body: Value, header_on: bool| {
+            let url = format!("{base}/api/command");
+            let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).build().into();
+            let mut r = agent.post(&url);
+            if header_on { r = r.header("x-worshipcue", "1"); }
+            let mut res = r.send_json(body).unwrap();
+            let code = res.status().as_u16();
+            let text = res.body_mut().read_to_string().unwrap_or_default();
+            (code, text)
+        };
+        let token = core.lock().start_camera_probe();
+        let good = json!({ "cmd": "cameraDevices", "args": { "token": token, "devices": [{ "deviceId": "f00d", "label": "USB 캡처보드", "kind": "videoinput" }], "error": "" } });
+        // 헤더 없으면 403
+        let (c, _) = { let p = post.clone(); let g = good.clone(); tokio::task::spawn_blocking(move || p(g, false)).await.unwrap() };
+        assert_eq!(c, 403);
+        assert!(core.lock().b.cams.devices.is_empty());
+        // 너무 많은 장치는 400, 목록 그대로
+        let many: Vec<Value> = (0..40).map(|i| json!({ "deviceId": format!("d{i}") })).collect();
+        let bad = json!({ "cmd": "cameraDevices", "args": { "token": token, "devices": many } });
+        let (c, _) = { let p = post.clone(); tokio::task::spawn_blocking(move || p(bad, true)).await.unwrap() };
+        assert_eq!(c, 400);
+        assert!(core.lock().b.cams.devices.is_empty());
+        // 올바른 결과는 저장
+        let (c, t) = { let p = post.clone(); let g = good.clone(); tokio::task::spawn_blocking(move || p(g, true)).await.unwrap() };
+        assert_eq!(c, 200, "{t}");
+        assert_eq!(serde_json::from_str::<Value>(&t).unwrap()["result"]["count"], 1);
+        assert_eq!(core.lock().camera_choices()[0].label, "USB 캡처보드");
+        // 같은 토큰을 다시 쓰면 거절
+        let (c, _) = { let p = post.clone(); let g = good.clone(); tokio::task::spawn_blocking(move || p(g, true)).await.unwrap() };
+        assert_eq!(c, 400);
+        // 도우미 페이지가 나온다
+        let url = format!("http://127.0.0.1:{port}/helper/cameras?token=x");
+        let page = tokio::task::spawn_blocking(move || ureq::get(&url).call().unwrap().body_mut().read_to_string().unwrap()).await.unwrap();
+        assert!(page.contains("cameraDevices") && page.contains("x-worshipcue"));
+        let url = format!("http://127.0.0.1:{port}/helper/camera?id=f00d");
+        let page = tokio::task::spawn_blocking(move || ureq::get(&url).call().unwrap().body_mut().read_to_string().unwrap()).await.unwrap();
+        assert!(page.contains("/shared/render.js") && page.contains("cameraStream"));
+        drop(core);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn helper_routes_are_not_on_lan_output_routes() {
+        // 내부망 출력 서버(lan.rs)는 output_routes 만 쓴다 → 도우미 길은 router() 에서만 붙는다
+        let src = include_str!("server.rs");
+        let i = src.find("pub fn output_routes").unwrap();
+        let j = src.find("pub fn router").unwrap();
+        assert!(!src[i..j].contains("camhelper"));
+        assert!(src[j..].contains("camhelper::routes()"));
     }
 }
