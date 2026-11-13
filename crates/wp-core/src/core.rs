@@ -455,7 +455,8 @@ impl Core {
         let Some(l) = &self.pres.live else { return };
         let p = l.deck.passage.clone();
         log::info!(target: "live", "송출: {} [{}/{}]", p["itemTitle"].as_str().filter(|x| !x.is_empty()).or(p["title"].as_str()).unwrap_or(""), l.deck.index + 1, l.deck.slides.len()); // [트랙 B] 로그
-        let cue_name = self.cue.as_ref().filter(|c| p["cueId"] == c.id.as_str()).map(|c| c.name.clone()).unwrap_or_default(); // [트랙 C]
+        // Electron core.js:544 — LIVE 순서의 큐시트 이름은 DB 에서 읽는다 (열린 큐시트와 다르더라도 비지 않게)
+        let cue_name = p["cueId"].as_str().filter(|id| !id.is_empty()).map(|id| match self.cue.as_ref().filter(|c| c.id == id) { Some(c) => c.name.clone(), None => self.store.get_cue(id).map(|c| c.name).unwrap_or_default() }).unwrap_or_default(); // [트랙 C]
         crate::usage::record(&self.store.db, &p, &cue_name); // [트랙 C] 사용 기록
         self.settings.update(|d| {
             if !d["history"].is_array() {
@@ -498,7 +499,28 @@ impl Core {
         self.set_bg_hidden(!self.layers.hide_bg);
     }
     /// 배경 끄기/켜기 (Electron toggleBackground). 직접 정한 배경은 다음 송출 때 되살리지 않는다 (bgByClear=false).
+    /// 지금 예배당 화면에 송출 배경(layers.media) 밖의 배경이 있는가 (Electron screenPayload().bgs 의 slide · template 항목)
+    /// - LIVE 슬라이드의 bg 가 색(#…)이 아닌 그림·영상·카메라
+    /// - 예배당(main) 템플릿 배경이 image · video · camera
+    fn has_slide_or_template_bg(&self) -> bool {
+        let slide_bg = self.pres.live.as_ref().and_then(|l| l.deck.slides.get(l.deck.index)).and_then(|s| s["bg"].as_str()).map(|u| !u.is_empty() && !u.starts_with('#')).unwrap_or(false);
+        if slide_bg {
+            return true;
+        }
+        matches!(self.template_for("main")["background"]["type"].as_str(), Some("image" | "video" | "camera"))
+    }
+
+    /// (Electron core.js:1290-1297) 감추는 쪽이고 송출 배경(라이브러리에서 띄운 카메라·그림·영상)이 있으면 그것은 아예 끈다.
+    /// 송출 배경맀 있었으면 거기서 끝 — 순서·템플릿 배경까지 숨기지(hideBg) 않는다.
     pub fn set_bg_hidden(&mut self, hide: bool) {
+        if hide && self.layers.media.is_some() {
+            self.layers.media = None;
+            if !self.has_slide_or_template_bg() {
+                self.emit(Ev::Live);
+                self.emit(Ev::Ui);
+                return;
+            }
+        }
         self.layers.hide_bg = hide;
         self.layers.bg_by_clear = false;
         self.emit(Ev::Live);
@@ -799,6 +821,67 @@ mod live_fix_tests {
         c.clear_all();
         crate::trackd::run_item_actions(&mut c, &json!({ "bg": "hide" }), 0);
         assert!(c.layers.hide_bg && !c.layers.bg_by_clear);
+    }
+
+    /// Electron core.js:1290-1297 toggleBackground: 배경을 끌 때 송출 배경(layers.media)이 있으면 그것만 끈다.
+    /// 송출 배경맀 있었으면 hideBg 는 그대로, 순서·템플릿 배경도 있으면 media 를 끈 다음 hideBg 까지.
+    #[test]
+    fn toggle_bg_with_media_only_clears_media() {
+        let mut c = core();
+        c.cue = Some(cue("A", vec![title("A0")]));
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        // 제목 순서는 bg 가 없고, 기본 템플릿 배경은 색/그라데이션 → 송출 배경만 있는 상황
+        assert!(!c.has_slide_or_template_bg(), "기본 템플릿 배경은 그림·영상·카메라가 아니어야 이 테스트가 성립");
+        c.layers.media = Some(json!({ "type": "camera", "deviceId": "cam1" }));
+        c.toggle_bg();
+        assert!(c.layers.media.is_none(), "송출 배경은 끈다");
+        assert!(!c.layers.hide_bg, "송출 배경맀 있었으므로 순서·템플릿 배경은 숨기지 않는다");
+        assert!(!c.layers.bg_by_clear);
+        // 한 번 더 누르면 이제는 보통의 배경 숨기기
+        c.toggle_bg();
+        assert!(c.layers.hide_bg && !c.layers.bg_by_clear);
+        c.toggle_bg();
+        assert!(!c.layers.hide_bg);
+
+        // 슬라이드에 그림 배경이 있으면: media 도 끄고 hideBg 도 숨김 (Electron: bgs 가 남아 있으므로 진행)
+        if let Some(l) = c.pres.live.as_mut() {
+            l.deck.slides[0]["bg"] = json!("/media/bg.jpg");
+        }
+        c.layers.media = Some(json!({ "type": "camera", "deviceId": "cam1" }));
+        c.toggle_bg();
+        assert!(c.layers.media.is_none());
+        assert!(c.layers.hide_bg && !c.layers.bg_by_clear, "순서 배경이 있으므로 배경도 숨김");
+        // 색 배경(#…)은 bgs 에 안 들어간다
+        c.layers.hide_bg = false;
+        if let Some(l) = c.pres.live.as_mut() {
+            l.deck.slides[0]["bg"] = json!("#000000");
+        }
+        c.layers.media = Some(json!({ "type": "image", "url": "/media/x.png" }));
+        c.toggle_bg();
+        assert!(c.layers.media.is_none() && !c.layers.hide_bg);
+        // '배경 다시 켜기'(hide=false) 는 media 를 건들지 않는다
+        c.layers.hide_bg = true;
+        c.layers.media = Some(json!({ "type": "image", "url": "/media/x.png" }));
+        c.toggle_bg();
+        assert!(!c.layers.hide_bg && c.layers.media.is_some());
+    }
+
+    /// 검토 1113-5 결함 3: 사용 기록의 큐시트 칸은 LIVE 순서의 cueId 로 DB 에서 읽는다 (Electron core.js:544)
+    #[test]
+    fn usage_log_cue_name_from_live_cue_not_open_cue() {
+        let mut c = core();
+        let a = cue("A", vec![json!({"type":"song", "title":"주 하나님 지으신 모든 세계", "lyrics":"주 하나님 지으신 모든 세계", "credit":"CCLI 1"})]);
+        c.store.save_cue(&a).unwrap();
+        c.cue = Some(a.clone());
+        trigger::send_cue_item(&mut c, 0).unwrap();
+        let deck_a = c.pres.live.as_ref().unwrap().deck.clone();
+        crate::usage::clear(&c.store.db, "");
+        // 다른 큐시트 B 를 열어 두고 LIVE 덱(A 의 순서)을 다시 송출 → 기록의 큐시트 칸은 'A'
+        c.cue = Some(cue("B", vec![title("B0")]));
+        c.send_deck(deck_a);
+        let rows = crate::usage::list(&c.store.db, &crate::usage::Filter::default());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cue, "A", "열린 큐시트(B)가 아닌 LIVE 순서의 큐시트(A) 이름");
     }
 }
 
