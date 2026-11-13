@@ -9,7 +9,7 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 - **릴리스 정지 (2026-11-12 사용자 지시): Electron 판의 모든 기능을 옮길 때까지 릴리스·설치 파일·공개 저장소·GitHub 업로드를 하지 않는다.** 로컬 커밋만.
 
 - 커밋: `git -c user.name=hahadark -c user.email=29118505+hahadark@users.noreply.github.com commit …`. 공동 작성자 표기는 실제 작업 모델과 일치시킨다. 챗GPT가 만든 새 작업을 클로드 작업으로 표기하지 않는다.
-- **현재 작업은 사용자 지시로 챗GPT 구독 모델만 사용한다.** 다른 공급자나 별도 유료 API로 자동 전환하지 않는다.
+- **모델 (2026-11-13 사용자 지시): 다시 클로드(Claude 구독)로 진행한다.** 2026-11-12~13 일부 작업은 챗GPT 구독(gpt-6.1-sol)으로 했다. 별도 유료 API로 자동 전환하지 않는다.
 - 개발 빌드·로컬 테스트는 구현 검증의 일부로 진행한다. 출시 빌드·릴리스·설치 파일 생성·푸시·GitHub 저장소 생성은 금지 상태를 유지한다. 커밋은 작업 단위마다.
 - Electron 판 저장소와 사용자의 실제 자료(`%APPDATA%\WorshipCue\data`)는 건드리지 않는다. Rust 판은 처음 실행할 때 그 자료를 **복사**(SQLite `VACUUM INTO`)해서 `%APPDATA%\WorshipPresenter-rs\data` 에서 쓴다.
 - 점검은 `--data <임시 폴더>` 로. 사용자가 띄워 둔 프로그램을 끄지 않는다.
