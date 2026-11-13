@@ -207,7 +207,9 @@ impl App {
     }
 
     pub(crate) fn library_tabs_panel(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
-        let mut tab = selection(ui, "library-tab", "songs");
+        // 점검용 --lib-tab cameras (--left-tab 3 과 함께 쓰면 라이브러리 카메라 탭 스크린샷)
+        let first = std::env::args().position(|x| x == "--lib-tab").and_then(|i| std::env::args().nth(i + 1)).unwrap_or_else(|| "songs".into());
+        let mut tab = selection(ui, "library-tab", &first);
         ui.horizontal_wrapped(|ui| {
             for (id, label) in TABS {
                 ui.selectable_value(&mut tab, id.into(), tr(label));

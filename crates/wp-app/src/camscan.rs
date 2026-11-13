@@ -13,28 +13,34 @@ use parking_lot::Mutex;
 use std::process::{Child, Command};
 use wp_core::cameras::Choice;
 use wp_core::core::Shared;
-use wp_core::i18n::tr;
+use wp_core::i18n::{tr, tr_s};
 
-/// 내가 띄운 도우미·미리보기 프로세스 (내 PID 만 끈다)
-static KIDS: Lazy<Mutex<Vec<Child>>> = Lazy::new(|| Mutex::new(vec![]));
+/// 내가 띄운 도우미·미리보기 프로세스 (내 PID 만 끈다). helper = 찾기 도우미(한 번에 하나)
+struct Kids {
+    helper: Option<Child>,
+    previews: Vec<Child>,
+}
+static KIDS: Lazy<Mutex<Kids>> = Lazy::new(|| Mutex::new(Kids { helper: None, previews: vec![] }));
 
-/// 끝난 프로세스를 목록에서 뺀다
-fn reap() {
-    KIDS.lock().retain_mut(|c| matches!(c.try_wait(), Ok(None)));
+fn alive(c: &mut Child) -> bool {
+    matches!(c.try_wait(), Ok(None))
 }
 
-fn spawn(args: &[&str]) -> Result<(), String> {
-    reap();
+/// 끝난 프로세스를 목록에서 뺀다 → 찾기 도우미가 살아 있나
+fn reap() -> bool {
+    let mut k = KIDS.lock();
+    k.previews.retain_mut(alive);
+    if k.helper.as_mut().is_some_and(|c| !alive(c)) {
+        k.helper = None;
+    }
+    k.helper.is_some()
+}
+
+fn spawn(args: &[&str]) -> Result<Child, String> {
     let mut cmd = Command::new(crate::outwin::exe());
     cmd.args(args);
     crate::outwin::no_window(&mut cmd);
-    match cmd.spawn() {
-        Ok(c) => {
-            KIDS.lock().push(c);
-            Ok(())
-        }
-        Err(e) => Err(format!("{}: {e}", tr("출력 창 프로그램을 띄우지 못했습니다"))),
-    }
+    cmd.spawn().map_err(|e| format!("{}: {e}", tr("출력 창 프로그램을 띄우지 못했습니다")))
 }
 
 /// 도우미 페이지 주소 (query 는 percent-encoding)
@@ -57,8 +63,18 @@ pub fn probe(core: &Shared) {
         }
         (c.port, c.start_camera_probe())
     };
-    if let Err(e) = spawn(&["--helper", "--url", &probe_url(port, &token)]) {
-        core.lock().cancel_camera_probe(&e);
+    match spawn(&["--helper", "--url", &probe_url(port, &token)]) {
+        Ok(child) => KIDS.lock().helper = Some(child),
+        Err(e) => core.lock().cancel_camera_probe(&e),
+    }
+}
+
+/// 찾는 중인데 도우미 창이 결과 없이 꺼졌으면(페이지 오류 등) 찾기를 그만둔다 — 60초를 기다리지 않게
+fn watch(core: &Shared) {
+    let helper_alive = reap();
+    let mut c = core.lock();
+    if c.camera_probing() && !helper_alive {
+        c.cancel_camera_probe(&tr("도우미 창이 결과를 보내지 않고 끝났습니다. 다시 찾아 보세요."));
     }
 }
 
@@ -66,14 +82,17 @@ pub fn probe(core: &Shared) {
 pub fn preview(core: &Shared, id: &str, label: &str) {
     let port = core.lock().port;
     let title = format!("📷 {}", if label.is_empty() { tr("기본 카메라") } else { label.to_string() });
-    if let Err(e) = spawn(&["--windowed", "--title", &title, "--url", &preview_url(port, id, label)]) {
-        core.lock().cancel_camera_probe(&e);
+    reap();
+    match spawn(&["--windowed", "--title", &title, "--url", &preview_url(port, id, label)]) {
+        Ok(child) => KIDS.lock().previews.push(child),
+        Err(e) => core.lock().cancel_camera_probe(&e),
     }
 }
 
 /// 프로그램이 끝날 때 내가 띄운 도우미·미리보기만 끈다
 pub fn kill_all() {
-    for mut c in KIDS.lock().drain(..) {
+    let mut k = KIDS.lock();
+    for mut c in k.helper.take().into_iter().chain(k.previews.drain(..)) {
         let _ = c.kill();
         let _ = c.wait();
     }
@@ -89,7 +108,7 @@ pub fn known_cameras(core: &wp_core::core::Core) -> Vec<(String, String)> {
     choices(core).into_iter().map(|c| (c.device_id, c.label)).collect()
 }
 
-/// 상태 글: 찾는 중 / 몇 대 연결 / 오류 / 아직 안 찾음
+/// 상태 글: 찾는 중 / 몇 대 연결 / 오류 / 아직 안 찾음 → (글, 오류인가)
 pub fn status_text(core: &wp_core::core::Core) -> (String, bool) {
     let l = &core.b.cams;
     if core.camera_probing() {
@@ -108,6 +127,7 @@ pub fn status_text(core: &wp_core::core::Core) -> (String, bool) {
 
 /// 공용 조각: [카메라 찾기] 단추 + 상태 글. 화면 셋이 모두 이걸 쓴다.
 pub fn scan_bar(ui: &mut egui::Ui, core: &Shared) {
+    watch(core);
     let (text, is_err, probing) = {
         let c = core.lock();
         let (t, e) = status_text(&c);
@@ -124,14 +144,14 @@ pub fn scan_bar(ui: &mut egui::Ui, core: &Shared) {
     }
 }
 
-/// 목록 한 줄의 표시 이름: 연결 상태 표시를 붙인다
+/// 목록 한 줄의 표시 이름: 연결·설정 상태 표시를 붙인다
 pub fn display_name(c: &Choice) -> String {
     let mut s = format!("📷 {}", c.label);
     if c.connected {
-        s.push_str(&tr(" · 연결됨"));
+        s.push_str(tr_s(" · 연결됨"));
     }
     if c.configured {
-        s.push_str(&tr(" · 설정됨"));
+        s.push_str(tr_s(" · 설정됨"));
     }
     s
 }
@@ -145,6 +165,29 @@ mod tests {
         assert_eq!(probe_url(37528, "ab/c d"), "http://127.0.0.1:37528/helper/cameras?token=ab%2Fc%20d");
         let u = preview_url(1, "x&y", "USB 캡처");
         assert!(u.starts_with("http://127.0.0.1:1/helper/camera?id=x%26y&label=USB%20"), "{u}");
+    }
+
+    /// 화면 셋(라이브러리 카메라 탭 · 큐시트 카메라 편집칸 · 카메라 설정 창)이 같은 목록과 같은 찾기 조각을 쓴다
+    #[test]
+    fn three_screens_share_the_list() {
+        let panel = include_str!("panel_ui.rs");
+        let i = panel.find("fn panel_cameras").unwrap();
+        let body = &panel[i..i + panel[i..].find("fn panel_templates").unwrap()];
+        assert!(body.contains("camscan::choices") && body.contains("camscan::scan_bar"), "라이브러리 카메라 탭");
+        assert!(!body.contains("[\"cameras\"]"), "설정을 직접 읽지 않고 공용 목록을 쓴다");
+
+        let app = include_str!("app.rs");
+        let i = app.find("fn editor(").unwrap();
+        let body = &app[i..i + 700];
+        assert!(body.contains("camscan::known_cameras") && body.contains("camscan::scan_bar"), "큐시트 카메라 편집칸");
+        let parity = include_str!("parity_ui.rs");
+        let i = parity.find("pub fn known_cameras").unwrap();
+        assert!(parity[i..i + 200].contains("camscan::known_cameras"));
+
+        let sys = include_str!("system_ui.rs");
+        let i = sys.find("fn cameras_window").unwrap();
+        let body = &sys[i..i + sys[i..].find("ST.lock().cameras = open;").unwrap()];
+        assert!(body.contains("camscan::choices") && body.contains("camscan::scan_bar"), "카메라 설정 창");
     }
 
     #[test]

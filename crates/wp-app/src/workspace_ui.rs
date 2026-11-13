@@ -312,6 +312,12 @@ impl App {
                 active,
                 collapsed,
             } => {
+                // 점검용 --pane library: 그 탭이 있는 묶음에서 그 탭을 앞으로 (스크린샷 점검)
+                if let Some(want) = std::env::args().position(|x| x == "--pane").and_then(|i| std::env::args().nth(i + 1)) {
+                    if let Some(t) = panes.iter().copied().find(|t| format!("{t:?}").eq_ignore_ascii_case(&want)) {
+                        if *active != t { *active = t; *collapsed = false; }
+                    }
+                }
                 let p = *active;
                 ui.scope_builder(
                     UiBuilder::new().max_rect(rect).id_salt(("pane", id)),
