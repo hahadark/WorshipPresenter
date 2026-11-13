@@ -284,9 +284,23 @@ impl Core {
         self.b.stage.message = text.chars().take(300).collect();
         self.changed(true);
     }
-    pub fn stage_pin_set(&mut self, p: Option<&Value>) {
-        self.b.stage.set_pin(p);
+    /// 무대 화면 고정 (Electron core.js stagePinSet): {mode:'order'|'text', text, name} · {preset: id}(settings.stagePresets 에서 찾음) · None(지금 화면으로).
+    /// 프리셋을 못 찾으면 고정을 바꾸지 않고 오류.
+    pub fn stage_pin_set(&mut self, p: Option<&Value>) -> Result<()> {
+        let preset = p.and_then(|p| p["preset"].as_str()).filter(|x| !x.is_empty()).map(String::from);
+        let resolved = match &preset {
+            Some(id) => {
+                let found = self.settings.get()["stagePresets"].as_array().and_then(|l| l.iter().find(|x| x["id"] == id.as_str()).cloned());
+                match found {
+                    Some(x) => Some(x),
+                    None => bail!("무대 화면 프리셋을 찾을 수 없습니다."),
+                }
+            }
+            None => p.cloned(),
+        };
+        self.b.stage.set_pin(resolved.as_ref());
         self.changed(true);
+        Ok(())
     }
     pub fn save_stage_preset(&mut self, p: &Value) -> Result<String> {
         let mut out = Ok(String::new());

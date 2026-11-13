@@ -287,9 +287,14 @@ pub fn run_item_actions(c: &mut Core, a: &Value, depth: u8) {
     }
     match s("stagePin").as_str() {
         "" => {}
-        "live" => c.stage_pin_set(None),
-        "order" => c.stage_pin_set(Some(&json!({ "mode": "order", "name": "순서표" }))),
-        p => c.stage_pin_set(Some(&json!({ "preset": p }))),
+        "live" => { let _ = c.stage_pin_set(None); }
+        "order" => { let _ = c.stage_pin_set(Some(&json!({ "mode": "order", "name": "순서표" }))); }
+        // 프리셋 id → settings.stagePresets 에서 찾아 고정. 없으면 고정은 그대로 두고 알림 (Electron stagePinSet 은 오류)
+        p => {
+            if let Err(e) = c.stage_pin_set(Some(&json!({ "preset": p }))) {
+                c.notify(e.to_string(), "warn");
+            }
+        }
     }
     // 네트워크 쪽 (장비 · Companion · OBS) 은 백그라운드에서 — 송출이 멈추지 않게
     let devices = c.settings.get()["devices"].clone();
@@ -375,6 +380,35 @@ mod actions_tests {
         run_item_actions(&mut c, &json!({ "logo": "on", "bg": "hide", "stageMsg": "마이크 켜기" }), 0);
         assert!(c.layers.logo && c.layers.hide_bg);
         assert_eq!(c.stage_payload()["message"], "마이크 켜기");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 검토 1113-3 결함 5: 순서 자동 동작 stagePin = 프리셋 id 는 고정을 푸는 게 아니라 그 프리셋으로 고정 (Electron stagePinSet {preset})
+    #[test]
+    fn stage_pin_preset_action_pins_preset_and_unknown_keeps_pin() {
+        let dir = std::env::temp_dir().join(format!("wp-trackd-pin-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        drop(rusqlite::Connection::open(dir.join("bible.db")).unwrap());
+        let mut c = Core::open(dir.clone(), dir.join("web"), None).unwrap();
+        let pid = c.save_stage_preset(&json!({ "id": "sermon1", "name": "설교 요약", "mode": "text", "text": "1. 은혜\n2. 응답" })).unwrap();
+        assert_eq!(pid, "sermon1");
+        // 순서표로 고정된 상태에서 프리셋 동작 → 프리셋으로 바뀜
+        run_item_actions(&mut c, &json!({ "stagePin": "order" }), 0);
+        assert_eq!(c.b.stage.pin.as_ref().unwrap()["mode"], "order");
+        run_item_actions(&mut c, &json!({ "stagePin": "sermon1" }), 0);
+        let pin = c.b.stage.pin.clone().expect("프리셋으로 고정되어야 함 (풀리면 안 됨)");
+        assert_eq!(pin["mode"], "text");
+        assert_eq!(pin["name"], "설교 요약");
+        assert_eq!(pin["text"], "1. 은혜\n2. 응답");
+        assert_eq!(pin["id"], "sermon1");
+        assert_eq!(c.stage_payload()["pin"]["mode"], "text");
+        // 없는 프리셋: 고정은 그대로, 오류 알림
+        run_item_actions(&mut c, &json!({ "stagePin": "nope" }), 0);
+        assert_eq!(c.b.stage.pin.as_ref().unwrap()["id"], "sermon1", "못 찾으면 고정을 바꾸지 않는다");
+        assert!(c.stage_pin_set(Some(&json!({ "preset": "nope" }))).is_err());
+        // 'live' 는 풀기
+        run_item_actions(&mut c, &json!({ "stagePin": "live" }), 0);
+        assert!(c.b.stage.pin.is_none());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

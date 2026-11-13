@@ -426,12 +426,12 @@ impl App {
             ui.separator();
             ui.label(wp_core::i18n::tr("고정 (지금 슬라이드 대신 계속 보이기)"));
             ui.horizontal(|ui| {
-                if ui.button(wp_core::i18n::tr("순서표")).clicked() { self.core.lock().stage_pin_set(Some(&json!({ "mode": "order", "name": "순서표" }))); }
-                if ui.button(wp_core::i18n::tr("풀기")).clicked() { self.core.lock().stage_pin_set(None); }
+                if ui.button(wp_core::i18n::tr("순서표")).clicked() { let _ = self.core.lock().stage_pin_set(Some(&json!({ "mode": "order", "name": "순서표" }))); }
+                if ui.button(wp_core::i18n::tr("풀기")).clicked() { let _ = self.core.lock().stage_pin_set(None); }
             });
             ui.add(egui::TextEdit::multiline(&mut self.tb.pin_text).desired_rows(2).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("고정할 글")));
             ui.horizontal(|ui| {
-                if ui.button(wp_core::i18n::tr("글 고정")).clicked() { self.core.lock().stage_pin_set(Some(&json!({ "mode": "text", "text": self.tb.pin_text, "name": "" }))); }
+                if ui.button(wp_core::i18n::tr("글 고정")).clicked() { let _ = self.core.lock().stage_pin_set(Some(&json!({ "mode": "text", "text": self.tb.pin_text, "name": "" }))); }
                 if ui.button(wp_core::i18n::tr("프리셋으로 저장")).clicked() {
                     let name: String = self.tb.pin_text.chars().take(16).collect();
                     self.tb.note = err(self.core.lock().save_stage_preset(&json!({ "mode": "text", "name": name, "text": self.tb.pin_text })));
@@ -440,7 +440,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 for p in &presets {
                     let r = ui.small_button(p["name"].as_str().unwrap_or(""));
-                    if r.clicked() { self.core.lock().stage_pin_set(Some(p)); }
+                    if r.clicked() { let _ = self.core.lock().stage_pin_set(Some(p)); }
                     r.on_hover_text(wp_core::i18n::tr("오른쪽 클릭: 지우기")).context_menu(|ui| { if ui.button(wp_core::i18n::tr("이 프리셋 지우기")).clicked() { self.core.lock().delete_stage_preset(p["id"].as_str().unwrap_or("")); ui.close(); } }); // [트랙 A] deleteStagePreset
                 }
             });
