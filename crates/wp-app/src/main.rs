@@ -32,6 +32,7 @@ mod template_ui; // [트랙 C]
 mod track_c; // [트랙 C]
 mod tools_ui;
 mod trackd_ui; // [트랙 D] // [트랙 D]
+mod actions_ui; // 순서 편집칸: 배경 음악 · ⚡ 송출할 때 자동으로
 
 use eframe::egui;
 use parking_lot::Mutex;

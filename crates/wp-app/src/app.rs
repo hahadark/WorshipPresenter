@@ -589,10 +589,14 @@ impl App {
             ui.label(RichText::new(wp_core::i18n::tr("메모 (무대 화면에 보임)")).small());
             changed |= field(ui, e, "note", false, 1, "");
             if it["type"] != "audio" { changed |= crate::flow_ui::item_fields(ui, e); } // [트랙 C] 자동 넘김·글자 숨김
+            if it["type"] != "audio" { changed |= crate::actions_ui::item_fields(ui, e, &self.core); } // 배경 음악 · ⚡ 송출할 때 자동으로 (Electron cue.js actionsHtml)
             changed |= crate::theme_ui::item_templates(ui, e, &self.core); // [트랙 C] 순서별 템플릿·테마
         });
         if changed {
-            acts.push(Act::UpdateItem(i, e.clone()));
+            // 저장본만 Electron cues.js normalizeItem 처럼 정규화 (편집 중인 e 는 글 입력이 끊기지 않게 그대로)
+            let mut saved = e.clone();
+            wp_core::actions::normalize_item_actions(&mut saved);
+            acts.push(Act::UpdateItem(i, saved));
         }
     }
 

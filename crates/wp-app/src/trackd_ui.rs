@@ -41,6 +41,21 @@ pub fn open(w: Win) {
     }
 }
 
+/// 순서 편집칸(⚡ 송출할 때 자동으로)의 OBS 줄이 쓰는 상태: (설정에서 켬, 연결됨, 장면 목록).
+/// 장면 목록은 OBS 원격 조작 창에서 마지막으로 받아 둔 캐시 (Electron `BCObs.state()` 와 같은 역할)
+pub fn obs_state(settings: &Value) -> (bool, bool, Vec<String>) {
+    let s = ST.lock();
+    let enabled = settings["obs"]["enabled"].as_bool().unwrap_or(false);
+    let connected = s.obs_status["connected"].as_bool().unwrap_or(false);
+    let scenes = s.obs_status["scenes"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+    (enabled, connected, scenes)
+}
+
+/// 장비(X32 · PTZ) 등록 창 (도구 → Companion·장비)
+pub fn open_devices() {
+    crate::tools_ui::open(crate::tools_ui::Tool::Devices);
+}
+
 /// 메뉴 id → 창 (못 알아들으면 false)
 pub fn handle_menu(id: &str) -> bool {
     match id {
