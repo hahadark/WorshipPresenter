@@ -229,12 +229,16 @@ impl App {
         }
     }
     fn panel_cameras(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
-        let cameras = crate::parity_ui::known_cameras(&self.core.lock());
-        // 출력 웹과 같은 deviceId 계약이며 기본 장치도 선택할 수 있다.
-        for (id, label) in std::iter::once((String::new(), tr("기본 카메라"))).chain(cameras) {
+        // 화면 셋 공용 목록(camscan): 연결된 카메라(도우미가 찾은 것) → 설정 → 큐시트. 출력 웹과 같은 deviceId 계약이며 기본 장치도 고를 수 있다.
+        crate::camscan::scan_bar(ui, &self.core);
+        let cameras = crate::camscan::choices(&self.core.lock());
+        let default = wp_core::cameras::Choice { device_id: String::new(), label: tr("기본 카메라"), connected: false, configured: false };
+        for c in std::iter::once(default).chain(cameras) {
+            let (id, label) = (c.device_id.clone(), c.label.clone());
             ui.group(|ui| {
-                ui.label(&label);
+                ui.label(if id.is_empty() { format!("📷 {label}") } else { crate::camscan::display_name(&c) });
                 ui.horizontal_wrapped(|ui| {
+                    if ui.button(tr("미리보기")).on_hover_text(tr("작은 창에 카메라를 엽니다 (출력과 같은 카메라 설정 적용)")).clicked() { crate::camscan::preview(&self.core, &id, &label); }
                     if ui.button(tr("순서로")).clicked() { acts.push(Act::AddItem("camera", Some(json!({"title": label, "deviceId": id, "label": label, "fit": "cover"})))); }
                     if ui.button(tr("배경으로")).clicked() { self.core.lock().set_background_media(Some(json!({"type":"camera", "deviceId":id,"label":label}))); }
                 });

@@ -152,10 +152,10 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
     };
     match e["type"].as_str().unwrap_or("") {
         "camera" => {
-            ui.label(RichText::new(wp_core::i18n::tr("카메라 기기 (예배당 화면 브라우저의 기기 번호, 비우면 기본 카메라)")).small());
+            ui.label(RichText::new(wp_core::i18n::tr("카메라 기기 (비우면 기본 카메라). '카메라 찾기'를 누르면 연결된 카메라가 이름으로 나옵니다.")).small());
             if !known_cameras.is_empty() {
                 let cur = e["deviceId"].as_str().unwrap_or("").to_string();
-                let name = known_cameras.iter().find(|c| c.0 == cur).map(|c| c.1.clone()).unwrap_or_else(|| if cur.is_empty() { "기본 카메라".into() } else { cur.chars().take(12).collect() });
+                let name = known_cameras.iter().find(|c| c.0 == cur).map(|c| c.1.clone()).unwrap_or_else(|| if cur.is_empty() { wp_core::i18n::tr("기본 카메라") } else { cur.chars().take(12).collect() });
                 egui::ComboBox::from_id_salt("cam-dev").selected_text(name).show_ui(ui, |ui| {
                     if ui.selectable_label(cur.is_empty(), wp_core::i18n::tr("기본 카메라")).clicked() {
                         e["deviceId"] = json!("");
@@ -273,23 +273,9 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
     changed
 }
 
-/// 설정·큐시트에 나온 카메라들 (deviceId, 이름)
+/// 고를 수 있는 카메라들 (deviceId, 이름): 연결된 것 → 설정 → 큐시트. 화면 셋이 같은 목록(camscan)을 쓴다.
 pub fn known_cameras(core: &wp_core::core::Core) -> Vec<(String, String)> {
-    let mut v: Vec<(String, String)> = vec![];
-    for (id, p) in core.settings.get()["cameras"].as_object().cloned().unwrap_or_default() {
-        if !id.is_empty() {
-            v.push((id.clone(), p["label"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| id.chars().take(12).collect())));
-        }
-    }
-    for c in core.cues.iter().filter_map(|c| core.store.get_cue(&c.id)) {
-        for it in c.items.iter().filter(|it| it["type"] == "camera") {
-            let id = it["deviceId"].as_str().unwrap_or("").to_string();
-            if !id.is_empty() && !v.iter().any(|x| x.0 == id) {
-                v.push((id.clone(), it["label"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| id.chars().take(12).collect())));
-            }
-        }
-    }
-    v
+    crate::camscan::known_cameras(core)
 }
 
 /// 도움말 메뉴 'a:help-…' (모르는 id 면 false)
