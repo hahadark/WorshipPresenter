@@ -801,6 +801,8 @@ impl eframe::App for App {
                 ui.label(RichText::new(wp_core::i18n::tr_args("출력 연결  예배당 {1} · OBS 자막 {2} · 무대 {3}", &[&(n("main")), &(n("overlay")), &(n("stage"))])).small());
                 ui.separator();
                 ui.label(RichText::new(format!("http://127.0.0.1:{}", s.port)).small().color(Color32::GRAY));
+                // [트랙 D] OBS 연결/방송/녹화/끊김 (설정에서 켰을 때만, 캐시는 obs 폴러가 채움)
+                if let Some((t, warn)) = crate::trackd_ui::obs_status_line(self.core.lock().settings.get()) { ui.separator(); ui.label(RichText::new(t).small().color(if warn { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::from_rgb(0x8a, 0xe0, 0xa8) })); }
                 if !self.out.error.is_empty() {
                     ui.separator();
                     ui.label(RichText::new(&self.out.error).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
