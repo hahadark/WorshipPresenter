@@ -180,19 +180,12 @@ impl App {
             ui.label(wp_core::i18n::tr("가사 (빈 줄로 슬라이드, [1절] [후렴] 이름표)")); s("lyrics", ui, true);
             ui.label(wp_core::i18n::tr("곡 정보 (작사·작곡·저작권)")); s("credit", ui, false);
             ui.label(wp_core::i18n::tr("기본 부를 순서 (예: 1 C 2 C)")); s("arrangement", ui, false);
-            ui.label(RichText::new(wp_core::i18n::tr_args("저장한 부를 순서: {1}", &[&(e["arrangements"].as_array().map(|a| a.iter().map(|x| format!("{}={}", x["name"].as_str().unwrap_or(""), x["order"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(" · ")).unwrap_or_default())])).small());
+            crate::media_ui::song_arrangements(ui, &mut self.core.lock(), e);
             let e2 = e.clone();
             ui.horizontal(|ui| {
                 if ui.button(wp_core::i18n::tr("저장")).clicked() {
                     let r = self.core.lock().save_song(&e2);
                     match r { Ok(v) => { self.tb.song_edit = Some(v); self.tb.note = "찬양을 저장했습니다.".into(); } Err(x) => self.tb.note = x.to_string() }
-                }
-                if ui.button(wp_core::i18n::tr("이 부를 순서 이름 붙여 저장")).clicked() {
-                    if let (Some(id), Some(o)) = (e2["id"].as_str(), e2["arrangement"].as_str()) {
-                        let name = format!("순서 {}", e2["arrangements"].as_array().map(|a| a.len() + 1).unwrap_or(1));
-                        let r = self.core.lock().save_song_arrangement(id, &name, o);
-                        if let Ok(v) = r { self.tb.song_edit = Some(v); }
-                    }
                 }
                 if ui.button(RichText::new(wp_core::i18n::tr("지우기")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
                     if let Some(id) = e2["id"].as_str() { self.tb.note = err(self.core.lock().delete_song(id)); self.tb.song_edit = None; }
@@ -267,6 +260,12 @@ impl App {
     fn overlays_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.overlays;
         egui::Window::new(wp_core::i18n::tr("오버레이")).open(&mut open).default_size([460.0, 420.0]).show(ctx, |ui| {
+            self.overlays_panel(ui);
+        });
+        self.tb.overlays = open;
+    }
+
+    pub(crate) fn overlays_panel(&mut self, ui: &mut egui::Ui) {
             ui.horizontal_wrapped(|ui| {
                 for (ty, label) in [("clock", "시계"), ("countdown", "카운트다운"), ("banner", "배너"), ("text", "글자"), ("logo", "로고")] {
                     if ui.button(format!("+ {label}")).clicked() {
@@ -316,8 +315,11 @@ impl App {
                     if changed { self.tb.note = err(self.core.lock().save_overlay(&v)); }
                 }
             });
-        });
-        self.tb.overlays = open;
+    }
+
+    pub(crate) fn library_kind_panel(&mut self, ui: &mut egui::Ui, kind: &str) {
+        self.tb.lib_kind = kind.into();
+        self.library_panel(ui);
     }
 
     // ---------------- 회중 메시지 ----------------
@@ -629,6 +631,8 @@ impl App {
             ui.label(RichText::new(wp_core::i18n::tr("영상")).strong().color(Color32::from_rgb(0xd9, 0x6a, 0x6a)));
             if ui.button(if v.playing { wp_core::i18n::tr_s("⏸ 멈춤") } else { wp_core::i18n::tr_s("▶ 재생") }).clicked() { act = Some((if v.playing { "pause" } else { "play" }, 0.0)); }
             if ui.button(wp_core::i18n::tr("⏮ 처음부터")).clicked() { act = Some(("restart", 0.0)); }
+            if ui.button(wp_core::i18n::tr("정지")).clicked() { act = Some(("stop", 0.0)); }
+            if ui.button(wp_core::i18n::tr("페이드아웃")).clicked() { act = Some(("fadeout", 3000.0)); }
             let pos = v.position();
             if ui.button(wp_core::i18n::tr("−10초")).clicked() { act = Some(("seek", (pos - 10.0).max(0.0))); }
             if ui.button(wp_core::i18n::tr("+10초")).clicked() { act = Some(("seek", pos + 10.0)); }
@@ -636,13 +640,22 @@ impl App {
             ui.label(RichText::new(format!("{:02}:{:02}{}", p / 60, p % 60, if v.ended { wp_core::i18n::tr_s(" (끝)") } else { "" })).monospace());
             ui.separator();
             let mut vol = v.volume.unwrap_or(1.0) as f32;
-            if ui.add(egui::Slider::new(&mut vol, 0.0..=1.0).text("소리")).changed() { act = Some(("volume", vol as f64)); }
+            if ui.add(egui::Slider::new(&mut vol, 0.0..=1.0).text(wp_core::i18n::tr("소리"))).changed() { act = Some(("volume", vol as f64)); }
             let mut lp = v.looped.unwrap_or(false);
             if ui.checkbox(&mut lp, wp_core::i18n::tr("반복")).changed() { act = Some(("loop", if lp { 1.0 } else { 0.0 })); }
         });
+        let url = self.core.lock().pres.live.as_ref().and_then(|l| l.deck.slides.get(l.deck.index)).and_then(|s| s["image"].as_str()).unwrap_or("").to_owned();
+        if let Some(dur) = crate::media_ui::video_duration(ui.ctx(), &url) {
+            let mut pos = if v.looped == Some(true) { v.position() % dur } else { v.position().min(dur) };
+            if ui.add(egui::Slider::new(&mut pos, 0.0..=dur).text(wp_core::i18n::tr("재생 위치"))).changed() { act = Some(("seek", pos)); }
+            ui.label(wp_core::i18n::tr_args("전체 {1}초 · 남은 {2}초", &[&format!("{dur:.0}"), &format!("{:.0}", (dur-pos).max(0.0))]));
+        } else { ui.label(wp_core::i18n::tr("영상 길이 확인 불가")); }
         if let Some((a, x)) = act {
             let mut c = self.core.lock();
             if let Err(e) = c.video_control(a, x) { c.notify(e.to_string(), "warn"); }
+        }
+        if let Some((at, ms)) = v.fade {
+            if wp_core::util::now_ms() as f64 >= at as f64 + ms { let _ = self.core.lock().video_control("stop", 0.0); }
         }
         if v.playing { ui.ctx().request_repaint_after(std::time::Duration::from_millis(500)); }
     }

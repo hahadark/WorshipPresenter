@@ -69,7 +69,7 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
         }
         ui.separator();
         if it["type"] == "song" && ui.button(wp_core::i18n::tr("찬양 라이브러리에 저장")).clicked() {
-            let s = json!({ "id": it["songId"].as_str().unwrap_or(""), "title": it["title"], "lyrics": it["lyrics"], "credit": it["credit"].as_str().unwrap_or(""), "order": it["order"].as_str().unwrap_or("") });
+            let s = json!({ "id": it["songId"].as_str().unwrap_or(""), "title": it["title"], "lyrics": it["lyrics"], "credit": it["credit"].as_str().unwrap_or(""), "arrangement": it["order"].as_str().unwrap_or("") });
             let mut c = app.core.lock();
             match c.save_song(&s) {
                 Ok(saved) => {

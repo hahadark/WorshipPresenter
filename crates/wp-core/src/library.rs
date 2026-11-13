@@ -168,17 +168,19 @@ pub struct Video {
     pub volume: Option<f64>,
     pub looped: Option<bool>,
     pub ended: bool,
+    pub fade: Option<(i64, f64)>,
 }
 
 impl Video {
     pub fn start(key: &str) -> Self {
-        Self { key: key.into(), playing: true, offset: 0.0, at: now_ms(), volume: None, looped: None, ended: false }
+        Self { key: key.into(), playing: true, offset: 0.0, at: now_ms(), volume: None, looped: None, ended: false, fade: None }
     }
     pub fn position(&self) -> f64 {
         self.offset + if self.playing { (now_ms() - self.at) as f64 / 1000.0 } else { 0.0 }
     }
     pub fn payload(&self) -> Value {
         let mut v = json!({ "key": self.key, "playing": self.playing, "offset": self.offset, "at": self.at, "now": now_ms() });
+        if let Some((at, ms)) = self.fade { v["fade"] = json!({"at":at,"ms":ms}); }
         if let Some(x) = self.volume {
             v["volume"] = json!(x);
         }
@@ -191,6 +193,7 @@ impl Video {
     pub fn control(&mut self, act: &str, arg: f64) -> Result<()> {
         let pos = self.position();
         let now = now_ms();
+        if act != "fadeout" { self.fade = None; }
         match act {
             "play" => {
                 self.playing = true;
@@ -220,6 +223,7 @@ impl Video {
             }
             "volume" => self.volume = Some(arg.clamp(0.0, 1.0)),
             "loop" => self.looped = Some(arg > 0.0),
+            "fadeout" => self.fade = Some((now, if arg.is_finite() { arg.clamp(1.0, 60000.0) } else { 3000.0 })),
             "stop" => {
                 self.playing = false;
                 self.offset = 0.0;
@@ -234,6 +238,17 @@ impl Video {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fade_matches_output_contract_and_stop_resets() {
+        let mut v = Video::start("test");
+        v.control("fadeout", 3000.0).unwrap();
+        assert_eq!(v.payload()["fade"]["ms"], 3000.0);
+        assert!(v.payload()["fade"]["at"].as_i64().is_some());
+        v.control("stop", 0.0).unwrap();
+        assert!(!v.playing);
+        assert_eq!(v.offset, 0.0);
+        assert!(v.payload().get("fade").is_none());
+    }
     #[test]
     fn folders_and_drop() {
         let dir = std::env::temp_dir().join(format!("wp-lib-{}", crate::util::short_id("t")));

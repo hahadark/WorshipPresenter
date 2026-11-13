@@ -14,6 +14,7 @@ mod trackb_ui; // [트랙 B]
 mod lyrics_ui; // [트랙 B]
 mod music_ui; // [트랙 B]
 mod system_ui; // [트랙 B]
+mod media_ui;
 mod thumbs_ui; // [트랙 B]
 mod form; // [트랙 C]
 mod history_ui; // [트랙 C]

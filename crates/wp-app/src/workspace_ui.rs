@@ -446,8 +446,7 @@ impl App {
             Pane::Library => self.songs_panel(ui),
             Pane::Stage => self.workspace_stage(ui),
             Pane::Media => {
-                self.library_panel(ui);
-                self.video_bar(ui);
+                self.media_panel(ui);
             }
             Pane::Preview => self.deck_view(
                 ui,
