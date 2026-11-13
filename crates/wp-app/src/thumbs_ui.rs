@@ -170,7 +170,7 @@ impl App {
         }
     }
 
-    fn add_lib_item(&mut self, it: Value) {
+    pub(crate) fn add_lib_item(&mut self, it: Value) {
         let at = self.sel.map(|s| s + 1);
         let mut c = self.core.lock();
         c.add_item(it, at);

@@ -189,6 +189,24 @@ pub fn save_imported(db: &Connection, songs: &[Value]) -> Result<Value> {
 mod tests {
     use super::*;
     #[test]
+    fn cue_save_keeps_default_order_and_named_arrangements() {
+        let db = Connection::open_in_memory().unwrap();
+        ensure_schema(&db).unwrap();
+        let s = save_song(&db, &json!({"title":"순서 회귀", "lyrics":"[1절]\n가사", "arrangement":"1 C 2 C"})).unwrap();
+        let id = s["id"].as_str().unwrap();
+        save_arrangement(&db, id, "짧게", "1 C").unwrap();
+        // 큐의 order는 라이브러리 계약 arrangement로 바꿔 저장한다.
+        let saved = save_song(&db, &json!({"id":id,"title":"순서 회귀","lyrics":"가사","arrangement":"2 C 1 C"})).unwrap();
+        assert_eq!(saved["arrangement"], "2 C 1 C");
+        assert_eq!(saved["arrangements"][0]["order"], "1 C");
+        save_arrangement(&db, id, "짧게", "C 1 C").unwrap();
+        assert_eq!(get_song(&db,id).unwrap()["arrangements"][0]["order"], "C 1 C");
+        save_arrangement(&db, id, "짧게", "").unwrap();
+        let saved = get_song(&db,id).unwrap();
+        assert_eq!(saved["arrangement"], "2 C 1 C");
+        assert!(saved["arrangements"].as_array().unwrap().is_empty());
+    }
+    #[test]
     fn songs_crud() {
         let db = Connection::open_in_memory().unwrap();
         ensure_schema(&db).unwrap();

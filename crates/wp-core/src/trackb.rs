@@ -138,11 +138,21 @@ impl Core {
         }
     }
     pub fn video_payload(&self) -> Value {
-        self.b.video.as_ref().map(|v| v.payload()).unwrap_or(Value::Null)
+        self.b.video.as_ref().map(|v| {
+            let mut payload = v.payload();
+            // 조작 패널이 닫혀 있어도 출력은 페이드 종료 뒤 멈춘 상태로 동기화한다.
+            if v.fade.is_some_and(|(at, ms)| now_ms() as f64 >= at as f64 + ms) {
+                payload["playing"] = json!(false);
+                payload["offset"] = json!(0);
+            }
+            payload
+        }).unwrap_or(Value::Null)
     }
     pub fn video_control(&mut self, act: &str, arg: f64) -> Result<()> {
         let Some(v) = self.b.video.as_mut() else { bail!("송출 중인 영상이 없습니다.") };
         v.control(act, arg)?;
+        if act == "stop" { self.pres.clear(); }
+        if act == "play" || act == "restart" { self.pres.restore(); }
         self.changed(true);
         Ok(())
     }
