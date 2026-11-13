@@ -197,6 +197,67 @@ pub fn build_meta(data_dir: &Path, file: &str, render: &str) -> Result<Value, St
     if xml { crate::pptx::build::build_cache(data_dir, file) } else { crate::pps::build_cache(data_dir, file) }
 }
 
+/// 꿝에서 F6/F5 로 넘어갈 순서가 아직 그림을 안 만든 PPT 일 때 기억해 두는 것.
+/// Electron `cue.js onCueNext` 는 `previewItem` 이 `loadHymn` 을 기다린 뒤 송출하므로 처음 열는 PPT 라도 못 초 뒤 자동으로 다음 순서가 나간다.
+/// Rust 는 만들기를 기다리지 않고(코어 잠금) BUILDING 을 돌려주므로, 요청을 기억해 두고 만들기가 꿝나면 이어서 송출한다.
+/// 그 사이 다른 송출·넘김이 있었거나(version) 다른 큐시트를 열었으면 버린다 (Electron `if (app.state.live.version !== version) return`).
+struct Deferred {
+    key: String,
+    cue_id: String,
+    index: usize,
+    dir: i64,
+    version: u64,
+}
+static DEFERRED: Lazy<Mutex<Option<Deferred>>> = Lazy::new(|| Mutex::new(None));
+
+/// index 순서가 만드는 중인 PPT 면 '꿝나면 이어서 송출' 을 기억하고 true
+pub fn defer_advance(core: &Core, index: usize, dir: i64) -> bool {
+    let Some(cue) = core.cue.as_ref() else { return false };
+    let Some(it) = cue.items.get(index) else { return false };
+    let Some(file) = it["file"].as_str().filter(|_| it["type"] == "hymn") else { return false };
+    if !is_building(file) {
+        return false;
+    }
+    *DEFERRED.lock() = Some(Deferred { key: norm(file), cue_id: cue.id.clone(), index, dir, version: core.pres.version });
+    true
+}
+
+/// 기억한 넘김이 이 파일이고 아직 유효하면 꺼내서 돌려준다 (다른 파일이면 그대로 둠)
+fn take_deferred(key: &str, cue_id: &str, version: u64) -> Option<(usize, i64)> {
+    let mut g = DEFERRED.lock();
+    if g.as_ref().is_some_and(|d| d.key == key) {
+        let d = g.take().unwrap();
+        return (d.cue_id == cue_id && d.version == version).then_some((d.index, d.dir));
+    }
+    None
+}
+
+/// 만들기가 실패했을 때: 이 파일에 기억한 넘김은 버린다
+fn clear_deferred(key: &str) {
+    let mut g = DEFERRED.lock();
+    if g.as_ref().is_some_and(|d| d.key == key) {
+        *g = None;
+    }
+}
+
+/// 만들기가 꿝났을 때: 기억한 넘김이 있으면 이어서 송출 (trigger::advance_live_cue 의 송출 분기와 같게) → 송출했으면 true
+fn finish_deferred(c: &mut Core, key: &str) -> bool {
+    let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
+    let Some((index, dir)) = take_deferred(key, &cue_id, c.pres.version) else { return false };
+    match c.item_deck(index) {
+        Ok(mut deck) => {
+            if dir < 0 { deck.index = deck.slides.len().saturating_sub(1); }
+            c.pres.preview = Some(deck.clone());
+            c.send_deck(deck);
+            true
+        }
+        Err(e) => {
+            c.notify(e, "warn");
+            false
+        }
+    }
+}
+
 fn start_build(core: &Core, file: &str) {
     let key = norm(file);
     if !PENDING.lock().insert(key.clone()) {
@@ -215,17 +276,25 @@ fn start_build(core: &Core, file: &str) {
             Ok(m) => {
                 let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
                 META.lock().insert(stamp, with_captions(&c, m));
-                // 이 파일 순서를 보고 있었으면 미리보기를 다시
-                let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
-                let pv = c.pres.preview.as_ref().filter(|p| p.passage["cueId"] == cue_id.as_str()).and_then(|p| p.passage["cueIndex"].as_i64()); // 열린 큐시트의 미리보기만
-                let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
                 let name = Path::new(&file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-                if let Some(i) = want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64)) {
-                    c.preview_item(i);
+                if finish_deferred(&mut c, &key) {
+                    // 꿝에서 F6/F5 로 기다리던 다음 순서를 이어서 송출했다 (Electron onCueNext 와 같은 결과)
+                    c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들어 다음 순서로 넘어갔습니다.", &[&name]), "ok");
+                } else {
+                    // 이 파일 순서를 보고 있었으면 미리보기를 다시
+                    let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
+                    let pv = c.pres.preview.as_ref().filter(|p| p.passage["cueId"] == cue_id.as_str()).and_then(|p| p.passage["cueIndex"].as_i64()); // 열린 큐시트의 미리보기만
+                    let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
+                    if let Some(i) = want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64)) {
+                        c.preview_item(i);
+                    }
+                    c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");
                 }
-                c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");
             }
-            Err(e) => c.notify(e, "error"),
+            Err(e) => {
+                clear_deferred(&key);
+                c.notify(e, "error");
+            }
         }
         let _ = tx.send(crate::core::Ev::Ui);
     });
@@ -1041,6 +1110,55 @@ mod default_bg_tests {
         assert_eq!(default_bg_label(&default_bg(&c)), "지정 이미지");
         let dir = c.data_dir.clone();
         assert!(set_default_bg_image(&mut c, &dir.join("x.pptx")).is_err());
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod deferred_tests {
+    use super::*;
+    use crate::db::Cue;
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-hymndefer-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+    /// 꿝에서 F6 → 만드는 중인 PPT: 기억해 두고, 큐시트·송출 version 이 그대로일 때만 이어서 송출 (cue.js onCueNext)
+    #[test]
+    fn defer_advance_until_built() {
+        let mut c = core();
+        let file = r"C:\hymn-defer-test\010 전능왕.pptx";
+        c.cue = Some(Cue { id: "q1".into(), name: "q1".into(), service_date: String::new(), start_time: String::new(), items: vec![json!({ "type": "title", "title": "예배" }), json!({ "type": "hymn", "title": "10장 전능왕", "file": file })], memo: String::new(), pinned: false, template: false });
+        // 만드는 중이 아니면 기억하지 않는다 (그냥 오류로)
+        assert!(!defer_advance(&c, 1, 1));
+        assert!(!defer_advance(&c, 0, 1)); // 찬송가가 아닌 순서
+        PENDING.lock().insert(norm(file));
+        assert!(defer_advance(&c, 1, 1));
+        let key = norm(file);
+        // 다른 파일의 만들기가 꿝나도 건들지 않는다
+        assert_eq!(take_deferred("c:\\other.pptx", "q1", c.pres.version), None);
+        assert!(DEFERRED.lock().is_some());
+        // 그 사이 다른 송출(version 바뀜)이 있었으면 버린다
+        assert_eq!(take_deferred(&key, "q1", c.pres.version + 1), None);
+        assert!(DEFERRED.lock().is_none());
+        // 다른 큐시트를 열었으면 버린다
+        assert!(defer_advance(&c, 1, -1));
+        assert_eq!(take_deferred(&key, "q2", c.pres.version), None);
+        // 그대로면 순서·방향을 돌려준다
+        assert!(defer_advance(&c, 1, -1));
+        assert_eq!(take_deferred(&key, "q1", c.pres.version), Some((1, -1)));
+        // finish_deferred: 파일을 열 수 없으면 송출하지 않고 경고만 (예전 미리보기가 나가지 않게)
+        assert!(defer_advance(&c, 1, 1));
+        assert!(!finish_deferred(&mut c, &key));
+        assert!(c.pres.live.is_none());
+        // 만들기 실패 → 기억도 버림
+        assert!(defer_advance(&c, 1, 1));
+        clear_deferred(&key);
+        assert!(DEFERRED.lock().is_none());
+        PENDING.lock().remove(&key);
+        let dir = c.data_dir.clone();
         drop(c);
         let _ = std::fs::remove_dir_all(dir);
     }
