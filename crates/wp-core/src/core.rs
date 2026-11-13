@@ -156,24 +156,25 @@ impl Core {
     }
 
     // ---------------- 템플릿 · 출력 데이터 ----------------
+    /// 실제 출력은 항상 LIVE 묶음을 기준으로 한다.
     pub fn template_for(&self, output: &str) -> Value {
+        self.template_for_deck(output, self.pres.live.as_ref().map(|l| &l.deck))
+    }
+
+    /// 미리보기·편집기에서 LIVE 상태를 빌리지 않고 대상 묶음의 템플릿을 고른다.
+    pub fn template_for_deck(&self, output: &str, deck: Option<&Deck>) -> Value {
         let s = self.settings.get();
         let tpls = self.settings.templates();
-        let live = self.pres.live.as_ref();
-        let over = live.and_then(|l| l.deck.passage["tpl"][output].as_str()).unwrap_or("").to_string();
-        let exists = |id: &str| tpls.iter().any(|t| t["id"] == id);
-        let mut id = if !over.is_empty() && exists(&over) { over.clone() } else { s["activeTemplates"][output].as_str().unwrap_or("").to_string() };
-        if output == "overlay" && over.is_empty() {
-            if let Some(l) = live {
-                if is_lyrics(&l.deck.passage, l.deck.slides.get(l.deck.index)) {
-                    let ly = s["activeTemplates"]["overlayLyrics"].as_str().unwrap_or("");
-                    if !ly.is_empty() && exists(ly) {
-                        id = ly.to_string();
-                    }
-                }
+        let find = |id: &str| tpls.iter().find(|t| t["id"] == id);
+        if let Some(t) = deck.and_then(|d| d.passage["tpl"][output].as_str()).and_then(find) {
+            return t.clone();
+        }
+        if output == "overlay" && deck.is_some_and(|d| is_lyrics(&d.passage, d.slides.get(d.index))) {
+            if let Some(t) = s["activeTemplates"]["overlayLyrics"].as_str().and_then(find) {
+                return t.clone();
             }
         }
-        tpls.iter().find(|t| t["id"] == id.as_str()).or(tpls.first()).cloned().unwrap_or(Value::Null)
+        s["activeTemplates"][output].as_str().and_then(find).or(tpls.first()).cloned().unwrap_or(Value::Null)
     }
 
     pub fn layers_payload(&self, output: &str) -> Value {
@@ -677,5 +678,64 @@ mod live_fix_tests {
             assert_eq!(remote::state_for(&c)["obs"]["full"], on);
             assert_eq!(c.output_payload("overlay")["obsFull"], on);
         }
+    }
+}
+
+#[cfg(test)]
+mod template_deck_tests {
+    use super::*;
+    fn core() -> Core {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.test-data").join(short_id("template"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir, None).unwrap();
+        c.settings.update(|s| {
+            s["templates"] = json!([{"id":"A"},{"id":"B"},{"id":"O"},{"id":"L"}]);
+            s["activeTemplates"] = json!({"main":"A","overlay":"O","overlayLyrics":"L"});
+        });
+        c
+    }
+    fn deck(tpl: Value, lyrics: bool) -> Deck {
+        Deck { passage: json!({"tpl":tpl,"lyrics":lyrics}), slides: vec![json!({"kind":"text"})], index: 0 }
+    }
+    #[test]
+    fn preview_and_editor_use_target_deck_without_changing_live_output() {
+        let mut c = core();
+        c.pres.send_live(Some(deck(json!({"main":"A","overlay":"O"}), false)));
+        let before = c.output_payload("main");
+        c.pres.preview = Some(deck(json!({"main":"B","overlay":"B"}), true));
+        assert_eq!(c.template_for_deck("main", c.pres.preview.as_ref())["id"], "B");
+        assert_eq!(c.template_for_deck("overlay", c.pres.preview.as_ref())["id"], "B");
+        assert_eq!(c.template_for("main")["id"], "A");
+        assert_eq!(c.template_for("overlay")["id"], "O");
+        assert_eq!(c.output_payload("main"), before);
+        std::fs::remove_dir_all(&c.data_dir).ok();
+    }
+    #[test]
+    fn lyrics_overlay_fallback_and_empty_deck_are_safe() {
+        let mut c = core();
+        for tpl in [json!({}), json!({"overlay":"missing"})] {
+            let d = deck(tpl, true);
+            assert_eq!(c.template_for_deck("overlay", Some(&d))["id"], "L");
+        }
+        let mut d = deck(json!({}), false);
+        d.slides = vec![json!({"kind":"image","caption":"가사"})];
+        assert_eq!(c.template_for_deck("overlay", Some(&d))["id"], "L");
+        d.index = usize::MAX;
+        assert_eq!(c.template_for_deck("overlay", Some(&d))["id"], "O");
+        assert_eq!(c.template_for_deck("overlay", None)["id"], "O");
+        c.settings.update(|s| s["templates"] = json!([]));
+        assert_eq!(c.template_for_deck("main", None), Value::Null);
+        std::fs::remove_dir_all(&c.data_dir).ok();
+    }
+    #[test]
+    fn live_lyrics_and_obs_full_keep_output_contract() {
+        let mut c = core();
+        c.pres.send_live(Some(deck(json!({"main":"B"}), true)));
+        assert_eq!(c.output_payload("overlay")["template"]["id"], "L");
+        c.obs_full = true;
+        assert_eq!(c.output_payload("overlay")["template"]["id"], "B");
+        assert_eq!(c.output_payload("main")["template"]["id"], "B");
+        std::fs::remove_dir_all(&c.data_dir).ok();
     }
 }

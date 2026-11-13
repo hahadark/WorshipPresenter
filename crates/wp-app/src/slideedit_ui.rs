@@ -38,7 +38,12 @@ impl SlideEditUi {
                 let mut c = core.lock();
                 let Some(it) = c.cue.as_ref().and_then(|q| q.items.get(i)).cloned() else { return };
                 // 건너뛴 슬라이드도 보이게: 꾸미기 전 슬라이드를 다시 꾸민다
-                let slides = match c.item_deck(i) {
+                let selected_deck = match c.item_deck(i) {
+                    Ok(d) => d,
+                    Err(e) => { ui.label(e); return; }
+                };
+                let tpl = c.template_for_deck("main", Some(&selected_deck));
+                let slides = match Ok::<_, String>(selected_deck) {
                     Ok(d) if !is_chunk(it["type"].as_str().unwrap_or("")) => {
                         let mut bare = it.clone();
                         if let Some(o) = bare.as_object_mut() { o.remove("skip"); o.remove("slideOrder"); o.remove("extra"); if it["type"] != "hymn" { o.remove("edits"); } }
@@ -51,7 +56,7 @@ impl SlideEditUi {
                     Ok(d) => d.slides,
                     Err(e) => { ui.label(RichText::new(e).color(Color32::from_rgb(0xff, 0xb0, 0x4a))); return; }
                 };
-                (it, slides, c.template_for("main"))
+                (it, slides, tpl)
             };
             // 편집 목록은 출력에서 나뉜 화면이 아니라 원래 글 덩어리 단위다.
             let slides = if matches!(it["type"].as_str(),Some("song" | "text")) {

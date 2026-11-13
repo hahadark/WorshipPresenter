@@ -438,7 +438,7 @@ impl App {
     fn workspace_panel(&mut self, ui: &mut egui::Ui, p: Pane, s: &Snap, acts: &mut Vec<Act>) {
         match p {
             Pane::Cue => self.workspace_cue(ui, s, acts),
-            Pane::Main => self.search_panel(ui, s, acts),
+            Pane::Main => self.main_panel(ui, s, acts),
             Pane::Quick => {
                 self.workspace_controls(ui, s, acts);
                 self.trackb_toolbar(ui);
@@ -453,16 +453,16 @@ impl App {
                 ui,
                 &tr("미리보기"),
                 s.preview.as_ref(),
-                &s.tpl_main,
+                false,
                 None,
                 s,
                 acts,
             ),
             Pane::Live => self.deck_view(
                 ui,
-                &tr("LIVE (예배당)"),
+                &tr("LIVE"),
                 s.live.as_ref().map(|l| &l.deck),
-                &s.tpl_main,
+                true,
                 s.live.as_ref(),
                 s,
                 acts,
