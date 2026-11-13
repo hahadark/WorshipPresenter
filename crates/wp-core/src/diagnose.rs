@@ -6,13 +6,85 @@ use crate::core::Core;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-/// 조작 화면이 알려 주는 것 (예배당 창 · 모니터)
+/// 조작 화면이 알려 주는 것 (예배당 창 · 모니터 · OBS 원격 조작 상태 캠시)
 #[derive(Default, Clone)]
 pub struct Desktop {
     pub monitors: usize,
     pub output_running: bool,
     pub output_monitor: String,
     pub same_as_control: bool,
+    /// OBS 원격 조작(obs-websocket) 상태 캠시. 연결 점검은 OBS 에 직접 붙지 않고 이 값으로 판정한다.
+    /// Null = 아직 확인한 것이 없음. 객체라면 { connected, scene, streaming, recording, error } (있는 칸만).
+    pub obs_ws: Value,
+}
+
+/// OBS 원격 조작 점검 (Electron diagnose.js:82-88 obsws). 설정 obs.enabled 가 꺼져 있으면 항목 없음.
+/// OBS 에 연결하지 않고 설정과 상태 캠시만으로 판정한다 (캐시가 없으면 '확인 못 함' 경고).
+pub fn check_obs_ws(settings: &Value, cache: &Value) -> Option<Value> {
+    use crate::i18n::{tr, tr_args};
+    let o = &settings["obs"];
+    if o["enabled"].as_bool() != Some(true) {
+        return None;
+    }
+    let title = tr("OBS 원격 조작");
+    let fix_electron = || {
+        vec![
+            tr("OBS 가 켜져 있는지 확인하세요 (OBS 28 이상)."),
+            tr("OBS → 도구 → WebSocket 서버 설정 → 'WebSocket 서버 사용' 을 켜고, 포트(기본 4455)와 비밀번호를 도구 → OBS 원격 조작에 똑같이 넣으세요."),
+            tr("OBS 가 다른 PC 에 있으면 주소에 그 PC 의 IP(192.168.x.x)를 넣고, 그 PC 방화벽에서 OBS 를 허용하세요."),
+        ]
+    };
+    let host = o["host"].as_str().filter(|x| !x.trim().is_empty()).unwrap_or("127.0.0.1").trim().to_string();
+    let port = o["port"].as_u64().unwrap_or(4455);
+    if port == 0 || port > 65535 {
+        return Some(item("obsws", &title, "fail", tr_args("포트가 잘못되었습니다: {1}", &[&o["port"]]), vec![tr("도구 → OBS 원격 조작에서 포트를 OBS 의 WebSocket 서버 설정과 같게(기본 4455) 넣으세요.")]));
+    }
+    if cache["connected"].as_bool() == Some(true) {
+        let detail = match cache["scene"].as_str() {
+            Some(scene) => tr_args(
+                "연결됨 — 장면 '{1}' · {2} · {3}",
+                &[&scene, &tr(if cache["streaming"] == true { "방송 중" } else { "방송 안 함" }), &tr(if cache["recording"] == true { "녹화 중" } else { "녹화 안 함" })],
+            ),
+            None => tr_args("연결됨 — {1}:{2} (OBS 원격 조작 창에서 마지막으로 확인한 상태)", &[&host, &port]),
+        };
+        return Some(item("obsws", &title, "ok", detail, vec![]));
+    }
+    if let Some(e) = cache["error"].as_str().filter(|x| !x.is_empty()) {
+        return Some(item("obsws", &title, "fail", e.to_string(), fix_electron()));
+    }
+    if cache["connected"].as_bool() == Some(false) {
+        return Some(item("obsws", &title, "fail", tr("OBS 에 연결돼 있지 않습니다."), fix_electron()));
+    }
+    // 상태 캠시가 없음: 예배 전에 확인해 보라고 알린다 (연결 점검은 OBS 에 직접 붙지 않는다)
+    let mut fix = vec![tr("도구 → OBS 원격 조작 창을 열어 연결을 한 번 확인하세요. 그 결과가 여기에 반영됩니다.")];
+    fix.extend(fix_electron());
+    Some(item("obsws", &title, "warn", tr_args("OBS 연결을 아직 확인하지 않았습니다 ({1}:{2}).", &[&host, &port]), fix))
+}
+
+/// 무대 화면 모니터 점검 (Electron diagnose.js:68-72 stagemon). Rust 판은 무대 화면이 별도 wp-output 창(또는 브라우저)으로
+/// `/outputs/stage` 에 붙으므로, 붙은 연결이 있으면 '켜짐'. 없으면 Electron 처럼 항목을 내지 않는다(무대 화면은 선택).
+pub fn check_stage(core: &Core) -> Option<Value> {
+    use crate::i18n::{tr, tr_args};
+    let n = core.outputs.values().filter(|c| c.client == "stage").count();
+    if n == 0 {
+        return None;
+    }
+    let windows = core.outputs.values().filter(|c| c.client == "stage" && c.kind == "window").count();
+    let how = if windows > 0 { tr("무대 화면 창") } else { tr("브라우저") };
+    Some(item("stagemon", &tr("무대 화면 모니터"), "ok", tr_args("켜짐 ({1} · 연결 {2}개)", &[&how, &n]), vec![]))
+}
+
+/// 업데이트 점검 (Electron diagnose.js:130-133 update): 확인 실패는 warn, 받아 둔 것은 info. 그 외에는 항목 없음.
+pub fn check_update(up: &Value) -> Option<Value> {
+    use crate::i18n::{tr, tr_args};
+    match up["state"].as_str() {
+        Some("error") => {
+            let e = up["error"].as_str().filter(|x| !x.is_empty()).map(|e| format!(" — {e}")).unwrap_or_default();
+            Some(item("update", &tr("업데이트"), "warn", tr_args("업데이트 확인에 실패했습니다{1}.", &[&e]), vec![tr("인터넷 연결을 확인하세요. 예배에는 지장이 없습니다."), tr("설정 → 정보 에서 다시 확인할 수 있습니다.")]))
+        }
+        Some("ready") | Some("downloaded") => Some(item("update", &tr("업데이트"), "info", tr_args("새 버전 {1} 을 받아 두었습니다 — 프로그램을 끌 때 설치됩니다.", &[&up["version"].as_str().unwrap_or("")]), vec![])),
+        _ => None,
+    }
 }
 
 fn item(id: &str, title: &str, status: &str, detail: impl Into<String>, fix: Vec<String>) -> Value {
@@ -155,6 +227,10 @@ pub fn diagnose(core: &mut Core, d: &Desktop) -> Value {
     } else {
         out.push(item("display", "예배당 화면 (보조 모니터)", "ok", format!("모니터 {}대 · {}", d.monitors, if d.output_running { format!("출력 켜짐 ({})", d.output_monitor) } else { "출력 꺼짐 — '예배당 화면 켜기' 로 켭니다".into() }), vec![]));
     }
+    // 1-1. 무대 화면 모니터 (붙은 연결이 있을 때만)
+    if let Some(x) = check_stage(core) {
+        out.push(x);
+    }
 
     // 2. OBS 브라우저 소스
     let count = |o: &str| core.outputs.values().filter(|c| c.client == o && c.kind != "window").count();
@@ -167,6 +243,11 @@ pub fn diagnose(core: &mut Core, d: &Desktop) -> Value {
             "이미 넣었다면 그 소스를 오른쪽 클릭 → 속성 → '현재 페이지의 캐시를 새로 고침'.".into(),
             "자막 PC 와 송출 PC 가 따로면 '내부망 출력' 을 켜세요.".into(),
         ]));
+    }
+
+    // 2-1. OBS 원격 조작 (obs-websocket) — 설정과 상태 캠시로만, OBS 에 직접 붙지 않는다
+    if let Some(x) = check_obs_ws(&s, &d.obs_ws) {
+        out.push(x);
     }
 
     // 3. 내부망 출력
@@ -240,6 +321,11 @@ pub fn diagnose(core: &mut Core, d: &Desktop) -> Value {
     // 8. 저장 공간
     if let Some(gb) = free_gb(&core.data_dir) {
         out.push(if gb < 1.0 { item("disk", "저장 공간", "warn", format!("데이터 드라이브에 {gb:.1}GB 남았습니다."), v(&["필요 없는 파일을 지우세요. 공간이 모자라면 큐시트·백업 저장이 실패할 수 있습니다."])) } else { item("disk", "저장 공간", "ok", format!("{gb:.0}GB 남음"), vec![]) });
+    }
+
+    // 9. 업데이트
+    if let Some(x) = check_update(&crate::updates::status(&s)) {
+        out.push(x);
     }
 
     let fail = out.iter().filter(|x| x["status"] == "fail").count();
@@ -327,6 +413,64 @@ mod tests {
     fn decode() {
         assert_eq!(percent_decode("C%3A%5C%EA%B0%80.png"), "C:\\가.png");
     }
+    /// 검토 1113-5 결함 1: obsws · stagemon · update 항목 (Electron diagnose.js:68-72, 82-88, 130-133)
+    #[test]
+    fn obsws_stage_update_items() {
+        // OBS 원격 조작: 꺼져 있으면 항목 없음
+        assert!(check_obs_ws(&json!({ "obs": { "enabled": false } }), &Value::Null).is_none());
+        assert!(check_obs_ws(&json!({}), &Value::Null).is_none());
+        let on = json!({ "obs": { "enabled": true, "host": "192.168.0.7", "port": 4455 } });
+        // 캠시 없음 → warn (OBS 에 직접 붙지 않고 확인을 안내)
+        let x = check_obs_ws(&on, &Value::Null).unwrap();
+        assert_eq!(x["id"], "obsws");
+        assert_eq!(x["status"], "warn");
+        assert!(x["detail"].as_str().unwrap().contains("192.168.0.7:4455"));
+        assert!(x["fix"].to_string().contains("4455") && x["fix"].to_string().contains("OBS 28"));
+        // 연결됨 → ok, Electron 과 같은 장면·방송·녹화 글
+        let x = check_obs_ws(&on, &json!({ "connected": true, "scene": "설거", "streaming": true, "recording": false })).unwrap();
+        assert_eq!(x["status"], "ok");
+        assert_eq!(x["detail"], "연결됨 — 장면 '설거' · 방송 중 · 녹화 안 함");
+        // 연결 실패 기록 → fail + 안내
+        let x = check_obs_ws(&on, &json!({ "connected": false, "error": "비밀번호가 틀립니다" })).unwrap();
+        assert_eq!(x["status"], "fail");
+        assert_eq!(x["detail"], "비밀번호가 틀립니다");
+        assert_eq!(x["fix"].as_array().unwrap().len(), 3);
+        let x = check_obs_ws(&on, &json!({ "connected": false })).unwrap();
+        assert_eq!(x["status"], "fail");
+        // 포트 0 → fail
+        assert_eq!(check_obs_ws(&json!({ "obs": { "enabled": true, "port": 0 } }), &Value::Null).unwrap()["status"], "fail");
+        // 업데이트
+        assert!(check_update(&json!({ "state": "idle" })).is_none());
+        assert!(check_update(&json!({ "state": "latest" })).is_none());
+        let u = check_update(&json!({ "state": "error", "error": "오프라인" })).unwrap();
+        assert_eq!(u["id"], "update");
+        assert_eq!(u["status"], "warn");
+        assert_eq!(u["detail"], "업데이트 확인에 실패했습니다 — 오프라인.");
+        let u = check_update(&json!({ "state": "ready", "version": "1.2.3" })).unwrap();
+        assert_eq!(u["status"], "info");
+        assert!(u["detail"].as_str().unwrap().contains("1.2.3"));
+        // 무대 화면: 붙은 연결이 없으면 항목 없음, 있으면 ok
+        let dir = std::env::temp_dir().join(format!("wp-diag-stage-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
+        assert!(check_stage(&c).is_none());
+        c.outputs.insert(1, crate::core::OutputClient { client: "stage".into(), kind: "window".into(), connected_at: 0, ack: None });
+        let x = check_stage(&c).unwrap();
+        assert_eq!(x["id"], "stagemon");
+        assert_eq!(x["status"], "ok");
+        assert!(x["detail"].as_str().unwrap().contains("무대 화면 창"));
+        // 전체 점검에도 들어가고, obs 가 꺼져 있으면 obsws 는 없다
+        let r = diagnose(&mut c, &Desktop::default());
+        let ids: Vec<&str> = r["items"].as_array().unwrap().iter().filter_map(|x| x["id"].as_str()).collect();
+        assert!(ids.contains(&"stagemon") && !ids.contains(&"obsws"));
+        c.settings.update(|d| d["obs"] = json!({ "enabled": true }));
+        let r = diagnose(&mut c, &Desktop { obs_ws: json!({ "connected": true }), ..Default::default() });
+        let ob = r["items"].as_array().unwrap().iter().find(|x| x["id"] == "obsws").unwrap().clone();
+        assert_eq!(ob["status"], "ok");
+        assert!(ob["detail"].as_str().unwrap().contains("127.0.0.1:4455"));
+    }
+
     #[test]
     fn full_check() {
         let dir = std::env::temp_dir().join(format!("wp-diag-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
