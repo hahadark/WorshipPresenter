@@ -101,13 +101,27 @@ fn type_info(t: &str) -> (&'static str, Color32) {
     }
 }
 
+/// 미리보기 켜짐/꺼짐에 맞춰 미리보기 패널을 보이거나 닫는다 (배치 잠금과 관계없이, 원본 BCDock.show/hide 와 같음)
+fn sync_preview_pane(ws: &mut wp_core::workspace::Workspace, on: bool) {
+    use wp_core::workspace::Pane;
+    if ws.visible(Pane::Preview) == on {
+        return;
+    }
+    let locked = ws.locked;
+    ws.locked = false;
+    ws.toggle(Pane::Preview);
+    ws.locked = locked;
+}
+
 impl App {
     pub fn new(core: Shared, web_dir: std::path::PathBuf, data_dir: std::path::PathBuf) -> Self {
         let versions = core.lock().store.list_versions();
         let out = OutWin::new();
         let saved = core.lock().settings.get()["rsOutputMonitor"].as_u64().map(|x| x as usize);
         let monitor = saved.filter(|m| out.monitors.iter().any(|x| x.index == *m)).unwrap_or_else(|| out.default_monitor());
-        let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
+        let mut workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
+        // 원본 dock.js:409 — 미리보기 끔(바로 송출)이면 미리보기 패널을 닫는다
+        sync_preview_pane(&mut workspace.state, core.lock().settings.get()["previewMode"].as_bool().unwrap_or(true));
         Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */ }
     }
 
@@ -242,6 +256,9 @@ impl App {
                 Act::TogglePreviewMode => {
                     let on = !c.settings.get()["previewMode"].as_bool().unwrap_or(true);
                     c.settings.update(|d| d["previewMode"] = json!(on));
+                    // 원본 control.js:491 — 켜면 미리보기 패널을 열고, 끄면 닫는다
+                    sync_preview_pane(&mut self.workspace.state, on);
+                    c.notify(if on { wp_core::i18n::tr("미리보기를 켰습니다. 고른 본문은 미리보기에 놓이고 F9 로 송출합니다.") } else { wp_core::i18n::tr("미리보기를 껌습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.") }, if on { "ok" } else { "info" });
                 }
                 Act::OutputToggle => {
                     let port = c.port;
