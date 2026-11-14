@@ -398,7 +398,10 @@ impl App {
                     let r = out.resp;
                     self.cue_row_dnd(ui, &r, i); // [트랙 B] 끌어서 옮기기
                     crate::parity_ui::cue_row_menu(self, &r, i, it, s.items.len(), acts); // [트랙 A] 오른쪽 클릭 메뉴
-                    if out.edit {
+                    if out.send {
+                        self.sel = Some(i);
+                        acts.push(Act::SendItem(i));
+                    } else if out.edit {
                         self.show_item_editor(i);
                         acts.push(Act::PreviewItem(i));
                     } else if r.clicked() {
@@ -406,7 +409,7 @@ impl App {
                         self.edit = None;
                         acts.push(Act::PreviewItem(i));
                     }
-                    if r.double_clicked() && !out.edit {
+                    if r.double_clicked() && !out.edit && !out.send {
                         acts.push(Act::SendItem(i));
                     }
                 }

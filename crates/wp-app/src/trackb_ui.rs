@@ -223,8 +223,11 @@ impl App {
         }
         for s in &list {
             let id = s["id"].as_str().unwrap_or("").to_string();
-            let (row, edit) = song_row(ui, s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or(""), sel.as_deref() == Some(id.as_str()));
-            if edit.clicked() {
+            let (row, edit, add) = song_row(ui, s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or(""), sel.as_deref() == Some(id.as_str()));
+            if add {
+                let it = self.core.lock().song_item(&id);
+                if let Some(it) = it { self.add_to_cue(it); }
+            } else if edit.clicked() {
                 self.tb.song_edit = self.core.lock().get_song(&id);
             } else if row.double_clicked() {
                 let it = self.core.lock().song_item(&id);
@@ -847,7 +850,7 @@ mod cue_duration_tests {
 }
 
 /// 찬양 목록 줄 (.lib-row: 여백 6px 10px · 아래 line-soft 선 · 음표 아이콘 · 굵은 제목 · 흐린 첫 줄 · 오른쪽 '고치기')
-fn song_row(ui: &mut egui::Ui, title: &str, first: &str, selected: bool) -> (egui::Response, egui::Response) {
+fn song_row(ui: &mut egui::Ui, title: &str, first: &str, selected: bool) -> (egui::Response, egui::Response, bool) {
     use crate::theme::{font, pal, Weight};
     use eframe::egui::{Pos2, Rect, Sense, Stroke, Vec2};
     let p = pal();
@@ -859,12 +862,15 @@ fn song_row(ui: &mut egui::Ui, title: &str, first: &str, selected: bool) -> (egu
     let eg = ui.painter().layout_no_wrap(wp_core::i18n::tr("고치기"), font(12.0, Weight::Regular), p.text);
     let er = Rect::from_min_size(Pos2::new(r.right() - 10.0 - eg.size().x - 18.0, r.center().y - 12.0), Vec2::new(eg.size().x + 18.0, 24.0));
     let edit = ui.interact(er, row.id.with("edit"), Sense::click());
+    // 마우스 올림: 고치기 왼쪽에 '큐시트에 넣기' 아이콘 (docs/ux-rules.md 3절, 두 번 누르기와 같은 동작을 눈에 보이게)
+    let hot = ui.rect_contains_pointer(r);
+    let ar = Rect::from_min_size(Pos2::new(er.left() - 6.0 - crate::widgets::HOVER_BTN, r.center().y - crate::widgets::HOVER_BTN / 2.0), Vec2::splat(crate::widgets::HOVER_BTN));
     let pt = ui.painter();
-    if selected { pt.rect_filled(r, 0.0, p.sel); } else if row.hovered() || edit.hovered() { pt.rect_filled(r, 0.0, p.hover); }
+    if selected { pt.rect_filled(r, 0.0, p.sel); } else if hot { pt.rect_filled(r, 0.0, p.hover); }
     pt.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
     crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 10.0 + 10.0, r.center().y), Vec2::splat(16.0)), "music", crate::theme::type_ink("song"));
     let tx = r.left() + 10.0 + 20.0 + 8.0;
-    let clip = Rect::from_min_max(Pos2::new(tx, r.top()), Pos2::new(er.left() - 8.0, r.bottom()));
+    let clip = Rect::from_min_max(Pos2::new(tx, r.top()), Pos2::new(if hot { ar.left() } else { er.left() } - 8.0, r.bottom()));
     let pt = ui.painter().with_clip_rect(clip);
     let mut y = r.center().y - (h - 12.0) / 2.0;
     let th = tg.size().y;
@@ -875,7 +881,10 @@ fn song_row(ui: &mut egui::Ui, title: &str, first: &str, selected: bool) -> (egu
     ui.painter().rect(er, eframe::egui::CornerRadius::same(crate::theme::RADIUS), bg, Stroke::new(p.border_w, border), eframe::egui::StrokeKind::Inside);
     ui.painter().galley(er.center() - eg.size() / 2.0, eg, p.text);
     if row.hovered() || edit.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
-    (row, edit.on_hover_text(wp_core::i18n::tr("가사 고치기")))
+    let add = hot && crate::widgets::overlay_btn(ui, row.id.with("add"), ar, "file-plus", &wp_core::i18n::tr("큐시트에 넣기 (고른 순서 다음, 두 번 눌러도)"), false).clicked();
+    #[cfg(test)]
+    if hot { crate::widgets::HOVER_SEEN.with(|m| m.borrow_mut().insert("song-add".into(), ar)); }
+    (row, edit.on_hover_text(wp_core::i18n::tr("가사 고치기")), add)
 }
 
 /// 폴더 안 찬양 파일 모으기 (하위 폴더까지, 깊이 8까지)
