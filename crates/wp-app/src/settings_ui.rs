@@ -1,7 +1,7 @@
 //! [트랙 C] 설정 창 (일반 · 출력 · 단축키 · 조작 화면) — settings.json 의 같은 칸을 고친다
 
 use crate::form::{check, num, pick, text};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use serde_json::Value;
 use wp_core::core::Shared;
 
@@ -49,10 +49,10 @@ impl SettingsUi {
         let mut open = self.open;
         let mut data = core.lock().settings.get().clone();
         let mut ch = false;
-        egui::Window::new(wp_core::i18n::tr("설정")).open(&mut open).default_size([640.0, 560.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "settings", wp_core::i18n::tr("설정"), [640.0, 560.0]).open(&mut open).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 for (i, n) in ["일반", "출력", "단축키", "조작 화면"].iter().enumerate() {
-                    if ui.selectable_label(self.tab == i as u8, *n).clicked() {
+                    if ui.selectable_label(self.tab == i as u8, wp_core::i18n::tr(n)).clicked() {
                         self.tab = i as u8;
                     }
                 }
@@ -63,25 +63,29 @@ impl SettingsUi {
                     0 => {
                         ch |= check(ui, &mut data, &["previewMode"], "미리보기를 거쳐 송출 (끄면 누른 것을 바로 송출)");
                         ui.end_row();
-                        ch |= check(ui, &mut data, &["cueAdvance"], "순서의 마지막 슬라이드에서 F6 → 다음 순서");
+                        // 빠른 설정·검색줄과 같은 말 (휴리스틱 평가 6번). Electron settings.js 문구 그대로:
+                        // 검색줄 '자동 · 장절 · 본문' = 기본 검색 방식, 빠른 설정 '분할: …' = 분할 방식, '이동: …' = 범위 끝에서
+                        ch |= check(ui, &mut data, &["cueAdvance"], "F6 을 누르면 다음 순서로 넘어가 바로 송출 (F5 는 이전 순서의 마지막 슬라이드)");
                         ui.end_row();
-                        ch |= check(ui, &mut data, &["cueEdgeHide"], "순서의 처음·끝에서 한 번 더 누르면 글자만 숨김");
+                        ch |= check(ui, &mut data, &["cueEdgeHide"], "그 전에 한 번은 글자만 숨기기 (모든 순서 — 순서마다 따로 켤 수도 있음)");
                         ui.end_row();
-                        ch |= pick(ui, &mut data, &["searchMode"], "찾기", &[("auto", "자동 (장절·낱말)"), ("reference", "장절만"), ("text", "낱말만")]);
+                        ch |= pick(ui, &mut data, &["searchMode"], "기본 검색 방식", &[("auto", "자동 (숫자가 있으면 장절, 없으면 본문)"), ("reference", "장절만"), ("text", "본문 단어만")]);
                         ui.end_row();
-                        ch |= pick(ui, &mut data, &["split", "mode"], "슬라이드 나누기", &[("auto", "화면에 맞춰 자동"), ("count", "절 수로")]);
+                        ch |= pick(ui, &mut data, &["split", "mode"], "분할 방식", &[("auto", "화면 공간에 맞춰 자동"), ("count", "지정한 절 수만큼")]);
                         ui.end_row();
-                        ch |= num(ui, &mut data, &["split", "count"], "한 슬라이드 절 수", 1.0, 20.0, 1.0);
+                        let by_count = data["split"]["mode"] == "count";
+                        ui.add_enabled_ui(by_count, |ui| { ch |= num(ui, &mut data, &["split", "count"], "분할 절 수", 1.0, 20.0, 1.0); })
+                            .response.on_disabled_hover_text(wp_core::i18n::tr("분할 방식을 '지정한 절 수만큼'으로 고르면 쓸 수 있습니다"));
                         ui.end_row();
-                        ch |= pick(ui, &mut data, &["navMode"], "성경 넘김", &[("range", "고른 범위 안에서만"), ("continuous", "범위 끝에서 다음 절로 이어감")]);
+                        ch |= pick(ui, &mut data, &["navMode"], "이동 (F5·F6 범위 끝에서)", &[("range", "선택한 범위 안에서만 이동"), ("continuous", "다음(이전) 절로 계속 이어가기")]);
                         ui.end_row();
                     }
                     1 => {
-                        ch |= check(ui, &mut data, &["output", "autoOnSend"], "송출하면 예배당 화면을 자동으로 켬");
+                        ch |= check(ui, &mut data, &["output", "autoOnSend"], "송출하면 예배당 화면 자동 켜기");
                         ui.end_row();
-                        ch |= check(ui, &mut data, &["output", "linkObs"], "예배당 화면을 끄면 OBS 화면도 숨김");
+                        ch |= check(ui, &mut data, &["output", "linkObs"], "예배당 화면을 끄면 OBS 화면도 숨기기 (다시 켜거나 송출하면 다시 보임)");
                         ui.end_row();
-                        ch |= check(ui, &mut data, &["output", "cursorHidden"], "출력 화면에서 마우스 숨김");
+                        ch |= check(ui, &mut data, &["output", "cursorHidden"], "예배당 화면에서 마우스 커서 숨김");
                         ui.end_row();
                         ch |= check(ui, &mut data, &["output", "obsPip"], "OBS 자막: 그림 슬라이드를 오른쪽 위에 작게");
                         ui.end_row();
@@ -96,7 +100,7 @@ impl SettingsUi {
                         ui.label(wp_core::i18n::tr("등록 상태"));
                         let reg: Vec<String> = ws["registered"].as_array().into_iter().flatten().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect();
                         let fail: Vec<String> = ws["failed"].as_array().into_iter().flatten().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect();
-                        ui.label(RichText::new(if !ws["available"].as_bool().unwrap_or(false) { "이 운영체제에서는 쓸 수 없음".to_string() } else if !ws["enabled"].as_bool().unwrap_or(false) { "꺼짐".to_string() } else { format!("등록 {}개{}{}", reg.len(), if fail.is_empty() { String::new() } else { format!(" · 다른 프로그램이 쓰는 키: {}", fail.join(", ")) }, if reg.is_empty() { String::new() } else { format!(" ({})", reg.join(", ")) }) }).small().color(if fail.is_empty() { Color32::GRAY } else { Color32::from_rgb(0xff, 0xb0, 0x4a) }));
+                        ui.label(RichText::new(if !ws["available"].as_bool().unwrap_or(false) { "이 운영체제에서는 쓸 수 없음".to_string() } else if !ws["enabled"].as_bool().unwrap_or(false) { "꺼짐".to_string() } else { format!("등록 {}개{}{}", reg.len(), if fail.is_empty() { String::new() } else { format!(" · 다른 프로그램이 쓰는 키: {}", fail.join(", ")) }, if reg.is_empty() { String::new() } else { format!(" ({})", reg.join(", ")) }) }).small().color(if fail.is_empty() { crate::theme::pal().muted } else { crate::theme::pal().warn }));
                         ui.end_row();
                         ch |= check(ui, &mut data, &["imeAuto"], "가사·공지·즉석 자막 칸에 들어가면 한글 입력으로 (윈도우)");
                         ui.end_row();
@@ -107,7 +111,7 @@ impl SettingsUi {
                             let label = labels[&id].as_str().unwrap_or(&id).to_string();
                             ch |= text(ui, &mut data, &["shortcuts", &id], &label, 160.0);
                             if let Some((_, why)) = conflicts.iter().find(|c| c.0 == id) {
-                                ui.label(RichText::new(why).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                                ui.label(RichText::new(why).small().color(crate::theme::pal().warn));
                             }
                             ui.end_row();
                         }
@@ -127,7 +131,7 @@ impl SettingsUi {
                     }
                 });
                 if self.tab == 2 {
-                    ui.label(RichText::new(wp_core::i18n::tr("Rust 판은 아직 F5·F6·F9·F10·Ctrl+K 등 기본 키로 동작합니다. 바꾼 키는 저장만 됩니다.")).small().color(Color32::GRAY));
+                    ui.label(RichText::new(wp_core::i18n::tr("Rust 판은 아직 F5·F6·F9·F10·Ctrl+K 등 기본 키로 동작합니다. 바꾼 키는 저장만 됩니다.")).small().color(crate::theme::pal().muted));
                 }
             });
         });
