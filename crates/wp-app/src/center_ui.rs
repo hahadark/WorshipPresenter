@@ -48,6 +48,110 @@ pub(crate) struct CenterState {
     cm_rows: Arc<Vec<Value>>,
     cm_installed: bool,
     cm_open: Vec<usize>,
+    /// 본문 목록에 키보드가 있음 (Electron #results 포커스: 줄을 누르거나 검색칸에서 ↓)
+    kbd: bool,
+    /// 화살표로 고른 줄 (app.results.sel)
+    sel: Option<usize>,
+    /// Shift 범위의 기준 줄과 범위 (app.results.anchor · range)
+    anchor: Option<usize>,
+    range: Option<(usize, usize)>,
+    /// 목록이 바뀌면 고른 줄·범위를 초기화
+    res_key: String,
+    /// 고른 줄이 보이게 스크롤
+    scroll_sel: bool,
+    /// 본문 목록 자리 (밖을 누르면 키보드를 놓는다)
+    body_rect: Option<Rect>,
+}
+
+/// 목록에서 누른 키 (control.js #results keydown)
+enum ListKey {
+    /// ↑↓: 고르기만 (미리보기 안 바꿈)
+    Move(usize),
+    /// Shift+↑↓: 범위 늘리기·줄이기
+    Range(usize),
+    /// Enter: 고른 줄 미리보기
+    Activate(usize),
+    /// 맨 위에서 ↑: 검색칸으로
+    ToSearch,
+}
+
+/// 목록 키 읽기 (키보드가 목록에 있고 글 쓰는 칸이 아닐 때). n = 줄 수, range = Shift 범위를 쓰는 목록인가
+fn list_keys(ctx: &egui::Context, st: &mut CenterState, n: usize, range: bool) -> Option<ListKey> {
+    use egui::{Key, Modifiers};
+    if !st.kbd || n == 0 || ctx.egui_wants_keyboard_input() {
+        return None;
+    }
+    let cur = st.sel;
+    let (down, up, sdown, sup, enter) = ctx.input_mut(|i| {
+        (
+            i.consume_key(Modifiers::NONE, Key::ArrowDown),
+            i.consume_key(Modifiers::NONE, Key::ArrowUp),
+            range && i.consume_key(Modifiers::SHIFT, Key::ArrowDown),
+            range && i.consume_key(Modifiers::SHIFT, Key::ArrowUp),
+            i.consume_key(Modifiers::NONE, Key::Enter),
+        )
+    });
+    if sdown || sup {
+        let s = cur.unwrap_or(0);
+        if st.anchor.is_none() {
+            st.anchor = Some(s);
+        }
+        let to = if sdown { (s + 1).min(n - 1) } else { s.saturating_sub(1) };
+        return Some(ListKey::Range(to));
+    }
+    if down || up {
+        st.anchor = None; // 일반 이동은 범위 기준점 초기화
+    }
+    if down {
+        return Some(ListKey::Move(cur.map(|s| (s + 1).min(n - 1)).unwrap_or(0)));
+    }
+    if up {
+        return Some(match cur {
+            Some(s) if s > 0 => ListKey::Move(s - 1),
+            _ => ListKey::ToSearch,
+        });
+    }
+    if enter {
+        return cur.filter(|s| *s < n).map(ListKey::Activate);
+    }
+    None
+}
+
+/// 검색칸에서 ↓: 키보드를 본문 목록으로 (고른 줄이 없으면 첫 줄)
+pub(crate) fn focus_results(ctx: &egui::Context) {
+    let mut st = load(ctx);
+    st.kbd = true;
+    if st.sel.is_none() {
+        st.sel = Some(0);
+    }
+    st.scroll_sel = true;
+    save(ctx, st);
+}
+
+/// 키보드가 본문 목록에 있는가 (있으면 전역 Enter=송출을 하지 않는다 — control.js 가 #results 를 뺀다)
+pub(crate) fn results_focused(ctx: &egui::Context) -> bool {
+    load(ctx).kbd
+}
+
+/// Shift 범위 → 그 절들만 담은 본문 (control.js rangePassage). (본문, 짧은 장절 '시23:2-4')
+fn range_passage(full: &Value, a: usize, b: usize) -> Option<(Value, String)> {
+    let verses: Vec<Value> = full["verses"].as_array()?.get(a..=b)?.to_vec();
+    let (f, l) = (verses.first()?, verses.last()?);
+    let n = |v: &Value, k: &str| v[k].as_i64().unwrap_or(0);
+    let span = if n(f, "chapter") == n(l, "chapter") {
+        if n(f, "verse") == n(l, "verse") { format!("{}:{}", n(f, "chapter"), n(f, "verse")) } else { format!("{}:{}-{}", n(f, "chapter"), n(f, "verse"), n(l, "verse")) }
+    } else {
+        format!("{}:{}-{}:{}", n(f, "chapter"), n(f, "verse"), n(l, "chapter"), n(l, "verse"))
+    };
+    let keys: Vec<(i64, i64)> = verses.iter().map(|v| (n(v, "chapter"), n(v, "verse"))).collect();
+    let mut sub = full.clone();
+    sub["title"] = json!(format!("{} {}", full["book"]["name"].as_str().unwrap_or(""), span));
+    let short = format!("{}{}", full["book"]["short"].as_str().unwrap_or(""), span);
+    sub["short"] = json!(short);
+    sub["headings"] = json!(full["headings"].as_array().into_iter().flatten().filter(|h| keys.contains(&(n(h, "chapter"), n(h, "verse")))).cloned().collect::<Vec<_>>());
+    sub["ranges"] = json!([{ "sc": n(f, "chapter"), "sv": n(f, "verse"), "ec": n(l, "chapter"), "ev": n(l, "verse") }]);
+    sub["verses"] = json!(verses);
+    Some((sub, short))
 }
 
 fn sid() -> egui::Id {
@@ -124,39 +228,68 @@ fn slide_keys(s: Option<&Value>) -> Vec<(i64, i64, i64)> {
         .unwrap_or_default()
 }
 
-/// grid.js slideText: 전체 목록·슬라이드 목록에 쓰는 글
-fn slide_text(s: &Value, list: bool) -> String {
+/// grid.js slideText: 전체 목록 한 줄의 글. 그림·영상·빈 화면처럼 글이 없는 슬라이드는 (아이콘, 이름)
+/// — Electron 은 🖼·🎬·⬛ 이모지, 여기서는 같은 자리에 선 아이콘 (docs/design-parity.md: 이모지를 쓰지 않는다)
+fn slide_text(s: &Value) -> (Option<&'static str>, String) {
     let kind = s["kind"].as_str().unwrap_or("");
     let st = |k: &str| s[k].as_str().unwrap_or("").to_string();
     match kind {
-        "title" => [st("ref"), st("subtitle")].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(if list { " · " } else { "\n" }),
+        "title" => (None, [st("ref"), st("subtitle")].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ")),
         "image" | "score" => {
             let c = st("caption");
-            if !c.is_empty() { c } else if kind == "score" { tr("악보") } else { tr("이미지") }
+            if !c.is_empty() { (None, c) } else if kind == "score" { (Some(icons::for_type("score")), tr("악보")) } else { (Some(icons::for_type("image")), tr("이미지")) }
         }
-        "video" => tr("영상"),
-        "camera" => tr("카메라"),
-        "blank" => tr(if s["mode"] == "background" { "배경·로고만" } else { "검은 화면" }),
+        "video" => (Some(icons::for_type("video")), tr("영상")),
+        "camera" => (Some(icons::for_type("camera")), tr("카메라")),
+        "blank" => (Some("square"), tr(if s["mode"] == "background" { "배경·로고만" } else { "검은 화면" })),
         _ => {
             let parts = s["parts"].as_array().cloned().unwrap_or_default();
             let text = kind == "text";
-            parts
+            let plain = |t: &str| wp_core::groups::strip_fmt(&wp_core::groups::strip_chords(t));
+            let t = parts
                 .iter()
                 .map(|p| {
-                    let t = strip_fmt(p["text"].as_str().unwrap_or(""));
+                    let t = plain(p["text"].as_str().unwrap_or(""));
                     if text || p["verse"].as_i64().unwrap_or(0) == 0 { t } else { format!("{} {}", p["verse"], t) }
                 })
                 .collect::<Vec<_>>()
                 .join(if text { "\n" } else { " " })
                 .trim()
-                .to_string()
+                .to_string();
+            (None, t)
         }
     }
 }
 
-/// BCGroup.stripFmt 근사: **굵게** · __밑줄__ · [코드] 같은 꾸밈 기호를 뺀다
-fn strip_fmt(t: &str) -> String {
-    t.replace("**", "").replace("__", "").replace("~~", "")
+/// 슬라이드 목록(.srow) 한 줄의 내용 (cue.js showSlideList)
+enum SrowBody {
+    /// 찬송가·악보 그림: 작은 그림 + OBS 가사 (없으면 None → 흐린 안내)
+    Thumb(String, Option<String>),
+    /// 글 (아이콘은 그림·영상·빈 화면 자리표시)
+    Text(Option<&'static str>, String),
+}
+
+fn srow_body(s: &Value, item_type: &str) -> SrowBody {
+    let kind = s["kind"].as_str().unwrap_or("");
+    let st = |k: &str| s[k].as_str().unwrap_or("").to_string();
+    if kind == "score" || (kind == "image" && item_type == "hymn") {
+        let src = Some(st("thumb")).filter(|x| !x.is_empty()).unwrap_or_else(|| st("image"));
+        return SrowBody::Thumb(src, Some(st("caption")).filter(|x| !x.is_empty()));
+    }
+    match kind {
+        // 공지·찬양 가사: 첫 글 조각 (서식 표시는 뺀다)
+        "text" => SrowBody::Text(None, wp_core::groups::strip_fmt(s["parts"][0]["text"].as_str().unwrap_or(""))),
+        "title" => SrowBody::Text(None, [st("ref"), st("subtitle")].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join("\n")),
+        "image" => SrowBody::Text(Some(icons::for_type("image")), tr("이미지")),
+        "video" => SrowBody::Text(Some(icons::for_type("video")), tr("영상")),
+        "camera" => SrowBody::Text(Some(icons::for_type("camera")), tr("카메라")),
+        _ => SrowBody::Text(Some("square"), tr(if s["mode"] == "background" { "배경·로고만" } else { "검은 화면" })),
+    }
+}
+
+/// 이름표 색 (BCGroup.color — 성경 슬라이드는 없음)
+fn group_color(s: &Value) -> Option<Color32> {
+    (s["kind"] != "bible").then(|| wp_core::groups::color(s["label"].as_str().unwrap_or(""))).flatten().map(theme::hex)
 }
 
 /// 슬라이드 이름 (grid.js: 숫자뿐인 이름은 빼고, 성경은 장절)
@@ -185,31 +318,53 @@ fn job(ui: &egui::Ui, text: &str, size: f32, w: Weight, color: Color32, line_h: 
     ui.painter().layout_job(j)
 }
 
+/// 결과 줄 표시 (control.js markResults: in-pv · on-air · sel · in-range)
+#[derive(Clone, Copy, Default)]
+struct Mark {
+    pv: bool,
+    live: bool,
+    /// 화살표로 고른 줄 (.sel)
+    sel: bool,
+    /// Shift 범위 안 (.in-range)
+    range: bool,
+}
+
+/// .results .row 바탕과 띠: hover < sel, in-range(범위) — 범위 안에서 고른 줄은 sel. 왼쪽 4px pv 띠, 오른쪽 4px live 띠
+fn paint_row_marks(ui: &egui::Ui, rect: Rect, m: Mark, hovered: bool) {
+    let p = pal();
+    let pt = ui.painter();
+    let bg = if m.sel { Some(p.sel) } else if m.range { Some(p.accent_bg) } else if hovered { Some(p.hover) } else { None };
+    if let Some(bg) = bg {
+        pt.rect_filled(rect, CornerRadius::ZERO, bg);
+    }
+    if m.pv {
+        pt.rect_filled(Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height())), CornerRadius::ZERO, p.pv);
+    }
+    if m.live {
+        pt.rect_filled(Rect::from_min_max(Pos2::new(rect.right() - 4.0, rect.top()), rect.max), CornerRadius::ZERO, p.live);
+    }
+}
+
+/// .row 왼쪽: 4px 테두리 + 12px 안쪽 여백
+const ROW_PAD_L: f32 = 16.0;
+
 /// .results .row.prow — 절 번호 칸(3.2em, hl 13px 700) + 16px 본문(줄 높이 1.6). 왼쪽 pv 띠, 오른쪽 live 띠
-fn verse_row(ui: &mut egui::Ui, vn: &str, text: &str, pv: bool, live: bool) -> Response {
+fn verse_row(ui: &mut egui::Ui, vn: &str, text: &str, m: Mark) -> Response {
     let p = pal();
     let w = row_width(ui);
     let vn_w = 16.0 * 3.2;
-    let x_text = 12.0 + vn_w;
+    let x_text = ROW_PAD_L + vn_w;
     let g = job(ui, text, 16.0, Weight::Regular, p.text, 1.6, w - x_text - 14.0);
     let h = g.size().y + 14.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     if ui.is_rect_visible(rect) {
+        paint_row_marks(ui, rect, m, resp.hovered());
         let pt = ui.painter();
-        if resp.hovered() {
-            pt.rect_filled(rect, CornerRadius::ZERO, p.hover);
-        }
-        if pv {
-            pt.rect_filled(Rect::from_min_size(rect.min, Vec2::new(4.0, h)), CornerRadius::ZERO, p.pv);
-        }
-        if live {
-            pt.rect_filled(Rect::from_min_max(Pos2::new(rect.right() - 4.0, rect.top()), rect.max), CornerRadius::ZERO, p.live);
-        }
         let vg = pt.layout_no_wrap(vn.to_string(), theme::font(13.0, Weight::Bold), p.hl);
         let first_line = 16.0 * 1.6;
         // 기준선 맞춤 (align-items: baseline): 13px 글자의 아래를 16px 글자의 아래에 맞춘다
         let y = rect.top() + 7.0 + (first_line - vg.size().y) / 2.0 + 1.5;
-        pt.galley(Pos2::new(rect.left() + 12.0 + vn_w - 10.0 - vg.size().x, y), vg, p.hl);
+        pt.galley(Pos2::new(rect.left() + ROW_PAD_L + vn_w - 10.0 - vg.size().x, y), vg, p.hl);
         pt.galley(Pos2::new(rect.left() + x_text, rect.top() + 7.0), g, p.text);
     }
     if resp.hovered() {
@@ -218,8 +373,44 @@ fn verse_row(ui: &mut egui::Ui, vn: &str, text: &str, pv: bool, live: bool) -> R
     resp
 }
 
+/// 낱말 강조 구간 (control.js highlight): 검색어의 글자 사이에 공백이 있어도 찾는다 ('하나님의 사랑' ↔ '하나님의사랑')
+fn mark_spans(text: &str, terms: &[String]) -> Vec<(usize, usize)> {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut hits: Vec<(usize, usize)> = vec![];
+    for t in terms {
+        let want: Vec<char> = t.chars().filter(|c| !c.is_whitespace()).collect();
+        if want.is_empty() {
+            continue;
+        }
+        let mut i = 0;
+        while i < chars.len() {
+            // i 에서 시작해 글자마다 맞추고, 글자 사이의 공백은 건너뛴다
+            let (mut j, mut k) = (i, 0);
+            while k < want.len() && j < chars.len() {
+                if chars[j].1 == want[k] {
+                    j += 1;
+                    k += 1;
+                } else if k > 0 && chars[j].1.is_whitespace() {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            if k == want.len() {
+                let end = chars.get(j).map(|c| c.0).unwrap_or(text.len());
+                hits.push((chars[i].0, end));
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    hits.sort();
+    hits
+}
+
 /// .results .row — 낱말 찾기 결과: 금색 장절(13px 700) + 본문(찾은 낱말은 warn-bg 칠)
-fn text_row(ui: &mut egui::Ui, r: &str, text: &str, terms: &[String], live: bool) -> Response {
+fn text_row(ui: &mut egui::Ui, r: &str, text: &str, terms: &[String], m: Mark) -> Response {
     let p = pal();
     let w = row_width(ui);
     let mut j = egui::text::LayoutJob::default();
@@ -227,16 +418,7 @@ fn text_row(ui: &mut egui::Ui, r: &str, text: &str, terms: &[String], live: bool
     j.append(r, 0.0, egui::TextFormat { font_id: theme::font(13.0, Weight::Bold), color: p.gold, line_height: lh, ..Default::default() });
     let base = egui::TextFormat { font_id: theme::font(16.0, Weight::Regular), color: p.text, line_height: lh, ..Default::default() };
     let mark = egui::TextFormat { background: p.warn_bg, ..base.clone() };
-    // 찾은 낱말 구간 (공백 무시 없이 단순 비교)
-    let mut hits: Vec<(usize, usize)> = vec![];
-    for t in terms.iter().map(|t| t.split_whitespace().collect::<String>()).filter(|t| !t.is_empty()) {
-        let mut from = 0;
-        while let Some(i) = text[from..].find(&t) {
-            hits.push((from + i, from + i + t.len()));
-            from += i + t.len();
-        }
-    }
-    hits.sort();
+    let hits = mark_spans(text, terms);
     let mut at = 0;
     let mut first = true;
     for (a, b) in hits {
@@ -249,19 +431,16 @@ fn text_row(ui: &mut egui::Ui, r: &str, text: &str, terms: &[String], live: bool
         at = b;
     }
     j.append(&text[at..], if first { 8.0 } else { 0.0 }, base);
-    j.wrap.max_width = (w - 26.0).max(20.0);
+    j.wrap.max_width = (w - ROW_PAD_L - 14.0).max(20.0);
     let g = ui.painter().layout_job(j);
     let h = g.size().y + 14.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     if ui.is_rect_visible(rect) {
-        let pt = ui.painter();
-        if resp.hovered() {
-            pt.rect_filled(rect, CornerRadius::ZERO, p.hover);
-        }
-        if live {
-            pt.rect_filled(Rect::from_min_max(Pos2::new(rect.right() - 4.0, rect.top()), rect.max), CornerRadius::ZERO, p.live);
-        }
-        pt.galley(Pos2::new(rect.left() + 12.0, rect.top() + 7.0), g, p.text);
+        paint_row_marks(ui, rect, m, resp.hovered());
+        ui.painter().galley(Pos2::new(rect.left() + ROW_PAD_L, rect.top() + 7.0), g, p.text);
+    }
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     resp
 }
@@ -282,13 +461,43 @@ fn empty(ui: &mut egui::Ui, text: &str) {
     });
 }
 
-/// .results .srow — 슬라이드 목록 한 줄: 이름(4.5em, hl 12px 700) + 15px 글. 미리보기면 pv 띠 + pv-bg
-fn slide_row(ui: &mut egui::Ui, label: &str, text: &str, pv: bool, live: bool) -> Response {
+/// .results .srow — 슬라이드 목록 한 줄: 이름(4.5em, hl 12px 700) + 15px 글(줄바꿈 그대로). 미리보기면 pv 띠 + pv-bg.
+/// 이름표 색이 있으면(--gc) 이름이 그 색, 테두리 안쪽에 4px 그 색 띠. 찬송가·악보는 작은 그림(높이 90 이하, 너비 45% 이하, 흰 바탕) + 가사
+#[allow(clippy::too_many_arguments)]
+fn slide_row(ui: &mut egui::Ui, c: &paint::Ctx, label: &str, gc: Option<Color32>, body: &SrowBody, pv: bool, live: bool) -> Response {
     let p = pal();
     let w = row_width(ui);
     let lw = 15.0 * 4.5;
-    let g = job(ui, text, 15.0, Weight::Regular, p.text, 1.6, w - 14.0 - lw - 14.0);
-    let h = g.size().y.max(15.0 * 1.6) + 16.0;
+    let x_text = 14.0 + lw;
+    let avail = (w - x_text - 14.0).max(40.0);
+    // 내용 배치
+    enum Lay {
+        Thumb(Option<egui::Image<'static>>, Vec2, Arc<egui::Galley>),
+        Text(Option<&'static str>, Arc<egui::Galley>),
+    }
+    let lay = match body {
+        SrowBody::Thumb(src, cap) => {
+            let img = paint::image_uri(c, src).map(egui::Image::new);
+            let max = Vec2::new(avail * 0.45, 90.0);
+            let nat = img.as_ref().and_then(|i| i.load_for_size(ui.ctx(), max).ok()).and_then(|t| t.size()).unwrap_or(Vec2::new(160.0, 90.0));
+            let sc = (max.x / nat.x).min(max.y / nat.y).min(1.0);
+            let isz = nat * sc;
+            let g = match cap {
+                Some(t) => job(ui, t, 16.0, Weight::Regular, p.text, 1.6, avail - isz.x - 16.0),
+                None => job(ui, &tr("(가사 없음 — 편집칸의 OBS 가사에 입력)"), 16.0, Weight::Regular, p.muted, 1.6, avail - isz.x - 16.0),
+            };
+            Lay::Thumb(img, isz, g)
+        }
+        SrowBody::Text(icon, t) => {
+            let iw = if icon.is_some() { 22.0 } else { 0.0 };
+            Lay::Text(*icon, job(ui, t, 15.0, Weight::Regular, p.text, 1.6, avail - iw))
+        }
+    };
+    let content_h = match &lay {
+        Lay::Thumb(_, isz, g) => isz.y.max(g.size().y),
+        Lay::Text(_, g) => g.size().y.max(15.0 * 1.6),
+    };
+    let h = content_h + 16.0 + 1.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     if ui.is_rect_visible(rect) {
         let pt = ui.painter();
@@ -300,13 +509,37 @@ fn slide_row(ui: &mut egui::Ui, label: &str, text: &str, pv: bool, live: bool) -
         if pv {
             pt.rect_filled(Rect::from_min_size(rect.min, Vec2::new(4.0, h)), CornerRadius::ZERO, p.pv);
         }
+        if let Some(gc) = gc {
+            pt.rect_filled(Rect::from_min_size(rect.min + Vec2::new(4.0, 0.0), Vec2::new(4.0, h)), CornerRadius::ZERO, gc);
+        }
         if live {
             pt.rect_filled(Rect::from_min_max(Pos2::new(rect.right() - 4.0, rect.top()), rect.max), CornerRadius::ZERO, p.live);
         }
         pt.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
-        let lg = pt.layout(label.to_string(), theme::font(12.0, Weight::Bold), p.hl, lw - 12.0);
-        pt.galley(Pos2::new(rect.left() + 14.0 + lw - 12.0 - lg.size().x, rect.top() + 8.0 + (15.0 * 1.6 - 12.0 * 1.3) / 2.0), lg, p.hl);
-        pt.galley(Pos2::new(rect.left() + 14.0 + lw, rect.top() + 8.0), g, p.text);
+        let lc = gc.unwrap_or(p.hl);
+        let lg = pt.layout(label.to_string(), theme::font(12.0, Weight::Bold), lc, lw - 12.0);
+        pt.galley(Pos2::new(rect.left() + 14.0 + lw - 12.0 - lg.size().x, rect.top() + 8.0 + (12.0 * 1.6 - lg.size().y.min(12.0 * 1.6)) / 2.0 + 2.0), lg, lc);
+        let top = rect.top() + 8.0;
+        match lay {
+            Lay::Thumb(img, isz, g) => {
+                // .sboth: 그림과 가사를 세로 가운데로, 사이 16px
+                let ir = Rect::from_min_size(Pos2::new(rect.left() + x_text, top + (content_h - isz.y) / 2.0), isz);
+                pt.rect_filled(ir, CornerRadius::same(4), Color32::WHITE);
+                if let Some(img) = img {
+                    img.corner_radius(4).paint_at(ui, ir);
+                }
+                let gy = top + (content_h - g.size().y) / 2.0;
+                ui.painter().galley(Pos2::new(ir.right() + 16.0, gy), g, p.text);
+            }
+            Lay::Text(icon, g) => {
+                let mut x = rect.left() + x_text;
+                if let Some(ic) = icon {
+                    icons::paint(ui, Rect::from_min_size(Pos2::new(x, top + (15.0 * 1.6 - 16.0) / 2.0), Vec2::splat(16.0)), ic, p.muted);
+                    x += 22.0;
+                }
+                ui.painter().galley(Pos2::new(x, top), g, p.text);
+            }
+        }
     }
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -349,6 +582,125 @@ pub(crate) fn slide_hover_ops(it: Option<&Value>, s: &Value, all_right: bool) ->
         v = v.into_iter().rev().map(|o| o.right()).collect();
     }
     v
+}
+
+/// 슬라이드 오른쪽 클릭 메뉴에서 고른 것
+pub(crate) enum MenuAct {
+    /// (다른 순서면 그 순서 번호, 슬라이드, 바로 송출)
+    Preview(Option<usize>, usize, bool),
+    /// (순서, 슬라이드, 편집 키, 동작 edit·add·dup·del)
+    Op(usize, usize, String, &'static str),
+    /// 여기서 새 순서로 나누기 (구역)
+    Split(usize, usize),
+    /// 이 순서 편집칸 (F2)
+    ItemEditor(usize),
+    /// 보기 방식 바꾸기
+    View(SlideView),
+}
+
+/// 메뉴 한 줄 (선 아이콘 + 글 + 오른쪽 키 설명)
+fn menu_btn(ui: &mut egui::Ui, icon: Option<&str>, label: &str, key: &str, enabled: bool, danger: bool) -> bool {
+    let p = pal();
+    let color = if danger { p.danger_text } else { p.text };
+    let mut b = match icon {
+        Some(ic) => egui::Button::image_and_text(icons::image(ic, 14.0, color), rich(label, 13.0, Weight::Regular, color)),
+        None => egui::Button::new(rich(label, 13.0, Weight::Regular, color)),
+    };
+    if !key.is_empty() {
+        b = b.shortcut_text(rich(key, 12.0, Weight::Regular, p.muted));
+    }
+    let r = ui.add_enabled(enabled, b);
+    if r.clicked() {
+        ui.close();
+        return true;
+    }
+    false
+}
+
+/// 슬라이드 목록·전체 목록 줄의 오른쪽 클릭 메뉴 (ctxmenu.js slideMenu · #cueGrid 메뉴).
+/// `all` 이 Some(순서 번호)이면 전체 보기 메뉴(머리 '7번 순서 · 슬라이드 2', 그 순서를 먼저 미리보기)
+fn slide_menu(resp: &Response, k: usize, sl: &Value, item: Option<(usize, &Value)>, all: Option<usize>, view: SlideView) -> Option<MenuAct> {
+    let mut out = None;
+    resp.context_menu(|ui| {
+        ui.set_min_width(230.0);
+        let p = pal();
+        let lab = sl["label"].as_str().filter(|l| !l.is_empty() && !l.chars().all(|c| c.is_ascii_digit()));
+        let head = match all {
+            Some(i) => tr_args("{1}번 순서 · 슬라이드 {2}", &[&(i + 1), &(k + 1)]),
+            None => format!("{}{}", tr_args("슬라이드 {1}", &[&(k + 1)]), lab.map(|l| format!(" · {l}")).unwrap_or_default()),
+        };
+        ui.label(rich(head, 12.0, Weight::SemiBold, p.muted));
+        if menu_btn(ui, None, &tr("미리보기"), &tr("클릭"), true, false) {
+            out = Some(MenuAct::Preview(all, k, false));
+        }
+        if menu_btn(ui, Some("play"), &tr("바로 송출"), &tr("더블클릭"), true, false) {
+            out = Some(MenuAct::Preview(all, k, true));
+        }
+        ui.separator();
+        let ty = item.map(|x| x.1["type"].as_str().unwrap_or("")).unwrap_or("");
+        let editable = item.is_some() && EDITABLE.contains(&ty);
+        let chunk = matches!(ty, "song" | "text" | "title");
+        let key = slide_key(sl);
+        let i = item.map(|x| x.0).unwrap_or(0);
+        if menu_btn(ui, Some("square-pen"), &tr("이 슬라이드 편집"), "Ctrl+E", editable, false) {
+            out = Some(MenuAct::Op(i, k, key.clone(), "edit"));
+        }
+        if editable {
+            if menu_btn(ui, Some("plus"), &tr("이 다음에 새 슬라이드"), "", true, false) {
+                out = Some(MenuAct::Op(i, k, key.clone(), "add"));
+            }
+            if all.is_none() {
+                if menu_btn(ui, Some("copy"), &tr("이 슬라이드 복제"), "", chunk || sl["xid"].is_string(), false) {
+                    out = Some(MenuAct::Op(i, k, key.clone(), "dup"));
+                }
+                let del = chunk || sl["xid"].is_string();
+                if menu_btn(ui, Some(if del { "trash-2" } else { "eye-off" }), &tr(if del { "이 슬라이드 지우기" } else { "이 슬라이드 건너뛰기" }), "", true, true) {
+                    out = Some(MenuAct::Op(i, k, key.clone(), "del"));
+                }
+            }
+        }
+        if let Some((i, _)) = item {
+            if all.is_none() && menu_btn(ui, Some("pencil"), &tr("이 순서 편집칸"), "F2", true, false) {
+                out = Some(MenuAct::ItemEditor(i));
+            }
+            // 구역 나누기: 글 덩어리(찬양·공지)의 둘째 장부터
+            let can_split = matches!(ty, "song" | "text") && sl["src"].as_u64().unwrap_or(k as u64) > 0;
+            if menu_btn(ui, Some("columns-2"), &tr("여기서 새 순서로 나누기 (구역)"), "", can_split, false) {
+                out = Some(MenuAct::Split(i, k));
+            }
+        }
+        ui.separator();
+        for (v, l) in [(SlideView::List, "목록"), (SlideView::Grid, "격자"), (SlideView::All, "전체 격자 (모든 순서)"), (SlideView::AllList, "전체 목록 (모든 순서)")] {
+            if v != view && menu_btn(ui, None, &tr_args("{1} 로 보기", &[&tr(l)]), "", true, false) {
+                out = Some(MenuAct::View(v));
+            }
+        }
+    });
+    out
+}
+
+/// 여기서 새 순서로 나누기 (slideedit.js splitAt — 썸네일 메뉴 parity2_ui 와 같은 방식)
+fn split_item(core: &wp_core::core::Shared, i: usize, k: usize) {
+    let mut c = core.lock();
+    let Ok(d) = c.item_deck(i) else { return };
+    let Some(it) = c.cue.as_ref().and_then(|q| q.items.get(i)).cloned() else { return };
+    let key = d.slides.get(k).and_then(|s| s["src"].as_u64()).map(|x| x as usize).unwrap_or(k);
+    let (new_it, back) = wp_core::slideedit::apply_op(&it, "split", key);
+    c.remember_items();
+    if let Some(cue) = &mut c.cue {
+        if i < cue.items.len() {
+            cue.items[i] = new_it;
+            if let Some(b) = back {
+                cue.items.insert(i + 1, b);
+            }
+        }
+    }
+    c.save_cue();
+    if let Ok(mut deck) = c.item_deck(i) {
+        deck.index = k.min(deck.slides.len().saturating_sub(1));
+        c.pres.preview = Some(deck);
+    }
+    c.emit(wp_core::core::Ev::Ui);
 }
 
 /// 미리보기·송출 덱이 열린 큐시트의 순서이면 그 번호와 순서
@@ -524,6 +876,13 @@ impl App {
     /// 가운데 본문: 목록(검색 결과·순서 슬라이드) / 격자 / 전체 격자·목록 / 주석
     pub(crate) fn center_body(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         let mut st = load(ui.ctx());
+        // 목록 밖을 누르거나 글 쓰는 칸에 들어가면 키보드는 목록을 떠난다 (#results blur)
+        let body = ui.max_rect();
+        st.body_rect = Some(body);
+        let outside = ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !body.contains(p)));
+        if outside || ui.ctx().egui_wants_keyboard_input() {
+            st.kbd = false;
+        }
         if st.cm {
             self.cm_view(ui, &mut st, s);
         } else {
@@ -537,7 +896,10 @@ impl App {
                     if st.cue_mode && s.preview.as_ref().and_then(cue_index).is_some() {
                         self.item_list(ui, &mut st, s, acts)
                     } else {
-                        self.search_results(ui, s, acts)
+                        // center_results 가 상태를 읽고 쓰므로 앞뒤로 맞춘다
+                        save(ui.ctx(), st.clone());
+                        self.search_results(ui, s, acts);
+                        st = load(ui.ctx());
                     }
                 }
             }
@@ -576,6 +938,12 @@ impl App {
         if r["mode"] == "reference" {
             let p = &r["passage"];
             let n = p["verses"].as_array().map(|v| v.len()).unwrap_or(0);
+            if let Some((a, b)) = st.range {
+                // markResults: '선택 3절 (23:2-4) · Shift+클릭으로 범위 조정'
+                let pt = s.preview.as_ref().and_then(|d| d.passage["title"].as_str()).unwrap_or("");
+                let span = pt.split_once(char::is_whitespace).map(|x| x.1).unwrap_or("");
+                return (p["title"].as_str().unwrap_or("").to_string(), tr_args("선택 {1}절 ({2}) · Shift+클릭으로 범위 조정", &[&(b - a + 1), &span]));
+            }
             return (p["title"].as_str().unwrap_or("").to_string(), tr_args("{1}절 · {2}", &[&n, &p["versionName"].as_str().unwrap_or("")]));
         }
         let n = r["results"].as_array().map(|v| v.len()).unwrap_or(0);
@@ -588,6 +956,26 @@ impl App {
         let pv_keys = slide_keys(s.preview.as_ref().and_then(|d| d.slides.get(d.index)));
         let live_keys = live_keys(s.live.as_ref());
         let mut st = load(ui.ctx());
+        // 목록이 바뀌면 고른 줄·범위 초기화 (낱말 찾기는 첫 줄을 고른 채로 — showTextResults sel: 0)
+        let reference = r["mode"] == "reference";
+        let n_rows = if reference { r["passage"]["verses"].as_array().map(|v| v.len()) } else { r["results"].as_array().map(|v| v.len()) }.unwrap_or(0);
+        let rk = format!("{}|{}|{}|{}", r["mode"], r["passage"]["title"], r["passage"]["versionName"], n_rows);
+        if rk != st.res_key {
+            st.res_key = rk;
+            st.sel = (!reference && n_rows > 0).then_some(0);
+            st.anchor = None;
+            st.range = None;
+        }
+        // 미리보기가 범위 본문이 아니게 되면(다른 것을 미리보기) 범위 표시도 푼다
+        if st.range.is_some() && s.preview.as_ref().is_none_or(|d| cue_index(d).is_some()) {
+            st.range = None;
+        }
+        // 이 절이 지금 미리보기(검색한 본문 또는 범위) 안에 있으면 그 슬라이드 번호 (activateResult: inPreview → setPreviewIndex)
+        let in_preview = |c: i64, v: i64| -> Option<usize> {
+            let d = s.preview.as_ref().filter(|d| cue_index(d).is_none())?;
+            d.slides.iter().any(|sl| slide_keys(Some(sl)).iter().any(|k| k.1 == c && k.2 == v)).then(|| wp_core::slides::index_of_verse(&d.slides, c, v))
+        };
+        let key = list_keys(ui.ctx(), &mut st, n_rows, reference);
         egui::ScrollArea::vertical().id_salt("results").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(6.0);
@@ -622,6 +1010,45 @@ impl App {
                 let mut last_ch = -1;
                 let pv_first = verses.iter().position(|v| pv_keys.iter().any(|k| same_verse(*k, vkey(v["book"].as_i64().unwrap_or(book), v["chapter"].as_i64().unwrap_or(0), v["verse"].as_i64().unwrap_or(0)))));
                 let scroll_key = format!("{}:{:?}", p["title"], pv_first);
+                let cv = |i: usize| verses.get(i).map(|v| (v["chapter"].as_i64().unwrap_or(0), v["verse"].as_i64().unwrap_or(0))).unwrap_or((0, 0));
+                // 누른 줄 미리보기 (activateResult)
+                let activate = |i: usize, this: &mut Self, st: &mut CenterState, acts: &mut Vec<Act>| {
+                    let (c, n) = cv(i);
+                    match in_preview(c, n) {
+                        Some(k) if st.range.is_some() || s.preview.as_ref().is_some_and(|d| d.passage["title"] == p["title"]) => acts.push(Act::PreviewIndex(k)),
+                        _ => {
+                            st.range = None;
+                            acts.push(Act::PreviewPassage(p.clone(), this.search.clone(), Some((c, n))));
+                        }
+                    }
+                };
+                // Shift 범위: 목록은 그대로, 고른 절들만 미리보기 (selectRange)
+                let select_range = |i: usize, this: &mut Self, st: &mut CenterState, acts: &mut Vec<Act>| {
+                    let i = i.min(verses.len().saturating_sub(1));
+                    let a = *st.anchor.get_or_insert(st.sel.unwrap_or(i));
+                    let rg = (a.min(i), a.max(i));
+                    st.range = Some(rg);
+                    st.sel = Some(i);
+                    st.scroll_sel = true;
+                    if let Some((sub, short)) = range_passage(p, rg.0, rg.1) {
+                        this.search = short.clone();
+                        st.seen_search = short.clone(); // 검색칸 글만 바꿈 (keepList: 다시 찾지 않음)
+                        acts.push(Act::PreviewPassage(sub, short, None));
+                    }
+                };
+                match key {
+                    Some(ListKey::Move(i)) => {
+                        st.sel = Some(i);
+                        st.scroll_sel = true;
+                    }
+                    Some(ListKey::Range(i)) => select_range(i, self, &mut st, acts),
+                    Some(ListKey::Activate(i)) => activate(i, self, &mut st, acts),
+                    Some(ListKey::ToSearch) => {
+                        st.kbd = false;
+                        self.focus_search = true;
+                    }
+                    None => {}
+                }
                 for (i, v) in verses.iter().enumerate() {
                     let (c, n) = (v["chapter"].as_i64().unwrap_or(0), v["verse"].as_i64().unwrap_or(0));
                     if multi && c != last_ch {
@@ -633,17 +1060,41 @@ impl App {
                     }
                     let k = vkey(v["book"].as_i64().unwrap_or(book), c, n);
                     let vn = if multi { format!("{c}:{n}") } else { n.to_string() };
-                    let resp = verse_row(ui, &vn, v["text"].as_str().unwrap_or(""), pv_keys.iter().any(|x| same_verse(*x, k)), live_keys.iter().any(|x| same_verse(*x, k)));
+                    let m = Mark { pv: pv_keys.iter().any(|x| same_verse(*x, k)), live: live_keys.iter().any(|x| same_verse(*x, k)), sel: st.sel == Some(i), range: st.range.is_some_and(|(a, b)| i >= a && i <= b) };
+                    let resp = verse_row(ui, &vn, v["text"].as_str().unwrap_or(""), m);
+                    #[cfg(test)]
+                    widgets::HOVER_SEEN.with(|h| h.borrow_mut().insert(format!("row-{i}"), resp.rect));
                     if Some(i) == pv_first && st.scroll_key != scroll_key {
                         resp.scroll_to_me(None);
                         st.scroll_key = scroll_key.clone();
                     }
+                    if m.sel && st.scroll_sel {
+                        resp.scroll_to_me(None);
+                        st.scroll_sel = false;
+                    }
                     crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", p["book"]["name"].as_str().unwrap_or(""), c, n), v["text"].as_str().unwrap_or(""));
                     if resp.clicked() {
-                        acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n))))
+                        st.kbd = true;
+                        if ui.input(|x| x.modifiers.shift) {
+                            select_range(i, self, &mut st, acts);
+                        } else {
+                            st.anchor = Some(i);
+                            st.sel = Some(i);
+                            // 범위 밖을 누르면 범위 해제(전체 본문을 그 절부터), 범위 안이면 범위 유지
+                            if st.range.is_some_and(|(a, b)| i < a || i > b) {
+                                st.range = None;
+                                if let Some(t) = p["title"].as_str() {
+                                    self.search = t.to_string();
+                                    st.seen_search = t.to_string();
+                                }
+                                acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n))));
+                            } else {
+                                activate(i, self, &mut st, acts);
+                            }
+                        }
                     }
                     if resp.double_clicked() {
-                        acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n))));
+                        activate(i, self, &mut st, acts);
                         acts.push(Act::SendPreview)
                     }
                 }
@@ -653,12 +1104,36 @@ impl App {
                 if rows.is_empty() {
                     empty(ui, &tr("검색 결과가 없습니다.\n다른 단어나 더 짧은 단어로 검색해 보세요."));
                 }
-                for v in &rows {
-                    let q = format!("{}{}:{}", v["bookShort"].as_str().unwrap_or(""), v["chapter"], v["verse"]);
+                let q_of = |v: &Value| format!("{}{}:{}", v["bookShort"].as_str().unwrap_or(""), v["chapter"], v["verse"]);
+                match key {
+                    Some(ListKey::Move(i)) => {
+                        st.sel = Some(i);
+                        st.scroll_sel = true;
+                    }
+                    Some(ListKey::Activate(i)) => {
+                        if let Some(v) = rows.get(i) {
+                            acts.push(Act::PreviewRef(q_of(v), None));
+                        }
+                    }
+                    Some(ListKey::ToSearch) => {
+                        st.kbd = false;
+                        self.focus_search = true;
+                    }
+                    _ => {}
+                }
+                for (i, v) in rows.iter().enumerate() {
+                    let q = q_of(v);
                     let k = vkey(v["book"].as_i64().unwrap_or(0), v["chapter"].as_i64().unwrap_or(0), v["verse"].as_i64().unwrap_or(0));
-                    let resp = text_row(ui, &q, v["text"].as_str().unwrap_or(""), &terms, live_keys.iter().any(|x| same_verse(*x, k)));
+                    let m = Mark { pv: pv_keys.iter().any(|x| same_verse(*x, k)), live: live_keys.iter().any(|x| same_verse(*x, k)), sel: st.sel == Some(i), range: false };
+                    let resp = text_row(ui, &q, v["text"].as_str().unwrap_or(""), &terms, m);
+                    if m.sel && st.scroll_sel {
+                        resp.scroll_to_me(None);
+                        st.scroll_sel = false;
+                    }
                     crate::parity_ui::verse_menu(&resp, v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or(""));
                     if resp.clicked() {
+                        st.kbd = true;
+                        st.sel = Some(i);
                         acts.push(Act::PreviewRef(q.clone(), None))
                     }
                     if resp.double_clicked() {
@@ -681,6 +1156,20 @@ impl App {
         let pv_keys = slide_keys(d.slides.get(d.index));
         let lkeys = live_keys(s.live.as_ref());
         let scroll_key = format!("{}:{}:{}", d.passage["cueId"], d.passage["cueIndex"], d.index);
+        let item = deck_item(s, d);
+        let item_type = d.passage["itemType"].as_str().unwrap_or("").to_string();
+        let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
+        // 성경 순서는 절 목록(showPassageList)이라 ↑↓·Enter 가 있다. 목록이 바뀌면 고른 줄 초기화
+        let verses = if item_type == "bible" { bible_verses(d) } else { vec![] };
+        let rk = format!("item|{}|{}|{}", d.passage["cueId"], d.passage["cueIndex"], verses.len());
+        if rk != st.res_key {
+            st.res_key = rk;
+            st.sel = None;
+            st.anchor = None;
+            st.range = None;
+        }
+        let key = list_keys(ui.ctx(), st, verses.len(), false);
+        let mut menu_act: Option<MenuAct> = None;
         egui::ScrollArea::vertical().id_salt("results-item").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(6.0);
@@ -690,24 +1179,51 @@ impl App {
                 empty(ui, &format!("{}\n{}", if name.is_empty() { tr("(음악 파일을 고르세요)") } else { name }, tr("F9 = 재생 · 화면은 바뀌지 않습니다")));
                 return;
             }
-            if d.passage["itemType"] == "bible" {
-                let verses = bible_verses(d);
+            if item_type == "bible" {
+                let idx_of = |i: usize| verses.get(i).map(|v| wp_core::slides::index_of_verse(&d.slides, v.1, v.2));
+                match key {
+                    Some(ListKey::Move(i)) => {
+                        st.sel = Some(i);
+                        st.scroll_sel = true;
+                    }
+                    Some(ListKey::Activate(i)) => {
+                        if let Some(k) = idx_of(i) {
+                            acts.push(Act::PreviewIndex(k));
+                        }
+                    }
+                    Some(ListKey::ToSearch) => {
+                        st.kbd = false;
+                        self.focus_search = true;
+                    }
+                    _ => {}
+                }
                 let multi = verses.first().map(|v| v.1) != verses.last().map(|v| v.1);
                 let mut last_ch = -1;
-                for (k, ch, vn, text) in verses {
+                for (i, (k, ch, vn, text)) in verses.iter().enumerate() {
+                    let (k, ch, vn) = (*k, *ch, *vn);
                     if multi && ch != last_ch {
                         heading(ui, &tr_args("{1}장", &[&ch]));
                     }
                     last_ch = ch;
                     let label = if multi { format!("{ch}:{vn}") } else { vn.to_string() };
                     let pv = pv_keys.iter().any(|x| same_verse(*x, k));
-                    let resp = verse_row(ui, &label, &text, pv, lkeys.iter().any(|x| same_verse(*x, k)));
+                    let m = Mark { pv, live: lkeys.iter().any(|x| same_verse(*x, k)), sel: st.sel == Some(i), range: false };
+                    let resp = verse_row(ui, &label, text, m);
+                    #[cfg(test)]
+                    widgets::HOVER_SEEN.with(|h| h.borrow_mut().insert(format!("row-{i}"), resp.rect));
                     if pv && st.scroll_key != scroll_key {
                         resp.scroll_to_me(None);
                         st.scroll_key = scroll_key.clone();
                     }
+                    if m.sel && st.scroll_sel {
+                        resp.scroll_to_me(None);
+                        st.scroll_sel = false;
+                    }
+                    crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", d.passage["book"]["name"].as_str().unwrap_or(""), ch, vn), text);
                     let idx = wp_core::slides::index_of_verse(&d.slides, ch, vn);
                     if resp.clicked() {
+                        st.kbd = true;
+                        st.sel = Some(i);
                         acts.push(Act::PreviewIndex(idx));
                     }
                     if resp.double_clicked() {
@@ -718,17 +1234,24 @@ impl App {
             } else {
                 for (k, sl) in d.slides.iter().enumerate() {
                     let l = sl["label"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| (k + 1).to_string());
-                    let resp = slide_row(ui, &l, &slide_text(sl, false), k == d.index, live_same == Some(k));
-                    if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("srow", k)), resp.rect, &slide_hover_ops(deck_item(s, d).map(|x| x.1), sl, true)) {
-                        if let Some((i, _)) = deck_item(s, d) {
+                    let resp = slide_row(ui, &c, &l, group_color(sl), &srow_body(sl, &item_type), k == d.index, live_same == Some(k));
+                    #[cfg(test)]
+                    widgets::HOVER_SEEN.with(|h| h.borrow_mut().insert(format!("srow-{k}"), resp.rect));
+                    if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("srow", k)), resp.rect, &slide_hover_ops(item.map(|x| x.1), sl, true)) {
+                        if let Some((i, _)) = item {
                             acts.push(Act::SlideOp(i, slide_key(sl), op));
                         }
+                    }
+                    // ctxmenu.js slideMenu
+                    if let Some(a) = slide_menu(&resp, k, sl, item, None, st.view) {
+                        menu_act = Some(a);
                     }
                     if k == d.index && st.scroll_key != scroll_key {
                         resp.scroll_to_me(None);
                         st.scroll_key = scroll_key.clone();
                     }
                     if resp.clicked() {
+                        st.kbd = true;
                         acts.push(Act::PreviewIndex(k));
                     }
                     if resp.double_clicked() {
@@ -739,6 +1262,46 @@ impl App {
             }
             ui.add_space(6.0);
         });
+        if let Some(a) = menu_act {
+            self.menu_act(a, st, s, acts);
+        }
+    }
+
+    /// 오른쪽 클릭 메뉴에서 고른 것 적용
+    fn menu_act(&mut self, a: MenuAct, st: &mut CenterState, s: &Snap, acts: &mut Vec<Act>) {
+        match a {
+            MenuAct::Preview(i, k, send) => {
+                if let Some(i) = i {
+                    self.sel = Some(i);
+                    let same = s.preview.as_ref().is_some_and(|d| deck_item(s, d).map(|x| x.0) == Some(i));
+                    if !same {
+                        acts.push(Act::PreviewItem(i));
+                    }
+                }
+                acts.push(Act::PreviewIndex(k));
+                if send {
+                    acts.push(Act::SendPreview);
+                }
+            }
+            MenuAct::Op(i, k, key, op) => {
+                self.sel = Some(i);
+                let same = s.preview.as_ref().is_some_and(|d| deck_item(s, d).map(|x| x.0) == Some(i));
+                if !same {
+                    acts.push(Act::PreviewItem(i));
+                }
+                acts.push(Act::PreviewIndex(k));
+                acts.push(Act::SlideOp(i, key, op));
+            }
+            MenuAct::Split(i, k) => {
+                self.sel = Some(i);
+                split_item(&self.core, i, k);
+            }
+            MenuAct::ItemEditor(i) => self.show_item_editor(i),
+            MenuAct::View(v) => {
+                st.view = v;
+                st.all_key.clear();
+            }
+        }
     }
 
     /// 격자: 미리보기 중인 순서·본문의 슬라이드 썸네일 (초록 = 미리보기, 빨강 = 송출)
@@ -801,6 +1364,7 @@ impl App {
         let size = st.size;
         let scroll_key = format!("all:{:?}", pv.map(|x| x.0));
         let mut new_scroll = None;
+        let mut menu_act: Option<MenuAct> = None;
         egui::ScrollArea::vertical().id_salt("cue-grid").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             egui::Frame::new().inner_margin(Margin { left: 10, right: 10, top: 4, bottom: 40 }).show(ui, |ui| {
@@ -808,33 +1372,18 @@ impl App {
                     let is_pv = pv.map(|x| x.0) == Some(i);
                     let is_lv = lv.map(|x| x.0) == Some(i);
                     let top = ui.cursor().top();
+                    let mut head_rect = Rect::NOTHING;
                     // .cg-sec: 왼쪽 3px 띠(미리보기 초록 · 송출 빨강), 안쪽 6px
                     let inner = egui::Frame::new().inner_margin(Margin { left: 9, right: 0, top: 0, bottom: 6 }).show(ui, |ui| {
                         // .cg-head: 14px 600, 번호 hl, 슬라이드 수 흐리게, 아래 line-soft
                         let n = sec.deck.as_ref().map(|d| d.slides.len()).unwrap_or(0);
                         let head_w = ui.available_width();
-                        let (hr, hresp) = ui.allocate_exact_size(Vec2::new(head_w, 32.0), Sense::click());
+                        let (hr, hresp) = ui.allocate_exact_size(Vec2::new(head_w, CG_HEAD_H), Sense::click());
+                        head_rect = hr;
                         if ui.is_rect_visible(hr) {
-                            let pt = ui.painter();
-                            pt.rect_filled(hr, CornerRadius::ZERO, if hresp.hovered() { p.hover } else { p.panel });
-                            pt.hline(hr.x_range(), hr.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
-                            let mut x = hr.left() + 4.0;
-                            let g = pt.layout_no_wrap(format!("{}", i + 1), theme::font(14.0, Weight::Bold), p.hl);
-                            let gw = g.size().x;
-                            pt.galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.hl);
-                            x += gw + 8.0;
-                            let ty = it["type"].as_str().unwrap_or("");
-                            icons::paint(ui, Rect::from_center_size(Pos2::new(x + 8.0, hr.center().y), Vec2::splat(16.0)), icons::for_type(ty), theme::type_color(ty).unwrap_or(p.muted));
-                            x += 22.0;
-                            let g = pt.layout_no_wrap(it["title"].as_str().unwrap_or("").to_string(), theme::font(14.0, Weight::SemiBold), p.text);
-                            let gw = g.size().x;
-                            pt.galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.text);
-                            x += gw + 6.0;
-                            if n > 0 {
-                                let g = pt.layout_no_wrap(tr_args("· 슬라이드 {1}장", &[&n]), theme::font(12.0, Weight::Regular), p.muted);
-                                pt.galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.muted);
-                            }
+                            paint_cg_head(ui, hr, i, it, n, hresp.hovered());
                         }
+                        let hresp = hresp.on_hover_text(tr("이 순서 미리보기"));
                         if hresp.clicked() {
                             self.sel = Some(i);
                             acts.push(Act::PreviewItem(i));
@@ -851,6 +1400,8 @@ impl App {
                                     let mut hit = None;
                                     for (k, sl) in d.slides.iter().enumerate() {
                                         let r = all_line(ui, k, sl, pvk == Some(k), lvk == Some(k));
+                                        #[cfg(test)]
+                                        widgets::HOVER_SEEN.with(|h| h.borrow_mut().insert(format!("cgl-{i}-{k}"), r.rect));
                                         if r.clicked() {
                                             hit = Some(Hit::Pick(k, false));
                                         }
@@ -859,6 +1410,9 @@ impl App {
                                         }
                                         if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("cgl", i, k)), r.rect, &slide_hover_ops(Some(it), sl, true)) {
                                             hit = Some(Hit::Op(k, op));
+                                        }
+                                        if let Some(a) = slide_menu(&r, k, sl, Some((i, it)), Some(i), st.view) {
+                                            menu_act = Some(a);
                                         }
                                         ui.add_space(2.0);
                                     }
@@ -891,19 +1445,45 @@ impl App {
                                     None => {}
                                 }
                             }
+                            // .cg-empty: padding 10px 4px, 13px 흐리게 (음악은 스피커 아이콘)
                             Ok(_) => {
-                                ui.add_space(4.0);
-                                ui.label(rich(if it["type"] == "audio" { tr("음악 · 화면은 바뀌지 않습니다") } else { tr("(슬라이드 없음)") }, 13.0, Weight::Regular, p.muted));
+                                ui.add_space(10.0);
+                                ui.horizontal(|ui| {
+                                    ui.add_space(4.0);
+                                    if it["type"] == "audio" {
+                                        icons::show(ui, "volume-2", 14.0, p.muted);
+                                    }
+                                    ui.label(rich(if it["type"] == "audio" { tr("음악 · 화면은 바뀌지 않습니다") } else { tr("(슬라이드 없음)") }, 13.0, Weight::Regular, p.muted));
+                                });
+                                ui.add_space(10.0);
                             }
                             Err(e) => {
-                                ui.add_space(4.0);
-                                ui.label(rich(e, 13.0, Weight::Regular, p.muted));
+                                ui.add_space(10.0);
+                                ui.horizontal(|ui| {
+                                    ui.add_space(4.0);
+                                    ui.label(rich(e, 13.0, Weight::Regular, p.muted));
+                                });
+                                ui.add_space(10.0);
                             }
                         }
                     });
                     let band = if is_lv { p.live } else if is_pv { p.pv } else { Color32::TRANSPARENT };
                     let r = inner.response.rect;
                     ui.painter().rect_filled(Rect::from_min_max(Pos2::new(r.left(), top), Pos2::new(r.left() + 3.0, r.bottom())), CornerRadius::ZERO, band);
+                    // .cg-head { position: sticky; top: 0 }: 순서 머리가 위로 넘어가면 그 순서가 끝날 때까지 맨 위에 붙어 있다
+                    let clip = ui.clip_rect();
+                    if head_rect.top() < clip.top() && r.bottom() > clip.top() {
+                        let y = clip.top().min(r.bottom() - CG_HEAD_H);
+                        let sticky = Rect::from_min_size(Pos2::new(head_rect.left(), y), head_rect.size());
+                        let n = sec.deck.as_ref().map(|d| d.slides.len()).unwrap_or(0);
+                        let sr = ui.interact(sticky, egui::Id::new(("cg-sticky", i)), Sense::click());
+                        // 같은 층에 나중에 그리고 나중에 등록하므로 밑의 줄보다 위에 보이고 먼저 눌린다
+                        paint_cg_head(ui, sticky, i, it, n, sr.hovered());
+                        if sr.clicked() {
+                            self.sel = Some(i);
+                            acts.push(Act::PreviewItem(i));
+                        }
+                    }
                 }
             });
             if let Some(r) = new_scroll {
@@ -911,6 +1491,9 @@ impl App {
                 st.scroll_key = scroll_key.clone();
             }
         });
+        if let Some(a) = menu_act {
+            self.menu_act(a, st, s, acts);
+        }
     }
 
     /// 주석 탭 자료 (미리보기 범위가 바뀔 때만 다시 읽음)
@@ -1011,6 +1594,33 @@ impl App {
     }
 }
 
+/// .cg-head 높이 (padding 6px 4px + 14px 글 + 아래 줄)
+const CG_HEAD_H: f32 = 32.0;
+
+/// .cg-head: 번호(hl 700) · 종류 아이콘 · 제목(14px 600) · '· 슬라이드 N장'(12px 흐리게), panel 바탕 · 아래 line-soft
+fn paint_cg_head(ui: &egui::Ui, hr: Rect, i: usize, it: &Value, n: usize, hovered: bool) {
+    let p = pal();
+    let pt = ui.painter();
+    pt.rect_filled(hr, CornerRadius::ZERO, if hovered { p.hover } else { p.panel });
+    pt.hline(hr.x_range(), hr.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
+    let mut x = hr.left() + 4.0;
+    let g = pt.layout_no_wrap(format!("{}", i + 1), theme::font(14.0, Weight::Bold), p.hl);
+    let gw = g.size().x;
+    pt.galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.hl);
+    x += gw + 8.0;
+    let ty = it["type"].as_str().unwrap_or("");
+    icons::paint(ui, Rect::from_center_size(Pos2::new(x + 8.0, hr.center().y), Vec2::splat(16.0)), icons::for_type(ty), theme::type_color(ty).unwrap_or(p.muted));
+    x += 22.0;
+    let g = pt.layout_no_wrap(it["title"].as_str().unwrap_or("").to_string(), theme::font(14.0, Weight::SemiBold), p.text);
+    let gw = g.size().x;
+    pt.galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.text);
+    x += gw + 6.0;
+    if n > 0 {
+        let g = pt.layout_no_wrap(tr_args("· 슬라이드 {1}장", &[&n]), theme::font(12.0, Weight::Regular), p.muted);
+        pt.galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.muted);
+    }
+}
+
 /// 송출 중(글자 보임)인 슬라이드의 절 열쇠
 fn live_keys(l: Option<&Live>) -> Vec<(i64, i64, i64)> {
     l.filter(|l| l.visible).map(|l| slide_keys(l.deck.slides.get(l.deck.index))).unwrap_or_default()
@@ -1042,9 +1652,12 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool) -> Res
     let w = row_width(ui);
     let kg = ui.painter().layout_no_wrap(format!("{}", k + 1), theme::font(12.0, Weight::Bold), p.hl);
     let lab = slide_label(s);
-    let lg = (!lab.is_empty()).then(|| ui.painter().layout_no_wrap(lab, theme::font(12.0, Weight::Regular), p.muted));
-    let x_text = 8.0 + 12.0 * 1.6 + 10.0 + lg.as_ref().map(|g| g.size().x + 10.0).unwrap_or(0.0);
-    let mut tj = egui::text::LayoutJob::single_section(slide_text(s, true), egui::TextFormat { font_id: theme::font(14.0, Weight::Regular), color: p.text, line_height: Some(14.0 * 1.4), ..Default::default() });
+    // 이름표 색이 있으면(--gc) 이름을 그 색 600 굵기로
+    let gc = group_color(s);
+    let lg = (!lab.is_empty()).then(|| ui.painter().layout_no_wrap(lab, theme::font(12.0, if gc.is_some() { Weight::SemiBold } else { Weight::Regular }), gc.unwrap_or(p.muted)));
+    let (icon, text) = slide_text(s);
+    let x_text = 8.0 + 12.0 * 1.6 + 10.0 + lg.as_ref().map(|g| g.size().x + 10.0).unwrap_or(0.0) + if icon.is_some() { 20.0 } else { 0.0 };
+    let mut tj = egui::text::LayoutJob::single_section(text, egui::TextFormat { font_id: theme::font(14.0, Weight::Regular), color: p.text, line_height: Some(14.0 * 1.4), ..Default::default() });
     tj.wrap.max_width = (w - x_text - 34.0).max(40.0);
     tj.wrap.max_rows = 3;
     let tg = ui.painter().layout_job(tj);
@@ -1056,11 +1669,23 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool) -> Res
         let y0 = rect.top() + 5.0 + (14.0 * 1.4 - 12.0 * 1.3) / 2.0;
         pt.galley(Pos2::new(rect.left() + 8.0 + 12.0 * 1.6 - kg.size().x, y0), kg, p.hl);
         if let Some(g) = lg {
-            pt.galley(Pos2::new(rect.left() + 8.0 + 12.0 * 1.6 + 10.0, y0), g, p.muted);
+            let c = gc.unwrap_or(p.muted);
+            pt.galley(Pos2::new(rect.left() + 8.0 + 12.0 * 1.6 + 10.0, y0), g, c);
         }
+        if let Some(ic) = icon {
+            icons::paint(ui, Rect::from_min_size(Pos2::new(rect.left() + x_text - 20.0, rect.top() + 5.0 + (14.0 * 1.4 - 14.0) / 2.0), Vec2::splat(14.0)), ic, p.muted);
+        }
+        let pt = ui.painter();
         pt.galley(Pos2::new(rect.left() + x_text, rect.top() + 5.0), tg, p.text);
+        // .sg-cell: hover line2 · in-pv pv · on-air live(+1px) · 둘 다면 live 테두리 + 바깥 2px pv
         let border = if live { p.live } else if pv { p.pv } else if resp.contains_pointer() { p.line2 } else { Color32::TRANSPARENT };
         pt.rect_stroke(rect, CornerRadius::same(4), Stroke::new(2.0, border), StrokeKind::Inside);
+        if live {
+            pt.rect_stroke(rect, CornerRadius::same(4), Stroke::new(1.0, p.live), StrokeKind::Outside);
+        }
+        if pv && live {
+            pt.rect_stroke(rect.expand(1.0), CornerRadius::same(5), Stroke::new(2.0, p.pv), StrokeKind::Outside);
+        }
     }
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
