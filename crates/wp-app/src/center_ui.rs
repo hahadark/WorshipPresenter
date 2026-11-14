@@ -69,6 +69,8 @@ pub(crate) struct CenterState {
     drag: Option<SlideDrag>,
     /// 옮긴 뒤 새 자리에서 다시 고를 슬라이드 (순서 번호, ekey 들)
     ms_after: Option<(usize, Vec<String>)>,
+    /// 점검용: --msel 0-2 (처음 미리보기한 순서에서 그 범위를 고른 채로)
+    ms_init: Option<(usize, usize)>,
 }
 
 /// 끌어서 차례 바꾸기 중 (slideedit.js attachSel)
@@ -388,6 +390,10 @@ fn load(ctx: &egui::Context) -> CenterState {
             _ => SlideView::List,
         };
         st.cm = arg("--center-tab").as_deref() == Some("cm");
+        st.ms_init = arg("--msel").and_then(|v| {
+            let (a, b) = v.split_once('-')?;
+            Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+        });
     }
     st
 }
@@ -1166,6 +1172,12 @@ impl App {
         let outside = ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !body.contains(p)));
         if outside || ui.ctx().egui_wants_keyboard_input() {
             st.kbd = false;
+        }
+        if let (Some((a, b)), Some(_)) = (st.ms_init, pv_item(s)) {
+            st.ms_init = None;
+            ms_reset(&mut st, s, Some(a));
+            st.ms = (a..=b).collect();
+            st.kbd = true;
         }
         // 끌어 옮긴 뒤: 옮긴 슬라이드를 새 자리에서 고른 채로 (moveSlides 끝)
         if let Some((i, keys)) = st.ms_after.take() {
