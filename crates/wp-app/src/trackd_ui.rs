@@ -136,7 +136,9 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
             Win::Obs => "OBS 원격 조작",
             Win::Update => "새 버전",
         };
-        egui::Window::new(wp_core::i18n::tr(title)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
+        // 떠 있는 창 기본 자리: 큐시트·메뉴줄을 가리지 않게 (widgets::float_pos)
+        let wid = egui::Id::unique(("wp-float", title));
+        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),

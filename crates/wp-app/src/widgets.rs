@@ -699,3 +699,190 @@ pub fn hover_ops_float(ui: &Ui, id: egui::Id, anchor: Rect, ops: &[HoverOp]) -> 
     });
     out
 }
+
+// ---------------- 되돌릴 수 없는 삭제 확인 (docs/ux-rules.md 1절 5 '실수를 막는다') ----------------
+// import_ui.rs 번역본 지우기와 같은 '줄 안 확인' 방식: 처음 누르면 그 자리에 '정말 지우기 · 그만두기'가 나온다.
+// 상태는 egui 임시 메모리(id)에 두므로 창마다 따로 필드를 만들 필요가 없다.
+
+/// 이 확인이 걸려 있나 (첫 단추를 눌러 '정말 지우기'를 기다리는 중)
+pub fn confirm_armed(ui: &Ui, id: egui::Id) -> bool {
+    ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false)
+}
+
+/// 확인을 건다 (아이콘·칩 단추처럼 첫 단추를 직접 그리는 곳에서 부른다)
+pub fn confirm_arm(ui: &Ui, id: egui::Id, on: bool) {
+    ui.data_mut(|d| d.insert_temp(id, on));
+}
+
+/// 확인 줄: 걸려 있으면 `question` + [정말 지우기] [그만두기] 를 그리고 정말 지우기를 누르면 true.
+/// 걸려 있지 않으면 아무것도 그리지 않는다.
+pub fn confirm_row(ui: &mut Ui, id: egui::Id, question: &str) -> bool {
+    if !confirm_armed(ui, id) {
+        return false;
+    }
+    let p = pal();
+    let mut yes = false;
+    ui.horizontal_wrapped(|ui| {
+        icons::show(ui, "trash-2", 16.0, p.danger_text);
+        ui.label(egui::RichText::new(question).color(p.danger_text));
+        let r = ui.add(Btn::new(wp_core::i18n::tr("정말 지우기")).kind(Kind::Danger).size(Size::Sm));
+        #[cfg(test)]
+        HOVER_SEEN.with(|m| m.borrow_mut().insert("confirm-yes".into(), r.rect));
+        if r.clicked() {
+            yes = true;
+            confirm_arm(ui, id, false);
+        }
+        if ui.add(Btn::new(wp_core::i18n::tr("그만두기")).size(Size::Sm)).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            confirm_arm(ui, id, false);
+        }
+    });
+    yes
+}
+
+/// 지우기 단추 + 줄 안 확인을 한 번에. 정말 지우기를 누른 프레임에 true.
+/// `label` 은 첫 단추 글('모두 지우기' 등), `question` 은 무엇이 어떻게 지워지는지 ("N줄이 지워지고 되살릴 수 없습니다").
+pub fn confirm_delete(ui: &mut Ui, id: egui::Id, label: &str, question: &str) -> bool {
+    if confirm_armed(ui, id) {
+        return confirm_row(ui, id, question);
+    }
+    let r = ui.add(Btn::new(label).icon("trash-2").kind(Kind::Danger).size(Size::Sm).tooltip(wp_core::i18n::tr("누르면 한 번 더 묻습니다")));
+    #[cfg(test)]
+    HOVER_SEEN.with(|m| m.borrow_mut().insert("confirm-first".into(), r.rect));
+    if r.clicked() {
+        confirm_arm(ui, id, true);
+    }
+    false
+}
+
+// ---------------- 떠 있는 창 기본 자리 (휴리스틱 평가 14번) ----------------
+// egui 기본은 모든 창이 왼쪽 위(큐시트·메뉴줄 위)에 열린다. 여기서 만든 창은
+// 처음 열 때 조작 화면 가운데 위쪽(메뉴줄·검색줄 아래, 왼쪽 큐시트 오른쪽)에 열리고,
+// 이미 열려 있는 떠 있는 창 수만큼 오른쪽 아래로 비껴서 제목줄이 겹치지 않는다.
+// 한 번 연 뒤 옮긴 자리는 egui 가 기억한다(닫았다 열어도 그 자리).
+
+/// 메뉴줄(약 28) + 검색줄(약 60) 아래부터
+pub const FLOAT_TOP: f32 = 96.0;
+/// 비껴 놓는 간격 (제목줄 높이보다 조금 크게)
+pub const FLOAT_STEP: f32 = 36.0;
+
+/// 지금까지 이 방식으로 연 창들의 id (열려 있는지 세는 데 쓴다)
+fn float_ids(ctx: &egui::Context) -> Vec<egui::Id> {
+    ctx.data(|d| d.get_temp::<Vec<egui::Id>>(egui::Id::unique("wp-float-ids"))).unwrap_or_default()
+}
+
+/// 새 창의 기본 왼쪽 위 자리. `id` 창이 이미 자리를 가졌으면 그 자리는 egui 가 쓰므로 계산만 한다.
+pub fn float_pos(ctx: &egui::Context, id: egui::Id, width: f32) -> Pos2 {
+    let scr = ctx.content_rect();
+    let mut ids = float_ids(ctx);
+    let open = ctx.memory(|m| ids.iter().filter(|x| **x != id).filter(|x| m.areas().is_visible(&egui::LayerId::new(egui::Order::Middle, **x))).count());
+    if !ids.contains(&id) {
+        ids.push(id);
+        ctx.data_mut(|d| d.insert_temp(egui::Id::unique("wp-float-ids"), ids));
+    }
+    // 왼쪽 큐시트(화면 너비 약 22%)를 가리지 않게, 될 수 있으면 가운데
+    let left_min = scr.left() + scr.width() * 0.22;
+    let x = (scr.center().x - width / 2.0).max(left_min);
+    let step = FLOAT_STEP * (open % 8) as f32;
+    let x = (x + step).min((scr.right() - width - 8.0).max(scr.left()));
+    Pos2::new(x, scr.top() + FLOAT_TOP + step)
+}
+
+/// 떠 있는 창을 만든다: id 고정 · 기본 크기 · 기본 자리(위 규칙). `.open(&mut 열림)` 은 부르는 쪽에서.
+/// `key` 는 창마다 다른 고정 이름 (제목은 번역되어 바뀔 수 있으므로 따로 받는다).
+pub fn float_window<'a>(ctx: &egui::Context, key: &str, title: impl Into<String>, size: [f32; 2]) -> egui::Window<'a> {
+    let id = egui::Id::unique(("wp-float", key));
+    let pos = float_pos(ctx, id, size[0]);
+    egui::Window::new(title.into()).id(id).default_size(size).default_pos(pos)
+}
+
+#[cfg(test)]
+mod float_tests {
+    use super::*;
+
+    fn pass(ctx: &egui::Context, open: &mut [bool; 2], seen: &mut [Option<Rect>; 2]) {
+        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1600.0, 960.0))), ..Default::default() };
+        let mut out = ctx.run_pass(input, |ctx| {
+            for (i, key) in ["a", "b"].iter().enumerate() {
+                if !open[i] {
+                    continue;
+                }
+                let r = float_window(ctx, key, format!("창 {key}"), [440.0, 300.0]).show(ctx, |ui| { ui.label("내용"); });
+                seen[i] = r.map(|r| r.response.rect);
+            }
+        });
+        out.textures_delta.clear(); // GPU 없는 시험: 텍스처 변경을 소비한다
+    }
+
+    #[test]
+    fn 떠있는_창은_큐시트와_메뉴줄을_가리지_않고_겹쳐_열리지_않는다() {
+        let ctx = egui::Context::default();
+        let mut open = [true, false];
+        let mut seen = [None, None];
+        for _ in 0..3 { pass(&ctx, &mut open, &mut seen); }
+        let a = seen[0].expect("첫 창");
+        assert!(a.top() >= FLOAT_TOP - 1.0, "메뉴줄 아래: {a:?}");
+        assert!(a.left() >= 1600.0 * 0.22 - 1.0, "큐시트 오른쪽: {a:?}");
+        open[1] = true;
+        for _ in 0..3 { pass(&ctx, &mut open, &mut seen); }
+        let b = seen[1].expect("둘째 창");
+        assert!((b.top() - a.top()) >= FLOAT_STEP - 1.0, "제목줄이 겹치지 않게 비껴 열림: {a:?} {b:?}");
+    }
+
+    #[test]
+    fn 줄_안_확인은_두_번_눌러야_지운다() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::unique("t-confirm");
+        let mut got = false;
+        let mut out = ctx.run_pass(Default::default(), |ctx| {
+            egui::Area::new(egui::Id::unique("t-confirm-area")).show(ctx, |ui| {
+                assert!(!confirm_armed(ui, id));
+                got |= confirm_row(ui, id, "물음"); // 걸리지 않았으면 아무 일 없음
+                confirm_arm(ui, id, true);
+                assert!(confirm_armed(ui, id));
+            });
+        });
+        out.textures_delta.clear();
+        assert!(!got);
+    }
+    /// 한 프레임: confirm_delete 를 그리고 정말 지우기가 눌렸는지
+    fn confirm_pass(ctx: &egui::Context, t: f64, events: Vec<egui::Event>) -> bool {
+        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+        let mut yes = false;
+        let mut out = ctx.run_pass(input, |ctx| {
+            egui::Area::new(egui::Id::unique("t-confirm-area2")).fixed_pos(Pos2::new(10.0, 10.0)).show(ctx, |ui| {
+                yes = confirm_delete(ui, egui::Id::unique("t-confirm2"), "모두 지우기", "N줄이 지워집니다.");
+            });
+        });
+        out.textures_delta.clear();
+        yes
+    }
+
+    fn click_at(ctx: &egui::Context, t: &mut f64, p: Pos2) -> bool {
+        let mut got = false;
+        *t += 0.05;
+        got |= confirm_pass(ctx, *t, vec![egui::Event::PointerMoved(p)]);
+        for (pressed, dt) in [(true, 0.05), (false, 0.05)] {
+            *t += dt;
+            got |= confirm_pass(ctx, *t, vec![egui::Event::PointerMoved(p), egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() }]);
+        }
+        *t += 0.05;
+        got |= confirm_pass(ctx, *t, vec![]);
+        got
+    }
+
+    #[test]
+    fn 지우기_단추는_첫_클릭에_묻고_두번째에_지운다() {
+        let ctx = egui::Context::default();
+        let mut t = 0.0;
+        for _ in 0..2 {
+            t += 0.05;
+            confirm_pass(&ctx, t, vec![]);
+        }
+        let first = HOVER_SEEN.with(|m| m.borrow().get("confirm-first").copied()).expect("첫 단추");
+        assert!(!click_at(&ctx, &mut t, first.center()), "첫 클릭으로는 지우지 않는다");
+        let yes = HOVER_SEEN.with(|m| m.borrow().get("confirm-yes").copied()).expect("정말 지우기 단추가 나와야 함");
+        assert!(click_at(&ctx, &mut t, yes.center()), "정말 지우기를 누르면 지운다");
+        // 지운 뒤에는 다시 첫 단추 상태
+        assert!(!confirm_pass(&ctx, t + 0.1, vec![]));
+    }
+}
