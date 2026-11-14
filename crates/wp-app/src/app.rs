@@ -661,55 +661,398 @@ impl App {
         self.center_results(ui, s, acts);
     }
 
+    /// 미리보기 · LIVE 패널 (Electron index.html .pane.preview / .pane.live, control.js renderPreview · renderLive · renderScreenLayers)
     pub(crate) fn deck_view(&mut self, ui: &mut egui::Ui, title: &str, deck: Option<&Deck>, is_live: bool, live: Option<&Live>, s: &Snap, acts: &mut Vec<Act>) {
-
-        ui.horizontal(|ui| {
-            let col = if is_live { Color32::from_rgb(0xff, 0x6b, 0x6b) } else { Color32::from_rgb(0x8f, 0xb8, 0xff) };
-            ui.label(RichText::new(wp_core::i18n::tr(title)).strong().color(col));
-            let view = if is_live { &mut self.views.live_obs } else { &mut self.views.preview_obs };
-            ui.selectable_value(view, false, wp_core::i18n::tr("예배당"));
-            ui.selectable_value(view, true, "OBS");
-            if let Some(d) = deck {
-                let t = d.passage["itemTitle"].as_str().filter(|x| !x.is_empty()).or(d.passage["title"].as_str()).unwrap_or("");
-                ui.label(RichText::new(format!("{}  [{}/{}]", t, d.index + 1, d.slides.len())).color(Color32::LIGHT_GRAY));
-            }
-            if let Some(l) = live {
-                if !l.visible { ui.label(RichText::new(wp_core::i18n::tr("글자 숨김")).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
-            }
-        });
-        let tpl = match (is_live, self.views.obs(is_live)) {
-            (true, false) => &s.tpl_main, (true, true) => &s.tpl_overlay,
-            (false, false) => &s.preview_main, (false, true) => &s.preview_overlay,
-        };
-        let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
-        let w = ui.available_width();
-        let tw = tpl["width"].as_f64().unwrap_or(1920.0) as f32;
-        let th = tpl["height"].as_f64().unwrap_or(1080.0) as f32;
-        let h = (w * th / tw).min(ui.available_height() - 150.0).max(60.0);
-        let w2 = h * tw / th;
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
-        let rect = egui::Rect::from_center_size(rect.center(), Vec2::new(w2, h));
-        let slide = deck.and_then(|d| d.slides.get(d.index));
-        let version = deck.map(|d| d.passage["versionName"].as_str().unwrap_or("").to_string()).unwrap_or_default();
-        let (visible, logo, hide_bg) = match live { Some(l) => (l.visible, s.logo, s.hide_bg), None => (true, false, false) };
-        paint_slide(ui, &c, rect, slide, tpl, &version, visible, logo, hide_bg);
-        ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(if is_live { 2.0 } else { 1.0 }, if is_live { Color32::from_rgb(0xc0, 0x39, 0x2b) } else { Color32::from_gray(70) }), egui::StrokeKind::Outside);
-        ui.add_space(4.0);
-        if let Some(d) = deck {
-            egui::ScrollArea::vertical().id_salt(format!("{title}-slides")).max_height(64.0).auto_shrink([false, true]).show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    for (k, sl) in d.slides.iter().enumerate() {
-                        let lb = sl["label"].as_str().filter(|x| !x.is_empty()).map(|x| format!("¶{x}")).or_else(|| sl["ref"].as_str().map(|r| r.rsplit(' ').next().unwrap_or(r).to_string())).unwrap_or_else(|| (k + 1).to_string());
-                        let b = egui::Button::new(RichText::new(lb).small()).selected(k == d.index);
-                        let r = ui.add(b);
-                        if r.clicked() { acts.push(if is_live { Act::LiveGoto(k) } else { Act::PreviewIndex(k) }) }
-                        if r.double_clicked() && !is_live { acts.push(Act::SendPreview) }
-                        crate::parity2_ui::slide_menu(&self.core, &r, d, k, is_live, acts); // [트랙 A] 썸네일 오른쪽 클릭
-                    }
+        use crate::theme::{self, pal, Weight};
+        use crate::widgets::{self, Badge, Btn};
+        use wp_core::i18n::tr;
+        let _ = title;
+        let p = pal();
+        let hidden = live.is_some_and(|l| !l.visible);
+        // .pane { padding: 8px 12px 10px }
+        egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 10 }).show(ui, |ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
+            // ---- .pane-head: 배지 · 제목 · (숨김 중) · 예배당 | OBS
+            ui.horizontal(|ui| {
+                ui.set_min_height(26.0);
+                if is_live { widgets::badge(ui, "LIVE", Badge::Live); } else { widgets::badge(ui, &tr("미리보기"), Badge::Pv); }
+                let info = deck.map(|d| deck_info(d, is_live)).unwrap_or_default();
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let view = if is_live { &mut self.views.live_obs } else { &mut self.views.preview_obs };
+                    let main_label = tr("예배당");
+                    widgets::segmented(ui, view, &[(false, main_label.as_str()), (true, "OBS")]);
+                    if hidden { hidden_badge(ui, &tr("숨김 중")); }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(egui::Label::new(theme::rich(info, 14.0, Weight::SemiBold, p.text)).truncate().selectable(false));
+                    });
                 });
             });
+            ui.add_space(8.0); // .pane-head { margin-bottom: 8px }
+            // ---- .screen: 16:9, 2px 테두리 (미리보기 pv · LIVE live · 숨김이면 점선), 둥글기 6
+            let tpl = match (is_live, self.views.obs(is_live)) {
+                (true, false) => &s.tpl_main, (true, true) => &s.tpl_overlay,
+                (false, false) => &s.preview_main, (false, true) => &s.preview_overlay,
+            };
+            let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
+            let w = ui.available_width();
+            let tw = tpl["width"].as_f64().unwrap_or(1920.0) as f32;
+            let th = tpl["height"].as_f64().unwrap_or(1080.0) as f32;
+            let reserve = if is_live { 128.0 } else { 74.0 };
+            let h = (w * th / tw).min(ui.available_height() - reserve).max(60.0);
+            let w2 = h * tw / th;
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
+            let rect = egui::Rect::from_center_size(rect.center(), Vec2::new(w2, h));
+            let slide = deck.and_then(|d| d.slides.get(d.index));
+            let version = deck.map(|d| d.passage["versionName"].as_str().unwrap_or("").to_string()).unwrap_or_default();
+            let (visible, logo, hide_bg) = match live { Some(l) => (l.visible, s.logo, s.hide_bg), None if is_live => (true, s.logo, s.hide_bg), None => (true, false, false) };
+            ui.painter().rect_filled(rect, egui::CornerRadius::same(6), Color32::BLACK);
+            paint_slide(ui, &c, rect.shrink(2.0), slide, tpl, &version, visible, logo, hide_bg);
+            if deck.is_none() {
+                let ph = if is_live { tr("송출 중인 본문 없음") } else { tr("검색한 본문이 여기에 표시됩니다") };
+                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, ph, theme::font(14.0, Weight::Regular), p.muted2);
+            }
+            let border = if is_live { p.live } else { p.pv };
+            if hidden {
+                dashed_rect(ui, rect.shrink(1.0), egui::Stroke::new(2.0, border));
+            } else {
+                ui.painter().rect_stroke(rect, egui::CornerRadius::same(6), egui::Stroke::new(2.0, border), egui::StrokeKind::Inside);
+            }
+            // ---- .pane-tools: (◀ n/m ▶) · 다음: … · 그리기
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.set_min_height(30.0);
+                if !is_live {
+                    let n = deck.map(|d| d.slides.len()).unwrap_or(0);
+                    let i = deck.map(|d| d.index).unwrap_or(0);
+                    if ui.add(Btn::new("◀").height(28.0).enabled(deck.is_some()).tooltip(tr("미리보기 이전 슬라이드 (PageUp)"))).clicked() && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
+                    count_label(ui, deck.map(|d| format!("{} / {}", d.index + 1, d.slides.len())).unwrap_or_default());
+                    if ui.add(Btn::new("▶").height(28.0).enabled(deck.is_some()).tooltip(tr("미리보기 다음 슬라이드 (PageDown)"))).clicked() && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
+                } else if let Some(d) = deck {
+                    count_label(ui, format!("{} / {}", d.index + 1, d.slides.len()));
+                }
+                let draw_on = is_live && crate::system_ui::ST.lock().draw;
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if is_live && ui.add(Btn::new(tr("그리기")).icon("brush").height(30.0).selected(draw_on).tooltip(tr("LIVE 화면에 그리기·강조 — 예배당·OBS 화면에 같이 보입니다"))).clicked() {
+                        crate::system_ui::ST.lock().draw = true;
+                    }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        if let Some(d) = deck {
+                            let continuous = is_live && self.core.lock().settings.get()["navMode"] == "continuous";
+                            ui.add(egui::Label::new(next_hint(d, continuous)).truncate().selectable(false));
+                        }
+                    });
+                });
+            });
+            // ---- .lv-layers: 지금 화면 (층마다 ✕)
+            if is_live {
+                ui.add_space(2.0);
+                let top = ui.cursor().top();
+                ui.painter().hline(ui.max_rect().x_range(), top, egui::Stroke::new(1.0, p.line_soft));
+                egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 4)).show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                        ui.set_min_height(22.0);
+                        ui.add(egui::Label::new(theme::rich(tr("지금 화면"), 11.0, Weight::Regular, p.muted)).selectable(false));
+                        ui.add_space(2.0);
+                        let layers = self.screen_layers(s, deck, live);
+                        if layers.is_empty() {
+                            ui.add(egui::Label::new(theme::rich(tr("비어 있음"), 12.0, Weight::Regular, p.muted)).selectable(false));
+                        }
+                        for ly in layers {
+                            if layer_chip(ui, &ly).clicked() { self.layer_action(ly.act, s, acts); }
+                        }
+                    });
+                });
+            }
+            // ---- .thumbs: 슬라이드 칩 (1. 3:16 …)
+            if let Some(d) = deck {
+                ui.add_space(4.0);
+                egui::ScrollArea::vertical().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).max_height(76.0).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                        for (k, sl) in d.slides.iter().enumerate() {
+                            let r = thumb_chip(ui, &chip_label(k, &slide_chip_text(sl)), k == d.index, is_live).on_hover_text(slide_snippet(sl));
+                            if r.clicked() { acts.push(if is_live { Act::LiveGoto(k) } else { Act::PreviewIndex(k) }) }
+                            if r.double_clicked() && !is_live { acts.push(Act::SendPreview) }
+                            crate::parity2_ui::slide_menu(&self.core, &r, d, k, is_live, acts); // [트랙 A] 썸네일 오른쪽 클릭
+                        }
+                    });
+                });
+            }
+        });
+    }
+
+    /// 지금 예배당 화면에 떠 있는 것 (Electron core.js screenPayload + control.js renderScreenLayers)
+    fn screen_layers(&self, s: &Snap, deck: Option<&Deck>, live: Option<&Live>) -> Vec<Layer> {
+        use wp_core::i18n::tr;
+        let mut out = vec![];
+        let c = self.core.lock();
+        if let (Some(d), Some(l)) = (deck, live) {
+            let slide = d.slides.get(d.index);
+            let kind = slide.and_then(|x| x["kind"].as_str()).unwrap_or("text").to_string();
+            let title = d.passage["itemTitle"].as_str().filter(|x| !x.is_empty()).or(d.passage["title"].as_str()).unwrap_or("");
+            let name = if d.slides.len() > 1 { format!("{title} {}/{}", d.index + 1, d.slides.len()) } else { title.to_string() };
+            let icon = match kind.as_str() { "video" => "clapperboard", "camera" => "camera", "image" => "image", "score" => "music-2", "blank" => "square", "slideshow" => "images", "title" => "tag", _ => "text" };
+            out.push(if l.visible {
+                Layer { act: LayerAct::Content, on: true, text: name, btn: "✕".into(), tip: tr(if kind == "video" { "영상 멈추고 지우기" } else { "슬라이드 지우기 (F10)" }), icon }
+            } else {
+                Layer { act: LayerAct::Content, on: false, text: format!("{name} · {}", tr("숨김")), btn: tr("보이기"), tip: tr("슬라이드 다시 보이기 (F10)"), icon }
+            });
+        }
+        let bg_icon = |t: &str| match t { "camera" => "camera", "video" => "clapperboard", "color" => "palette", _ => "image" };
+        if let Some(m) = &c.layers.media {
+            let label = m["label"].as_str().unwrap_or("");
+            let text = if label.is_empty() { tr("송출 배경") } else { format!("{}: {label}", tr("송출 배경")) };
+            out.push(Layer { act: LayerAct::Media, on: true, text, btn: "✕".into(), tip: tr("송출 배경 끄기 (카메라는 닫힘)"), icon: bg_icon(m["type"].as_str().unwrap_or("")) });
+        }
+        if c.layers.hide_bg {
+            out.push(Layer { act: LayerAct::BgOn, on: false, text: tr("배경 꺼짐"), btn: tr("다시 켜기"), tip: tr("배경(순서·템플릿 배경)을 다시 켭니다"), icon: "image" });
+        } else {
+            let kind_of = |u: &str| -> &'static str {
+                let l = u.to_ascii_lowercase();
+                let path = l.split(['?', '#']).next().unwrap_or("");
+                if u.is_empty() { "" } else if u.starts_with('#') { "color" } else if u.starts_with("camera:") { "camera" } else if [".mp4", ".webm", ".mov", ".m4v", ".ogv", ".mkv"].iter().any(|e| path.ends_with(e)) { "video" } else { "image" }
+            };
+            if let (Some(d), Some(_)) = (deck, live) {
+                let bg = d.slides.get(d.index).and_then(|x| x["bg"].as_str()).unwrap_or("");
+                let k = kind_of(bg);
+                if !k.is_empty() && k != "color" {
+                    out.push(Layer { act: LayerAct::BgItem, on: true, text: tr("순서 배경"), btn: "✕".into(), tip: tr("이 순서에서 배경 빼기"), icon: bg_icon(k) });
+                }
+            }
+            let b = &s.tpl_main["background"];
+            let bt = b["type"].as_str().unwrap_or("");
+            if matches!(bt, "image" | "video" | "camera") {
+                let name = s.tpl_main["name"].as_str().unwrap_or("");
+                let text = if name.is_empty() { tr("템플릿 배경") } else { format!("{}: {name}", tr("템플릿 배경")) };
+                out.push(Layer { act: LayerAct::BgTpl, on: true, text, btn: "✕".into(), tip: tr("템플릿 배경 빼기 (단색으로, 이 템플릿을 쓰는 모든 순서)"), icon: bg_icon(bt) });
+            }
+        }
+        let ov: Vec<String> = c.overlays().into_iter().filter(|o| o["on"] == true).map(|o| {
+            o["name"].as_str().filter(|x| !x.is_empty()).or(o["text"].as_str().filter(|x| !x.is_empty())).map(String::from).unwrap_or_else(|| tr("오버레이"))
+        }).collect();
+        if !ov.is_empty() {
+            out.push(Layer { act: LayerAct::Overlays, on: true, text: ov.join(", "), btn: "✕".into(), tip: tr("오버레이 끄기"), icon: "layers" });
+        }
+        if c.layers.logo {
+            out.push(Layer { act: LayerAct::Logo, on: true, text: tr("로고 화면"), btn: "✕".into(), tip: tr("로고 화면 끄기"), icon: "flag" });
+        }
+        let dj = c.draw_json();
+        if dj["strokes"].as_array().is_some_and(|a| !a.is_empty()) || !dj["spot"].is_null() {
+            out.push(Layer { act: LayerAct::Draw, on: true, text: tr("그리기"), btn: "✕".into(), tip: tr("그린 것 지우기"), icon: "brush" });
+        }
+        out
+    }
+
+    /// 지금 화면 칩을 눌렀을 때 (control.js #lvLayers click)
+    fn layer_action(&mut self, act: LayerAct, s: &Snap, acts: &mut Vec<Act>) {
+        match act {
+            LayerAct::Content => acts.push(Act::ToggleClear),
+            LayerAct::Media => self.core.lock().set_background_media(None),
+            LayerAct::BgOn => acts.push(Act::ToggleBg),
+            LayerAct::Logo => acts.push(Act::ToggleLogo),
+            LayerAct::Overlays => self.core.lock().toggle_overlays_off(),
+            LayerAct::Draw => self.core.lock().draw_clear(),
+            LayerAct::BgItem => {
+                // 지금 송출 중인 순서(열린 큐시트)에서 배경 빼기
+                let Some(l) = &s.live else { return };
+                let (cid, idx) = (l.deck.passage["cueId"].as_str().unwrap_or(""), l.deck.passage["cueIndex"].as_i64().unwrap_or(-1));
+                if idx < 0 || cid != s.cue_id { return; }
+                if let Some(mut it) = s.items.get(idx as usize).cloned() {
+                    it["bg"] = json!("");
+                    acts.push(Act::UpdateItem(idx as usize, it));
+                }
+            }
+            LayerAct::BgTpl => {
+                // 템플릿 배경을 단색으로 (Electron app.removeTemplateBg)
+                let mut t = s.tpl_main.clone();
+                if t.is_null() { return; }
+                let color = t["background"]["color"].as_str().filter(|x| !x.is_empty()).unwrap_or("#000000").to_string();
+                t["background"]["type"] = json!("color");
+                t["background"]["color"] = json!(color);
+                let mut c = self.core.lock();
+                let _ = wp_core::templates::save_template(&mut c.settings, &t);
+                c.emit(wp_core::core::Ev::Live);
+                c.emit(wp_core::core::Ev::Ui);
+            }
         }
     }
+}
+
+// ---------------------------------------------------------------- 미리보기 · LIVE 패널 조각 (deck_view 전용)
+
+/// 패널 제목 (control.js: 미리보기 = 본문 제목 · 번역본, LIVE = 슬라이드 장절(순서면 순서 제목) · 번역본)
+fn deck_info(d: &Deck, is_live: bool) -> String {
+    let slide = d.slides.get(d.index);
+    let sref = slide.and_then(|x| x["ref"].as_str()).unwrap_or("");
+    let head = if is_live {
+        let in_cue = d.passage["cueIndex"].as_i64().is_some_and(|i| i >= 0);
+        let kind = slide.and_then(|x| x["kind"].as_str()).unwrap_or("");
+        if in_cue && kind != "bible" { d.passage["itemTitle"].as_str().filter(|x| !x.is_empty()).unwrap_or(sref).to_string() } else { sref.to_string() }
+    } else {
+        d.passage["title"].as_str().unwrap_or("").to_string()
+    };
+    [head.as_str(), d.passage["versionName"].as_str().unwrap_or("")].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" · ")
+}
+
+/// .hidden-badge (warn 바탕 · 검은 글자 · 700 · 12px · 여백 2px 8px)
+fn hidden_badge(ui: &mut egui::Ui, text: &str) {
+    let p = crate::theme::pal();
+    let g = ui.painter().layout_no_wrap(text.to_string(), crate::theme::font(12.0, crate::theme::Weight::Bold), Color32::BLACK);
+    let (r, _) = ui.allocate_exact_size(g.size() + Vec2::new(16.0, 4.0), Sense::hover());
+    ui.painter().rect_filled(r, egui::CornerRadius::same(4), p.warn);
+    ui.painter().galley(r.center() - g.size() / 2.0, g, Color32::BLACK);
+}
+
+/// 점선 테두리 (.live.is-hidden .screen { border-style: dashed })
+fn dashed_rect(ui: &egui::Ui, r: egui::Rect, st: egui::Stroke) {
+    let pts = vec![r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
+    for s in egui::Shape::dashed_line(&pts, st, 8.0, 5.0) { ui.painter().add(s); }
+}
+
+/// .count (muted, 가운데, 최소 48px)
+fn count_label(ui: &mut egui::Ui, t: String) {
+    let p = crate::theme::pal();
+    let g = ui.painter().layout_no_wrap(t, crate::theme::font(14.0, crate::theme::Weight::Regular), p.muted);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x.max(48.0), g.size().y), Sense::hover());
+    ui.painter().galley(r.center() - g.size() / 2.0, g, p.muted);
+}
+
+/// 슬라이드 짧은 글 (control.js slideSnippet)
+pub(crate) fn slide_snippet(s: &Value) -> String {
+    use wp_core::i18n::tr;
+    match s["kind"].as_str().unwrap_or("") {
+        "title" => [s["ref"].as_str().unwrap_or(""), s["subtitle"].as_str().unwrap_or("")].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" · "),
+        "image" => tr("이미지"),
+        "video" => tr("영상"),
+        "blank" => tr(if s["mode"] == "background" { "배경만" } else { "검은 화면" }),
+        _ => {
+            let t: Vec<String> = s["parts"].as_array().into_iter().flatten().map(|p| strip_marks(p["text"].as_str().unwrap_or(""))).collect();
+            let t = t.join(" ").split_whitespace().collect::<Vec<_>>().join(" ");
+            if t.chars().count() > 46 { format!("{}…", t.chars().take(46).collect::<String>()) } else { t }
+        }
+    }
+}
+
+/// 꾸밈 표시(**굵게** 등)·코드([C] 같은 화음) 빼기 — BCGroup.stripFmt · stripChords 근사
+fn strip_marks(t: &str) -> String {
+    let mut out = String::with_capacity(t.len());
+    let mut depth = 0;
+    for ch in t.chars() {
+        match ch {
+            '[' => depth += 1,
+            ']' if depth > 0 => depth -= 1,
+            '*' | '_' | '~' | '{' | '}' => {}
+            c if depth == 0 => out.push(if c == '\n' { ' ' } else { c }),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// '다음: <b>요한복음 3:17</b> 하나님이 …' (control.js pvNextHint · lvNextHint)
+fn next_hint(d: &Deck, continuous: bool) -> egui::text::LayoutJob {
+    use crate::theme::{font, pal, Weight};
+    use wp_core::i18n::tr;
+    let p = pal();
+    let mut job = egui::text::LayoutJob::default();
+    let fmt = |w: Weight, c: Color32| egui::TextFormat { font_id: font(12.0, w), color: c, valign: Align::Center, ..Default::default() };
+    match d.slides.get(d.index + 1) {
+        Some(nx) => {
+            job.append(&format!("{} ", tr("다음:")), 0.0, fmt(Weight::Regular, p.muted));
+            job.append(nx["ref"].as_str().unwrap_or(""), 0.0, fmt(Weight::Bold, p.text2));
+            job.append(&format!(" {}", slide_snippet(nx)), 0.0, fmt(Weight::Regular, p.muted));
+        }
+        None => job.append(&tr(if continuous { "범위 끝 — F6을 누르면 다음 절로 이어갑니다" } else { "마지막 슬라이드" }), 0.0, fmt(Weight::Regular, p.muted)),
+    }
+    job.wrap.max_rows = 1;
+    job.wrap.break_anywhere = true;
+    job
+}
+
+/// 슬라이드 칩 글 (bible: '3:16' = 장절에서 책 이름 뺀 것, 찬양: 이름표)
+fn slide_chip_text(s: &Value) -> String {
+    if let Some(l) = s["label"].as_str().filter(|x| !x.is_empty()) { return l.to_string(); }
+    if let Some(r) = s["ref"].as_str().filter(|x| !x.is_empty()) {
+        return match r.split_once(char::is_whitespace) { Some((_, rest)) => rest.to_string(), None => r.to_string() };
+    }
+    slide_snippet(s).chars().take(12).collect()
+}
+
+/// control.js chipLabel: '1. 3:16' (글이 번호와 같으면 번호만)
+fn chip_label(i: usize, t: &str) -> String {
+    if t.is_empty() || t == (i + 1).to_string() { (i + 1).to_string() } else { format!("{}. {t}", i + 1) }
+}
+
+/// .thumbs button (12px, 여백 2px 8px). 고른 칸: 미리보기 sel 바탕 + accent 테두리 · LIVE live-bg 바탕 + live 테두리
+fn thumb_chip(ui: &mut egui::Ui, text: &str, on: bool, is_live: bool) -> egui::Response {
+    use crate::theme::{font, pal, Weight};
+    let p = pal();
+    let g = ui.painter().layout_no_wrap(text.to_string(), font(12.0, Weight::Regular), p.text);
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 16.0 + 2.0, g.size().y.max(16.0) + 6.0), Sense::click());
+    let (bg, border) = match (on, is_live) {
+        (true, true) => (p.live_bg, p.live),
+        (true, false) => (p.sel, p.accent),
+        _ if resp.hovered() => (p.hover, p.line2),
+        _ => (p.panel2, p.line),
+    };
+    ui.painter().rect(r, egui::CornerRadius::same(crate::theme::RADIUS), bg, egui::Stroke::new(p.border_w, border), egui::StrokeKind::Inside);
+    ui.painter().galley(r.center() - g.size() / 2.0, g, p.text);
+    if resp.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+    resp
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LayerAct { Content, Media, BgOn, BgItem, BgTpl, Overlays, Logo, Draw }
+
+/// 지금 화면 칩 하나 (renderScreenLayers chip)
+struct Layer { act: LayerAct, on: bool, text: String, btn: String, tip: String, icon: &'static str }
+
+/// .lv-layers .ly: 둥근 칩(12) · 아이콘 14 · 글 12px · 오른쪽 ✕ 동그라미. 켜진 층은 live 테두리, 꺼진 층은 점선·흐리게
+fn layer_chip(ui: &mut egui::Ui, ly: &Layer) -> egui::Response {
+    use crate::theme::{alpha, font, pal, Weight};
+    let p = pal();
+    let fg = if ly.on { p.text } else { p.text.gamma_multiply(0.8) };
+    let mut tg = ui.painter().layout_no_wrap(ly.text.clone(), font(12.0, Weight::Regular), fg);
+    if tg.size().x > 220.0 {
+        let mut job = egui::text::LayoutJob::simple(ly.text.clone(), font(12.0, Weight::Regular), fg, 220.0);
+        job.wrap.max_rows = 1;
+        job.wrap.break_anywhere = true;
+        tg = ui.painter().layout_job(job);
+    }
+    let xg = ui.painter().layout_no_wrap(ly.btn.clone(), font(12.0, Weight::Bold), fg);
+    let xw = xg.size().x + 12.0;
+    let h = 26.0; // line-height 20 + 여백 2·2 + 테두리
+    let w = 8.0 + 14.0 + 5.0 + tg.size().x + 5.0 + xw + 4.0;
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
+    let hovered = resp.hovered();
+    let pt = ui.painter();
+    let bg = if hovered { p.hover } else { p.panel2 };
+    let border = if ly.on { p.live } else if hovered { p.line2 } else { p.line };
+    let cr = egui::CornerRadius::same(12);
+    if ly.on {
+        pt.rect(r, cr, bg, egui::Stroke::new(p.border_w, border), egui::StrokeKind::Inside);
+    } else {
+        pt.rect_filled(r, cr, bg.gamma_multiply(0.8));
+        let rr = r.shrink(0.5);
+        let pts = vec![rr.left_top() + Vec2::new(12.0, 0.0), rr.right_top() - Vec2::new(12.0, 0.0)];
+        for s in egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0, border), 4.0, 3.0) { pt.add(s); }
+        let pts = vec![rr.left_bottom() + Vec2::new(12.0, 0.0), rr.right_bottom() - Vec2::new(12.0, 0.0)];
+        for s in egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0, border), 4.0, 3.0) { pt.add(s); }
+    }
+    let mut x = r.left() + 8.0;
+    let icol = if ly.on { p.danger_text } else { p.muted };
+    crate::icons::paint(ui, egui::Rect::from_min_size(egui::Pos2::new(x, r.center().y - 7.0), Vec2::splat(14.0)), ly.icon, icol);
+    x += 14.0 + 5.0;
+    let pt = ui.painter();
+    pt.galley(egui::Pos2::new(x, r.center().y - tg.size().y / 2.0), tg.clone(), fg);
+    x += tg.size().x + 5.0;
+    let xr = egui::Rect::from_min_size(egui::Pos2::new(x, r.center().y - 9.0), Vec2::new(xw, 18.0));
+    let (xbg, xfg) = if ly.on && hovered { (p.live, Color32::WHITE) } else { (alpha(Color32::from_gray(127), 0.18), fg) };
+    pt.rect_filled(xr, egui::CornerRadius::same(9), xbg);
+    pt.galley(xr.center() - xg.size() / 2.0, xg, xfg);
+    if hovered { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+    resp.on_hover_text(ly.tip.clone())
 }
 
 static SHOT_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
