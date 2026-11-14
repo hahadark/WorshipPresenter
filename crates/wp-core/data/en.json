@@ -3950,5 +3950,8 @@
  "글자 보이기": "Show text",
  "미리보기를 송출 (F9)": "Send the preview live (F9)",
  "배경 지우기 · 로고 화면": "Clear background · Logo screen",
- "글자·배경·로고를 모두 지움": "Clear text, background and logo"
+ "글자·배경·로고를 모두 지움": "Clear text, background and logo",
+ "슬라이드 {1}": "Slide {1}",
+ "이 슬라이드 복제": "Duplicate this slide",
+ "이 슬라이드 지우기": "Delete this slide"
 }

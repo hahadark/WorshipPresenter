@@ -37,6 +37,8 @@ pub(crate) enum Act {
     OutputToggle,
     SetMonitor(usize),
     CuePreviewStep(i64),
+    /// 미리보기 앞뒤 슬라이드 (control.js stepPreview): 순서 끝이면 다음·이전 순서로 (cueAdvance)
+    PreviewStep(i64),
     /// 썸네일·목록의 마우스 올림 단추: (순서 번호, 슬라이드 ekey, 동작 edit·add·dup·del·skip·up·down)
     SlideOp(usize, String, &'static str),
     /// 알림에 붙은 단추 ("undo" 되돌리기 · "output-on" 예배당 화면 켜기)
@@ -395,7 +397,25 @@ impl App {
                         _ => {}
                     }
                 }
+                Act::PreviewStep(d) => {
+                    use wp_core::i18n::tr;
+                    let Some((idx, n, ci, cid)) = c.pres.preview.as_ref().map(|p| (p.index as i64, p.slides.len() as i64, p.passage["cueIndex"].as_i64().unwrap_or(-1), p.passage["cueId"].as_str().unwrap_or("").to_string())) else { continue };
+                    let ni = idx + d;
+                    if ni >= 0 && ni < n { c.set_preview_index(ni as usize); continue; }
+                    // 큐시트 순서의 끝: 설정 '순서 끝에서 다음 순서로'(cueAdvance)가 켜져 있으면 다음·이전 순서 미리보기 (뒤로 가면 마지막 장)
+                    if ci < 0 || c.settings.get()["cueAdvance"] == json!(false) { continue; }
+                    let Some(len) = c.cue.as_ref().filter(|q| q.id == cid).map(|q| q.items.len() as i64) else { continue };
+                    let j = ci + d;
+                    if j < 0 { c.notify(tr("큐시트의 첫 순서입니다."), "info"); continue; }
+                    if j >= len { c.notify(tr("큐시트의 마지막 순서입니다."), "info"); continue; }
+                    self.sel = Some(j as usize);
+                    self.edit = None;
+                    if c.preview_item(j as usize) && d < 0 {
+                        if let Some(last) = c.pres.preview.as_ref().map(|p| p.slides.len().saturating_sub(1)) { c.set_preview_index(last); }
+                    }
+                }
                 Act::CuePreviewStep(d) => {
+
                     let n = c.cue.as_ref().map(|x| x.items.len()).unwrap_or(0) as i64;
                     if n == 0 { continue; }
                     let cur = self.sel.map(|x| x as i64).unwrap_or(-1);
@@ -435,9 +455,18 @@ impl App {
         }
         if !typing {
             let pv = self.core.lock().pres.preview.as_ref().map(|p| (p.index, p.slides.len()));
-            if let Some((i, n)) = pv {
-                if on("previewNextSlide", "PageDown") && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
-                if on("previewPrevSlide", "PageUp") && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
+            if pv.is_some() {
+                if on("previewNextSlide", "PageDown") { acts.push(Act::PreviewStep(1)) }
+                if on("previewPrevSlide", "PageUp") { acts.push(Act::PreviewStep(-1)) }
+                // control.js: ← → = 미리보기 앞뒤 슬라이드, Enter = 미리보기 송출 (글 쓰는 칸·창이 열려 있을 때·본문 목록에 키보드가 있을 때 Enter 는 빼고)
+                if !self.tc.slideedit.open {
+                    if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowLeft)) { acts.push(Act::PreviewStep(-1)) }
+                    if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowRight)) { acts.push(Act::PreviewStep(1)) }
+                    if !crate::center_ui::results_focused(ctx) && ctx.input(|i| i.key_pressed(Key::Enter) && i.modifiers.is_none()) {
+                        ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+                        acts.push(Act::SendPreview)
+                    }
+                }
             }
             if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Space)) { acts.push(Act::Step(1)) }
         }
