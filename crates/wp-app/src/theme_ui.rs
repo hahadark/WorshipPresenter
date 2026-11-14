@@ -49,11 +49,8 @@ impl ThemeUi {
         let smp = sample();
         let mut open = self.open;
         let screen = ctx.content_rect();
-        egui::Window::new(tr("테마 고르기"))
+        crate::widgets::float_window(ctx, "themes", tr("테마 고르기"), [(screen.width() - 80.0).clamp(760.0, 1260.0), (screen.height() - 120.0).clamp(480.0, 760.0)])
             .open(&mut open)
-            .default_size([(screen.width() - 80.0).clamp(760.0, 1260.0), (screen.height() - 120.0).clamp(480.0, 760.0)])
-            .pivot(Align2::CENTER_CENTER)
-            .default_pos(screen.center())
             .collapsible(false)
             .show(ctx, |ui| {
                 ui.label(RichText::new(tr("테마를 누르면 오른쪽에서 예배당 화면과 OBS 자막 모양을 미리 봅니다. '적용'을 눌러야 실제 출력이 바뀝니다.")).size(12.5).color(p.muted));

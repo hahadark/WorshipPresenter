@@ -274,7 +274,14 @@ pub fn show_with(ui: &mut Ui, menus: &[Menu], mut extra: impl FnMut(&str, &mut U
                         sep(ui);
                         continue;
                     }
-                    if item_row(ui, icon_of(i.id), &wp_core::i18n::tr(i.label), i.key, None).clicked() {
+                    let row = item_row(ui, icon_of(i.id), &wp_core::i18n::tr(i.label), i.key, None);
+                    // 이름은 원본 menubar.js 그대로('실행 취소'), 무엇을 되돌리는지는 툴팁으로 (글 입력 되돌리기와 구분)
+                    let row = match i.id {
+                        "b:undo" => row.on_hover_text(wp_core::i18n::tr("큐시트 순서 변경 되돌리기 (Ctrl+Z)")),
+                        "b:redo" => row.on_hover_text(wp_core::i18n::tr("큐시트 순서 변경 다시 하기 (Ctrl+Y)")),
+                        _ => row,
+                    };
+                    if row.clicked() {
                         picked = Some(i.id);
                         ui.close();
                     }

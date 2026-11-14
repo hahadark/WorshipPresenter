@@ -5,7 +5,7 @@
 //!   검색 방식 | 번역본 | 병행 번역 묶음(.hgroup) · '미리보기 켜짐 / 미리보기 끔 · 바로 송출'(.studio) ·
 //!   작업공간 고르기(.ws-pick, 배치 아이콘) · 설정 톱니(.icon-btn)
 //! - 송출 줄: 이전 F5 · 다음 F6 · 송출 F9 · [글자 숨김 F10 · 지우기 ▾ · 모두 지우기] · 즉석 자막 Ctrl+T ·
-//!   보조 화면 꺼짐/켜짐 Ctrl+Shift+F | 오른쪽 출력 연결 상태 점
+//!   예배당 화면: 꺼짐 · 켜기 / 켜짐 · 끄기 Ctrl+Shift+F | 오른쪽 출력 연결 상태 점
 //! - 알림(.msg): 오른쪽 아래(송출 줄 위)에 뜨는 상자
 use super::{Act, App, Snap};
 use crate::icons;
@@ -121,7 +121,7 @@ impl App {
         for x in [r_mode.right() + 0.5, r_ver.right() + 0.5] {
             ui.painter().vline(x, rect.y_range().shrink(1.0), Stroke::new(1.0, p.line));
         }
-        let rm = select_at(ui, r_mode, Id::new("hdr-mode"), &mode_label, &tr("검색 방식"));
+        let rm = select_at(ui, r_mode, Id::new("hdr-mode"), &mode_label, &tr("기본 검색 방식 (요3:16 → 장절, 사랑 → 본문)"));
         select_popup(&rm, w_mode, |ui| {
             for (k, l) in &modes {
                 if menubar::item_row(ui, None, l, "", Some(*k == mode)).clicked() {
@@ -304,13 +304,14 @@ impl App {
             if egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 7)).show(ui, |ui| ui.add(q)).inner.clicked() {
                 self.tb.quick = !qon;
             }
-            // 보조 화면 꺼짐/켜짐 (.big.output-toggle, 켜짐 = pv 바탕·테두리)
+            // 예배당 화면: 꺼짐/켜짐 + 누르면 할 일 (.big.output-toggle, 켜짐 = pv 바탕·테두리)
+            // 원본은 '보조 화면 꺼짐' 이지만 상태 줄('예배당 화면 꺼짐')과 이름을 하나로 맞춘다.
             let running = self.out.running();
-            let b = Btn::new(if running { tr("보조 화면 켜짐") } else { tr("보조 화면 꺼짐") })
+            let b = Btn::new(if running { tr("예배당 화면: 켜짐 · 끄기") } else { tr("예배당 화면: 꺼짐 · 켜기") })
                 .kbd("Ctrl+Shift+F")
                 .size(Size::Big)
                 .kind(if running { Kind::Pv } else { Kind::Default })
-                .tooltip(tr("보조 모니터(예배당 화면) 전체 화면 출력을 켜고 끕니다"));
+                .tooltip(tr("예배당 모니터의 전체 화면 출력을 켜고 끕니다 (Ctrl+Shift+F)"));
             if egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 4)).show(ui, |ui| ui.add(b)).inner.clicked() {
                 acts.push(Act::OutputToggle);
             }
@@ -383,7 +384,7 @@ impl App {
         let win: Vec<_> = acks.iter().filter(|c| c.1 == "window" && c.0 == "main").collect();
         if !win.is_empty() && running {
             let synced = win.iter().all(|c| c.2 == Some(version));
-            v.push((if synced { p.pv } else { p.warn }, if synced { tr("출력 창 반영됨") } else { tr("출력 창 갱신 대기") }, "window"));
+            v.push((if synced { p.pv } else { p.warn }, if synced { tr("예배당 화면 반영됨") } else { tr("예배당 화면 반영 대기") }, "window"));
         }
         // [트랙 D] OBS 원격 조작 상태 (설정에서 켰을 때만)
         if let Some((t, warn)) = crate::trackd_ui::obs_status_line(self.core.lock().settings.get()) {

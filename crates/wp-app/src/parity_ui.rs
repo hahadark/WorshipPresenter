@@ -119,9 +119,8 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
         ui.separator();
         if ui.button(wp_core::i18n::tr("큐시트를 글로 복사 (순서표)")).clicked() {
             if let Some(t) = app.core.lock().active_cue_text() {
-                ui.ctx().copy_text(t);
+                crate::widgets::copy_notice(ui.ctx(), t, wp_core::i18n::tr("큐시트 순서표를 글로 복사했습니다."));
             }
-            app.core.lock().notify(wp_core::i18n::tr("큐시트 순서표를 글로 복사했습니다."), "ok");
             ui.close();
         }
     });
@@ -302,7 +301,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let c = app.core.lock();
         (wp_core::settings::SHORTCUTS["labels"].clone(), c.settings.get()["shortcuts"].clone())
     };
-    egui::Window::new(wp_core::i18n::tr("단축키")).open(&mut open).default_width(420.0).show(ctx, |ui| {
+    egui::Window::new(wp_core::i18n::tr("단축키")).id(egui::Id::unique("wp-float-shortcuts")).default_pos(crate::widgets::float_pos(ctx, egui::Id::unique("wp-float-shortcuts"), 420.0)).open(&mut open).default_width(420.0).show(ctx, |ui| {
         egui::Grid::new("keys").striped(true).num_columns(2).show(ui, |ui| {
             for (k, label) in labels.as_object().cloned().unwrap_or_default() {
                 ui.label(RichText::new(keys[&k].as_str().unwrap_or("")).monospace().strong());

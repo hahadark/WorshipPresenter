@@ -229,7 +229,7 @@ fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
         ui.label(RichText::new(wp_core::i18n::tr("프롬프트를 복사해 채팅 AI 에 주보와 함께 붙여 넣고, 받은 답(JSON)을 아래에 붙여 넣으세요.")).small());
         ui.horizontal(|ui| {
             if ui.button(wp_core::i18n::tr("프롬프트 복사")).clicked() {
-                ui.ctx().copy_text(bulletin::chat_prompt(&s.extra));
+                crate::widgets::copy_notice(ui.ctx(), bulletin::chat_prompt(&s.extra), wp_core::i18n::tr("프롬프트를 복사했습니다."));
                 s.msg = wp_core::i18n::tr("✓ 프롬프트를 복사했습니다.").into();
             }
             if ui.button(wp_core::i18n::tr("샘플 파일 저장…")).clicked() {
@@ -320,9 +320,9 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
     }
     let running = app.out.running();
     let held = core.lock().obs_hold;
-    ui.label(wp_core::i18n::tr_args("예배당 창: {1}{2}", &[&(if running { wp_core::i18n::tr_s("켜짐") } else { wp_core::i18n::tr_s("꺼짐") }), &(if held { wp_core::i18n::tr_s(" · OBS 화면 숨김 중") } else { "" })]));
+    ui.label(wp_core::i18n::tr_args("예배당 화면: {1}{2}", &[&(if running { wp_core::i18n::tr_s("켜짐") } else { wp_core::i18n::tr_s("꺼짐") }), &(if held { wp_core::i18n::tr_s(" · OBS 화면 숨김 중") } else { "" })]));
     ui.horizontal(|ui| {
-        if ui.button(if running { wp_core::i18n::tr_s("예배당 창 끄기") } else { wp_core::i18n::tr_s("예배당 창 켜기") }).clicked() {
+        if ui.button(if running { wp_core::i18n::tr_s("예배당 화면 끄기") } else { wp_core::i18n::tr_s("예배당 화면 켜기") }).clicked() {
             if running {
                 app.out.close();
             } else {

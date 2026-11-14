@@ -107,11 +107,11 @@ impl App {
         let old_nav = nav.clone();
         let collapsed_id = egui::Id::new("quick-collapsed");
         let mut collapsed = ui.data(|d| d.get_temp::<bool>(collapsed_id)).unwrap_or(false);
-        // .quick-head: '빠른 설정' · 대상 분할 단추 · 템플릿 · 테마 · 분할 · 이동 · (빈 칸) · 자세히 ▸ · 접기 ▾
+        // .quick-head: 대상 분할 단추 · 템플릿 · 테마 · 분할 · 이동 · (빈 칸) · 자세히 ▸ · 접기 ▾
         egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 7)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-                crate::quick_ui::head_label(ui);
+                // '빠른 설정' 이름표는 패널 탭 이름과 겹쳐 뺐다 (원본은 탭이 없어 이름표가 있었음)
                 let labels: Vec<(String, String)> = TARGETS.iter().map(|(id, l)| (id.to_string(), tr(l))).collect();
                 let items: Vec<(String, &str)> = labels.iter().map(|(id, l)| (id.clone(), l.as_str())).collect();
                 crate::widgets::segmented_with(ui, &mut slot, &items, crate::widgets::SegStyle { font: 13.0, pad: egui::vec2(9.0, 4.0), fill: false, radius: 6 });
@@ -161,7 +161,7 @@ impl App {
             egui::ScrollArea::vertical().id_salt("quick-body").auto_shrink([false, false]).show(ui, |ui| {
                 egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 10 }).show(ui, |ui| {
                     out = crate::quick_ui::basic_controls(ui, &mut tpl);
-                    self.trackb_toolbar(ui);
+                    // 순서 되돌리기·다시 하기(↶↷)는 큐시트 머리(cue_ui::undo_buttons)·큐시트 메뉴·Ctrl+Z/Y 에 있어 여기서 뺐다.
                 });
             });
         }

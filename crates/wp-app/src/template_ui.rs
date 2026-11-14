@@ -212,13 +212,10 @@ impl TemplateUi {
         let before = self.draft.clone();
         let mut open = self.open;
         let screen = ctx.content_rect();
-        let size = Vec2::new((screen.width() - 40.0).clamp(900.0, 1560.0), (screen.height() - 90.0).clamp(520.0, 880.0));
-        let win = egui::Window::new(tr("출력 템플릿"))
-            .id(egui::Id::new("tpl-editor"))
+        let size = Vec2::new((screen.width() - 40.0).clamp(900.0, 1560.0), (screen.height() - crate::widgets::FLOAT_TOP - 12.0).clamp(520.0, 880.0));
+        // 자리는 다른 떠 있는 창과 같은 규칙 (widgets::float_window: 메뉴·검색줄 아래, 격치면 비껴 놓기)
+        let win = crate::widgets::float_window(ctx, "tpl-editor", tr("출력 템플릿"), [size.x, size.y])
             .open(&mut open)
-            .default_size(size)
-            .pivot(Align2::CENTER_CENTER)
-            .default_pos(screen.center())
             .collapsible(false)
             .vscroll(false)
             .show(ctx, |ui| {

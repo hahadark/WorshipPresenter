@@ -387,8 +387,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             };
             match r {
                 Ok(p) => {
-                    ui.ctx().copy_text(p);
-                    app.core.lock().notify(wp_core::i18n::tr("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요."), "ok");
+                    crate::widgets::copy_notice(ui.ctx(), p, wp_core::i18n::tr("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요."));
                 }
                 Err(e) => app.core.lock().notify(e, "error"),
             }

@@ -61,7 +61,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
 }
 
 /// 상단 메뉴 줄 (top 패널 위, control.css .menubar: menubar 바탕 · 아래 line 1px · 안쪽 3px 6px).
-/// 정적 항목은 menubar::menus(), 상태에 따라 바뀌는 항목(미리보기 끄기 ✓·보조 화면·출력 템플릿·OBS 주소)은 여기서 덧붙인다.
+/// 정적 항목은 menubar::menus(), 상태에 따라 바뀌는 항목(미리보기 끄기 ✓·예배당 화면·출력 템플릿·OBS 주소)은 여기서 덧붙인다.
 pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     use wp_core::i18n::tr;
     let p = crate::theme::pal();
@@ -76,9 +76,9 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
         menubar::show_with(ui, &menubar::menus(), |m, ui| match m {
             "송출" => {
                 menubar::sep(ui);
-                // 원본 송출 메뉴: '미리보기 끄기 (클릭하면 바로 송출)' ✓ · '보조 화면(예배당) 켜기·끄기'
+                // 원본 송출 메뉴: '미리보기 끄기 (클릭하면 바로 송출)' ✓ · '보조 화면(예배당) 켜기·끄기' (Rust 판은 '예배당 화면' 으로 통일)
                 if menubar::item_row(ui, None, &tr("미리보기 끄기 (클릭하면 바로 송출)"), "", Some(preview_off)).clicked() { acts.push(Act::TogglePreviewMode); ui.close(); }
-                if menubar::item_row(ui, Some("monitor"), &tr("보조 화면(예배당) 켜기·끄기"), "Ctrl+Shift+F", None).clicked() { acts.push(Act::OutputToggle); ui.close(); }
+                if menubar::item_row(ui, Some("monitor"), &tr("예배당 화면 켜기·끄기"), "Ctrl+Shift+F", None).clicked() { acts.push(Act::OutputToggle); ui.close(); }
             }
             "보기" => {
                 // Rust 판 머리 줄에 있던 출력 템플릿 고르기 · OBS 주소 (원본은 빠른 설정 · 설정 → 출력)

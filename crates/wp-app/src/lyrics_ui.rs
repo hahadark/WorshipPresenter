@@ -80,7 +80,7 @@ impl App {
             return;
         }
         let sel_song = self.sel.and_then(|i| self.core.lock().cue.as_ref().and_then(|c| c.items.get(i).cloned())).filter(|it| it["type"] == "song");
-        egui::Window::new(wp_core::i18n::tr("웹에서 가사 찾기 (Ctrl+L)")).open(&mut open).default_size([560.0, 620.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "lyrics", wp_core::i18n::tr("웹에서 가사 찾기 (Ctrl+L)"), [560.0, 620.0]).open(&mut open).show(ctx, |ui| {
             let mut st = ST.lock();
             let mut search = false;
             ui.horizontal(|ui| {

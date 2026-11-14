@@ -91,7 +91,7 @@ impl SlideEditUi {
             return;
         }
         let mut open = self.open;
-        egui::Window::new(wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)")).open(&mut open).default_size([980.0, 640.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "slideedit", wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)"), [980.0, 640.0]).open(&mut open).show(ctx, |ui| {
             let Some(i) = sel else {
                 ui.label(wp_core::i18n::tr("큐시트에서 순서를 먼저 고르세요."));
                 return;
