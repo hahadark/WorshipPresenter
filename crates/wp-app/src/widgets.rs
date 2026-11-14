@@ -624,6 +624,13 @@ thread_local! {
     pub(crate) static HOVER_SEEN: std::cell::RefCell<std::collections::BTreeMap<String, Rect>> = Default::default();
 }
 
+/// 합성 입력 시험용: 이름 붙은 위젯 자리를 남긴다 (시험 빌드가 아니면 아무것도 안 함)
+#[allow(unused_variables)]
+pub fn mark(name: &str, rect: Rect) {
+    #[cfg(test)]
+    HOVER_SEEN.with(|m| m.borrow_mut().insert(name.to_string(), rect));
+}
+
 /// 반투명 바탕 아이콘 단추 하나 (control.css .sg-ops button: rgba(15,18,24,.85) 바탕 · 흰 글자 · 지우기는 빨강)
 pub fn overlay_btn(ui: &Ui, id: egui::Id, rect: Rect, icon: &str, tip: &str, danger: bool) -> Response {
     let p = pal();

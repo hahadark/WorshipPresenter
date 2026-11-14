@@ -152,6 +152,16 @@ impl Undo {
         self.fwd.push((cue_id.to_string(), cur.to_vec()));
         Some(items)
     }
+    /// 되돌리면(redo 면 다시 하면) 돌아갈 모습 (없으면 None)
+    pub fn peek(&self, cue_id: &str, redo: bool) -> Option<&[Value]> {
+        let v = if redo { &self.fwd } else { &self.back };
+        v.iter().rev().find(|x| x.0 == cue_id).map(|x| x.1.as_slice())
+    }
+    /// 이 큐시트에서 더 되돌리거나(redo) 다시 할 수 있는 횟수
+    pub fn depth(&self, cue_id: &str, redo: bool) -> usize {
+        let v = if redo { &self.fwd } else { &self.back };
+        v.iter().filter(|x| x.0 == cue_id).count()
+    }
     pub fn redo(&mut self, cue_id: &str, cur: &[Value]) -> Option<Vec<Value>> {
         let i = self.fwd.iter().rposition(|x| x.0 == cue_id)?;
         let (_, items) = self.fwd.remove(i);
@@ -160,9 +170,69 @@ impl Undo {
     }
 }
 
+/// 순서 목록이 `before` 에서 `after` 로 바뀐 일을 짧은 말로 (되돌리기 단추 툴팁·알림용).
+/// 예: "'말씀 봉독' 순서 삭제" · "'찬양' 순서 넣기" · "'설교' 순서 옮기기" · "'광고' 고치기"
+pub fn describe_change(before: &[Value], after: &[Value]) -> String {
+    use crate::i18n::{tr, tr_args};
+    let id = |x: &Value| x["id"].as_str().unwrap_or("").to_string();
+    let name = |x: &Value| x["title"].as_str().map(str::trim).filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| tr("제목 없는 순서"));
+    let (a, b): (Vec<String>, Vec<String>) = (before.iter().map(id).collect(), after.iter().map(id).collect());
+    let one = |list: Vec<&Value>, single: &str, many: &str| match list.as_slice() {
+        [x] => tr_args(single, &[&name(x)]),
+        xs => tr_args(many, &[&xs.len()]),
+    };
+    if after.len() < before.len() {
+        return one(before.iter().filter(|x| !b.contains(&id(x))).collect(), "'{1}' 순서 삭제", "순서 {1}개 삭제");
+    }
+    if after.len() > before.len() {
+        return one(after.iter().filter(|x| !a.contains(&id(x))).collect(), "'{1}' 순서 넣기", "순서 {1}개 넣기");
+    }
+    let mut sa = a.clone();
+    let mut sb = b.clone();
+    sa.sort();
+    sb.sort();
+    if a != b && sa == sb {
+        // 같은 순서들의 자리만 바뀜: 자리가 가장 많이 바뀐 순서를 옮긴 것으로 본다
+        let moved = before.iter().enumerate().max_by_key(|(i, x)| b.iter().position(|y| *y == id(x)).map(|j| j.abs_diff(*i)).unwrap_or(0)).map(|(_, x)| x);
+        return moved.map(|x| tr_args("'{1}' 순서 옮기기", &[&name(x)])).unwrap_or_else(|| tr("순서 옮기기"));
+    }
+    match before.iter().zip(after).position(|(x, y)| x != y) {
+        Some(i) => tr_args("'{1}' 고치기", &[&name(&after[i])]),
+        None => tr("순서 변경"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn describe_change_names_what_changed() {
+        let a = json!({ "id": "a", "title": "말씀 봉독" });
+        let b = json!({ "id": "b", "title": "찬양" });
+        let c = json!({ "id": "c", "title": "설교" });
+        let all = vec![a.clone(), b.clone(), c.clone()];
+        assert_eq!(describe_change(&all, &[b.clone(), c.clone()]), "'말씀 봉독' 순서 삭제");
+        assert_eq!(describe_change(&all, &[c.clone()]), "순서 2개 삭제");
+        assert_eq!(describe_change(&[a.clone(), c.clone()], &all), "'찬양' 순서 넣기");
+        assert_eq!(describe_change(&all, &[c.clone(), a.clone(), b.clone()]), "'설교' 순서 옮기기");
+        let mut b2 = b.clone();
+        b2["title"] = json!("찬양 2");
+        assert_eq!(describe_change(&all, &[a.clone(), b2, c.clone()]), "'찬양 2' 고치기");
+        assert_eq!(describe_change(&all, &all), "순서 변경");
+    }
+    #[test]
+    fn undo_peek_and_depth() {
+        let mut u = Undo::default();
+        assert!(u.peek("c", false).is_none());
+        u.push("c", &[json!({ "id": "a" })]);
+        u.push("x", &[]);
+        assert_eq!(u.depth("c", false), 1);
+        assert_eq!(u.peek("c", false).unwrap().len(), 1);
+        u.undo("c", &[]);
+        assert_eq!(u.depth("c", false), 0);
+        assert_eq!(u.depth("c", true), 1);
+        assert!(u.peek("c", true).unwrap().is_empty());
+    }
     fn store() -> BibleStore {
         let p = std::env::temp_dir().join(format!("wp-cues-{}.db", short_id("t")));
         BibleStore::open(&p).unwrap()

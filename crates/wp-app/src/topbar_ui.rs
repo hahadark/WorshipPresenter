@@ -374,12 +374,16 @@ impl App {
         v
     }
 
-    /// 알림 상자 (.msg: 오른쪽 16px · 아래 72px, 600, 둥글기 8, 종류별 바탕)
-    pub(super) fn toast(&self, ctx: &egui::Context, s: &Snap) {
-        let Some((msg, kind, at)) = &s.toast else { return };
-        if wp_core::util::now_ms() - at >= 8000 {
-            return;
+    /// 알림 상자 (.msg: 오른쪽 16px · 아래 72px, 600, 둥글기 8, 종류별 바탕).
+    /// 누를 수 있다: 글을 누르면 닫히고, 단추(되돌리기 · 예배당 화면 켜기)가 붙으면 그 동작을 돌려준다
+    pub(super) fn toast(&self, ctx: &egui::Context, s: &Snap) -> Option<Act> {
+        let (msg, kind, at) = s.toast.as_ref()?;
+        // 단추가 있는 알림은 누를 시간을 더 준다
+        let life = if s.toast_act.is_some() { 12000 } else { 8000 };
+        if wp_core::util::now_ms() - at >= life {
+            return None;
         }
+        let mut out = None;
         let p = pal();
         let fill = match *kind {
             "error" => p.live_bg,
@@ -390,9 +394,9 @@ impl App {
         egui::Area::new(Id::new("wp-toast"))
             .order(egui::Order::Foreground)
             .anchor(Align2::RIGHT_BOTTOM, Vec2::new(-16.0, -72.0))
-            .interactable(false)
+            .interactable(true)
             .show(ctx, |ui| {
-                egui::Frame::new()
+                let fr = egui::Frame::new()
                     .fill(fill)
                     .stroke(Stroke::new(1.0, alpha(Color32::WHITE, 0.12)))
                     .corner_radius(CornerRadius::same(8))
@@ -400,9 +404,34 @@ impl App {
                     .shadow(egui::Shadow { offset: [0, 10], blur: 30, spread: 0, color: alpha(Color32::BLACK, 0.55) })
                     .show(ui, |ui| {
                         ui.set_max_width(440.0);
-                        ui.label(theme::rich(msg.clone(), 14.0, Weight::SemiBold, p.text));
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 12.0;
+                            let lr = ui.add(egui::Label::new(theme::rich(msg.clone(), 14.0, Weight::SemiBold, p.text)).wrap().selectable(false).sense(Sense::click())).on_hover_text(tr("눌러서 닫기"));
+                            if lr.clicked() {
+                                out = Some(Act::ToastDismiss);
+                            }
+                            if let Some(a) = s.toast_act {
+                                let (label, icon) = toast_button(a);
+                                let br = ui.add(Btn::new(label).icon(icon).size(Size::Sm).height(28.0));
+                                widgets::mark("toast-act", br.rect);
+                                if br.clicked() {
+                                    out = Some(Act::ToastAct(a));
+                                }
+                            }
+                        });
                     });
+                let _ = fr;
             });
+        out
+    }
+}
+
+/// 알림 단추 글·아이콘 (Core::notify_act 의 act 이름)
+fn toast_button(act: &str) -> (String, &'static str) {
+    match act {
+        "undo" => (tr("되돌리기"), "undo-2"),
+        "output-on" => (tr("예배당 화면 켜기"), "monitor"),
+        _ => (tr("확인"), "check"),
     }
 }
 

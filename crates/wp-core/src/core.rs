@@ -61,6 +61,8 @@ pub struct Core {
     pub cues: Vec<CueSummary>,
     /// 화면 아래 알림 (글, 종류, 시각)
     pub toast: Option<(String, &'static str, i64)>,
+    /// 알림에 붙는 단추 하나 ("undo" 되돌리기 · "output-on" 예배당 화면 켜기). notify 는 지우고 notify_act 만 채운다
+    pub toast_act: Option<&'static str>,
     pub port: u16,
     pub b: crate::trackb::TrackB, // [트랙 B]
     pub flow: crate::flow::Flow, // [트랙 C] 자동 넘김·글자 자동 숨김
@@ -121,7 +123,7 @@ impl Core {
         let mut c = Self {
             data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), pending_audio: None, obs_hold: false, obs_full: false, // [트랙 C] obs_full
            
-            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, port, b: Default::default(), flow: Default::default(), // [트랙 B] · [트랙 C] flow
+            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, toast_act: None, port, b: Default::default(), flow: Default::default(), // [트랙 B] · [트랙 C] flow
         };
         c.trackb_init(); // [트랙 B]
         if c.version_id().is_empty() {
@@ -150,7 +152,14 @@ impl Core {
 
     pub fn notify(&mut self, msg: impl Into<String>, kind: &'static str) {
         self.toast = Some((msg.into(), kind, now_ms()));
+        self.toast_act = None;
         self.emit(Ev::Ui);
+    }
+
+    /// 단추 하나가 붙은 알림 (예: '순서를 삭제했습니다 [되돌리기]'). 단추 동작은 조작 화면이 act 이름으로 정한다
+    pub fn notify_act(&mut self, msg: impl Into<String>, kind: &'static str, act: &'static str) {
+        self.notify(msg, kind);
+        self.toast_act = Some(act);
     }
 
     pub fn version_id(&self) -> String {

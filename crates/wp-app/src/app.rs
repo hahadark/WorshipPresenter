@@ -39,6 +39,12 @@ pub(crate) enum Act {
     CuePreviewStep(i64),
     /// 썸네일·목록의 마우스 올림 단추: (순서 번호, 슬라이드 ekey, 동작 edit·add·dup·del·skip·up·down)
     SlideOp(usize, String, &'static str),
+    /// 알림에 붙은 단추 ("undo" 되돌리기 · "output-on" 예배당 화면 켜기)
+    ToastAct(&'static str),
+    /// 알림을 눌러 닫기
+    ToastDismiss,
+    /// 되돌리기(false) · 다시 하기(true) — 알림은 코어 undo_items 가 띄운다
+    Undo(bool),
 }
 
 pub struct App {
@@ -81,6 +87,7 @@ pub(crate) struct Snap {
     version: String,
     preview_mode: bool,
     toast: Option<(String, &'static str, i64)>,
+    toast_act: Option<&'static str>,
     outputs: Vec<(String, String)>,
     port: u16,
     logo: bool,
@@ -147,6 +154,7 @@ impl App {
             version: c.version_id(),
             preview_mode: s["previewMode"].as_bool().unwrap_or(true),
             toast: c.toast.clone(),
+            toast_act: c.toast_act,
             outputs: c.outputs.values().map(|o| (o.client.clone(), o.kind.clone())).collect(),
             port: c.port,
             logo: c.layers.logo,
@@ -227,7 +235,12 @@ impl App {
                     self.edit = None;
                 }
                 Act::RemoveItem(i) => {
+                    let name = c.cue.as_ref().and_then(|x| x.items.get(i)).map(|it| it["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).unwrap_or(type_info(it["type"].as_str().unwrap_or("")).0).to_string());
                     c.remove_item(i);
+                    if let Some(n) = name {
+                        // 원본은 바로 지우고 알림이 없다. 잘못 지운 것을 바로 되살리도록 알림에 [되돌리기]
+                        c.notify_act(wp_core::i18n::tr_args("'{1}' 순서를 삭제했습니다", &[&n]), "ok", "undo");
+                    }
                     self.sel = None;
                     self.edit = None;
                 }
@@ -321,6 +334,32 @@ impl App {
                         self.out.open(port, m, false);
                     }
                     continue;
+                }
+                Act::Undo(redo) => {
+                    c.undo_items(redo);
+                    self.edit = None;
+                }
+                Act::ToastDismiss => {
+                    c.toast = None;
+                    c.toast_act = None;
+                }
+                Act::ToastAct(a) => {
+                    c.toast = None;
+                    c.toast_act = None;
+                    match a {
+                        "undo" => {
+                            c.undo_items(false);
+                            self.edit = None;
+                        }
+                        "output-on" => {
+                            drop(c);
+                            if !self.out.running() {
+                                self.apply(vec![Act::OutputToggle]);
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
                 }
                 Act::CuePreviewStep(d) => {
                     let n = c.cue.as_ref().map(|x| x.items.len()).unwrap_or(0) as i64;
@@ -1215,7 +1254,7 @@ impl eframe::App for App {
         egui::Panel::bottom("status").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::BOTTOM_MARGIN)).show(ui, |ui| {
             self.bottom_bar(ui, &s, &mut acts);
         });
-        self.toast(&ctx, &s);
+        if let Some(a) = self.toast(&ctx, &s) { acts.push(a); }
         if std::mem::take(&mut self.editor_reveal) { self.reveal_editor_panel(); }
         self.workspace_window(&ctx); // 작업공간 · 패널 배치 창 (고르기는 머리 줄)
         egui::CentralPanel::default_margins().show(ui, |ui| { self.workspace_content(ui, &s, &mut acts); });
@@ -1298,6 +1337,17 @@ impl Drop for App {
 #[cfg(test)]
 #[path = "ui_integration_tests.rs"]
 mod ui_integration_tests;
+#[cfg(test)]
+#[path = "ux_a_tests.rs"]
+mod ux_a_tests;
+#[cfg(test)]
+impl App {
+    /// 시험용 App (출력 창·점검 인자 없이)
+    pub(crate) fn for_test(core: Shared, dir: std::path::PathBuf) -> Self {
+        let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
+        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir: dir.clone(), data_dir: dir, search: String::new(), result: Value::Null, versions: vec![], sel: None, edit: None, out: crate::outwin::OutWin::for_test(), monitor: 0, last_flush: Instant::now(), focus_search: false, test: None, tb: Default::default(), tc: Default::default() }
+    }
+}
 /// 머리 줄 · 아래 송출 줄 · 상태 · 알림 (Snap 의 private 필드를 읽도록 자식 모듈)
 #[path = "topbar_ui.rs"]
 mod topbar_ui;
