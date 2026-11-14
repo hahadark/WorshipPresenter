@@ -124,7 +124,7 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::E))) { app.tc.slideedit.open = !app.tc.slideedit.open; }
     let (sel, wd, dd) = (app.sel, app.web_dir.clone(), app.data_dir.clone());
     app.tc.slideedit.show(ctx, &core, sel, &wd, &dd, acts);
-    app.tc.themes.show(ctx, &core);
+    app.tc.themes.show(ctx, &core, &app.web_dir, &app.data_dir);
     app.tc.import.show(ctx, &core);
     app.tc.commentary.show(ctx, &core);
     // 점검용: --open-c settings|templates|history|usage|about
