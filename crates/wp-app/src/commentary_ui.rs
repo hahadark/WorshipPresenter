@@ -46,7 +46,7 @@ impl CommentaryUi {
             }
         }
         let mut open = self.open;
-        egui::Window::new(wp_core::i18n::tr("주석")).open(&mut open).default_size([560.0, 600.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "commentary", wp_core::i18n::tr("주석"), [560.0, 600.0]).open(&mut open).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.tab, 0, wp_core::i18n::tr("주석 보기"));
                 ui.selectable_value(&mut self.tab, 1, wp_core::i18n::tr("주석 가져오기·지우기"));

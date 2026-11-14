@@ -39,7 +39,7 @@ impl ImportUi {
             }
         }
         let mut open = self.open;
-        egui::Window::new(wp_core::i18n::tr("성경 번역본")).open(&mut open).default_size([620.0, 560.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "import-bible", wp_core::i18n::tr("성경 번역본"), [620.0, 560.0]).open(&mut open).show(ctx, |ui| {
             ui.label(RichText::new(wp_core::i18n::tr("가지고 있는 번역본")).strong());
             let versions = core.lock().store.list_versions();
             let cur = core.lock().version_id();

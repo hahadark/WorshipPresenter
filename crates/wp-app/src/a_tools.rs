@@ -134,7 +134,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     }
     let mut open = true;
     let p = &mut st.points;
-    egui::Window::new(wp_core::i18n::tr("설교 포인트 슬라이드")).open(&mut open).default_size([720.0, 640.0]).show(ctx, |ui| {
+    crate::widgets::float_window(ctx, "sermon-points", wp_core::i18n::tr("설교 포인트 슬라이드"), [720.0, 640.0]).open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(wp_core::i18n::tr("설교 원고(또는 자막)에서 대지를 뽑아, 예배 중에 띄울 '제목' 순서 하나로 만듭니다.")).small().color(Color32::GRAY));
         ui.horizontal(|ui| {
             if ui.button(wp_core::i18n::tr("원고 파일 열기…")).clicked() {
@@ -186,8 +186,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             if ui.button(wp_core::i18n::tr("채팅 AI 프롬프트 복사")).on_hover_text(wp_core::i18n::tr("챗GPT·클로드·제미나이에 붙여 넣고, 답을 아래 칸에 붙여 넣으세요")).clicked() {
                 match sp::chat_prompt(&p.text, &meta(p), p.extra.trim()) {
                     Ok(t) => {
-                        ui.ctx().copy_text(t);
-                        app.core.lock().notify(wp_core::i18n::tr("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요."), "ok");
+                        crate::widgets::copy_notice(ui.ctx(), t, wp_core::i18n::tr("프롬프트를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 'AI 답' 칸에 붙여 넣으세요."));
                     }
                     Err(e) => app.core.lock().notify(e, "warn"),
                 }
@@ -294,7 +293,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
         p.loaded = true;
     }
     let mut open = true;
-    egui::Window::new(wp_core::i18n::tr("예배 전 화면 만들기")).open(&mut open).default_size([640.0, 560.0]).show(ctx, |ui| {
+    crate::widgets::float_window(ctx, "preservice", wp_core::i18n::tr("예배 전 화면 만들기"), [640.0, 560.0]).open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(wp_core::i18n::tr("지난주 말씀카드 + 이번 주 QT 첫날 본문 → 자동으로 넘기며 반복하는 슬라이드쇼 순서 (큐시트 맨 앞에)")).small().color(Color32::GRAY));
         ui.label(RichText::new(wp_core::i18n::tr("말씀카드 그림")).strong());
         ui.horizontal(|ui| {
@@ -390,7 +389,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
         h.url = app.core.lock().settings.get()["home"]["feedUrl"].as_str().unwrap_or("").to_string();
     }
     let mut open = true;
-    egui::Window::new(wp_core::i18n::tr("홈페이지 주보")).open(&mut open).default_size([620.0, 520.0]).show(ctx, |ui| {
+    crate::widgets::float_window(ctx, "web-bulletin", wp_core::i18n::tr("홈페이지 주보"), [620.0, 520.0]).open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(wp_core::i18n::tr("교회 홈페이지의 주보 JSON → 큐시트 · 광고 슬라이드")).small().color(Color32::GRAY));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut h.url).hint_text(wp_core::i18n::tr("https://교회주소/bulletin/feed.json")).desired_width(420.0));

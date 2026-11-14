@@ -40,7 +40,7 @@ impl App {
     /// 작업공간 · 패널 배치 창 (고르기는 머리 줄 topbar_ui::workspace_picker, 원본 .ws-pick)
     pub(crate) fn workspace_window(&mut self, ctx: &egui::Context) {
         let mut open = self.workspace.open;
-        egui::Window::new(tr("작업공간 · 패널 배치")).open(&mut open).show(ctx,|ui|{
+        egui::Window::new(tr("작업공간 · 패널 배치")).id(egui::Id::unique("wp-float-workspace")).default_pos(crate::widgets::float_pos(ctx, egui::Id::unique("wp-float-workspace"), 420.0)).open(&mut open).show(ctx,|ui|{
    ui.label(tr("제목을 끌어 다른 패널의 좌·우·위·아래에 놓습니다. 경계선을 끌면 크기가 바뀝니다."));
    ui.add_enabled_ui(!self.workspace.state.locked,|ui|{ui.horizontal_wrapped(|ui|{for p in Pane::ALL{let mut visible=self.workspace.state.visible(p);if ui.checkbox(&mut visible,tr(p.title())).changed(){self.workspace.state.toggle(p)}}});
    if ui.button(tr("기본 배치로 복원")).clicked(){self.workspace.state.select("b-default")}});

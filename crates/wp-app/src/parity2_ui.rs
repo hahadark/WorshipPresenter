@@ -86,7 +86,7 @@ fn paste_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     }
     let mut open = true;
     let mut close = false;
-    egui::Window::new(wp_core::i18n::tr("종류를 골라 붙여 넣기 (Ctrl+Shift+V)")).open(&mut open).default_size([560.0, 420.0]).show(ctx, |ui| {
+    crate::widgets::float_window(ctx, "paste-as", wp_core::i18n::tr("종류를 골라 붙여 넣기 (Ctrl+Shift+V)"), [560.0, 420.0]).open(&mut open).show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.label(wp_core::i18n::tr("넣을 종류"));
             for (v, l) in [("auto", "알아서"), ("bible", "성경 (줄마다 장절)"), ("song", "찬양 가사"), ("text", "공지"), ("title", "제목")] {
