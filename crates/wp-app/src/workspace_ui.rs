@@ -257,7 +257,7 @@ impl App {
                     )
                 };
                 let at = if !*horizontal && folded(a) {
-                    28.0
+                    34.0
                 } else if !*horizontal && folded(b) {
                     (len - 34.0).max(0.0)
                 } else {
@@ -294,15 +294,14 @@ impl App {
                         Node::resize_ratio(ratio, a, b, offset / (len - 6.0).max(1.0));
                     }
                 }
-                ui.painter().rect_filled(
-                    divider,
-                    0.0,
-                    if response.hovered() {
-                        ui.visuals().selection.bg_fill
-                    } else {
-                        ui.visuals().widgets.noninteractive.bg_fill
-                    },
-                );
+                // 카드 사이 틈: 평소에는 빈 칸(bg), 끌 수 있을 때 올리면 accent 45% (--dv-active-sash-color)
+                if response.hovered() || response.dragged() {
+                    ui.painter().rect_filled(
+                        divider.shrink(1.0),
+                        2.0,
+                        crate::theme::alpha(crate::theme::pal().accent, 0.45),
+                    );
+                }
                 self.workspace_node(ui, ra, a, s, acts, id * 2, !*horizontal);
                 self.workspace_node(ui, rb, b, s, acts, id * 2 + 1, !*horizontal);
             }
@@ -319,84 +318,114 @@ impl App {
                     }
                 }
                 let p = *active;
+                let locked = self.workspace.state.locked;
+                // 독 패널 카드 (Electron .wc-dock .dv-groupview: panel 바탕, 둥글기 12, line-soft 테두리)
+                {
+                    let pl = crate::theme::pal();
+                    ui.painter().rect(
+                        rect,
+                        egui::CornerRadius::same(crate::theme::CARD_RADIUS),
+                        pl.panel,
+                        egui::Stroke::new(1.0, pl.line_soft),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 ui.scope_builder(
                     UiBuilder::new().max_rect(rect).id_salt(("pane", id)),
                     |ui| {
                         ui.set_clip_rect(rect);
                         ui.set_min_size(rect.size());
-                        ui.horizontal_wrapped(|ui| {
-                            for tab in panes.iter().copied() {
-                                let r = ui.add(
-                                    egui::Button::new(tr(tab.title()))
-                                        .selected(*active == tab)
-                                        .sense(if self.workspace.state.locked {
-                                            Sense::click()
-                                        } else {
-                                            Sense::click_and_drag()
-                                        }),
-                                );
-                                #[cfg(test)]
-                                self.workspace.observed.insert(format!("tab-{tab:?}"), r.rect);
-                                #[cfg(test)]
-                                self.workspace.observed.insert(format!("pane-{tab:?}"), rect);
-                                if r.clicked() {
-                                    *active = tab;
-                                    *collapsed = false
-                                }
-                                if !self.workspace.state.locked {
-                                    r.dnd_set_drag_payload(tab);
-                                }
-                                r.context_menu(|ui| {
-                                    ui.add_enabled_ui(!self.workspace.state.locked, |ui| {
-                                        if ui.button(tr("독립창으로 띄우기")).clicked() {
-                                            self.workspace.float = Some(tab);
-                                            ui.close()
-                                        }
-                                        if ui.button(tr("패널 숨기기")).clicked() {
-                                            ui.data_mut(|d| {
-                                                d.insert_temp(
-                                                    egui::Id::unique("workspace-hide"),
-                                                    Some(tab),
-                                                )
-                                            });
-                                            ui.close()
-                                        }
-                                    });
-                                });
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        // 패널 탭 머리: 제목 + ✕(활성 탭) · 흐린 비활성 탭 · accent 밑줄 · 오른쪽 ▾(메뉴) · ⧉(독립 창)
+                        let titles: Vec<String> = panes.iter().map(|t| tr(t.title())).collect();
+                        let refs: Vec<&str> = titles.iter().map(|t| t.as_str()).collect();
+                        let mut idx = panes.iter().position(|t| *t == *active).unwrap_or(0);
+                        let head = crate::widgets::panel_tabs_dock(
+                            ui,
+                            &format!("dock-{id}"),
+                            &refs,
+                            &mut idx,
+                            !locked,
+                            !locked,
+                            !locked,
+                        );
+                        for (k, tab) in panes.iter().copied().enumerate() {
+                            let Some(r) = head.tabs.get(k) else { continue };
+                            #[cfg(test)]
+                            self.workspace.observed.insert(format!("tab-{tab:?}"), r.rect);
+                            #[cfg(test)]
+                            self.workspace.observed.insert(format!("pane-{tab:?}"), rect);
+                            if !locked {
+                                r.dnd_set_drag_payload(tab);
                             }
-                            ui.add_enabled_ui(!self.workspace.state.locked, |ui| {
-                                ui.menu_button(tr("그룹"), |ui| {
-                                    if ui.button(tr("그룹 전체 독립창")).clicked() {
-                                        self.workspace.float_group = Some(p);
-                                        ui.close();
+                            r.context_menu(|ui| {
+                                ui.add_enabled_ui(!locked, |ui| {
+                                    if ui.button(tr("독립창으로 띄우기")).clicked() {
+                                        self.workspace.float = Some(tab);
+                                        ui.close()
                                     }
-                                    ui.menu_button(tr("그룹 전체 병합"), |ui| {
-                                        // 렌더 전에 수집한 대상에서 자기 그룹을 제외한다.
-                                        for target in self.workspace.targets.clone() {
-                                            if !panes.contains(&target) {
-                                                if ui.button(tr(target.title())).clicked() {
-                                                    self.workspace.merge_group = Some((p, target));
-                                                    ui.close();
-                                                }
-                                            }
-                                        }
-                                    });
+                                    if ui.button(tr("패널 숨기기")).clicked() {
+                                        ui.data_mut(|d| {
+                                            d.insert_temp(
+                                                egui::Id::unique("workspace-hide"),
+                                                Some(tab),
+                                            )
+                                        });
+                                        ui.close()
+                                    }
                                 });
                             });
-                            if ui
-                                .add_enabled(
-                                    !self.workspace.state.locked && (foldable || *collapsed),
-                                    egui::Button::new(tr(if *collapsed {
-                                        "펼치기"
-                                    } else {
-                                        "접기"
-                                    })),
-                                )
-                                .clicked()
-                            {
-                                *collapsed = !*collapsed
-                            }
-                        });
+                        }
+                        if let Some(k) = head.clicked {
+                            *active = panes[k];
+                            *collapsed = false
+                        }
+                        if let Some(k) = head.closed {
+                            // 탭 ✕ = 그 패널 숨기기 (Electron: 패널 닫기 → 작업공간 패널 목록에서 다시 표시)
+                            let tab = panes[k];
+                            ui.data_mut(|d| {
+                                d.insert_temp(egui::Id::unique("workspace-hide"), Some(tab))
+                            });
+                        }
+                        if head.popout {
+                            self.workspace.float_group = Some(p);
+                        }
+                        // ▾ 펼침: 접기 · 그룹 전체 독립창 · 그룹 전체 병합
+                        if let Some(fr) = &head.fold_resp {
+                            egui::Popup::menu(fr).show(|ui| {
+                                ui.set_min_width(180.0);
+                                if ui
+                                    .add_enabled(
+                                        foldable || *collapsed,
+                                        egui::Button::new(tr(if *collapsed {
+                                            "펼치기"
+                                        } else {
+                                            "접기"
+                                        })),
+                                    )
+                                    .clicked()
+                                {
+                                    *collapsed = !*collapsed;
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button(tr("그룹 전체 독립창")).clicked() {
+                                    self.workspace.float_group = Some(p);
+                                    ui.close();
+                                }
+                                ui.menu_button(tr("그룹 전체 병합"), |ui| {
+                                    // 렌더 전에 수집한 대상에서 자기 그룹을 제외한다.
+                                    for target in self.workspace.targets.clone() {
+                                        if !panes.contains(&target) {
+                                            if ui.button(tr(target.title())).clicked() {
+                                                self.workspace.merge_group = Some((p, target));
+                                                ui.close();
+                                            }
+                                        }
+                                    }
+                                });
+                            });
+                        }
                         if !self.workspace.state.locked {
                             if let Some(payload) = egui::DragAndDrop::payload::<Pane>(ui.ctx()) {
                                 if *payload != p {
@@ -426,7 +455,7 @@ impl App {
                                         ui.painter().rect_filled(
                                             highlight,
                                             0.0,
-                                            egui::Color32::from_rgba_unmultiplied(80, 140, 230, 70),
+                                            crate::theme::alpha(crate::theme::pal().accent, 0.22),
                                         );
                                         if ui.input(|i| i.pointer.any_released()) {
                                             if let Some(payload) =
@@ -440,7 +469,7 @@ impl App {
                             }
                         }
                         if !*collapsed {
-                            ui.separator();
+                            ui.spacing_mut().item_spacing.y = 4.0;
                             egui::ScrollArea::vertical()
                                 .id_salt(("body", id))
                                 .auto_shrink([false, false])

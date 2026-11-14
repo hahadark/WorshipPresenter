@@ -449,6 +449,10 @@ pub struct TabHead {
     pub popout: bool,
     /// 머리 줄 전체 사각형
     pub rect: Rect,
+    /// 탭마다 Response (도킹: 끌기·오른쪽 클릭 메뉴용, 순서는 tabs 와 같음)
+    pub tabs: Vec<Response>,
+    /// 오른쪽 ▾ 단추 Response (펼침 메뉴를 붙일 때: `egui::Popup::menu(r)`)
+    pub fold_resp: Option<Response>,
 }
 
 /// 탭 머리 높이 (--dv-tabs-and-actions-container-height)
@@ -462,10 +466,15 @@ pub fn panel_tabs(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize) -> T
 
 /// closable: 활성 탭에 ✕ · actions: 오른쪽 ▾ ⧉ 단추
 pub fn panel_tabs_ex(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize, closable: bool, actions: bool) -> TabHead {
+    panel_tabs_dock(ui, id, tabs, active, closable, actions, false)
+}
+
+/// 도킹용: draggable 이면 탭을 끌 수 있다(Sense::click_and_drag). ▾ 단추는 fold_resp 로 메뉴를 붙인다
+pub fn panel_tabs_dock(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize, closable: bool, actions: bool, draggable: bool) -> TabHead {
     let p = pal();
     let id = egui::Id::new(("panel-tabs", id));
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), TAB_H), Sense::hover());
-    let mut out = TabHead { clicked: None, closed: None, fold: false, popout: false, rect };
+    let mut out = TabHead { clicked: None, closed: None, fold: false, popout: false, rect, tabs: vec![], fold_resp: None };
     ui.painter().rect_filled(rect, 0.0, p.panel);
     ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
     let mut x = rect.left() + 4.0; // padding: 0 4px
@@ -477,7 +486,7 @@ pub fn panel_tabs_ex(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize, c
         let w = 8.0 + g.size().x + xw + 8.0;
         let r = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(w, TAB_H - 1.0));
         x += w;
-        let resp = ui.interact(r, id.with(i), Sense::click());
+        let resp = ui.interact(r, id.with(i), if draggable { Sense::click_and_drag() } else { Sense::click() });
         let close_r = Rect::from_center_size(Pos2::new(r.right() - 8.0 - 7.0, r.center().y), Vec2::splat(18.0));
         let close = (on && closable).then(|| ui.interact(close_r, id.with(("x", i)), Sense::click()));
         if close.as_ref().is_some_and(|c| c.clicked()) {
@@ -500,6 +509,7 @@ pub fn panel_tabs_ex(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize, c
             let u = Rect::from_min_max(Pos2::new(r.left() + 8.0, rect.bottom() - 2.0), Pos2::new(r.right() - 8.0, rect.bottom()));
             pt.rect_filled(u, CornerRadius { nw: 2, ne: 2, sw: 0, se: 0 }, p.accent);
         }
+        out.tabs.push(resp);
     }
     if actions {
         // .dock-actions button { padding: 0 7px; font-size: 13px; line-height: 20px } → 약 26×22
@@ -519,7 +529,7 @@ pub fn panel_tabs_ex(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize, c
                 let s = 3.0;
                 pt.add(egui::Shape::convex_polygon(vec![Pos2::new(c.x - s, c.y - s * 0.6), Pos2::new(c.x + s, c.y - s * 0.6), Pos2::new(c.x, c.y + s * 0.7)], fg, Stroke::NONE));
                 out.fold |= resp.clicked();
-                resp.on_hover_text("접기 (탭 줄만 남기고 위·아래 패널에 자리를 줌)");
+                out.fold_resp = Some(resp.on_hover_text(wp_core::i18n::tr("패널 메뉴 (접기 · 그룹)")));
             } else {
                 // ⧉ 두 겹 네모
                 let a = Rect::from_min_size(c + Vec2::new(-6.0, -6.0), Vec2::splat(8.0));
@@ -527,7 +537,7 @@ pub fn panel_tabs_ex(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize, c
                 pt.rect_stroke(a, CornerRadius::same(1), Stroke::new(1.2, fg), StrokeKind::Middle);
                 pt.rect_stroke(b, CornerRadius::same(1), Stroke::new(1.2, fg), StrokeKind::Middle);
                 out.popout |= resp.clicked();
-                resp.on_hover_text("떠 있는 창으로 띄우기");
+                resp.on_hover_text(wp_core::i18n::tr("떠 있는 창으로 띄우기"));
             }
         }
     }
