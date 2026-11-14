@@ -51,7 +51,8 @@ impl App {
         if sc(Modifiers::CTRL, Key::T) { self.tb.quick = true; }
         if sc(Modifiers::CTRL, Key::L) { crate::lyrics_ui::open(); }
         if sc(Modifiers::CTRL, Key::P) { self.print_cue(); }
-        if !ctx.egui_wants_keyboard_input() {
+        // 템플릿 편집 창 위에서는 Ctrl+Z 가 그 창의 실행 취소 (큐시트 되돌리기가 아님)
+        if !ctx.egui_wants_keyboard_input() && !self.tc.templates.owns_undo(ctx) {
             if sc(Modifiers::CTRL, Key::Z) { self.core.lock().undo_items(false); self.edit = None; }
             if sc(Modifiers::CTRL, Key::Y) || sc(Modifiers::CTRL | Modifiers::SHIFT, Key::Z) { self.core.lock().undo_items(true); self.edit = None; }
         }

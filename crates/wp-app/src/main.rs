@@ -31,6 +31,8 @@ mod commentary_ui; // [트랙 C]
 mod menubar; // [트랙 C]
 mod settings_ui; // [트랙 C]
 mod template_ui; // [트랙 C]
+mod tpl_controls; // 템플릿 편집 속성 칸 부품
+mod tpl_inspect; // 템플릿 편집 속성 칸
 mod track_c; // [트랙 C]
 mod tools_ui;
 mod trackd_ui; // [트랙 D] // [트랙 D]
