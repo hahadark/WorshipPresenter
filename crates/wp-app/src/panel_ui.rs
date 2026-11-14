@@ -30,33 +30,56 @@ fn remember(ui: &mut egui::Ui, key: &str, value: String) {
 impl App {
     pub(crate) fn quick_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         let mut slot = selection(ui, "quick-target", "main");
-        ui.horizontal_wrapped(|ui| {
-            for (id, label) in TARGETS {
-                ui.selectable_value(&mut slot, id.into(), tr(label));
-            }
-        });
-        remember(ui, "quick-target", slot.clone());
         let (list, mut tpl, settings) = {
             let c = self.core.lock();
-            (
-                c.settings.templates(),
-                c.template_for_deck(&slot, None),
-                c.settings.get().clone(),
-            )
+            (c.settings.templates(), c.template_for_deck(&slot, None), c.settings.get().clone())
         };
+        // 막대를 끄는 중에는 저장하지 않고 이 사본을 보인다 (tplcontrols final=false)
+        let draft_id = egui::Id::new(("quick-draft", slot.clone()));
+        if let Some(d) = ui.data(|d| d.get_temp::<Value>(draft_id)) {
+            if d["id"] == tpl["id"] {
+                tpl = d;
+            }
+        }
         let old_id = tpl["id"].as_str().unwrap_or("").to_string();
         let mut selected = old_id.clone();
-        egui::ComboBox::from_id_salt("quick-template")
-            .selected_text(tpl["name"].as_str().unwrap_or(""))
-            .show_ui(ui, |ui| {
-                for t in &list {
-                    ui.selectable_value(
-                        &mut selected,
-                        t["id"].as_str().unwrap_or("").into(),
-                        t["name"].as_str().unwrap_or(""),
-                    );
+        let mut split = if settings["split"]["mode"] == "auto" { "auto".to_string() } else { settings["split"]["count"].as_u64().unwrap_or(1).to_string() };
+        let old_split = split.clone();
+        let mut nav = settings["navMode"].as_str().unwrap_or("range").to_string();
+        let old_nav = nav.clone();
+        let collapsed_id = egui::Id::new("quick-collapsed");
+        let mut collapsed = ui.data(|d| d.get_temp::<bool>(collapsed_id)).unwrap_or(false);
+        // .quick-head: '빠른 설정' · 대상 분할 단추 · 템플릿 · 테마 · 분할 · 이동 · (빈 칸) · 자세히 ▸ · 접기 ▾
+        egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 7)).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+                crate::quick_ui::head_label(ui);
+                let labels: Vec<(String, String)> = TARGETS.iter().map(|(id, l)| (id.to_string(), tr(l))).collect();
+                let items: Vec<(String, &str)> = labels.iter().map(|(id, l)| (id.clone(), l.as_str())).collect();
+                crate::widgets::segmented_with(ui, &mut slot, &items, crate::widgets::SegStyle { font: 13.0, pad: egui::vec2(9.0, 4.0), fill: false, radius: 6 });
+                let tpl_opts: Vec<(String, String)> = list.iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
+                crate::quick_ui::select(ui, "quick-template", &mut selected, &tpl_opts, 170.0, "이 출력에 쓸 템플릿");
+                if ui.add(crate::widgets::Btn::new(tr("테마")).tooltip(tr("구세군 테마 고르기"))).clicked() {
+                    self.tc.themes.open = true;
+                }
+                let split_opts: Vec<(String, String)> = [("auto", "분할: 자동"), ("1", "분할: 한 절씩"), ("2", "분할: 2절씩"), ("3", "분할: 3절씩"), ("4", "분할: 4절씩")].iter().map(|(v, l)| (v.to_string(), tr(l))).collect();
+                crate::quick_ui::select(ui, "quick-split", &mut split, &split_opts, 90.0, "슬라이드 나누기");
+                let nav_opts = vec![("range".to_string(), tr("이동: 범위 안")), ("continuous".to_string(), tr("이동: 다음 절로 계속"))];
+                crate::quick_ui::select(ui, "quick-nav", &mut nav, &nav_opts, 120.0, "F5/F6 으로 범위 끝에 닿았을 때");
+                if !self.tb.note.is_empty() {
+                    ui.label(crate::theme::rich(&self.tb.note, 12.0, crate::theme::Weight::Regular, crate::theme::pal().muted));
+                }
+                if ui.add(crate::widgets::Btn::new(format!("{} ▸", tr("자세히"))).tooltip(tr("굵기·줄 간격·여백·장절 색 등 모든 디자인 항목"))).clicked() {
+                    self.tc.templates.open = true;
+                }
+                if ui.add(crate::widgets::Btn::new(format!("{} {}", tr(if collapsed { "펴기" } else { "접기" }), if collapsed { "▸" } else { "▾" })).tooltip(tr("빠른 설정 접기/펴기"))).clicked() {
+                    collapsed = !collapsed;
                 }
             });
+        });
+        crate::quick_ui::rule(ui);
+        ui.data_mut(|d| d.insert_temp(collapsed_id, collapsed));
+        remember(ui, "quick-target", slot.clone());
         if selected != old_id {
             self.core.lock().set_template(&slot, &selected);
             if let Some(t) = list.iter().find(|t| t["id"] == selected) {
@@ -64,60 +87,34 @@ impl App {
             }
             self.panel_rebuild();
         }
-        let mut split = if settings["split"]["mode"] == "auto" {
-            0
-        } else {
-            settings["split"]["count"].as_u64().unwrap_or(1) as usize
-        };
-        let old_split = split;
-        egui::ComboBox::from_id_salt("quick-split")
-            .selected_text(tr(match split {
-                1 => "분할: 한 절씩",
-                2 => "분할: 2절씩",
-                3 => "분할: 3절씩",
-                4 => "분할: 4절씩",
-                _ => "분할: 자동",
-            }))
-            .show_ui(ui, |ui| {
-                for (n, label) in [
-                    (0, "분할: 자동"),
-                    (1, "분할: 한 절씩"),
-                    (2, "분할: 2절씩"),
-                    (3, "분할: 3절씩"),
-                    (4, "분할: 4절씩"),
-                ] {
-                    ui.selectable_value(&mut split, n, tr(label));
-                }
-            });
-        let mut nav = settings["navMode"].as_str().unwrap_or("range").to_string();
-        let old_nav = nav.clone();
-        egui::ComboBox::from_id_salt("quick-nav")
-            .selected_text(tr(if nav == "continuous" {
-                "이동: 다음 절로 계속"
-            } else {
-                "이동: 범위 안"
-            }))
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut nav, "range".into(), tr("이동: 범위 안"));
-                ui.selectable_value(&mut nav, "continuous".into(), tr("이동: 다음 절로 계속"));
-            });
         if split != old_split || nav != old_nav {
             self.core.lock().settings.update(|v| {
-                v["split"]["mode"] = json!(if split == 0 { "auto" } else { "count" });
-                if split > 0 {
-                    v["split"]["count"] = json!(split);
+                v["split"]["mode"] = json!(if split == "auto" { "auto" } else { "count" });
+                if let Ok(n) = split.parse::<u64>() {
+                    v["split"]["count"] = json!(n);
                 }
                 v["navMode"] = json!(nav);
             });
             self.panel_rebuild();
         }
-        let mut changed = false;
-        egui::CollapsingHeader::new(tr("기본 디자인"))
-            .default_open(true)
-            .show(ui, |ui| {
-                changed |= basic_fields(ui, &mut tpl);
+        let mut out = crate::quick_ui::Out::default();
+        if !collapsed {
+            // .quick-body: 안쪽 8px 12px 10px, 넘치면 굴림
+            egui::ScrollArea::vertical().id_salt("quick-body").auto_shrink([false, false]).show(ui, |ui| {
+                egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 10 }).show(ui, |ui| {
+                    out = crate::quick_ui::basic_controls(ui, &mut tpl);
+                    self.trackb_toolbar(ui);
+                });
             });
-        if changed {
+        }
+        if out.more {
+            self.tc.templates.open = true;
+        }
+        if out.changed && !out.fin {
+            ui.data_mut(|d| d.insert_temp(draft_id, tpl.clone()));
+        }
+        if out.changed && out.fin {
+            ui.data_mut(|d| d.remove::<Value>(draft_id));
             let result = {
                 let mut c = self.core.lock();
                 let result = templates::save_template(&mut c.settings, &tpl);
@@ -131,17 +128,8 @@ impl App {
             };
             self.panel_rebuild();
         }
-        if ui.button(tr("자세히")).clicked() {
-            self.tc.templates.open = true;
-        }
-        if ui.button(tr("테마")).clicked() {
-            self.tc.themes.open = true;
-        }
-        if !self.tb.note.is_empty() {
-            ui.label(&self.tb.note);
-        }
-        self.trackb_toolbar(ui);
     }
+
 
     /// 재송출하지 않고 덱만 재계산한다. 열린 큐가 LIVE의 큐와 다르면 순서 번호를 재사용하지 않는다.
     fn panel_rebuild(&mut self) {

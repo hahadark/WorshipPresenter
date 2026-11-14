@@ -3,6 +3,8 @@
 
 mod app;
 mod panel_ui;
+mod quick_ui; // 디자인 2단계: 빠른 설정 안쪽 (tplcontrols basic)
+mod center_ui; // 디자인 2단계: 가운데 본문 패널 (머리·목록·격자·주석)
 mod workspace_ui;
 mod hymns_ui; // [트랙 A]
 mod outwin;

@@ -380,12 +380,11 @@ impl App {
     pub(crate) fn main_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         // 검색칸은 원본처럼 머리 줄(topbar_ui::search_bar)에 있다.
         let selected = self.sel.filter(|i| *i < s.items.len());
-        if selected.is_some() {
-            ui.horizontal(|ui| {
-                ui.label(wp_core::i18n::tr("본문"));
-                ui.toggle_value(&mut self.editor_on, wp_core::i18n::tr("편집칸")).on_hover_text("F2 · Ctrl+Shift+E");
-            });
-        }
+        // .center-head: '본문 | 주석' · '편집칸' · 제목 + 부가 글 · '목록 | 격자 | 전체 격자 | 전체 목록' (center_ui.rs)
+        let mut editor_on = self.editor_on;
+        ui.spacing_mut().item_spacing.y = 0.0;
+        self.center_head(ui, s, &mut editor_on);
+        self.editor_on = editor_on;
         // 원본처럼 순서를 골랐을 때만 편집칸을 보이고, 높이는 본문 패널의 절반 안쪽(control.css .cue-editor max-height 46%)으로 제한해 검색 결과가 가려지지 않게 한다.
         if let (true, Some(i)) = (self.editor_on, selected) {
             let h = (ui.available_height() * 0.46).max(160.0);
@@ -393,105 +392,262 @@ impl App {
                 ui.set_max_height(h);
                 self.editor(ui, i, &s.items[i], acts);
             });
-            ui.separator();
         }
-        self.search_results(ui, s, acts);
+        self.center_body(ui, s, acts);
     }
 
+    /// 순서 편집칸 (Electron cue.js renderEditor): 머리 줄 카드 + 이름표-입력칸 2단. 입력하면 바로 저장
     fn editor(&mut self, ui: &mut egui::Ui, i: usize, it: &Value, acts: &mut Vec<Act>) {
+        use crate::center_ui::{ce_area, ce_head, ce_note, ce_row, ce_select, ce_text};
+        let ty = it["type"].as_str().unwrap_or("").to_string();
+        let cams = if ty == "camera" { crate::camscan::known_cameras(&self.core.lock()) } else { vec![] }; // 연결된 카메라 포함 (화면 셋 공용 목록)
+        let scan_bar = |ui: &mut egui::Ui, core: &Shared| crate::camscan::scan_bar(ui, core); // 카메라 순서: 카메라 찾기 줄
         let key = it["id"].as_str().unwrap_or("").to_string();
         if self.edit.as_ref().map(|e| &e.0) != Some(&key) {
             self.edit = Some((key.clone(), it.clone()));
         }
-        let cams = if it["type"] == "camera" { crate::camscan::known_cameras(&self.core.lock()) } else { vec![] }; // 연결된 카메라 포함 (화면 셋 공용 목록)
-        if it["type"] == "camera" {
-            crate::camscan::scan_bar(ui, &self.core);
-        }
-        let Some((_, e)) = &mut self.edit else { return };
-        let mut changed = false;
-        let mut field = |ui: &mut egui::Ui, e: &mut Value, k: &str, multi: bool, rows: usize, hint: &str| {
-            let mut sv = e[k].as_str().unwrap_or("").to_string();
-            let r = if multi {
-                ui.add(egui::TextEdit::multiline(&mut sv).desired_rows(rows).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr(hint)))
-            } else {
-                ui.add(egui::TextEdit::singleline(&mut sv).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr(hint)))
-            };
-            if r.changed() {
-                e[k] = json!(sv);
-                true
-            } else {
-                false
+        let p = crate::theme::pal();
+        let tr = wp_core::i18n::tr;
+        // 고를 거리: 번역본 · 템플릿
+        let mut versions = vec![(String::new(), tr("현재 번역본"))];
+        versions.extend(self.versions.iter().map(|v| (v.id.clone(), v.name.clone())));
+        let tpls: Vec<(String, String)> = self.core.lock().settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
+        // 장절 확인 글 ('✓ 시편 23:1-6 (6절)') — 장절·번역본이 바뀔 때만 다시 찾는다
+        let ref_msg = if ty == "bible" {
+            let (r, v) = self.edit.as_ref().map(|(_, e)| (e["ref"].as_str().unwrap_or("").to_string(), e["versionId"].as_str().unwrap_or("").to_string())).unwrap_or_default();
+            let id = egui::Id::new(("ce-ref", &r, &v));
+            match ui.data(|d| d.get_temp::<(bool, String)>(id)) {
+                Some(m) => Some(m),
+                None if r.trim().is_empty() => None,
+                None => {
+                    let mut c = self.core.lock();
+                    let ver = if v.is_empty() || !c.store.has_version(&v) { c.version_id() } else { v.clone() };
+                    let res = c.store.resolve_reference(&ver, &r);
+                    drop(c);
+                    let m = if res["ok"] == json!(true) {
+                        let n = res["passage"]["verses"].as_array().map(|x| x.len()).unwrap_or(0);
+                        (true, wp_core::i18n::tr_args("✓ {1} ({2}절)", &[&res["passage"]["title"].as_str().unwrap_or(""), &n]))
+                    } else {
+                        (false, res["error"].as_str().unwrap_or("").to_string())
+                    };
+                    ui.data_mut(|d| d.insert_temp(id, m.clone()));
+                    Some(m)
+                }
             }
+        } else {
+            None
         };
-        egui::ScrollArea::vertical().id_salt("edit").auto_shrink([false, false]).show(ui, |ui| {
-            ui.label(RichText::new(wp_core::i18n::tr("제목")).small());
-            changed |= field(ui, e, "title", false, 1, "순서 이름");
-            match it["type"].as_str().unwrap_or("") {
-                "bible" => {
-                    ui.label(RichText::new(wp_core::i18n::tr("장절")).small());
-                    changed |= field(ui, e, "ref", false, 1, "예: 요3:16-18, 시 23");
+        let mut head = crate::center_ui::CeHead::default();
+        let mut changed = false;
+        // .cue-editor: panel2 바탕 · 안쪽 8px 14px 10px · 아래 2px pv (너비는 보이는 영역까지)
+        let full = ui.available_width().min(ui.clip_rect().right() - ui.cursor().left());
+        let frame = egui::Frame::new().fill(p.panel2).inner_margin(egui::Margin { left: 14, right: 14, top: 8, bottom: 10 }).show(ui, |ui| {
+            ui.set_width(full - 28.0);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            head = ce_head(ui, i, &ty, "");
+            if ty == "camera" {
+                scan_bar(ui, &self.core);
+            }
+            let Some((_, e)) = &mut self.edit else { return };
+            let core = &self.core;
+            egui::ScrollArea::vertical().id_salt("edit").auto_shrink([false, true]).show(ui, |ui| {
+                let w = ui.available_width().min(ui.clip_rect().right() - ui.cursor().left()) - 62.0;
+                changed |= ce_row(ui, &tr("제목"), |ui| ce_text(ui, e, "title", "순서 이름", w));
+                match ty.as_str() {
+                    "bible" => {
+                        changed |= ce_row(ui, &tr("장절"), |ui| {
+                            let mut ch = false;
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 6.0;
+                                ch |= ce_text(ui, e, "ref", "예: 롬 8:18-25 · 시 23", (w - 146.0).max(80.0));
+                                let mut v = e["versionId"].as_str().unwrap_or("").to_string();
+                                if ce_select(ui, "ce-version", &mut v, &versions, 120.0) {
+                                    e["versionId"] = json!(v);
+                                    ch = true;
+                                }
+                            });
+                            if let Some((ok, m)) = &ref_msg {
+                                ce_note(ui, m, if *ok { p.ok_text } else { p.danger_text });
+                            }
+                            ch
+                        });
+                    }
+                    "song" => {
+                        changed |= ce_row(ui, &tr("가사"), |ui| {
+                            let mut ch = ce_area(ui, e, "lyrics", "[1절]\n첫째 줄\n둘째 줄\n\n[후렴]\n…", 7);
+                            ui.horizontal_wrapped(|ui| {
+                                let mut stt = e["showTitle"].as_bool().unwrap_or(false);
+                                if ui.checkbox(&mut stt, tr("화면에 제목 표시")).changed() {
+                                    e["showTitle"] = json!(stt);
+                                    ch = true;
+                                }
+                                ce_note(ui, &tr("· 빈 줄 = 다음 슬라이드 · [1절] 줄은 슬라이드 이름"), p.muted);
+                            });
+                            ch
+                        });
+                        changed |= ce_row(ui, &tr("부를 순서"), |ui| {
+                            let mut ch = ce_text(ui, e, "order", "비우면 가사 순서대로 · 예: 1절 후렴 2절 후렴 후렴 (또는 1 C 2 C C)", w);
+                            ch |= crate::media_ui::song_arrangements(ui, &mut core.lock(), e);
+                            ch
+                        });
+                    }
+                    "text" => {
+                        changed |= ce_row(ui, &tr("내용"), |ui| {
+                            let ch = ce_area(ui, e, "body", "광고 내용…\n---\n다음 장", 6);
+                            ce_note(ui, &tr("'---' 줄 = 다음 슬라이드 · 교독문: 줄 앞에 인도자: · 회중: · 다같이: 를 쓰면 회중·다같이 줄은 굵게"), p.muted);
+                            ch
+                        });
+                    }
+                    "title" => {
+                        changed |= ce_row(ui, &tr("부제"), |ui| ce_text(ui, e, "subtitle", "예: 홍길동 집사 · 설교 제목 · 본문", w));
+                        let rows = if e["more"].as_str().is_some_and(|m| !m.is_empty()) { 3 } else { 1 };
+                        changed |= ce_row(ui, &tr("추가 슬라이드"), |ui| ce_area(ui, e, "more", "다음 슬라이드 (첫 줄 = 제목, 둘째 줄 = 부제) · '---' 줄로 또 다음 · 비우면 한 장", rows));
+                    }
+                    "blank" => {
+                        changed |= ce_row(ui, &tr("화면"), |ui| {
+                            let mut m = e["mode"].as_str().unwrap_or("black").to_string();
+                            let opts = [("black".to_string(), tr("검은 화면 (로고도 숨김)")), ("background".to_string(), tr("배경·로고만 보이기"))];
+                            if ce_select(ui, "ce-blank", &mut m, &opts, 220.0) {
+                                e["mode"] = json!(m);
+                                return true;
+                            }
+                            false
+                        });
+                    }
+                    "image" => {
+                        changed |= ce_row(ui, &tr("이미지"), |ui| {
+                            let mut ch = false;
+                            ui.horizontal(|ui| {
+                                let has = e["image"].as_str().is_some_and(|x| !x.is_empty());
+                                if ui.add(crate::widgets::Btn::new(tr(if has { "바꾸기" } else { "고르기" })).icon("image")).clicked() {
+                                    if let Some(f) = rfd::FileDialog::new().add_filter("그림", &["png", "jpg", "jpeg", "webp", "gif", "bmp"]).pick_file() {
+                                        let enc = percent_encoding::utf8_percent_encode(&f.to_string_lossy(), percent_encoding::NON_ALPHANUMERIC).to_string();
+                                        e["image"] = json!(format!("/lib/file?p={enc}"));
+                                        if e["title"].as_str().is_none_or(|t| t.is_empty() || t == "그림") {
+                                            e["title"] = json!(f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default());
+                                        }
+                                        ch = true;
+                                    }
+                                }
+                                ce_note(ui, &tr("등록한 그림 폴더 안의 그림만 예배당 화면에 보입니다"), p.muted);
+                            });
+                            ch
+                        });
+                    }
+                    "hymn" => {
+                        changed |= crate::hymns_ui::editor(ui, e, core); // [트랙 A]
+                    }
+                    _ => {
+                        changed |= crate::parity_ui::editor(ui, e, &cams); // [트랙 A] 카메라 · 슬라이드쇼 · 영상
+                    }
                 }
-                "song" => {
-                    ui.label(RichText::new(wp_core::i18n::tr("가사 (빈 줄로 슬라이드 나눔, [1절] [후렴] 은 이름표)")).small());
-                    changed |= field(ui, e, "lyrics", true, 12, "[1절]\n가사 첫 줄\n가사 둘째 줄\n\n[후렴]\n…");
-                    ui.label(RichText::new(wp_core::i18n::tr("부를 순서 (예: 1 C 2 C)")).small());
-                    changed |= field(ui, e, "order", false, 1, "비우면 가사 순서대로");
-                    changed |= crate::media_ui::song_arrangements(ui, &mut self.core.lock(), e);
-                    let mut st = e["showTitle"].as_bool().unwrap_or(false);
-                    if ui.checkbox(&mut st, wp_core::i18n::tr("곡 제목 보이기")).changed() { e["showTitle"] = json!(st); changed = true; }
-                }
-                "text" => {
-                    ui.label(RichText::new(wp_core::i18n::tr("본문 ('---' 줄로 장 나눔, '인도자:' '회중:' 교독 표시)")).small());
-                    changed |= field(ui, e, "body", true, 12, "");
-                }
-                "title" => {
-                    ui.label(RichText::new(wp_core::i18n::tr("부제")).small());
-                    changed |= field(ui, e, "subtitle", false, 1, "");
-                    ui.label(RichText::new(wp_core::i18n::tr("더 넣을 장 ('---' 로 나눔)")).small());
-                    changed |= field(ui, e, "more", true, 4, "");
-                }
-                "blank" => {
-                    let mut m = e["mode"].as_str().unwrap_or("black").to_string();
-                    ui.horizontal(|ui| {
-                        if ui.radio_value(&mut m, "black".to_string(), wp_core::i18n::tr("검은 화면")).changed() | ui.radio_value(&mut m, "background".to_string(), wp_core::i18n::tr("배경만")).changed() {
-                            e["mode"] = json!(m);
-                            changed = true;
-                        }
+                // 배경: 성경·찬양·공지·제목만 (이 순서에만 다른 이미지·영상)
+                if matches!(ty.as_str(), "song" | "text" | "title" | "bible") {
+                    changed |= ce_row(ui, &tr("배경"), |ui| {
+                        let mut ch = false;
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let bg = e["bg"].as_str().unwrap_or("").to_string();
+                            let name = percent_encoding::percent_decode_str(bg.rsplit('=').next().unwrap_or("")).decode_utf8_lossy().rsplit(['\\', '/']).next().unwrap_or("").to_string();
+                            ui.label(crate::theme::rich(if bg.is_empty() { tr("템플릿 배경") } else { name }, 14.0, crate::theme::Weight::Regular, p.muted));
+                            if ui.add(crate::widgets::Btn::new(tr("이미지·영상 고르기…")).icon("image")).clicked() {
+                                if let Some(f) = rfd::FileDialog::new().add_filter("그림·영상", &["png", "jpg", "jpeg", "webp", "gif", "bmp", "mp4", "webm", "mov"]).pick_file() {
+                                    let enc = percent_encoding::utf8_percent_encode(&f.to_string_lossy(), percent_encoding::NON_ALPHANUMERIC).to_string();
+                                    e["bg"] = json!(format!("/lib/file?p={enc}"));
+                                    ch = true;
+                                }
+                            }
+                            if !bg.is_empty() && ui.add(crate::widgets::Btn::new(tr("지우기"))).clicked() {
+                                e["bg"] = json!("");
+                                ch = true;
+                            }
+                        });
+                        ch
                     });
                 }
-                "image" => {
-                    ui.horizontal(|ui| {
-                        if ui.button(wp_core::i18n::tr("그림 고르기…")).clicked() {
-                            if let Some(p) = rfd::FileDialog::new().add_filter("그림", &["png", "jpg", "jpeg", "webp", "gif", "bmp"]).pick_file() {
-                                let enc = percent_encoding::utf8_percent_encode(&p.to_string_lossy(), percent_encoding::NON_ALPHANUMERIC).to_string();
-                                e["image"] = json!(format!("/lib/file?p={enc}"));
-                                if e["title"].as_str().is_none_or(|t| t.is_empty() || t == "그림") {
-                                    e["title"] = json!(p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default());
+                if ty != "audio" {
+                    // 테마: 이 순서에만 다른 테마 (예배당·OBS 템플릿을 함께 바꿈)
+                    changed |= ce_row(ui, &tr("테마"), |ui| {
+                        let custom = e["tplMain"].as_str().is_some_and(|x| !x.is_empty()) || e["tplOverlay"].as_str().is_some_and(|x| !x.is_empty());
+                        let mut cur = if custom { "custom".to_string() } else { String::new() };
+                        let mut opts = vec![(String::new(), tr("기본 (전체 설정 따름)"))];
+                        if custom {
+                            opts.push(("custom".into(), tr("직접 고른 템플릿 (아래)")));
+                        }
+                        opts.extend(wp_core::themes::list_themes().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())));
+                        if ce_select(ui, "ce-theme", &mut cur, &opts, 220.0) {
+                            if cur.is_empty() {
+                                e["tplMain"] = json!("");
+                                e["tplOverlay"] = json!("");
+                                return true;
+                            }
+                            if cur != "custom" {
+                                if let Ok(ids) = wp_core::themes::ensure_theme(&mut core.lock(), &cur) {
+                                    e["tplMain"] = ids["main"].clone();
+                                    e["tplOverlay"] = ids["overlay"].clone();
+                                    return true;
                                 }
-                                changed = true;
                             }
                         }
-                        ui.label(RichText::new(wp_core::i18n::tr("등록한 그림 폴더 안의 그림만 예배당 화면에 보입니다")).small().color(Color32::GRAY));
+                        false
                     });
+                    changed |= ce_row(ui, &tr("템플릿"), |ui| {
+                        let mut ch = false;
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            for (k, label, salt) in [("tplMain", "예배당", "ce-tm"), ("tplOverlay", "OBS", "ce-to")] {
+                                let l = tr(label);
+                                let mut opts = vec![(String::new(), format!("{l}: {}", tr("기본 템플릿")))];
+                                opts.extend(tpls.iter().map(|(id, n)| (id.clone(), format!("{l}: {n}"))));
+                                let mut cur = e[k].as_str().unwrap_or("").to_string();
+                                if ce_select(ui, salt, &mut cur, &opts, 200.0) {
+                                    e[k] = json!(cur);
+                                    ch = true;
+                                }
+                            }
+                        });
+                        ch
+                    });
+                    changed |= crate::flow_ui::item_fields(ui, e); // [트랙 C] 자동 넘김·글자 숨김
+                    changed |= crate::actions_ui::item_fields(ui, e, core); // 배경 음악 · ⚡ 송출할 때 자동으로 (Electron cue.js actionsHtml)
                 }
-                "hymn" => {
-                    changed |= crate::hymns_ui::editor(ui, e, &self.core); // [트랙 A]
-                }
-                _ => {
-                    changed |= crate::parity_ui::editor(ui, e, &cams); // [트랙 A] 카메라 · 슬라이드쇼 · 영상
-                }
-            }
-            ui.label(RichText::new(wp_core::i18n::tr("메모 (무대 화면에 보임)")).small());
-            changed |= field(ui, e, "note", false, 1, "");
-            if it["type"] != "audio" { changed |= crate::flow_ui::item_fields(ui, e); } // [트랙 C] 자동 넘김·글자 숨김
-            if it["type"] != "audio" { changed |= crate::actions_ui::item_fields(ui, e, &self.core); } // 배경 음악 · ⚡ 송출할 때 자동으로 (Electron cue.js actionsHtml)
-            changed |= crate::theme_ui::item_templates(ui, e, &self.core); // [트랙 C] 순서별 템플릿·테마
+                changed |= ce_row(ui, &tr("메모"), |ui| ce_text(ui, e, "note", "조작자만 보는 메모 (예: 설교 후 바로)", w));
+            });
         });
+        let r = frame.response.rect;
+        ui.painter().hline(r.x_range(), r.bottom() - 1.0, egui::Stroke::new(2.0, p.pv));
+        if head.up && i > 0 {
+            acts.push(Act::MoveItem(i, -1));
+        }
+        if head.down {
+            acts.push(Act::MoveItem(i, 1));
+        }
+        if head.del {
+            acts.push(Act::RemoveItem(i));
+        }
+        if head.close {
+            self.editor_on = false;
+        }
+        if head.slide_edit {
+            acts.push(Act::PreviewItem(i));
+            self.tc.slideedit.open = true;
+        }
+        if head.dup {
+            let mut c = self.core.lock();
+            c.remember_items();
+            c.add_item(wp_core::parity_a::duplicate_item(it), Some(i + 1));
+            drop(c);
+            self.sel = Some(i + 1);
+            self.edit = None;
+            return;
+        }
         if changed {
-            // 저장본만 Electron cues.js normalizeItem 처럼 정규화 (편집 중인 e 는 글 입력이 끊기지 않게 그대로)
-            let mut saved = e.clone();
-            wp_core::actions::normalize_item_actions(&mut saved);
-            acts.push(Act::UpdateItem(i, saved));
+            if let Some((_, e)) = &self.edit {
+                // 저장본만 Electron cues.js normalizeItem 처럼 정규화 (편집 중인 e 는 글 입력이 끊기지 않게 그대로)
+                let mut saved = e.clone();
+                wp_core::actions::normalize_item_actions(&mut saved);
+                acts.push(Act::UpdateItem(i, saved));
+            }
         }
     }
 
@@ -500,47 +656,9 @@ impl App {
         self.search_results(ui, s, acts);
     }
 
-    /// 성경 검색 결과 (장절 본문 또는 낱말 찾기 목록)
-    pub(crate) fn search_results(&mut self, ui: &mut egui::Ui, _s: &Snap, acts: &mut Vec<Act>) {
-        let r = &self.result;
-        egui::ScrollArea::vertical().id_salt("results").auto_shrink([false, false]).show(ui, |ui| {
-            if r.is_null() {
-                ui.label(RichText::new(wp_core::i18n::tr("장절을 쓰면 바로 미리보기에 뜨고, 낱말을 쓰면 본문에서 찾습니다.")).color(Color32::GRAY));
-                return;
-            }
-            if r["ok"] != json!(true) {
-                ui.label(RichText::new(r["error"].as_str().unwrap_or("")).color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
-                for c in r["candidates"].as_array().into_iter().flatten() {
-                    let name = c["name"].as_str().unwrap_or("").to_string();
-                    if ui.button(&name).clicked() {
-                        self.search = format!("{} {}", c["short"].as_str().unwrap_or(&name), r["rest"].as_str().unwrap_or(""));
-                        acts.push(Act::Search(self.search.clone()));
-                    }
-                }
-                return;
-            }
-            if r["mode"] == "reference" {
-                let p = &r["passage"];
-                ui.label(RichText::new(format!("{} · {}", p["title"].as_str().unwrap_or(""), p["versionName"].as_str().unwrap_or(""))).strong().color(Color32::from_rgb(0xff, 0xd4, 0x79)));
-                for v in p["verses"].as_array().into_iter().flatten() {
-                    let (c, n) = (v["chapter"].as_i64().unwrap_or(0), v["verse"].as_i64().unwrap_or(0));
-                    let resp = ui.add(egui::Label::new(RichText::new(format!("{}:{}  {}", c, n, v["text"].as_str().unwrap_or("")))).sense(Sense::click()).wrap());
-                    crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", p["book"]["name"].as_str().unwrap_or(""), c, n), v["text"].as_str().unwrap_or("")); // [트랙 A]
-                    if resp.clicked() { acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n)))) }
-                    if resp.double_clicked() { acts.push(Act::PreviewPassage(p.clone(), self.search.clone(), Some((c, n)))); acts.push(Act::SendPreview) }
-                }
-            } else {
-                let rows = r["results"].as_array().cloned().unwrap_or_default();
-                ui.label(RichText::new(wp_core::i18n::tr_args("'{1}' {2}건{3}", &[&(self.search.trim()), &(rows.len()), &(if r["truncated"] == json!(true) { wp_core::i18n::tr_s(" (더 있음)") } else { "" })])).strong());
-                for v in rows {
-                    let q = format!("{}{}:{}", v["bookShort"].as_str().unwrap_or(""), v["chapter"], v["verse"]);
-                    let resp = ui.add(egui::Label::new(RichText::new(format!("{}  {}", v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or("")))).sense(Sense::click()).wrap());
-                    crate::parity_ui::verse_menu(&resp, v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or("")); // [트랙 A]
-                    if resp.clicked() { acts.push(Act::PreviewRef(q.clone(), None)) }
-                    if resp.double_clicked() { acts.push(Act::SendRef(q, None)) }
-                }
-            }
-        });
+    /// 성경 검색 결과 (장절 본문 또는 낱말 찾기 목록) — 모양은 center_ui.rs (control.css .results .row)
+    pub(crate) fn search_results(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+        self.center_results(ui, s, acts);
     }
 
     pub(crate) fn deck_view(&mut self, ui: &mut egui::Ui, title: &str, deck: Option<&Deck>, is_live: bool, live: Option<&Live>, s: &Snap, acts: &mut Vec<Act>) {
