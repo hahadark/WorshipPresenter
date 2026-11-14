@@ -13,7 +13,7 @@ const TARGETS: [(&str, &str); 3] = [
 const TABS: [(&str, &str); 7] = [
     ("songs", "찬양"),
     ("hymns", "찬송가·PPT"),
-    ("images", "그림·영상"),
+    ("images", "이미지·영상"),
     ("cameras", "카메라"),
     ("audio", "음악"),
     ("overlays", "오버레이"),
@@ -25,6 +25,64 @@ fn selection(ui: &egui::Ui, key: &str, default: &str) -> String {
 }
 fn remember(ui: &mut egui::Ui, key: &str, value: String) {
     ui.data_mut(|d| d.insert_temp(egui::Id::new(key), value));
+}
+
+/// 라이브러리 탭 아이콘 (library.js TABS)
+fn tab_icon(id: &str) -> &'static str {
+    match id {
+        "songs" => "music",
+        "hymns" => "music-2",
+        "images" => "image",
+        "cameras" => "camera",
+        "audio" => "volume-2",
+        "overlays" => "layers",
+        _ => "palette",
+    }
+}
+
+/// .lib-tabs: 아이콘 탭 줄 (높이 34 · 12.5px · 종류 색 아이콘 · 고른 탭 굵게 + accent 밑줄) · 오른쪽 ⌃ 검색·단추 줄 접기
+fn lib_tab_row(ui: &mut egui::Ui, tab: &mut String) {
+    use crate::theme::{font, pal, type_ink, Weight};
+    use egui::{Pos2, Rect, Sense, Stroke, Vec2};
+    let p = pal();
+    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
+    ui.painter().hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, p.line));
+    let mut x = row.left() + 6.0;
+    for (id, label) in TABS {
+        let on = *tab == id;
+        let g = ui.painter().layout_no_wrap(tr(label), font(12.5, if on { Weight::SemiBold } else { Weight::Regular }), p.text);
+        let w = 9.0 + 15.0 + 5.0 + g.size().x + 9.0;
+        let r = Rect::from_min_size(Pos2::new(x, row.top()), Vec2::new(w, 34.0));
+        x += w;
+        let resp = ui.interact(r, egui::Id::new(("lib-tab", id)), Sense::click());
+        if resp.clicked() {
+            *tab = id.into();
+        }
+        let pt = ui.painter();
+        if resp.hovered() && !on {
+            pt.rect_filled(r, 0.0, p.hover);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        let fg = if on || resp.hovered() { p.text } else { p.muted };
+        let ink = type_ink(id);
+        crate::icons::paint(ui, Rect::from_min_size(Pos2::new(r.left() + 9.0, r.center().y - 7.5), Vec2::splat(15.0)), tab_icon(id), if on { ink } else { ink.gamma_multiply(0.8) });
+        ui.painter().galley(Pos2::new(r.left() + 9.0 + 15.0 + 5.0, r.center().y - g.size().y / 2.0), g, fg);
+        if on {
+            ui.painter().rect_filled(Rect::from_min_max(Pos2::new(r.left(), r.bottom() - 2.0), r.right_bottom()), 0.0, p.accent);
+        }
+    }
+    // .lib-fold: 검색·단추 줄 접기/펴기 (28×28, muted)
+    let key = egui::Id::new("lib-bar-off");
+    let off = ui.data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
+    let fr = Rect::from_center_size(Pos2::new(row.right() - 6.0 - 14.0, row.center().y), Vec2::splat(28.0));
+    let resp = ui.interact(fr, egui::Id::new("lib-fold"), Sense::click()).on_hover_text(tr("검색·단추 줄 접기/펴기"));
+    if resp.hovered() {
+        ui.painter().rect_filled(fr, egui::CornerRadius::same(crate::theme::RADIUS), p.hover);
+    }
+    crate::icons::paint(ui, fr.shrink(6.5), if off { "chevron-down" } else { "chevron-up" }, if resp.hovered() { p.text } else { p.muted });
+    if resp.clicked() {
+        ui.data_mut(|d| d.insert_temp(key, !off));
+    }
 }
 
 impl App {
@@ -210,13 +268,8 @@ impl App {
         // 점검용 --lib-tab cameras (--left-tab 3 과 함께 쓰면 라이브러리 카메라 탭 스크린샷)
         let first = std::env::args().position(|x| x == "--lib-tab").and_then(|i| std::env::args().nth(i + 1)).unwrap_or_else(|| "songs".into());
         let mut tab = selection(ui, "library-tab", &first);
-        ui.horizontal_wrapped(|ui| {
-            for (id, label) in TABS {
-                ui.selectable_value(&mut tab, id.into(), tr(label));
-            }
-        });
+        lib_tab_row(ui, &mut tab);
         remember(ui, "library-tab", tab.clone());
-        ui.separator();
         match tab.as_str() {
             "hymns" => crate::hymns_ui::tab(self, ui, acts),
             "images" => self.library_kind_panel(ui, "image"),

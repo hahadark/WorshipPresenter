@@ -148,73 +148,140 @@ impl App {
 
     // ---------------- 왼쪽 탭에도 쓰는 패널 ----------------
     pub(crate) fn songs_panel(&mut self, ui: &mut egui::Ui) {
-
-        ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.tb.song_q).hint_text(wp_core::i18n::tr("제목·가사로 찾기")).desired_width(260.0));
-            if ui.button(wp_core::i18n::tr("새 찬양")).clicked() { self.tb.song_edit = Some(json!({ "title": "", "lyrics": "", "credit": "", "tags": "", "arrangement": "" })); }
-            if ui.button(wp_core::i18n::tr("웹에서 가사 찾기 Ctrl+L")).clicked() { crate::lyrics_ui::open(); }
-        });
-        let list = self.core.lock().list_songs(&self.tb.song_q);
-        ui.label(RichText::new(wp_core::i18n::tr_args("{1}곡", &[&(list.len())])).small());
-        egui::ScrollArea::vertical().id_salt("songlist").max_height(200.0).show(ui, |ui| {
-            for s in &list {
+        // Electron library.js drawSongs: 검색칸 · + 새 찬양 · 가사 찾기 · 가져오기 ▾ / 목록 줄(🎵 · 굵은 제목 · 흐린 첫 줄 · 고치기)
+        use crate::theme::{pal, rich, Weight};
+        use crate::widgets::Btn;
+        use wp_core::i18n::tr;
+        let p = pal();
+        let bar_off = ui.data(|d| d.get_temp::<bool>(egui::Id::new("lib-bar-off"))).unwrap_or(false);
+        let paste_id = egui::Id::new("song-paste-open");
+        let mut paste_open = ui.data(|d| d.get_temp::<bool>(paste_id)).unwrap_or(false);
+        if !bar_off {
+            // .lib-bar: panel2 바탕 · 여백 7px 8px · 아래 line 선 · 높이 30 칸
+            let bar = egui::Frame::new().fill(p.panel2).inner_margin(egui::Margin::symmetric(8, 7)).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let r = ui.selectable_label(false, format!("{}  ·  {}", s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or("")));
-                    let id = s["id"].as_str().unwrap_or("").to_string();
-                    if r.clicked() { self.tb.song_edit = self.core.lock().get_song(&id); }
-                    if r.double_clicked() || ui.small_button(wp_core::i18n::tr("큐시트에")).clicked() {
-                        let it = self.core.lock().song_item(&id);
-                        if let Some(it) = it { self.add_to_cue(it); }
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let bw = 98.0 + 110.0 + 112.0 + 18.0;
+                    let w = (ui.available_width() - bw).max(140.0);
+                    ui.add_sized([w, 30.0], egui::TextEdit::singleline(&mut self.tb.song_q).hint_text(tr("찬양 제목·가사로 찾기")).vertical_align(egui::Align::Center).margin(egui::Margin::symmetric(9, 4)));
+                    if ui.add(Btn::new(tr("새 찬양")).icon("plus").height(30.0).tooltip(tr("새 찬양 가사 입력"))).clicked() {
+                        self.tb.song_edit = Some(json!({ "title": "", "lyrics": "", "credit": "", "tags": "", "arrangement": "" }));
                     }
+                    if ui.add(Btn::new(tr("가사 찾기")).icon("globe").height(30.0).tooltip(tr("벅스 · 지니 · 멜론에서 가사를 찾아 찬양 슬라이드로 (한 곡씩, Ctrl+L)"))).clicked() {
+                        crate::lyrics_ui::open();
+                    }
+                    let imp = ui.add(Btn::new(tr("가져오기")).icon("download").caret().height(30.0).tooltip(tr("파일 · 폴더 통째로 · 여러 곡 붙여넣기")));
+                    egui::Popup::menu(&imp).show(|ui| {
+                        ui.set_min_width(260.0);
+                        if ui.button(tr("파일 고르기… (OpenLP · ChordPro · ProPresenter 6 · PPT · txt)")).clicked() {
+                            ui.close();
+                            if let Some(fs) = rfd::FileDialog::new().add_filter(tr("찬양 파일"), &wp_core::songimport::SONG_EXT).pick_files() {
+                                self.import_song_paths(&fs);
+                            }
+                        }
+                        if ui.button(tr("폴더 통째로… (하위 폴더까지)")).clicked() {
+                            ui.close();
+                            if let Some(d) = rfd::FileDialog::new().pick_folder() {
+                                let mut fs = vec![];
+                                collect_song_files(&d, &mut fs, 0);
+                                if fs.is_empty() { self.tb.note = tr("그 폴더에 찬양 파일이 없습니다."); } else { self.import_song_paths(&fs); }
+                            }
+                        }
+                        if ui.button(tr("여러 곡 붙여넣기…")).clicked() {
+                            paste_open = true;
+                            ui.close();
+                        }
+                    });
                 });
-            }
-        });
-        ui.separator();
-        if let Some(e) = &mut self.tb.song_edit {
-            let mut s = |k: &str, ui: &mut egui::Ui, multi: bool| {
-                let mut v = e[k].as_str().unwrap_or("").to_string();
-                let r = if multi { ui.add(egui::TextEdit::multiline(&mut v).desired_rows(8).desired_width(f32::INFINITY)) } else { ui.add(egui::TextEdit::singleline(&mut v).desired_width(f32::INFINITY)) };
-                if r.changed() { e[k] = json!(v); }
-            };
-            ui.label(wp_core::i18n::tr("제목")); s("title", ui, false);
-            ui.label(wp_core::i18n::tr("가사 (빈 줄로 슬라이드, [1절] [후렴] 이름표)")); s("lyrics", ui, true);
-            ui.label(wp_core::i18n::tr("곡 정보 (작사·작곡·저작권)")); s("credit", ui, false);
-            ui.label(wp_core::i18n::tr("기본 부를 순서 (예: 1 C 2 C)")); s("arrangement", ui, false);
-            crate::media_ui::song_arrangements(ui, &mut self.core.lock(), e);
-            let e2 = e.clone();
-            ui.horizontal(|ui| {
-                if ui.button(wp_core::i18n::tr("저장")).clicked() {
-                    let r = self.core.lock().save_song(&e2);
-                    match r { Ok(v) => { self.tb.song_edit = Some(v); self.tb.note = "찬양을 저장했습니다.".into(); } Err(x) => self.tb.note = x.to_string() }
-                }
-                if ui.button(RichText::new(wp_core::i18n::tr("지우기")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
-                    if let Some(id) = e2["id"].as_str() { self.tb.note = err(self.core.lock().delete_song(id)); self.tb.song_edit = None; }
-                }
+            });
+            ui.painter().hline(bar.response.rect.x_range(), bar.response.rect.bottom() - 0.5, egui::Stroke::new(1.0, p.line));
+        }
+        if paste_open {
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+                ui.label(rich(tr("가사 붙여 넣어 가져오기 (여러 곡은 '# 제목' 줄로 나눔)"), 12.0, Weight::Regular, p.muted));
+                ui.add(egui::TextEdit::multiline(&mut self.tb.import_text).desired_rows(5).desired_width(f32::INFINITY));
+                ui.horizontal(|ui| {
+                    if ui.add(Btn::new(tr("가져오기")).kind(crate::widgets::Kind::Primary).height(28.0)).clicked() {
+                        let r = self.core.lock().import_song_text(&self.tb.import_text, 2);
+                        self.tb.note = match r { Ok(v) => format!("{}곡 저장 · 같은 제목 {}곡 건너뜀", v["saved"], v["skipped"]), Err(e) => e.to_string() };
+                        paste_open = false;
+                    }
+                    if ui.add(Btn::new(tr("닫기")).height(28.0)).clicked() { paste_open = false; }
+                });
             });
         }
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui.button(wp_core::i18n::tr("파일에서 가져오기…")).on_hover_text(wp_core::i18n::tr("OpenLP(OpenLyrics .xml) · ChordPro(.cho) · ProPresenter 6(.pro6) · PowerPoint(.pptx .ppt .pps) · 글(.txt)")).clicked() {
-                if let Some(fs) = rfd::FileDialog::new().add_filter("찬양 파일", &wp_core::songimport::SONG_EXT).pick_files() {
-                    let r = self.core.lock().import_song_files(&fs);
-                    self.tb.note = match r {
-                        Ok(v) => {
-                            let errs: Vec<String> = v["errors"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
-                            format!("{}곡 저장 · 같은 제목 {}곡 건너뜀{}", v["saved"], v["skipped"], if errs.is_empty() { String::new() } else { format!(" · 못 읽음: {}", errs.join(" / ")) })
-                        }
-                        Err(e) => e.to_string(),
-                    };
-                }
+        ui.data_mut(|d| d.insert_temp(paste_id, paste_open));
+        // .lib-body: 목록 줄
+        let list = self.core.lock().list_songs(&self.tb.song_q);
+        let sel_id = egui::Id::new("song-sel");
+        let mut sel: Option<String> = ui.data(|d| d.get_temp(sel_id)).flatten();
+        ui.add_space(4.0);
+        if list.is_empty() {
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 12)).show(ui, |ui| {
+                ui.label(rich(if self.tb.song_q.trim().is_empty() { tr("저장한 찬양이 없습니다. ＋ 새 찬양 으로 가사를 입력하거나, 큐시트의 찬양 순서에서 '라이브러리에 저장'을 누르세요.") } else { tr("찾는 찬양이 없습니다.") }, 13.0, Weight::Regular, p.muted));
+            });
+        }
+        for s in &list {
+            let id = s["id"].as_str().unwrap_or("").to_string();
+            let (row, edit) = song_row(ui, s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or(""), sel.as_deref() == Some(id.as_str()));
+            if edit.clicked() {
+                self.tb.song_edit = self.core.lock().get_song(&id);
+            } else if row.double_clicked() {
+                let it = self.core.lock().song_item(&id);
+                if let Some(it) = it { self.add_to_cue(it); }
+            } else if row.clicked() {
+                sel = Some(id.clone());
             }
-            ui.label(RichText::new("OpenLP · ChordPro · ProPresenter 6 · PPT · txt").small().color(Color32::GRAY));
-        });
-        ui.collapsing(wp_core::i18n::tr("가사 붙여 넣어 가져오기 (여러 곡은 '# 제목' 줄로 나눔)"), |ui| {
-            ui.add(egui::TextEdit::multiline(&mut self.tb.import_text).desired_rows(5).desired_width(f32::INFINITY));
-            if ui.button(wp_core::i18n::tr("가져오기")).clicked() {
-                let r = self.core.lock().import_song_text(&self.tb.import_text, 2);
-                self.tb.note = match r { Ok(v) => format!("{}곡 저장 · 같은 제목 {}곡 건너뜀", v["saved"], v["skipped"]), Err(e) => e.to_string() };
+            row.on_hover_text(tr("두 번 누르면 큐시트에 넣습니다"));
+        }
+        ui.data_mut(|d| d.insert_temp(sel_id, sel));
+        if !self.tb.note.is_empty() {
+            ui.add_space(4.0);
+            ui.label(rich(self.tb.note.clone(), 12.0, Weight::Regular, p.muted));
+        }
+        if let Some(mut e) = self.tb.song_edit.take() {
+            let mut close = false;
+            let mut saved: Option<Value> = None;
+            ui.add_space(6.0);
+            crate::widgets::card_frame().inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                ui.label(rich(if e["id"].as_str().is_some() { tr("찬양 고치기") } else { tr("새 찬양") }, 14.0, Weight::SemiBold, p.text));
+                let e = &mut e;
+                let mut s = |k: &str, ui: &mut egui::Ui, multi: bool| {
+                    let mut v = e[k].as_str().unwrap_or("").to_string();
+                    let r = if multi { ui.add(egui::TextEdit::multiline(&mut v).desired_rows(8).desired_width(f32::INFINITY)) } else { ui.add(egui::TextEdit::singleline(&mut v).desired_width(f32::INFINITY)) };
+                    if r.changed() { e[k] = json!(v); }
+                };
+                ui.label(tr("제목")); s("title", ui, false);
+                ui.label(tr("가사 (빈 줄로 슬라이드, [1절] [후렴] 이름표)")); s("lyrics", ui, true);
+                ui.label(tr("곡 정보 (작사·작곡·저작권)")); s("credit", ui, false);
+                ui.label(tr("기본 부를 순서 (예: 1 C 2 C)")); s("arrangement", ui, false);
+                crate::media_ui::song_arrangements(ui, &mut self.core.lock(), e);
+                let e2 = e.clone();
+                ui.horizontal(|ui| {
+                    if ui.add(Btn::new(tr("저장")).kind(crate::widgets::Kind::Primary)).clicked() {
+                        let r = self.core.lock().save_song(&e2);
+                        match r { Ok(v) => { saved = Some(v); self.tb.note = tr("찬양을 저장했습니다."); } Err(x) => self.tb.note = x.to_string() }
+                    }
+                    if e2["id"].as_str().is_some() && ui.add(Btn::new(tr("지우기")).kind(crate::widgets::Kind::Danger)).clicked() {
+                        if let Some(id) = e2["id"].as_str() { self.tb.note = err(self.core.lock().delete_song(id)); close = true; }
+                    }
+                    if ui.add(Btn::new(tr("닫기"))).clicked() { close = true; }
+                });
+            });
+            self.tb.song_edit = if close { None } else { Some(saved.unwrap_or(e)) };
+        }
+    }
+
+    /// 찬양 파일 여러 개 가져오기 (결과는 tb.note)
+    fn import_song_paths(&mut self, fs: &[std::path::PathBuf]) {
+        let r = self.core.lock().import_song_files(fs);
+        self.tb.note = match r {
+            Ok(v) => {
+                let errs: Vec<String> = v["errors"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+                format!("{}곡 저장 · 같은 제목 {}곡 건너뜀{}", v["saved"], v["skipped"], if errs.is_empty() { String::new() } else { format!(" · 못 읽음: {}", errs.join(" / ")) })
             }
-        });
+            Err(e) => e.to_string(),
+        };
     }
 
     pub(crate) fn library_panel(&mut self, ui: &mut egui::Ui) {
@@ -776,5 +843,49 @@ mod cue_duration_tests {
             item["duration"] = original["duration"].clone();
             assert_eq!(item, original);
         }
+    }
+}
+
+/// 찬양 목록 줄 (.lib-row: 여백 6px 10px · 아래 line-soft 선 · 음표 아이콘 · 굵은 제목 · 흐린 첫 줄 · 오른쪽 '고치기')
+fn song_row(ui: &mut egui::Ui, title: &str, first: &str, selected: bool) -> (egui::Response, egui::Response) {
+    use crate::theme::{font, pal, Weight};
+    use eframe::egui::{Pos2, Rect, Sense, Stroke, Vec2};
+    let p = pal();
+    let w = ui.available_width();
+    let tg = ui.painter().layout_no_wrap(title.to_string(), font(14.0, Weight::Bold), p.text);
+    let fg = (!first.is_empty()).then(|| ui.painter().layout_no_wrap(first.to_string(), font(12.0, Weight::Regular), p.muted));
+    let h = 12.0 + tg.size().y + fg.as_ref().map(|g| g.size().y).unwrap_or(0.0);
+    let (r, row) = ui.allocate_exact_size(Vec2::new(w, h.max(34.0)), Sense::click());
+    let eg = ui.painter().layout_no_wrap(wp_core::i18n::tr("고치기"), font(12.0, Weight::Regular), p.text);
+    let er = Rect::from_min_size(Pos2::new(r.right() - 10.0 - eg.size().x - 18.0, r.center().y - 12.0), Vec2::new(eg.size().x + 18.0, 24.0));
+    let edit = ui.interact(er, row.id.with("edit"), Sense::click());
+    let pt = ui.painter();
+    if selected { pt.rect_filled(r, 0.0, p.sel); } else if row.hovered() || edit.hovered() { pt.rect_filled(r, 0.0, p.hover); }
+    pt.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
+    crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 10.0 + 10.0, r.center().y), Vec2::splat(16.0)), "music", crate::theme::type_ink("song"));
+    let tx = r.left() + 10.0 + 20.0 + 8.0;
+    let clip = Rect::from_min_max(Pos2::new(tx, r.top()), Pos2::new(er.left() - 8.0, r.bottom()));
+    let pt = ui.painter().with_clip_rect(clip);
+    let mut y = r.center().y - (h - 12.0) / 2.0;
+    let th = tg.size().y;
+    pt.galley(Pos2::new(tx, y), tg, p.text);
+    y += th;
+    if let Some(g) = fg { pt.galley(Pos2::new(tx, y), g, p.muted); }
+    let (bg, border) = if edit.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
+    ui.painter().rect(er, eframe::egui::CornerRadius::same(crate::theme::RADIUS), bg, Stroke::new(p.border_w, border), eframe::egui::StrokeKind::Inside);
+    ui.painter().galley(er.center() - eg.size() / 2.0, eg, p.text);
+    if row.hovered() || edit.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+    (row, edit.on_hover_text(wp_core::i18n::tr("가사 고치기")))
+}
+
+/// 폴더 안 찬양 파일 모으기 (하위 폴더까지, 깊이 8까지)
+fn collect_song_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>, depth: usize) {
+    if depth > 8 { return; }
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let path = e.path();
+        if path.is_dir() { collect_song_files(&path, out, depth + 1); continue; }
+        let ext = path.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+        if wp_core::songimport::SONG_EXT.contains(&ext.as_str()) { out.push(path); }
     }
 }
