@@ -423,7 +423,7 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
     let busy = s.obs_busy;
     let mut check = false;
     ui.horizontal(|ui| {
-        check = ui.add_enabled(!busy, egui::Button::new(wp_core::i18n::tr("연결 확인"))).clicked();
+        check = ui.add_enabled(!busy, egui::Button::new(wp_core::i18n::tr("연결 확인"))).on_disabled_hover_text(wp_core::i18n::tr("확인하는 중입니다. 잠시 기다리세요")).clicked();
         if busy {
             ui.spinner();
         }
@@ -597,10 +597,10 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
     if st["state"] == "ready" { ui.label(wp_core::i18n::tr("SHA-256 검증 완료. 설치 준비됨. 자동 설치하지 않습니다.")); }
     if st["state"] == "cancelled" { ui.label(wp_core::i18n::tr("다운로드를 취소했습니다.")); }
     ui.horizontal(|ui| {
-        if ui.add_enabled(st["canDownload"] == true, egui::Button::new(wp_core::i18n::tr("검증하여 다운로드"))).clicked() {
+        if ui.add_enabled(st["canDownload"] == true, egui::Button::new(wp_core::i18n::tr("검증하여 다운로드"))).on_disabled_hover_text(wp_core::i18n::tr("받을 새 버전이 없거나 이미 받는 중입니다")).clicked() {
             if let Err(e) = wp_core::updates::download(core) { core.lock().notify(e, "warn"); }
         }
-        if ui.add_enabled(st["canInstall"] == true, egui::Button::new(wp_core::i18n::tr("지금 설치 요청 (프로그램 종료)"))).clicked() {
+        if ui.add_enabled(st["canInstall"] == true, egui::Button::new(wp_core::i18n::tr("지금 설치 요청 (프로그램 종료)"))).on_disabled_hover_text(wp_core::i18n::tr("먼저 새 버전을 받아 검증을 마쳐야 합니다")).clicked() {
             match wp_core::updates::install_now(core) {
                 Ok(()) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
                 Err(e) => core.lock().notify(e, "warn"),

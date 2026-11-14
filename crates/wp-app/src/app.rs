@@ -878,9 +878,12 @@ impl App {
                 if !is_live {
                     let n = deck.map(|d| d.slides.len()).unwrap_or(0);
                     let i = deck.map(|d| d.index).unwrap_or(0);
-                    if ui.add(Btn::new("◀").height(28.0).enabled(deck.is_some()).tooltip(tr("미리보기 이전 슬라이드 (PageUp)"))).clicked() && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
+                    let why = if deck.is_none() { Some(tr("미리보기에 띄운 본문이 없습니다")) } else { None };
+                    let prev_tip = why.clone().unwrap_or_else(|| if i == 0 { tr("첫 슬라이드입니다") } else { tr("미리보기 이전 슬라이드 (PageUp)") });
+                    if ui.add(Btn::new("◀").height(28.0).enabled(deck.is_some() && i > 0).tooltip(prev_tip)).clicked() && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
                     count_label(ui, deck.map(|d| format!("{} / {}", d.index + 1, d.slides.len())).unwrap_or_default());
-                    if ui.add(Btn::new("▶").height(28.0).enabled(deck.is_some()).tooltip(tr("미리보기 다음 슬라이드 (PageDown)"))).clicked() && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
+                    let next_tip = why.unwrap_or_else(|| if i + 1 >= n { tr("마지막 슬라이드입니다") } else { tr("미리보기 다음 슬라이드 (PageDown)") });
+                    if ui.add(Btn::new("▶").height(28.0).enabled(deck.is_some() && i + 1 < n).tooltip(next_tip)).clicked() && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
                 } else if let Some(d) = deck {
                     count_label(ui, format!("{} / {}", d.index + 1, d.slides.len()));
                 }
