@@ -73,6 +73,8 @@ pub struct TemplateUi {
     pub(crate) last_focus: Option<Sec>,
 }
 
+static CHECKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// 견본 슬라이드 (성경 · 찬양 · 공지 · 제목)
 fn sample(k: usize) -> Value {
     match k {
@@ -186,6 +188,17 @@ impl TemplateUi {
             self.flush(core);
             if let Some(t) = list.iter().find(|t| t["id"] == w.as_str()) {
                 self.load(t);
+            }
+        }
+        // 점검용: --tpl-check <테마 id>[:main|overlay][:묶음] — 테마 템플릿을 (저장하지 않고) 열어 그 묶음을 펼친다
+        if !CHECKED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            if let Some(arg) = std::env::args().position(|x| x == "--tpl-check").and_then(|i| std::env::args().nth(i + 1)) {
+                let mut it = arg.split(':');
+                let (tid, slot, sec) = (it.next().unwrap_or(""), it.next().unwrap_or("main"), it.next().unwrap_or(""));
+                if let Some(th) = wp_core::themes::list_themes().iter().find(|x| x["id"] == tid) {
+                    self.load(&wp_core::settings::normalize_template(&th[slot]));
+                }
+                self.focus = Sec::ALL.into_iter().find(|x| x.id() == sec);
             }
         }
         if self.draft.is_null() {

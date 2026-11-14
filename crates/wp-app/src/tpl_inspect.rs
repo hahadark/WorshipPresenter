@@ -544,7 +544,16 @@ fn effects(ui: &mut egui::Ui, t: &mut Value) -> bool {
     ui.add_space(4.0);
     ch |= tc::switch(ui, t, "box.enabled", "글 상자", "본문 뒤에 반투명 상자를 깝니다 (OBS 자막에 좋음)");
     if b(t, "box.enabled") {
-        ch |= tc::color(ui, t, "box.color", "상자 색", &BOX_COLORS, false);
+        let had_grad = !s(t, "box.gradient").trim().is_empty();
+        if had_grad {
+            tc::note(ui, "테마의 그라데이션 상자입니다. 색을 고르면 그 색 하나로 바뀝니다.");
+        }
+        if tc::color(ui, t, "box.color", "상자 색", &BOX_COLORS, false) {
+            if had_grad {
+                set(t, "box.gradient", json!(""));
+            }
+            ch = true;
+        }
         ch |= tc::slider(ui, t, "box.opacity", "진하기", "", 0.0, 1.0, 0.05, 0.6, 100.0, "%");
         ch |= tc::slider(ui, t, "box.radius", "모서리", "모서리 둥글기", 0.0, 80.0, 1.0, 16.0, 1.0, "");
         ch |= tc::slider(ui, t, "box.padding", "안 여백", "상자 테두리와 글 사이", 0.0, 120.0, 2.0, 32.0, 1.0, "");
@@ -576,7 +585,10 @@ fn effects(ui: &mut egui::Ui, t: &mut Value) -> bool {
     ch
 }
 
-fn advanced(ui: &mut egui::Ui, t: &mut Value) -> bool {
+fn advanced(ui: &mut egui::Ui, t0: &mut Value) -> bool {
+    // form:: 칸은 없는 열쇠를 null 로 만들어 넣으므로 사본에서 고치고, 바뀐 때만 되돌려 쓴다
+    let mut copy = t0.clone();
+    let t = &mut copy;
     let mut ch = false;
     tc::note(ui, "직접 값을 적는 칸입니다. 보통은 위의 묶음으로 충분합니다.");
     egui::Grid::new("tpl-adv").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
@@ -605,6 +617,9 @@ fn advanced(ui: &mut egui::Ui, t: &mut Value) -> bool {
         ch |= form::num(ui, t, &["animation", "duration"], "전환 시간(ms)", 0.0, 5000.0, 10.0);
         ui.end_row();
     });
+    if ch {
+        *t0 = copy;
+    }
     ch
 }
 

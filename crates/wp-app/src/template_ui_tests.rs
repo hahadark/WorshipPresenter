@@ -144,3 +144,24 @@ fn reopen_with_selects_template_and_revert_restores_original() {
     h.wait(0.5);
     assert_eq!(f(&h.saved(), "font.size", 0.0), f(&orig, "font.size", 0.0));
 }
+
+/// 테마 템플릿을 열고 묶음을 하나씩 펼쳐 그려도, 사용자가 만지지 않으면 값이 바뀌거나 저장되지 않아야 한다
+/// (막대 칸 맞춤으로 48 → 50 처럼 스스로 바뀌어 저장되던 문제)
+#[test]
+fn opening_sections_does_not_change_template() {
+    let mut h = H::new();
+    for th in wp_core::themes::list_themes() {
+        for slot in ["main", "overlay"] {
+            let tpl = wp_core::settings::normalize_template(&th[slot]);
+            h.ui.load(&tpl);
+            for sec in Sec::ALL {
+                h.ui.focus = Some(sec);
+                for _ in 0..3 {
+                    h.frame(vec![]);
+                }
+                assert_eq!(h.ui.draft, tpl, "{} {slot} {:?} 를 펼쳤더니 값이 바뀜", th["id"], sec);
+                assert!(h.ui.undo.is_empty() && h.ui.changed_at.is_none(), "{} {slot} {:?}", th["id"], sec);
+            }
+        }
+    }
+}

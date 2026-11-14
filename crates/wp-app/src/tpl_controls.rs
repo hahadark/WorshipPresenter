@@ -73,7 +73,9 @@ pub fn slider(ui: &mut egui::Ui, t: &mut Value, path: &str, label: &str, tip: &s
         let r = ui.add(egui::Slider::new(&mut v, slo..=shi).step_by(sstep).show_value(false));
         let dec = if sstep < 0.1 { 2 } else if sstep < 1.0 { 1 } else { 0 };
         let r2 = ui.add(egui::DragValue::new(&mut v).range(slo..=shi).speed(sstep.max(0.01)).fixed_decimals(dec).suffix(unit));
-        if (r.changed() || r2.changed()) && (v / scale - cur).abs() > f64::EPSILON {
+        // 사용자가 직접 만진 때만 쓴다 (막대가 칸에 맞추느라 스스로 바꾼 값은 저장하지 않음: 48 → 50 같은 일)
+        let touched = |r: &egui::Response| r.changed() && (r.is_pointer_button_down_on() || r.dragged() || r.drag_stopped() || r.clicked() || r.has_focus() || r.lost_focus());
+        if (touched(&r) || touched(&r2)) && (v / scale - cur).abs() > f64::EPSILON {
             let nv = (v / scale).clamp(lo, hi);
             let nv = if step >= 1.0 { json!(nv.round() as i64) } else { json!((nv * 1000.0).round() / 1000.0) };
             set(t, path, nv);
