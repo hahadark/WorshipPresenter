@@ -1259,6 +1259,13 @@ impl eframe::App for App {
         egui::Panel::top("top").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::TOP_MARGIN)).show(ui, |ui| {
             self.top_bar(ui, &s, &mut acts);
         });
+        if !s.preview_mode {
+            // 바로 송출 중: 주황 띠를 계속 보인다 (조작 실수 막기)
+            let p = crate::theme::pal();
+            egui::Panel::top("direct-band").frame(egui::Frame::new().fill(p.warn_bg).stroke(egui::Stroke::new(1.0, p.warn)).inner_margin(egui::Margin::symmetric(12, 4))).show(ui, |ui| {
+                self.direct_band(ui, &mut acts);
+            });
+        }
         // 아래 송출 줄 (footer.bottom: 창 맨 아래 전체 폭, panel 바탕 · 위 line) — topbar_ui.rs
         egui::Panel::bottom("status").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::BOTTOM_MARGIN)).show(ui, |ui| {
             self.bottom_bar(ui, &s, &mut acts);

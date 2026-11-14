@@ -213,6 +213,32 @@ fn output_settings_obs_urls_copy_with_notice() {
     assert!(crate::widgets::take_copied(&h.ctx).is_none(), "한 번 꺼내면 지워짐");
 }
 
+// ---------------- 3-7 미리보기 / 바로 송출 ----------------
+
+fn top(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    app.top_bar(ui, s, acts);
+}
+fn band(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, _: &Snap, acts: &mut Vec<Act>) {
+    app.direct_band(ui, acts);
+}
+fn preview_mode(h: &H) -> bool {
+    h.app.core.lock().settings.get()["previewMode"].as_bool().unwrap_or(true)
+}
+
+#[test]
+fn studio_split_button_picks_mode_and_band_returns() {
+    let mut h = H::new(two());
+    assert!(preview_mode(&h));
+    h.click("studio-preview", top);
+    assert!(preview_mode(&h), "이미 고른 쪽을 눌러도 그대로 (토글이 아님)");
+    h.click("studio-direct", top);
+    assert!(!preview_mode(&h), "'바로 송출'을 고르면 미리보기 끔");
+    h.click("studio-direct", top);
+    assert!(!preview_mode(&h));
+    h.click("direct-band-back", band);
+    assert!(preview_mode(&h), "띠의 [미리보기로 돌아가기]");
+}
+
 // ---------------- 3-2 · 2 되돌리기 ----------------
 
 #[test]

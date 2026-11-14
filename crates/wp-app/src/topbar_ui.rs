@@ -80,13 +80,12 @@ impl App {
                     self.tc.settings.open = true;
                 }
                 self.workspace_picker(ui);
-                // .studio: 켜짐 = pv 테두리 · ok-text, 끔 = warn 바탕 · warn 테두리 · 700
-                let on = s.preview_mode;
-                let b = Btn::new(if on { tr("미리보기 켜짐") } else { tr("미리보기 끔 · 바로 송출") })
-                    .kind(if on { Kind::Pv } else { Kind::Warn })
-                    .tooltip(tr("미리보기를 끄면 클릭한 본문·순서가 바로 송출됩니다 (OBS 스튜디오 모드 끄기와 같음)"));
-                if ui.add(b).clicked() {
-                    acts.push(Act::TogglePreviewMode);
+                // 클릭하면: [미리보기] [바로 송출] — 상태를 이름으로 쓴 토글 대신 고르는 분할 단추 (평가 7번).
+                // 원본 .studio 색: 미리보기 = pv, 바로 송출 = warn
+                if let Some(on) = studio_split(ui, s.preview_mode) {
+                    if on != s.preview_mode {
+                        acts.push(Act::TogglePreviewMode);
+                    }
                 }
                 self.search_group(ui, s, acts);
                 self.search_bar(ui, s, acts);
@@ -486,6 +485,54 @@ impl App {
             return;
         }
         c.notify_act(tr("송출했지만 예배당 화면이 꺼져 있어 회중에게 보이지 않습니다"), "warn", "output-on");
+    }
+}
+
+/// '클릭하면: [미리보기] [바로 송출]' (오른쪽→왼쪽 배치 안에서 부름). 눌린 쪽을 Some(미리보기 켬지)로
+fn studio_split(ui: &mut Ui, preview: bool) -> Option<bool> {
+    let p = pal();
+    let mut out = None;
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let direct = Btn::new(tr("바로 송출"))
+            .kind(if preview { Kind::Default } else { Kind::Warn })
+            .selected(!preview)
+            .tooltip(tr("클릭한 본문·순서·슬라이드가 미리보기를 거치지 않고 바로 회중 화면에 나갑니다 (OBS 스튜디오 모드 끄기와 같음)"));
+        let r = ui.add(direct);
+        widgets::mark("studio-direct", r.rect);
+        if r.clicked() {
+            out = Some(false);
+        }
+        let pv = Btn::new(tr("미리보기"))
+            .kind(if preview { Kind::Pv } else { Kind::Default })
+            .tooltip(tr("클릭하면 미리보기에만 놓이고, F9(송출)를 눌러야 회중 화면에 나갑니다"));
+        let r = ui.add(pv);
+        widgets::mark("studio-preview", r.rect);
+        if r.clicked() {
+            out = Some(true);
+        }
+    });
+    ui.add(egui::Label::new(theme::rich(tr("클릭하면"), 13.0, Weight::Regular, p.muted)).selectable(false));
+    out
+}
+
+impl App {
+    /// 바로 송출 중일 때 머리 줄 아래에 계속 보이는 주황 띠 (평가 7번)
+    pub(super) fn direct_band(&mut self, ui: &mut Ui, acts: &mut Vec<Act>) {
+        let p = pal();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            icons::show(ui, "radio", 16.0, p.warn);
+            ui.add(egui::Label::new(theme::rich(tr("클릭하면 바로 송출됩니다"), 13.0, Weight::Bold, p.text)).selectable(false));
+            ui.add(egui::Label::new(theme::rich(tr("큐시트 순서·본문·슬라이드를 누르는 즉시 회중 화면에 나갑니다"), 13.0, Weight::Regular, p.text2)).truncate().selectable(false));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let b = ui.add(Btn::new(tr("미리보기로 돌아가기")).size(Size::Sm).height(24.0).tooltip(tr("클릭하면 미리보기에 놓고 F9 로 송출하는 방식으로")));
+                widgets::mark("direct-band-back", b.rect);
+                if b.clicked() {
+                    acts.push(Act::TogglePreviewMode);
+                }
+            });
+        });
     }
 }
 
