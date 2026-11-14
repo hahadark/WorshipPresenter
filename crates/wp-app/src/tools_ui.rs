@@ -76,7 +76,7 @@ fn copy_row(ui: &mut egui::Ui, label: &str, url: &str) {
         }
         ui.label(RichText::new(url).monospace().small());
         if ui.small_button(wp_core::i18n::tr("복사")).clicked() {
-            ui.ctx().copy_text(url.to_string());
+            crate::widgets::copy_notice(ui.ctx(), url, wp_core::i18n::tr("주소를 복사했습니다."));
         }
     });
 }

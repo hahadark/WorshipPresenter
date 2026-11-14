@@ -80,13 +80,12 @@ impl App {
                     self.tc.settings.open = true;
                 }
                 self.workspace_picker(ui);
-                // .studio: 켜짐 = pv 테두리 · ok-text, 끔 = warn 바탕 · warn 테두리 · 700
-                let on = s.preview_mode;
-                let b = Btn::new(if on { tr("미리보기 켜짐") } else { tr("미리보기 끔 · 바로 송출") })
-                    .kind(if on { Kind::Pv } else { Kind::Warn })
-                    .tooltip(tr("미리보기를 끄면 클릭한 본문·순서가 바로 송출됩니다 (OBS 스튜디오 모드 끄기와 같음)"));
-                if ui.add(b).clicked() {
-                    acts.push(Act::TogglePreviewMode);
+                // 클릭하면: [미리보기] [바로 송출] — 상태를 이름으로 쓴 토글 대신 고르는 분할 단추 (평가 7번).
+                // 원본 .studio 색: 미리보기 = pv, 바로 송출 = warn
+                if let Some(on) = studio_split(ui, s.preview_mode) {
+                    if on != s.preview_mode {
+                        acts.push(Act::TogglePreviewMode);
+                    }
                 }
                 self.search_group(ui, s, acts);
                 self.search_bar(ui, s, acts);
@@ -201,11 +200,11 @@ impl App {
             r.request_focus(); // 돋보기·여백을 눌러도 칸으로
         }
         // 예전 검색 줄의 '송출 · 큐시트에 넣기' 단추 → 원본처럼 오른쪽 클릭 메뉴로 (ctxmenu.js '이 본문을 큐시트에 넣기')
-        let is_ref = self.result["mode"] == "reference" && self.result["ok"] == json!(true);
+        let is_ref = self.searched_bible_item().is_some();
         r.context_menu(|ui| {
-            if ui.add_enabled(is_ref, egui::Button::new(tr("이 본문을 큐시트에 넣기 (고른 순서 다음)"))).clicked() {
-                let title = self.result["passage"]["title"].clone();
-                acts.push(Act::AddItem("bible", Some(json!({ "title": "성경 봉독", "ref": self.search.trim(), "subtitle": title }))));
+            let b = ui.add_enabled(is_ref, egui::Button::new(tr("이 본문을 큐시트에 넣기 (고른 순서 다음)"))).on_disabled_hover_text(tr("장절(예: 요3:16)을 먼저 검색하세요"));
+            if b.clicked() {
+                self.add_searched_bible(acts);
                 ui.close();
             }
             if ui.button(tr("송출 (Ctrl+Enter)")).clicked() {
@@ -318,34 +317,53 @@ impl App {
             widgets::vsep(ui, 24.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 14.0; // .status { gap: 14px }
-                // 오른쪽부터 채우고, 자리가 모자라면 왼쪽(덜 중요한) 항목은 뺀다 (송출 단추를 덮지 않게)
-                for (col, text) in self.status_items(s).into_iter().rev() {
-                    if ui.available_width() < text_w(ui, &text, 12.0, Weight::Regular) + 14.0 {
-                        break;
+                // 중요한 순서(오류 > 예배당 화면 > OBS 전체 > OBS 자막 > 출력 창 > OBS 원격)로 자리를 주고,
+                // 모자라면 글은 빼고 점만(툴팁에 전체 문구), 그래도 모자라면 뒤 항목부터 뺀다.
+                // 오른쪽→왼쪽 배치라 거꾸로 그려서 화면에는 중요한 것이 왼쪽(송출 줄 쪽)에 온다.
+                let items = self.status_items(s);
+                let widths: Vec<f32> = items.iter().map(|x| text_w(ui, &x.1, 12.0, Weight::Regular)).collect();
+                let fit = widgets::fit_status(&widths, ui.available_width() - 4.0, 14.0);
+                let mut open = None;
+                for ((col, text, key), f) in items.iter().zip(&fit).rev() {
+                    let Some(full) = f else { continue };
+                    let tip = match *key {
+                        "obs-remote" => tr("누르면 OBS 원격 조작 창"),
+                        _ => tr("누르면 출력 설정 (예배당 화면 · OBS 주소)"),
+                    };
+                    let r = widgets::status_btn(ui, *col, text, !*full, &tip);
+                    widgets::mark(&format!("status-{key}"), r.rect);
+                    if r.clicked() {
+                        open = Some(*key);
                     }
-                    widgets::status_dot(ui, col, &text);
+                }
+                match open {
+                    Some("obs-remote") => crate::trackd_ui::open(crate::trackd_ui::Win::Obs),
+                    Some(_) => crate::trackd_ui::open(crate::trackd_ui::Win::Output),
+                    None => {}
                 }
             });
         });
     }
 
     /// 출력 연결 상태 (control.js renderStatus 와 같은 문구·색)
-    fn status_items(&mut self, s: &Snap) -> Vec<(Color32, String)> {
+    /// (점 색, 글, 항목 이름) — 중요한 것부터
+    pub(crate) fn status_items(&mut self, s: &Snap) -> Vec<(Color32, String, &'static str)> {
         let p = pal();
         let mut v = vec![];
         let running = self.out.running();
         if !self.out.error.is_empty() {
             // Rust 판 전용(예배당 창 실행 오류) — 길면 줄여서 송출 단추를 덮지 않게
             let e: String = self.out.error.chars().take(28).collect();
-            v.push((p.live, if e.len() < self.out.error.len() { format!("{e}…") } else { e }));
+            v.push((p.live, if e.len() < self.out.error.len() { format!("{e}…") } else { e }, "error"));
         }
         // 예배당 화면 (꺼짐 = muted2 · 켜짐 = pv · 모니터 없음 = live)
         let mon = self.out.monitors.iter().find(|m| m.index == self.monitor).map(|m| format!("{} {}×{}", m.name, m.size.0, m.size.1));
-        v.push(match (running, mon) {
+        let (c, t) = match (running, mon) {
             (false, _) => (p.muted2, tr("예배당 화면 꺼짐")),
             (true, Some(m)) => (p.pv, wp_core::i18n::tr_args("예배당 화면: {1}", &[&m])),
             (true, None) => (p.live, tr("예배당 모니터 연결 안 됨")),
-        });
+        };
+        v.push((c, t, "output"));
         // OBS 전체 · OBS 자막 (브라우저 소스, 창 제외) — ack 버전이 송출 버전과 같으면 동기화됨
         let (version, acks): (u64, Vec<(String, String, Option<u64>)>) = {
             let c = self.core.lock();
@@ -356,30 +374,34 @@ impl App {
             let cs: Vec<_> = acks.iter().filter(|c| c.0 == out && c.1 != "window").collect();
             let name = tr(name);
             if cs.is_empty() {
-                v.push((p.muted2, wp_core::i18n::tr_args("{1} 연결 없음", &[&name])));
+                v.push((p.muted2, wp_core::i18n::tr_args("{1} 연결 없음", &[&name]), out));
                 continue;
             }
             let synced = cs.iter().all(|c| c.2 == Some(version));
-            v.push((if synced { p.pv } else { p.warn }, wp_core::i18n::tr_args(if synced { "{1} {2}개 동기화됨" } else { "{1} {2}개 갱신 대기" }, &[&name, &cs.len()])));
+            v.push((if synced { p.pv } else { p.warn }, wp_core::i18n::tr_args(if synced { "{1} {2}개 동기화됨" } else { "{1} {2}개 갱신 대기" }, &[&name, &cs.len()]), out));
         }
         let win: Vec<_> = acks.iter().filter(|c| c.1 == "window" && c.0 == "main").collect();
         if !win.is_empty() && running {
             let synced = win.iter().all(|c| c.2 == Some(version));
-            v.push((if synced { p.pv } else { p.warn }, if synced { tr("출력 창 반영됨") } else { tr("출력 창 갱신 대기") }));
+            v.push((if synced { p.pv } else { p.warn }, if synced { tr("출력 창 반영됨") } else { tr("출력 창 갱신 대기") }, "window"));
         }
         // [트랙 D] OBS 원격 조작 상태 (설정에서 켰을 때만)
         if let Some((t, warn)) = crate::trackd_ui::obs_status_line(self.core.lock().settings.get()) {
-            v.push((if warn { p.live } else { p.pv }, t));
+            v.push((if warn { p.live } else { p.pv }, t, "obs-remote"));
         }
         v
     }
 
-    /// 알림 상자 (.msg: 오른쪽 16px · 아래 72px, 600, 둥글기 8, 종류별 바탕)
-    pub(super) fn toast(&self, ctx: &egui::Context, s: &Snap) {
-        let Some((msg, kind, at)) = &s.toast else { return };
-        if wp_core::util::now_ms() - at >= 8000 {
-            return;
+    /// 알림 상자 (.msg: 오른쪽 16px · 아래 72px, 600, 둥글기 8, 종류별 바탕).
+    /// 누를 수 있다: 글을 누르면 닫히고, 단추(되돌리기 · 예배당 화면 켜기)가 붙으면 그 동작을 돌려준다
+    pub(super) fn toast(&self, ctx: &egui::Context, s: &Snap) -> Option<Act> {
+        let (msg, kind, at) = s.toast.as_ref()?;
+        // 단추가 있는 알림은 누를 시간을 더 준다
+        let life = if s.toast_act.is_some() { 12000 } else { 8000 };
+        if wp_core::util::now_ms() - at >= life {
+            return None;
         }
+        let mut out = None;
         let p = pal();
         let fill = match *kind {
             "error" => p.live_bg,
@@ -390,9 +412,9 @@ impl App {
         egui::Area::new(Id::new("wp-toast"))
             .order(egui::Order::Foreground)
             .anchor(Align2::RIGHT_BOTTOM, Vec2::new(-16.0, -72.0))
-            .interactable(false)
+            .interactable(true)
             .show(ctx, |ui| {
-                egui::Frame::new()
+                let fr = egui::Frame::new()
                     .fill(fill)
                     .stroke(Stroke::new(1.0, alpha(Color32::WHITE, 0.12)))
                     .corner_radius(CornerRadius::same(8))
@@ -400,9 +422,126 @@ impl App {
                     .shadow(egui::Shadow { offset: [0, 10], blur: 30, spread: 0, color: alpha(Color32::BLACK, 0.55) })
                     .show(ui, |ui| {
                         ui.set_max_width(440.0);
-                        ui.label(theme::rich(msg.clone(), 14.0, Weight::SemiBold, p.text));
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 12.0;
+                            let lr = ui.add(egui::Label::new(theme::rich(msg.clone(), 14.0, Weight::SemiBold, p.text)).wrap().selectable(false).sense(Sense::click())).on_hover_text(tr("눌러서 닫기"));
+                            if lr.clicked() {
+                                out = Some(Act::ToastDismiss);
+                            }
+                            if let Some(a) = s.toast_act {
+                                let (label, icon) = toast_button(a);
+                                let br = ui.add(Btn::new(label).icon(icon).size(Size::Sm).height(28.0));
+                                widgets::mark("toast-act", br.rect);
+                                if br.clicked() {
+                                    out = Some(Act::ToastAct(a));
+                                }
+                            }
+                        });
                     });
+                let _ = fr;
             });
+        out
+    }
+}
+
+impl App {
+    /// LIVE 패널 머리 아래 주황 띠: 예배당 화면이 꺼진 채 송출 중이면 "회중에게 보이지 않습니다 [지금 켜기]".
+    /// (원본은 상태 줄의 작은 점뿐이라 예배 시작 직후 놓치기 쉬움 — 평가 1번)
+    pub(super) fn output_off_band(&mut self, ui: &mut Ui, has_live: bool, acts: &mut Vec<Act>) {
+        if self.out.running() || !has_live {
+            return;
+        }
+        let p = pal();
+        ui.add_space(6.0);
+        egui::Frame::new().fill(p.warn_bg).stroke(Stroke::new(1.0, p.warn)).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(10, 4)).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                icons::show(ui, "monitor-off", 16.0, p.warn);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let b = ui.add(Btn::new(tr("지금 켜기")).icon("monitor").kind(Kind::Warn).height(28.0).kbd("Ctrl+Shift+F").tooltip(tr("예배당 모니터에 전체 화면 출력을 켭니다")));
+                    widgets::mark("live-output-on", b.rect);
+                    if b.clicked() {
+                        acts.push(Act::OutputToggle);
+                    }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(egui::Label::new(theme::rich(tr("예배당 화면이 꺼져 있어 회중에게 보이지 않습니다"), 13.0, Weight::SemiBold, p.text)).truncate().selectable(false));
+                    });
+                });
+            });
+        });
+    }
+
+    /// 송출했는데 예배당 화면이 꺼져 있고 자동으로 켜지도 않을 때, 꺼진 동안 한 번만 알림 + [예배당 화면 켜기]
+    pub(super) fn warn_output_off_after_send(&mut self) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static WARNED: AtomicBool = AtomicBool::new(false);
+        if self.out.running() {
+            WARNED.store(false, Ordering::SeqCst);
+            return;
+        }
+        let mut c = self.core.lock();
+        let auto = c.settings.get()["output"]["autoOnSend"].as_bool().unwrap_or(true);
+        if auto || c.pres.live.is_none() || WARNED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        c.notify_act(tr("송출했지만 예배당 화면이 꺼져 있어 회중에게 보이지 않습니다"), "warn", "output-on");
+    }
+}
+
+/// '클릭하면: [미리보기] [바로 송출]' (오른쪽→왼쪽 배치 안에서 부름). 눌린 쪽을 Some(미리보기 켬지)로
+fn studio_split(ui: &mut Ui, preview: bool) -> Option<bool> {
+    let p = pal();
+    let mut out = None;
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let direct = Btn::new(tr("바로 송출"))
+            .kind(if preview { Kind::Default } else { Kind::Warn })
+            .selected(!preview)
+            .tooltip(tr("클릭한 본문·순서·슬라이드가 미리보기를 거치지 않고 바로 회중 화면에 나갑니다 (OBS 스튜디오 모드 끄기와 같음)"));
+        let r = ui.add(direct);
+        widgets::mark("studio-direct", r.rect);
+        if r.clicked() {
+            out = Some(false);
+        }
+        let pv = Btn::new(tr("미리보기"))
+            .kind(if preview { Kind::Pv } else { Kind::Default })
+            .tooltip(tr("클릭하면 미리보기에만 놓이고, F9(송출)를 눌러야 회중 화면에 나갑니다"));
+        let r = ui.add(pv);
+        widgets::mark("studio-preview", r.rect);
+        if r.clicked() {
+            out = Some(true);
+        }
+    });
+    ui.add(egui::Label::new(theme::rich(tr("클릭하면"), 13.0, Weight::Regular, p.muted)).selectable(false));
+    out
+}
+
+impl App {
+    /// 바로 송출 중일 때 머리 줄 아래에 계속 보이는 주황 띠 (평가 7번)
+    pub(super) fn direct_band(&mut self, ui: &mut Ui, acts: &mut Vec<Act>) {
+        let p = pal();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            icons::show(ui, "radio", 16.0, p.warn);
+            ui.add(egui::Label::new(theme::rich(tr("클릭하면 바로 송출됩니다"), 13.0, Weight::Bold, p.text)).selectable(false));
+            ui.add(egui::Label::new(theme::rich(tr("큐시트 순서·본문·슬라이드를 누르는 즉시 회중 화면에 나갑니다"), 13.0, Weight::Regular, p.text2)).truncate().selectable(false));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let b = ui.add(Btn::new(tr("미리보기로 돌아가기")).size(Size::Sm).height(24.0).tooltip(tr("클릭하면 미리보기에 놓고 F9 로 송출하는 방식으로")));
+                widgets::mark("direct-band-back", b.rect);
+                if b.clicked() {
+                    acts.push(Act::TogglePreviewMode);
+                }
+            });
+        });
+    }
+}
+
+/// 알림 단추 글·아이콘 (Core::notify_act 의 act 이름)
+fn toast_button(act: &str) -> (String, &'static str) {
+    match act {
+        "undo" => (tr("되돌리기"), "undo-2"),
+        "output-on" => (tr("예배당 화면 켜기"), "monitor"),
+        _ => (tr("확인"), "check"),
     }
 }
 

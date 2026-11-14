@@ -44,7 +44,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "b:cues" => app.tb.cues = true,
         "b:print" => app.print_cue(),
         "b:undo" | "b:redo" => {
-            app.core.lock().undo_items(id == "b:redo");
+            app.core.lock().undo_items(id == "b:redo"); // 결과 알림은 코어가 띄운다
             app.edit = None;
         }
         // 트랙 D 도구 창 (예전 임시 도구 단추)
@@ -94,7 +94,7 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 menubar::sub_row(ui, Some("copy"), &tr("OBS 주소 복사"), |ui| {
                     for (label, path) in [("예배당 화면 그대로", "/outputs/main"), ("투명 자막", "/outputs/overlay"), ("무대 화면", "/outputs/stage")] {
                         let url = format!("http://127.0.0.1:{port}{path}");
-                        if menubar::item_row(ui, None, &tr(label), &url, None).clicked() { ui.ctx().copy_text(url); ui.close(); }
+                        if menubar::item_row(ui, None, &tr(label), &url, None).clicked() { crate::widgets::copy_notice(ui.ctx(), url, obs_copied_msg(label)); ui.close(); }
                     }
                 });
             }
@@ -104,6 +104,11 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     if let Some(id) = picked {
         handle_menu(app, id);
     }
+}
+
+/// OBS 주소를 복사한 뒤 알림 (보기 메뉴 · 출력 설정 창 공용)
+pub fn obs_copied_msg(label: &str) -> String {
+    wp_core::i18n::tr_args("'{1}' 주소를 복사했습니다. OBS 브라우저 소스의 주소 칸에 붙여 넣으세요.", &[&wp_core::i18n::tr(label)])
 }
 
 /// 창들 · 단축키 · 조작 화면 테마

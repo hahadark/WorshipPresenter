@@ -9,7 +9,7 @@ use crate::theme::{self, pal, rich, Weight};
 use crate::widgets::{self, Btn};
 use eframe::egui::{self, Align2, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 use serde_json::{json, Value};
-use wp_core::i18n::tr;
+use wp_core::i18n::{tr, tr_args};
 
 const SIDE: &str = "cue-side"; // "cue" | "books"
 const BOOK_Q: &str = "cue-book-q";
@@ -108,7 +108,8 @@ pub fn head(app: &mut App, ui: &mut egui::Ui, cue_id: &str, cue_label: &str, cue
     inset(ui, 8.0, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            let w = (ui.available_width() - theme::CTL_H - 4.0).max(60.0);
+            // 단추 셋(↶ ↷ 폴더) + 간격 4px
+            let w = (ui.available_width() - 3.0 * (theme::CTL_H + 4.0)).max(60.0);
             // select: sunken 바탕 · line 테두리 · 여백 6px 8px · 오른쪽 ▾
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, theme::CTL_H), Sense::click());
             let resp = resp.on_hover_text(tr("큐시트 고르기"));
@@ -139,6 +140,11 @@ pub fn head(app: &mut App, ui: &mut egui::Ui, cue_id: &str, cue_label: &str, cue
                     }
                 });
             });
+            // 되돌리기 · 다시 하기 (툴팁에 무엇이 되돌려지는지, 할 것이 없으면 흐리게 + 이유)
+            let (u, r) = { let c = app.core.lock(); (c.undo_label(false), c.undo_label(true)) };
+            if let Some(a) = undo_buttons(ui, u.as_deref(), r.as_deref()) {
+                acts.push(Act::Undo(a));
+            }
             // 큐시트 관리: 새로 만들기 · 복제 · 서식 · 메모 · 내보내기·가져오기 · 휴지통
             let fb = ui.add(Btn::icon_only("folder-open").tooltip(tr("큐시트 관리: 새로 만들기 · 다음 주로 복제 · 서식 · 메모 · 내보내기·가져오기 · 휴지통")));
             egui::Popup::menu(&fb).show(|ui| {
@@ -154,6 +160,28 @@ pub fn head(app: &mut App, ui: &mut egui::Ui, cue_id: &str, cue_label: &str, cue
             });
         });
     });
+}
+
+/// 큐시트 머리의 ↶ ↷ 아이콘 단추 (34×34). 눌린 쪽: Some(false)=되돌리기 · Some(true)=다시 하기
+pub(crate) fn undo_buttons(ui: &mut egui::Ui, undo: Option<&str>, redo: Option<&str>) -> Option<bool> {
+    let mut out = None;
+    let tip = |what: Option<&str>, verb: &str, key: &str, none: &str| match what {
+        Some(w) => format!("{verb}: {w} ({key})"),
+        None => tr(none),
+    };
+    let b = Btn::icon_only("undo-2").enabled(undo.is_some()).tooltip(tip(undo, &tr("되돌리기"), "Ctrl+Z", "되돌릴 것이 없습니다"));
+    let r = ui.add(b);
+    widgets::mark("cue-undo", r.rect);
+    if r.clicked() {
+        out = Some(false);
+    }
+    let b = Btn::icon_only("redo-2").enabled(redo.is_some()).tooltip(tip(redo, &tr("다시 하기"), "Ctrl+Y", "다시 할 것이 없습니다"));
+    let r = ui.add(b);
+    widgets::mark("cue-redo", r.rect);
+    if r.clicked() {
+        out = Some(true);
+    }
+    out
 }
 
 /// 한 줄로 자르고 넘치면 … (text-overflow: ellipsis)
@@ -444,7 +472,15 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
         for rowk in main.chunks(3) {
             ui.horizontal(|ui| {
                 for (ty, label, tip) in rowk {
-                    if add_btn(ui, cw, Some(icons::for_type(ty)), theme::type_ink(ty), &tr(label), false, false, &tr(tip)).clicked() {
+                    // '성경': 지금 검색한 장절이 있으면 그것으로 채워 넣는다는 것을 툴팁에
+                    let tip = match (*ty, app.searched_bible_item()) {
+                        ("bible", Some(it)) => tr_args("성경 순서 넣기: 검색한 '{1}' 로 채움 (고른 순서 다음)", &[&it["ref"].as_str().unwrap_or("")]),
+                        ("bible", None) => tr("성경 순서 넣기 (먼저 장절을 검색하면 그 장절로 채움)"),
+                        _ => tr(tip),
+                    };
+                    let r = add_btn(ui, cw, Some(icons::for_type(ty)), theme::type_ink(ty), &tr(label), false, false, &tip);
+                    widgets::mark(&format!("add-{ty}"), r.rect);
+                    if r.clicked() {
                         add(app, ui.ctx(), ty, acts);
                     }
                 }
@@ -509,7 +545,12 @@ fn add(app: &mut App, ctx: &egui::Context, ty: &str, acts: &mut Vec<Act>) {
         "video" => acts.push(Act::AddItem("video", Some(json!({ "title": tr("영상"), "file": "", "sound": true, "volume": 1, "endAction": "hold", "loop": false })))),
         "audio" => acts.push(Act::AddItem("audio", Some(json!({ "title": tr("음악"), "file": "" })))),
         "blank" => acts.push(Act::AddItem("blank", Some(json!({ "mode": "background" })))),
-        "bible" => acts.push(Act::AddItem("bible", None)),
+        // 지금 검색한 장절이 있으면 그것으로 채운다 (없으면 빈 성경 순서)
+        "bible" => {
+            if !app.add_searched_bible(acts) {
+                acts.push(Act::AddItem("bible", None))
+            }
+        }
         "song" => acts.push(Act::AddItem("song", None)),
         "text" => acts.push(Act::AddItem("text", None)),
         "title" => acts.push(Act::AddItem("title", None)),

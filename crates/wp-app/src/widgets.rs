@@ -574,6 +574,50 @@ pub fn status_dot(ui: &mut Ui, color: Color32, text: &str) -> Response {
     resp
 }
 
+/// 눌러서 여는 상태 점 (아래 상태 줄). `dot_only` 면 점만 그리고 글은 툴팁으로.
+/// 마우스를 올리면 hover 바탕 · 손 모양 커서.
+pub fn status_btn(ui: &mut Ui, color: Color32, text: &str, dot_only: bool, tip: &str) -> Response {
+    let p = pal();
+    let g = layout(ui, text, theme::font(12.0, Weight::Regular));
+    let w = if dot_only { 9.0 } else { 9.0 + 5.0 + g.size().x };
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, g.size().y.max(9.0)), Sense::click());
+    let hov = resp.hovered();
+    if hov {
+        ui.painter().rect_filled(r.expand2(Vec2::new(4.0, 3.0)), CornerRadius::same(4), p.hover);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    ui.painter().circle_filled(Pos2::new(r.left() + 4.5, r.center().y), 4.5, color);
+    if !dot_only {
+        ui.painter().galley(Pos2::new(r.left() + 14.0, r.center().y - g.size().y / 2.0), g, if hov { p.text } else { p.muted });
+    }
+    let tip = if dot_only { format!("{text} — {tip}") } else { tip.to_string() };
+    resp.on_hover_text(tip)
+}
+
+/// 상태 항목을 중요한 순서(앞에서부터)로 자리에 맞춘다: 먼저 모두 점만, 자리가 남으면 중요한 것부터 글까지.
+/// 점조차 모자라면 덜 중요한(뒤) 항목부터 뺀다. 돌려주는 것: 항목마다 None=안 보임 · Some(false)=점만 · Some(true)=점+글
+pub fn fit_status(text_w: &[f32], avail: f32, gap: f32) -> Vec<Option<bool>> {
+    const DOT: f32 = 9.0;
+    let n = text_w.len();
+    let mut out = vec![None; n];
+    let mut used = 0.0;
+    for o in out.iter_mut() {
+        let add = DOT + if used > 0.0 { gap } else { 0.0 };
+        if used + add > avail {
+            break;
+        }
+        used += add;
+        *o = Some(false);
+    }
+    for (i, o) in out.iter_mut().enumerate() {
+        if *o == Some(false) && used + 5.0 + text_w[i] <= avail {
+            used += 5.0 + text_w[i];
+            *o = Some(true);
+        }
+    }
+    out
+}
+
 /// 흐린 글 (css .muted)
 pub fn muted(ui: &mut Ui, text: &str) -> Response {
     ui.label(egui::RichText::new(text).color(pal().muted))
@@ -622,6 +666,26 @@ pub const HOVER_BTN: f32 = 26.0;
 thread_local! {
     /// 합성 입력 시험용: 이번 프레임에 그린 마우스 올림 단추 자리 (동작 이름 → 자리, 마지막에 그린 것)
     pub(crate) static HOVER_SEEN: std::cell::RefCell<std::collections::BTreeMap<String, Rect>> = Default::default();
+}
+
+/// 클립보드에 복사하고 알림을 남긴다 (모든 복사 지점 공용). 알림은 다음에 App 이 `take_copied` 로 꺼내 띄운다.
+/// core 를 받지 않는 메뉴·창에서도 쓸 수 있게 egui 임시 자료에 둔다
+pub fn copy_notice(ctx: &egui::Context, text: impl Into<String>, msg: impl Into<String>) {
+    ctx.copy_text(text.into());
+    let m: String = msg.into();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("wp-copied"), m));
+}
+
+/// `copy_notice` 가 남긴 알림 글 (한 번 꺼내면 지워짐)
+pub fn take_copied(ctx: &egui::Context) -> Option<String> {
+    ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new("wp-copied")))
+}
+
+/// 합성 입력 시험용: 이름 붙은 위젯 자리를 남긴다 (시험 빌드가 아니면 아무것도 안 함)
+#[allow(unused_variables)]
+pub fn mark(name: &str, rect: Rect) {
+    #[cfg(test)]
+    HOVER_SEEN.with(|m| m.borrow_mut().insert(name.to_string(), rect));
 }
 
 /// 반투명 바탕 아이콘 단추 하나 (control.css .sg-ops button: rgba(15,18,24,.85) 바탕 · 흰 글자 · 지우기는 빨강)

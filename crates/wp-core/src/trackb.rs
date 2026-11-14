@@ -436,8 +436,18 @@ impl Core {
             self.b.undo.push(&id, &items);
         }
     }
+    /// 되돌리기(redo 면 다시 하기) 단추 툴팁·알림에 쓸 말: 무엇이 되돌려지는지 (할 것이 없으면 None)
+    pub fn undo_label(&self, redo: bool) -> Option<String> {
+        let c = self.cue.as_ref()?;
+        let target = self.b.undo.peek(&c.id, redo)?;
+        // 되돌리기: 그 전 모습(target) → 지금(cur) 으로 바꾼 일을 취소 / 다시 하기: 지금 → target 으로 다시
+        Some(if redo { cues::describe_change(&c.items, target) } else { cues::describe_change(target, &c.items) })
+    }
+    /// 되돌리기 · 다시 하기. 결과를 알림으로 보인다 (원본 cue.js undo: '실행 취소 (N번 더 가능)')
     pub fn undo_items(&mut self, redo: bool) -> bool {
+        use crate::i18n::{tr, tr_args};
         let Some((id, cur)) = self.cue.as_ref().map(|c| (c.id.clone(), c.items.clone())) else { return false };
+        let label = self.undo_label(redo);
         let r = if redo { self.b.undo.redo(&id, &cur) } else { self.b.undo.undo(&id, &cur) };
         match r {
             Some(items) => {
@@ -445,9 +455,16 @@ impl Core {
                     c.items = items;
                 }
                 self.save_cue();
+                let label = label.unwrap_or_default();
+                let left = self.b.undo.depth(&id, false);
+                let msg = if redo { tr_args("다시 했습니다: {1}", &[&label]) } else { tr_args("되돌렸습니다: {1} ({2}번 더 되돌릴 수 있음)", &[&label, &left]) };
+                self.notify(msg, "ok");
                 true
             }
-            None => false,
+            None => {
+                self.notify(if redo { tr("다시 할 것이 없습니다") } else { tr("더 되돌릴 것이 없습니다") }, "info");
+                false
+            }
         }
     }
     /// 편집칸에서 글을 고칠 때 (실행 취소 묶음): 다른 순서이거나 1.5초 넘게 쉬었다 치면 새 묶음

@@ -430,7 +430,26 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
 
 impl App {
     /// 가운데 본문 패널 머리 줄(.center-head). `editor_on` 은 App 의 편집칸 켜짐 값
-    pub(crate) fn center_head(&mut self, ui: &mut egui::Ui, s: &Snap, editor_on: &mut bool) {
+    /// 지금 검색한 장절로 만든 성경 순서 (장절 검색 결과가 없으면 None).
+    /// 원본 ctxmenu.js '이 본문을 큐시트에 넣기': { title: '성경봉독', ref: 본문 제목 } — 번역본은 비워 두어(현재 번역본) 원본과 같게
+    pub(crate) fn searched_bible_item(&self) -> Option<Value> {
+        if self.result["mode"] != "reference" || self.result["ok"] != json!(true) {
+            return None;
+        }
+        let title = self.result["passage"]["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(String::from).unwrap_or_else(|| self.search.trim().to_string());
+        (!title.is_empty()).then(|| json!({ "title": tr("성경 봉독"), "ref": title }))
+    }
+
+    /// 검색한 장절을 고른 순서 다음에 넣고 알린다 (본문 패널 머리 · 검색칸 오른쪽 클릭 · 왼쪽 '성경' 단추)
+    pub(crate) fn add_searched_bible(&mut self, acts: &mut Vec<Act>) -> bool {
+        let Some(it) = self.searched_bible_item() else { return false };
+        let r = it["ref"].as_str().unwrap_or("").to_string();
+        acts.push(Act::AddItem("bible", Some(it)));
+        self.core.lock().notify(tr_args("'{1}' 을(를) 큐시트에 넣었습니다.", &[&r]), "ok");
+        true
+    }
+
+    pub(crate) fn center_head(&mut self, ui: &mut egui::Ui, s: &Snap, editor_on: &mut bool, acts: &mut Vec<Act>) {
         let mut st = load(ui.ctx());
         // 가운데에 무엇을 보일지: 큐시트 순서를 미리보기로 올리면 그 슬라이드, 검색하면 검색 결과 (Electron 은 마지막에 그린 쪽)
         let pk = s.preview.as_ref().map(|d| format!("{}:{}:{}", d.passage["cueId"], d.passage["cueIndex"], d.passage["title"])).unwrap_or_default();
@@ -462,7 +481,10 @@ impl App {
                     toggle_editor = true;
                 }
                 // 제목(굵게 15px) + 흐린 부가 글 — 넘치면 제목을 줄인다
-                let view_w = 250.0 + if matches!(st.view, SlideView::Grid | SlideView::All) { 100.0 } else { 0.0 };
+                // 검색한 장절을 보고 있을 때만 '＋ 큐시트에 넣기' (큐시트 순서를 보고 있을 때는 필요 없음)
+                let can_add = !st.cue_mode && self.searched_bible_item().is_some();
+                let add_w = if can_add { 140.0 } else { 0.0 };
+                let view_w = 250.0 + add_w + if matches!(st.view, SlideView::Grid | SlideView::All) { 100.0 } else { 0.0 };
                 let info_g = ui.painter().layout_no_wrap(info.clone(), theme::font(14.0, Weight::Regular), pal().muted);
                 let room = (row_width(ui) - view_w - info_g.size().x - 16.0).max(60.0);
                 ui.scope(|ui| {
@@ -471,6 +493,13 @@ impl App {
                 });
                 if !info.is_empty() {
                     ui.label(rich(&info, 14.0, Weight::Regular, pal().muted));
+                }
+                if can_add {
+                    let b = ui.add(Btn::new(tr("큐시트에 넣기")).icon("plus").size(Size::Sm).height(26.0).kind(widgets::Kind::Primary).tooltip(tr("검색한 본문을 성경 순서로 큐시트에 넣습니다 (고른 순서 다음에)")));
+                    widgets::mark("center-add-bible", b.rect);
+                    if b.clicked() {
+                        self.add_searched_bible(acts);
+                    }
                 }
                 let (l, g, a, al) = (tr("목록"), tr("격자"), tr("전체 격자"), tr("전체 목록"));
                 let mut v = st.view;
@@ -1050,10 +1079,12 @@ pub(crate) struct CeHead {
     pub dup: bool,
     pub del: bool,
     pub close: bool,
+    /// '크게' / '작게' 누름
+    pub big: bool,
 }
 
-/// .ce-head: 종류 아이콘(26×26 sunken, hl) · 'N번 성경' · (빈 칸) · ▲ ▼ · 파란 '슬라이드 편집' · 복제 · 지우기 · ✕
-pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, saved: &str) -> CeHead {
+/// .ce-head: 종류 아이콘(26×26 sunken, hl) · 'N. 순서 이름' + 종류 꼬리표 · (빈 칸) · ▲ ▼ · 파란 '슬라이드 편집' · 복제 | 순서 삭제 | 크게 · ✕
+pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved: &str, big_on: bool) -> CeHead {
     let p = pal();
     let mut h = CeHead::default();
     ui.horizontal(|ui| {
@@ -1061,12 +1092,27 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, saved: &str) -> CeH
         let (r, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
         ui.painter().rect_filled(r, CornerRadius::same(6), p.sunken);
         icons::paint(ui, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icons::for_type(ty), p.hl);
-        ui.label(rich(tr_args("{1}번 {2}", &[&(i + 1), &tr(type_name(ty))]), 14.0, Weight::Bold, p.text));
+        // 목록에서 누른 이름 그대로 ('6. 설교') + 종류 꼬리표 (평가 20번). 이름이 없으면 예전처럼 'N번 종류'
+        let title = title.trim();
+        if title.is_empty() {
+            ui.label(rich(tr_args("{1}번 {2}", &[&(i + 1), &tr(type_name(ty))]), 14.0, Weight::Bold, p.text));
+        } else {
+            ui.add(egui::Label::new(rich(format!("{}. {title}", i + 1), 14.0, Weight::Bold, p.text)).truncate().selectable(false));
+            ui.label(rich(tr(type_name(ty)), 12.0, Weight::Regular, p.muted));
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // 오른쪽부터: ✕ · 지우기 · 복제 · 슬라이드 편집 · ▼ · ▲ · 저장 표시
+            // 오른쪽부터: ✕ · 크게 | 순서 삭제 | 복제 · 슬라이드 편집 · ▼ · ▲ · 저장 표시
             let sm = |t: &str| Btn::new(t).size(Size::Sm).height(26.0);
             h.close = ui.add(Btn::icon_only("x").size(Size::Sm).height(26.0).tooltip(tr("편집칸 닫기"))).clicked();
-            h.del = ui.add(sm(&tr("지우기")).tooltip(tr("이 순서 지우기 (Delete)"))).clicked();
+            let br = ui.add(sm(&if big_on { tr("작게") } else { tr("크게") }).icon("maximize").selected(big_on).tooltip(if big_on { tr("편집칸을 원래 높이로 (검색 결과가 다시 보임)") } else { tr("편집칸이 본문 패널 전체를 쓰게 (긴 가사·공지 고칠 때)") }));
+            widgets::mark("editor-big", br.rect);
+            h.big = br.clicked();
+            widgets::vsep(ui, 20.0);
+            // 되돌릴 수 있지만 큰 변화라 빨간 휴지통 + '순서 삭제', 복제와 구분선으로 떼어 둔다 (평가 9번)
+            let dr = ui.add(sm(&tr("순서 삭제")).icon("trash-2").icon_color(p.live).kind(widgets::Kind::Danger).tooltip(tr("이 순서를 큐시트에서 삭제 (Delete) — 알림의 [되돌리기] 나 Ctrl+Z 로 되살림")));
+            widgets::mark("editor-del", dr.rect);
+            h.del = dr.clicked();
+            widgets::vsep(ui, 20.0);
             h.dup = ui.add(sm(&tr("복제")).tooltip(tr("이 순서 복제"))).clicked();
             if ty != "audio" {
                 h.slide_edit = ui.add(sm(&tr("슬라이드 편집")).icon("square-pen").kind(crate::widgets::Kind::Primary).tooltip(tr("슬라이드마다 글상자 위치·꾸미기, 글·그림·도형 덧붙이기 (Ctrl+E)"))).clicked();

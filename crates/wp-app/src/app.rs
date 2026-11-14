@@ -39,6 +39,12 @@ pub(crate) enum Act {
     CuePreviewStep(i64),
     /// 썸네일·목록의 마우스 올림 단추: (순서 번호, 슬라이드 ekey, 동작 edit·add·dup·del·skip·up·down)
     SlideOp(usize, String, &'static str),
+    /// 알림에 붙은 단추 ("undo" 되돌리기 · "output-on" 예배당 화면 켜기)
+    ToastAct(&'static str),
+    /// 알림을 눌러 닫기
+    ToastDismiss,
+    /// 되돌리기(false) · 다시 하기(true) — 알림은 코어 undo_items 가 띄운다
+    Undo(bool),
 }
 
 pub struct App {
@@ -81,6 +87,7 @@ pub(crate) struct Snap {
     version: String,
     preview_mode: bool,
     toast: Option<(String, &'static str, i64)>,
+    toast_act: Option<&'static str>,
     outputs: Vec<(String, String)>,
     port: u16,
     logo: bool,
@@ -147,6 +154,7 @@ impl App {
             version: c.version_id(),
             preview_mode: s["previewMode"].as_bool().unwrap_or(true),
             toast: c.toast.clone(),
+            toast_act: c.toast_act,
             outputs: c.outputs.values().map(|o| (o.client.clone(), o.kind.clone())).collect(),
             port: c.port,
             logo: c.layers.logo,
@@ -155,6 +163,14 @@ impl App {
     }
 
     fn apply(&mut self, acts: Vec<Act>) {
+        let sent = acts.iter().any(|a| matches!(a, Act::SendPreview | Act::SendItem(_) | Act::SendRef(..)));
+        self.apply_acts(acts);
+        if sent {
+            self.warn_output_off_after_send();
+        }
+    }
+
+    fn apply_acts(&mut self, acts: Vec<Act>) {
         for a in acts {
             let mut c = self.core.lock();
             match a {
@@ -227,7 +243,12 @@ impl App {
                     self.edit = None;
                 }
                 Act::RemoveItem(i) => {
+                    let name = c.cue.as_ref().and_then(|x| x.items.get(i)).map(|it| it["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).unwrap_or(type_info(it["type"].as_str().unwrap_or("")).0).to_string());
                     c.remove_item(i);
+                    if let Some(n) = name {
+                        // 원본은 바로 지우고 알림이 없다. 잘못 지운 것을 바로 되살리도록 알림에 [되돌리기]
+                        c.notify_act(wp_core::i18n::tr_args("'{1}' 순서를 삭제했습니다", &[&n]), "ok", "undo");
+                    }
                     self.sel = None;
                     self.edit = None;
                 }
@@ -321,6 +342,32 @@ impl App {
                         self.out.open(port, m, false);
                     }
                     continue;
+                }
+                Act::Undo(redo) => {
+                    c.undo_items(redo);
+                    self.edit = None;
+                }
+                Act::ToastDismiss => {
+                    c.toast = None;
+                    c.toast_act = None;
+                }
+                Act::ToastAct(a) => {
+                    c.toast = None;
+                    c.toast_act = None;
+                    match a {
+                        "undo" => {
+                            c.undo_items(false);
+                            self.edit = None;
+                        }
+                        "output-on" => {
+                            drop(c);
+                            if !self.out.running() {
+                                self.apply(vec![Act::OutputToggle]);
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
                 }
                 Act::CuePreviewStep(d) => {
                     let n = c.cue.as_ref().map(|x| x.items.len()).unwrap_or(0) as i64;
@@ -449,17 +496,52 @@ impl App {
         // .center-head: '본문 | 주석' · '편집칸' · 제목 + 부가 글 · '목록 | 격자 | 전체 격자 | 전체 목록' (center_ui.rs)
         let mut editor_on = self.editor_on;
         ui.spacing_mut().item_spacing.y = 0.0;
-        self.center_head(ui, s, &mut editor_on);
+        self.center_head(ui, s, &mut editor_on, acts);
         self.editor_on = editor_on;
-        // 원본처럼 순서를 골랐을 때만 편집칸을 보이고, 높이는 본문 패널의 절반 안쪽(control.css .cue-editor max-height 46%)으로 제한해 검색 결과가 가려지지 않게 한다.
+        // 원본처럼 순서를 골랐을 때만 편집칸을 보인다. 높이는 기본 본문 패널의 46%(control.css .cue-editor max-height 46%),
+        // 아래 구분선을 끌어 바꾸고(설정 rsEditorFrac 에 기억, 두 번 누르면 처음대로), 머리의 '크게' 로 본문 패널 전체를 쓴다 (평가 8번).
+        let mut big = false;
         if let (true, Some(i)) = (self.editor_on, selected) {
-            let h = (ui.available_height() * 0.46).max(160.0);
-            ui.allocate_ui(egui::vec2(ui.available_width(), h), |ui| {
+            big = editor_big(ui.ctx());
+            let avail = ui.available_height();
+            let frac_id = egui::Id::new("editor-frac-drag");
+            let saved = self.core.lock().settings.get()["rsEditorFrac"].as_f64().unwrap_or(EDITOR_FRAC as f64) as f32;
+            let frac = ui.data(|d| d.get_temp::<f32>(frac_id)).unwrap_or(saved);
+            let h = if big { avail } else { editor_height(avail, frac) };
+            let w = ui.available_width();
+            ui.allocate_ui(egui::vec2(w, h), |ui| {
                 ui.set_max_height(h);
+                if !big { ui.set_min_height(h); }
                 self.editor(ui, i, &s.items[i], acts);
             });
+            if !big {
+                // 끌어서 높이를 바꾸는 구분선 (8px, 가운데 손잡이)
+                let p = crate::theme::pal();
+                let (r, resp) = ui.allocate_exact_size(egui::vec2(w, 8.0), Sense::click_and_drag());
+                crate::widgets::mark("editor-split", r);
+                let resp = resp.on_hover_text(wp_core::i18n::tr("끌어서 편집칸 높이 바꾸기 (두 번 누르면 처음 높이)"));
+                let hot = resp.hovered() || resp.dragged();
+                if hot { ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical); }
+                let c = r.center();
+                ui.painter().line_segment([egui::pos2(c.x - 20.0, c.y), egui::pos2(c.x + 20.0, c.y)], egui::Stroke::new(3.0, if hot { p.accent } else { p.line2 }));
+                if resp.dragged() {
+                    let nf = ((h + resp.drag_delta().y) / avail.max(1.0)).clamp(EDITOR_FRAC_MIN, EDITOR_FRAC_MAX);
+                    ui.data_mut(|d| d.insert_temp(frac_id, nf));
+                }
+                if resp.drag_stopped() {
+                    let nf = ui.data(|d| d.get_temp::<f32>(frac_id)).unwrap_or(frac);
+                    self.core.lock().settings.update(|d| d["rsEditorFrac"] = json!(nf));
+                    ui.data_mut(|d| d.remove::<f32>(frac_id));
+                }
+                if resp.double_clicked() {
+                    self.core.lock().settings.update(|d| d["rsEditorFrac"] = json!(EDITOR_FRAC));
+                    ui.data_mut(|d| d.remove::<f32>(frac_id));
+                }
+            }
         }
-        self.center_body(ui, s, acts);
+        if !big {
+            self.center_body(ui, s, acts);
+        }
     }
 
     /// 순서 편집칸 (Electron cue.js renderEditor): 머리 줄 카드 + 이름표-입력칸 2단. 입력하면 바로 저장
@@ -510,7 +592,7 @@ impl App {
         let frame = egui::Frame::new().fill(p.panel2).inner_margin(egui::Margin { left: 14, right: 14, top: 8, bottom: 10 }).show(ui, |ui| {
             ui.set_width(full - 28.0);
             ui.spacing_mut().item_spacing.y = 0.0;
-            head = ce_head(ui, i, &ty, "");
+            head = ce_head(ui, i, &ty, it["title"].as_str().unwrap_or(""), "", editor_big(ui.ctx()));
             if ty == "camera" {
                 scan_bar(ui, &self.core);
             }
@@ -693,6 +775,11 @@ impl App {
         }
         if head.close {
             self.editor_on = false;
+            set_editor_big(ui.ctx(), false);
+        }
+        if head.big {
+            let b = editor_big(ui.ctx());
+            set_editor_big(ui.ctx(), !b);
         }
         if head.slide_edit {
             acts.push(Act::PreviewItem(i));
@@ -753,6 +840,7 @@ impl App {
                     });
                 });
             });
+            if is_live { self.output_off_band(ui, deck.is_some(), acts); } // 예배당 화면 꺼짐 띠 [지금 켜기]
             ui.add_space(8.0); // .pane-head { margin-bottom: 8px }
             // ---- .screen: 16:9, 2px 테두리 (미리보기 pv · LIVE live · 숨김이면 점선), 둥글기 6
             let tpl = match (is_live, self.views.obs(is_live)) {
@@ -790,9 +878,12 @@ impl App {
                 if !is_live {
                     let n = deck.map(|d| d.slides.len()).unwrap_or(0);
                     let i = deck.map(|d| d.index).unwrap_or(0);
-                    if ui.add(Btn::new("◀").height(28.0).enabled(deck.is_some()).tooltip(tr("미리보기 이전 슬라이드 (PageUp)"))).clicked() && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
+                    let why = if deck.is_none() { Some(tr("미리보기에 띄운 본문이 없습니다")) } else { None };
+                    let prev_tip = why.clone().unwrap_or_else(|| if i == 0 { tr("첫 슬라이드입니다") } else { tr("미리보기 이전 슬라이드 (PageUp)") });
+                    if ui.add(Btn::new("◀").height(28.0).enabled(deck.is_some() && i > 0).tooltip(prev_tip)).clicked() && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
                     count_label(ui, deck.map(|d| format!("{} / {}", d.index + 1, d.slides.len())).unwrap_or_default());
-                    if ui.add(Btn::new("▶").height(28.0).enabled(deck.is_some()).tooltip(tr("미리보기 다음 슬라이드 (PageDown)"))).clicked() && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
+                    let next_tip = why.unwrap_or_else(|| if i + 1 >= n { tr("마지막 슬라이드입니다") } else { tr("미리보기 다음 슬라이드 (PageDown)") });
+                    if ui.add(Btn::new("▶").height(28.0).enabled(deck.is_some() && i + 1 < n).tooltip(next_tip)).clicked() && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
                 } else if let Some(d) = deck {
                     count_label(ui, format!("{} / {}", d.index + 1, d.slides.len()));
                 }
@@ -1128,6 +1219,24 @@ fn layer_chip(ui: &mut egui::Ui, ly: &Layer) -> egui::Response {
     resp.on_hover_text(ly.tip.clone())
 }
 
+/// 편집칸 높이: 본문 패널에서 차지하는 비율 (기본·최소·최대)
+const EDITOR_FRAC: f32 = 0.46;
+const EDITOR_FRAC_MIN: f32 = 0.2;
+const EDITOR_FRAC_MAX: f32 = 0.85;
+
+/// 비율 → 편집칸 높이 (너무 작거나 검색 결과를 다 덮지 않게)
+fn editor_height(avail: f32, frac: f32) -> f32 {
+    (avail * frac.clamp(EDITOR_FRAC_MIN, EDITOR_FRAC_MAX)).clamp(160.0_f32.min(avail), (avail - 80.0).max(160.0))
+}
+
+/// '크게': 편집칸이 본문 패널 전체를 쓰는지 (창을 닫으면 처음처럼)
+pub(crate) fn editor_big(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::new("editor-big"))).unwrap_or(false)
+}
+fn set_editor_big(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("editor-big"), on));
+}
+
 static SHOT_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn test_args() -> Option<(Instant, Option<String>, bool, Option<String>, u8)> {
@@ -1211,11 +1320,18 @@ impl eframe::App for App {
         egui::Panel::top("top").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::TOP_MARGIN)).show(ui, |ui| {
             self.top_bar(ui, &s, &mut acts);
         });
+        if !s.preview_mode {
+            // 바로 송출 중: 주황 띠를 계속 보인다 (조작 실수 막기)
+            let p = crate::theme::pal();
+            egui::Panel::top("direct-band").frame(egui::Frame::new().fill(p.warn_bg).stroke(egui::Stroke::new(1.0, p.warn)).inner_margin(egui::Margin::symmetric(12, 4))).show(ui, |ui| {
+                self.direct_band(ui, &mut acts);
+            });
+        }
         // 아래 송출 줄 (footer.bottom: 창 맨 아래 전체 폭, panel 바탕 · 위 line) — topbar_ui.rs
         egui::Panel::bottom("status").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::BOTTOM_MARGIN)).show(ui, |ui| {
             self.bottom_bar(ui, &s, &mut acts);
         });
-        self.toast(&ctx, &s);
+        if let Some(a) = self.toast(&ctx, &s) { acts.push(a); }
         if std::mem::take(&mut self.editor_reveal) { self.reveal_editor_panel(); }
         self.workspace_window(&ctx); // 작업공간 · 패널 배치 창 (고르기는 머리 줄)
         egui::CentralPanel::default_margins().show(ui, |ui| { self.workspace_content(ui, &s, &mut acts); });
@@ -1233,6 +1349,11 @@ impl eframe::App for App {
 
         if !acts.is_empty() {
             self.apply(acts);
+            ctx.request_repaint();
+        }
+        // 복사한 뒤 '복사했습니다' 알림 (widgets::copy_notice 를 쓴 모든 복사 지점)
+        if let Some(m) = crate::widgets::take_copied(&ctx) {
+            self.core.lock().notify(m, "ok");
             ctx.request_repaint();
         }
         if self.last_flush.elapsed().as_secs_f32() > 1.0 {
@@ -1298,6 +1419,17 @@ impl Drop for App {
 #[cfg(test)]
 #[path = "ui_integration_tests.rs"]
 mod ui_integration_tests;
+#[cfg(test)]
+#[path = "ux_a_tests.rs"]
+mod ux_a_tests;
+#[cfg(test)]
+impl App {
+    /// 시험용 App (출력 창·점검 인자 없이)
+    pub(crate) fn for_test(core: Shared, dir: std::path::PathBuf) -> Self {
+        let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
+        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir: dir.clone(), data_dir: dir, search: String::new(), result: Value::Null, versions: vec![], sel: None, edit: None, out: crate::outwin::OutWin::for_test(), monitor: 0, last_flush: Instant::now(), focus_search: false, test: None, tb: Default::default(), tc: Default::default() }
+    }
+}
 /// 머리 줄 · 아래 송출 줄 · 상태 · 알림 (Snap 의 private 필드를 읽도록 자식 모듈)
 #[path = "topbar_ui.rs"]
 mod topbar_ui;

@@ -42,6 +42,11 @@ pub fn open(w: Win) {
     }
 }
 
+/// 그 창이 열려 있는지 (상태 점을 눌러 열었는지 시험용)
+pub fn is_open(w: Win) -> bool {
+    ST.lock().open.contains(&w)
+}
+
 /// 순서 편집칸(⚡ 송출할 때 자동으로)의 OBS 줄이 쓰는 상태: (설정에서 켬, 연결됨, 장면 목록).
 /// 출처는 `wp_core::obs::cached()` — 백그라운드 폴러(obs.enabled 면 10초마다)·OBS 창·자동 동작이 모두 같은 캐시를 쓴다
 /// (Electron `BCObs.state()` 와 같은 역할). OBS 창을 열지 않아도 장면 콤보가 채워진다.
@@ -329,6 +334,46 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
             app.out.open(port, app.monitor, true);
         }
     });
+    ui.separator();
+    let port = core.lock().port;
+    obs_urls(ui, port);
+}
+
+/// OBS 에 넣을 주소 3줄 + [복사] (원본 설정 → 출력 'OBS 브라우저 소스 주소' 와 같은 역할, 평가 5번).
+/// 복사하면 '… 주소를 복사했습니다' 알림
+pub(crate) fn obs_urls(ui: &mut egui::Ui, port: u16) {
+    use crate::theme::{self, pal, Weight};
+    use crate::widgets::{self, Btn, Size};
+    use wp_core::i18n::tr;
+    let p = pal();
+    ui.label(theme::rich(tr("OBS에 넣을 주소"), 14.0, Weight::Bold, p.text));
+    ui.add_space(4.0);
+    for (i, (label, path)) in [("예배당 화면 그대로", "/outputs/main"), ("투명 자막", "/outputs/overlay"), ("무대 화면", "/outputs/stage")].into_iter().enumerate() {
+        let url = format!("http://127.0.0.1:{port}{path}");
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            ui.allocate_ui_with_layout(egui::vec2(120.0, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(120.0);
+                ui.add(egui::Label::new(theme::rich(tr(label), 13.0, Weight::Regular, p.text2)).truncate());
+            });
+            egui::Frame::new().fill(p.sunken).stroke(egui::Stroke::new(1.0, p.line)).corner_radius(egui::CornerRadius::same(4)).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+                ui.set_min_width(300.0);
+                ui.add(egui::Label::new(egui::RichText::new(&url).monospace().color(p.text)).selectable(true));
+            });
+            let b = ui.add(Btn::new(tr("복사")).icon("copy").size(Size::Sm).height(26.0).tooltip(tr("주소를 복사해 OBS 브라우저 소스에 붙여 넣습니다")));
+            widgets::mark(&format!("obs-copy-{i}"), b.rect);
+            if b.clicked() {
+                widgets::copy_notice(ui.ctx(), url.clone(), crate::track_c::obs_copied_msg(label));
+            }
+        });
+    }
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.label(theme::rich(tr("OBS → 소스 ＋ → 브라우저 → 주소 붙여 넣기 · 너비·높이 1920×1080"), 12.0, Weight::Regular, p.muted));
+        if ui.link(tr("도움말 › OBS 연결 안내")).clicked() {
+            crate::parity_ui::handle_menu("a:help-obs");
+        }
+    });
 }
 
 /// OBS 창의 동작·연결 확인을 백그라운드에서 (코어 잠금 없이). 상태는 `obs::status` 가 캐시에 남기고, 동작 오류만 BG 로 돌려준다
@@ -378,7 +423,7 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
     let busy = s.obs_busy;
     let mut check = false;
     ui.horizontal(|ui| {
-        check = ui.add_enabled(!busy, egui::Button::new(wp_core::i18n::tr("연결 확인"))).clicked();
+        check = ui.add_enabled(!busy, egui::Button::new(wp_core::i18n::tr("연결 확인"))).on_disabled_hover_text(wp_core::i18n::tr("확인하는 중입니다. 잠시 기다리세요")).clicked();
         if busy {
             ui.spinner();
         }
@@ -552,10 +597,10 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
     if st["state"] == "ready" { ui.label(wp_core::i18n::tr("SHA-256 검증 완료. 설치 준비됨. 자동 설치하지 않습니다.")); }
     if st["state"] == "cancelled" { ui.label(wp_core::i18n::tr("다운로드를 취소했습니다.")); }
     ui.horizontal(|ui| {
-        if ui.add_enabled(st["canDownload"] == true, egui::Button::new(wp_core::i18n::tr("검증하여 다운로드"))).clicked() {
+        if ui.add_enabled(st["canDownload"] == true, egui::Button::new(wp_core::i18n::tr("검증하여 다운로드"))).on_disabled_hover_text(wp_core::i18n::tr("받을 새 버전이 없거나 이미 받는 중입니다")).clicked() {
             if let Err(e) = wp_core::updates::download(core) { core.lock().notify(e, "warn"); }
         }
-        if ui.add_enabled(st["canInstall"] == true, egui::Button::new(wp_core::i18n::tr("지금 설치 요청 (프로그램 종료)"))).clicked() {
+        if ui.add_enabled(st["canInstall"] == true, egui::Button::new(wp_core::i18n::tr("지금 설치 요청 (프로그램 종료)"))).on_disabled_hover_text(wp_core::i18n::tr("먼저 새 버전을 받아 검증을 마쳐야 합니다")).clicked() {
             match wp_core::updates::install_now(core) {
                 Ok(()) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
                 Err(e) => core.lock().notify(e, "warn"),
