@@ -33,9 +33,8 @@ pub fn shortcut_conflicts(s: &Value) -> Vec<(String, String)> {
 
 /// 조작 화면 테마·글자 크기 적용 (어둡게가 기본, 밝은 테마는 고를 때만)
 pub fn apply_ui_prefs(ctx: &egui::Context, s: &Value) {
-    let theme = s["ui"]["theme"].as_str().unwrap_or("dark");
-    let light = matches!(theme, "light" | "manna" | "mannaro" | "bright" | "warm");
-    ctx.set_theme(if light { egui::Theme::Light } else { egui::Theme::Dark });
+    // control.css 테마 5개 (dark·light·contrast·warm·navy) → crate::theme (같은 테마면 아무것도 안 함)
+    crate::theme::apply(ctx, crate::theme::ThemeId::from_setting(s["ui"]["theme"].as_str().unwrap_or("dark")));
     let scale = s["ui"]["scale"].as_f64().unwrap_or(100.0).clamp(70.0, 200.0) as f32 / 100.0;
     if (ctx.zoom_factor() - scale).abs() > 0.001 {
         ctx.set_zoom_factor(scale);
@@ -121,7 +120,7 @@ impl SettingsUi {
                         ui.end_row();
                     }
                     _ => {
-                        ch |= pick(ui, &mut data, &["ui", "theme"], "테마", &[("dark", "어둡게 (기본)"), ("contrast", "고대비"), ("night", "푸른 밤"), ("light", "밝게"), ("manna", "만나로 (밝음)")]);
+                        ch |= pick(ui, &mut data, &["ui", "theme"], "테마", &[("dark", "어둡게 (기본)"), ("contrast", "고대비"), ("light", "밝게"), ("warm", "따뜻하게"), ("navy", "푸른 밤"), ("manna", "만나로 (밝음)")]);
                         ui.end_row();
                         ch |= num(ui, &mut data, &["ui", "scale"], "글자 크기(%)", 70.0, 200.0, 5.0);
                         ui.end_row();

@@ -183,7 +183,7 @@ fn checker(p: &egui::Painter, rect: Rect) {
 }
 
 fn family(weight: f32) -> FontFamily {
-    if weight >= 600.0 { FontFamily::Name("bold".into()) } else { FontFamily::Proportional }
+    crate::theme::slide_family(weight >= 600.0) // 슬라이드는 맑은 고딕 먼저 (송출 화면 기본 글꼴)
 }
 
 /// 슬라이드 하나를 rect 에 그린다. visible=false 면 글자는 숨기고 배경만 (LIVE 숨김 상태)
@@ -380,11 +380,11 @@ fn paint_text(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32, vers
             let h = part["heading"].as_str().unwrap_or("");
             if !h.is_empty() && heads["show"].as_bool().unwrap_or(false) && pi <= 1 {
                 let hs = num(&heads["size"], 36.0) * sc;
-                job.append(h, 0.0, fmt(hs, color(&heads["color"], Color32::LIGHT_GRAY), FontFamily::Proportional, 1.3));
+                job.append(h, 0.0, fmt(hs, color(&heads["color"], Color32::LIGHT_GRAY), crate::theme::slide_family(false), 1.3));
                 job.append("\n", 0.0, fmt(hs * 0.3, fcol, fam.clone(), 1.0));
             }
             if show_num && pi <= 1 {
-                let mut nf = fmt(size * vsc, vcol, FontFamily::Name("bold".into()), lh / vsc);
+                let mut nf = fmt(size * vsc, vcol, crate::theme::slide_family(true), lh / vsc);
                 nf.valign = Align::TOP;
                 job.append(&format!("{} ", part["verse"]), 0.0, nf);
             }
@@ -405,10 +405,10 @@ fn paint_text(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32, vers
     let vl = &t["versionLabel"];
     if vl["show"].as_bool().unwrap_or(false) && !version_name.is_empty() {
         let vs = num(&vl["size"], 28.0) * sc;
-        job.append(&format!("\n{}", version_name), 0.0, fmt(vs, color(&vl["color"], Color32::GRAY), FontFamily::Proportional, 1.2));
+        job.append(&format!("\n{}", version_name), 0.0, fmt(vs, color(&vl["color"], Color32::GRAY), crate::theme::slide_family(false), 1.2));
     }
     if let Some(ft) = s["footer"].as_str().filter(|x| !x.is_empty()) {
-        job.append(&format!("\n{}", ft), 0.0, fmt(size * 0.45, fcol.gamma_multiply(0.8), FontFamily::Proportional, 1.4));
+        job.append(&format!("\n{}", ft), 0.0, fmt(size * 0.45, fcol.gamma_multiply(0.8), crate::theme::slide_family(false), 1.4));
     }
     let galley = p.layout_job(job);
     let size_v = galley.size() + Vec2::splat(2.0 * bpad);
@@ -463,7 +463,7 @@ fn paint_title(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32) {
     job.wrap.max_width = area.width().max(10.0);
     job.halign = Align::Center;
     let t1 = size * 1.3;
-    job.append(s["ref"].as_str().unwrap_or(""), 0.0, TextFormat { font_id: FontId::new(t1.max(1.0), FontFamily::Name("bold".into())), color: fcol, line_height: Some(t1 * 1.3), ..Default::default() });
+    job.append(s["ref"].as_str().unwrap_or(""), 0.0, TextFormat { font_id: FontId::new(t1.max(1.0), crate::theme::slide_family(true)), color: fcol, line_height: Some(t1 * 1.3), ..Default::default() });
     if let Some(sub) = s["subtitle"].as_str().filter(|x| !x.is_empty()) {
         let t2 = size * 0.62;
         job.append(&format!("\n{}", sub), 0.0, TextFormat { font_id: FontId::proportional(t2.max(1.0)), color: fcol.gamma_multiply(0.9), line_height: Some(t2 * 1.6), ..Default::default() });

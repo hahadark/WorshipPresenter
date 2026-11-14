@@ -18,7 +18,7 @@ fn num(v: &Value, d: f32) -> f32 {
 
 /// PPT 글꼴을 egui 에 등록한다 (처음 본 이름은 이번 프레임은 기본 글꼴, 다음 프레임부터 그 글꼴)
 fn family_for(ctx: &egui::Context, name: &str, bold: bool) -> FontFamily {
-    let fallback = if bold { FontFamily::Name("bold".into()) } else { FontFamily::Proportional };
+    let fallback = crate::theme::slide_family(bold); // 못 찾은 PPT 글꼴은 맑은 고딕
     let name = name.trim();
     if name.is_empty() {
         return fallback;
