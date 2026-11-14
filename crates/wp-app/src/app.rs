@@ -118,8 +118,34 @@ fn sync_preview_pane(ws: &mut wp_core::workspace::Workspace, on: bool) {
     }
     let locked = ws.locked;
     ws.locked = false;
-    ws.toggle(Pane::Preview);
+    // 다시 켤 때는 원본 기본 배치처럼 LIVE 바로 위에 붙인다 (맨 오른쪽 끝에 새 열로 붙지 않게)
+    if on && ws.layout.as_ref().is_some_and(|n| n.contains(Pane::Live)) {
+        if let Some(n) = &mut ws.layout {
+            n.insert(Pane::Preview, Pane::Live, 2);
+        }
+    } else {
+        ws.toggle(Pane::Preview);
+    }
     ws.locked = locked;
+}
+
+#[cfg(test)]
+mod preview_pane_tests {
+    use super::sync_preview_pane;
+    use wp_core::workspace::{Pane, Workspace};
+    #[test]
+    fn preview_returns_above_live_not_as_new_column() {
+        let mut ws = Workspace::default();
+        sync_preview_pane(&mut ws, false);
+        assert!(!ws.visible(Pane::Preview));
+        sync_preview_pane(&mut ws, true);
+        assert!(ws.visible(Pane::Preview));
+        // LIVE 와 같은 묶음(위아래 분할) 안에 있어야 한다
+        let g = ws.layout.as_ref().unwrap().group(Pane::Live);
+        let json = serde_json::to_string(ws.layout.as_ref().unwrap()).unwrap();
+        assert!(g.is_some(), "{json}");
+        assert!(ws.floating.is_empty());
+    }
 }
 
 impl App {

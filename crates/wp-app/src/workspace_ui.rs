@@ -89,58 +89,47 @@ impl App {
         if let Some((p, t)) = self.workspace.merge_group.take() {
             self.workspace.state.merge_group(p, t);
         }
+        // 떠 있는 묶음: 원본(dockview addFloatingGroup)처럼 프로그램 창 안에 떠 있는 패널로 그린다.
+        // (별도 OS 창으로 띄우면 다른 창 뒤로 숨고, 매 프레임 위치·크기를 다시 주면서 창이 깜빡였다)
+        let screen = ui.ctx().content_rect();
         for f in self.workspace.state.floating.clone() {
             let ctx = ui.ctx().clone();
             let mut attach = false;
             let mut node = f.node();
-            let mut geometry = None;
-            let mut builder = egui::ViewportBuilder::default()
-                .with_title(tr(f.pane.title()))
-                .with_inner_size(f.size.unwrap_or([520.0, 420.0]));
-            if let Some(pos) = f.position {
-                builder = builder.with_position(pos);
-            }
-            ctx.show_viewport_immediate(
-                egui::ViewportId::from_hash_of(("workspace-float", format!("{:?}", f.pane))),
-                builder,
-                |ctx, _| {
-                    egui::CentralPanel::default_margins().show(ctx, |ui| {
-                        if ui
-                            .add_enabled(
-                                !self.workspace.state.locked,
-                                egui::Button::new(tr("제자리에 붙이기")),
-                            )
-                            .clicked()
-                        {
-                            attach = true
-                        }
-                        let rect = ui.available_rect_before_wrap();
-                        self.workspace_node(
-                            ui,
-                            rect,
-                            &mut node,
-                            s,
-                            acts,
-                            100 + f.pane as u64,
-                            false,
-                        );
-                    });
-                    geometry = ctx.input(|i| {
-                        let v = i.viewport();
-                        if v.minimized == Some(true) || v.maximized == Some(true) {
-                            return None;
-                        }
-                        let pos = v.outer_rect?.min;
-                        let size = v.inner_rect?.size();
-                        Some(([pos.x, pos.y], [size.x, size.y]))
-                    });
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        ctx.ctx()
-                            .send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            let size = f.size.unwrap_or([520.0, 420.0]);
+            let size = egui::vec2(size[0].min(screen.width() - 40.0).max(240.0), size[1].min(screen.height() - 80.0).max(160.0));
+            // 예전에 OS 창 자리로 저장된 값이 화면 밖이면 화면 안으로
+            let pos = f.position.map(|p| egui::pos2(p[0], p[1])).unwrap_or(screen.center() - size / 2.0);
+            let pos = egui::pos2(pos.x.clamp(screen.left(), (screen.right() - 120.0).max(screen.left())), pos.y.clamp(screen.top(), (screen.bottom() - 60.0).max(screen.top())));
+            let mut open = true;
+            let resp = egui::Window::new(tr(f.pane.title()))
+                .id(egui::Id::new(("workspace-float", format!("{:?}", f.pane))))
+                .default_pos(pos)
+                .default_size(size)
+                .collapsible(false)
+                .resizable(true)
+                .constrain(true)
+                .open(&mut open)
+                .show(&ctx, |ui| {
+                    if ui
+                        .add_enabled(!self.workspace.state.locked, egui::Button::new(tr("제자리에 붙이기")))
+                        .on_hover_text(tr("이 묶음을 다시 프로그램 배치 안으로 넣습니다"))
+                        .clicked()
+                    {
                         attach = true
                     }
-                },
-            );
+                    let rect = ui.available_rect_before_wrap();
+                    self.workspace_node(ui, rect, &mut node, s, acts, 100 + f.pane as u64, false);
+                    ui.allocate_rect(rect, Sense::hover());
+                });
+            if !open {
+                attach = true
+            }
+            // 자리·크기는 사용자가 옮기거나 늘렸을 때만 저장 (반올림으로 매 프레임 값이 바뀌지 않게)
+            let geometry = resp.map(|r| {
+                let rr = r.response.rect;
+                ([rr.min.x.round(), rr.min.y.round()], [rr.width().round(), rr.height().round()])
+            });
             if let Some(saved) = self
                 .workspace
                 .state
@@ -151,8 +140,13 @@ impl App {
                 saved.group = Some(node);
                 if let Some((position, size)) = geometry {
                     if size.iter().all(|x| *x >= 100.0) {
-                        saved.position = Some(position);
-                        saved.size = Some(size);
+                        let moved = |a: Option<[f32; 2]>, b: [f32; 2]| a.is_none_or(|a| (a[0] - b[0]).abs() >= 2.0 || (a[1] - b[1]).abs() >= 2.0);
+                        if moved(saved.position, position) {
+                            saved.position = Some(position);
+                        }
+                        if moved(saved.size, size) {
+                            saved.size = Some(size);
+                        }
                     }
                 }
             }

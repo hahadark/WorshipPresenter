@@ -676,7 +676,8 @@ pub fn books(app: &mut App, ui: &mut egui::Ui) {
                 ui.label(rich(format!("{} ({}{})", b["name"].as_str().unwrap_or(""), n, tr("장")), 14.0, Weight::Bold, p.text));
                 ui.add_space(6.0 - ui.spacing().item_spacing.y);
                 // .chapter-grid { auto-fill minmax(36px, 1fr) · 간격 4 }
-                let aw = ui.available_width();
+                // 스크롤 막대 자리를 빼고 계산 (예전에는 오른쪽 칸이 패널 밖으로 넘쳐 24·36·48장이 잘렸다)
+                let aw = (ui.available_width() - 14.0).max(40.0);
                 let cols = (((aw + 4.0) / 40.0).floor() as usize).max(1);
                 let cw = (aw - 4.0 * (cols - 1) as f32) / cols as f32;
                 ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
