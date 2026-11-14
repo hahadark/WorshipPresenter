@@ -80,22 +80,17 @@ impl App {
         }
     }
 
-    /// 위 도구 줄
+    /// 빠른 설정 아래 줄 (panel_ui 에서 부름).
+    /// 찬양·라이브러리·오버레이·회중 메시지·즉석 자막·무대 화면·매크로·큐시트 관리·인쇄 단추는
+    /// '도구'·'큐시트' 메뉴와 아래 독 탭에 이미 있어 덜어냈다 (휴리스틱 평가 13번: 같은 기능 단추 중복).
+    /// 순서 변경 되돌리기는 큐시트 머리로 옮기기 전까지 여기 남긴다.
     pub(crate) fn trackb_toolbar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            let t = &mut self.tb;
-            ui.toggle_value(&mut t.songs, wp_core::i18n::tr("찬양"));
-            ui.toggle_value(&mut t.lib, wp_core::i18n::tr("라이브러리"));
-            ui.toggle_value(&mut t.overlays, wp_core::i18n::tr("오버레이"));
-            ui.toggle_value(&mut t.message, wp_core::i18n::tr("회중 메시지 Ctrl+M"));
-            ui.toggle_value(&mut t.quick, wp_core::i18n::tr("즉석 자막 Ctrl+T"));
-            ui.toggle_value(&mut t.stage, wp_core::i18n::tr("무대 화면"));
-            ui.toggle_value(&mut t.macros, wp_core::i18n::tr("매크로"));
-            ui.toggle_value(&mut t.cues, wp_core::i18n::tr("큐시트 관리"));
-            if ui.button(wp_core::i18n::tr("인쇄 Ctrl+P")).clicked() { self.print_cue(); }
-            if ui.button("↶").on_hover_text(wp_core::i18n::tr("실행 취소 Ctrl+Z")).clicked() { self.core.lock().undo_items(false); self.edit = None; }
-            if ui.button("↷").on_hover_text(wp_core::i18n::tr("다시 Ctrl+Y")).clicked() { self.core.lock().undo_items(true); self.edit = None; }
-            if !self.tb.note.is_empty() { ui.label(RichText::new(&self.tb.note).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
+        use crate::widgets::{Btn, Size};
+        let p = crate::theme::pal();
+        ui.horizontal_wrapped(|ui| {
+            if ui.add(Btn::icon_only("undo-2").size(Size::Sm).tooltip(wp_core::i18n::tr("순서 변경 되돌리기 (Ctrl+Z)"))).clicked() { self.core.lock().undo_items(false); self.edit = None; }
+            if ui.add(Btn::icon_only("redo-2").size(Size::Sm).tooltip(wp_core::i18n::tr("순서 변경 다시 하기 (Ctrl+Y)"))).clicked() { self.core.lock().undo_items(true); self.edit = None; }
+            if !self.tb.note.is_empty() { ui.label(RichText::new(&self.tb.note).small().color(p.warn)); }
         });
     }
 
@@ -135,7 +130,7 @@ impl App {
     // ---------------- 찬양 ----------------
     fn songs_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.songs;
-        egui::Window::new(wp_core::i18n::tr("찬양 라이브러리")).open(&mut open).default_size([520.0, 560.0]).show(ctx, |ui|  self.songs_panel(ui));
+        crate::widgets::float_window(ctx, "songs", wp_core::i18n::tr("찬양 라이브러리"), [520.0, 560.0]).open(&mut open).show(ctx, |ui|  self.songs_panel(ui));
         self.tb.songs = open;
     }
 
@@ -143,7 +138,7 @@ impl App {
     fn lib_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.lib;
         if self.tb.lib_kind.is_empty() { self.tb.lib_kind = "image".into(); }
-        egui::Window::new(wp_core::i18n::tr("라이브러리 (그림·영상·음악)")).open(&mut open).default_size([520.0, 520.0]).show(ctx, |ui|  self.library_panel(ui));
+        crate::widgets::float_window(ctx, "lib", wp_core::i18n::tr("라이브러리 (그림·영상·음악)"), [520.0, 520.0]).open(&mut open).show(ctx, |ui|  self.library_panel(ui));
         self.tb.lib = open;
     }
 
@@ -266,8 +261,9 @@ impl App {
                         let r = self.core.lock().save_song(&e2);
                         match r { Ok(v) => { saved = Some(v); self.tb.note = tr("찬양을 저장했습니다."); } Err(x) => self.tb.note = x.to_string() }
                     }
-                    if e2["id"].as_str().is_some() && ui.add(Btn::new(tr("지우기")).kind(crate::widgets::Kind::Danger)).clicked() {
-                        if let Some(id) = e2["id"].as_str() { self.tb.note = err(self.core.lock().delete_song(id)); close = true; }
+                    if let Some(id) = e2["id"].as_str() {
+                        let q = tr("이 찬양이 라이브러리에서 지워지고 되살릴 수 없습니다.");
+                        if crate::widgets::confirm_delete(ui, egui::Id::unique(("song-del", id)), &tr("지우기"), &q) { self.tb.note = err(self.core.lock().delete_song(id)); close = true; }
                     }
                     if ui.add(Btn::new(tr("닫기"))).clicked() { close = true; }
                 });
@@ -330,7 +326,7 @@ impl App {
     // ---------------- 오버레이 ----------------
     fn overlays_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.overlays;
-        egui::Window::new(wp_core::i18n::tr("오버레이")).open(&mut open).default_size([460.0, 420.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "overlays", wp_core::i18n::tr("오버레이"), [460.0, 420.0]).open(&mut open).show(ctx, |ui| {
             self.overlays_panel(ui);
         });
         self.tb.overlays = open;
@@ -367,7 +363,8 @@ impl App {
                                     changed = true;
                                 }
                             }
-                            if ui.small_button(wp_core::i18n::tr("지우기")).clicked() { self.core.lock().delete_overlay(&id); }
+                            let q = wp_core::i18n::tr_args("'{1}' 오버레이를 지웁니다.", &[&(o["name"].as_str().unwrap_or(""))]);
+                            if crate::widgets::confirm_delete(ui, egui::Id::unique(("ovl-del", &id)), &wp_core::i18n::tr("지우기"), &q) { self.core.lock().delete_overlay(&id); }
                         });
                         ui.horizontal(|ui| {
                             for k in ["text", "target"] {
@@ -396,15 +393,39 @@ impl App {
     // ---------------- 회중 메시지 ----------------
     fn message_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.message;
-        egui::Window::new(wp_core::i18n::tr("회중 메시지")).open(&mut open).default_size([420.0, 320.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "message", wp_core::i18n::tr("회중 메시지"), [460.0, 480.0]).open(&mut open).show(ctx, |ui| {
+            use crate::widgets::{self, Btn, HoverOp, Kind, Size};
+            use crate::theme::pal;
+            use wp_core::i18n::tr;
+            let p = pal();
+            // Electron messagepanel.js: 설명 · 지금 보이는 메시지 · 틀 · 글 · 채울 칸 · 미리보기 · 표시 시간 · 보이기/숨기기 · 틀로 저장
+            ui.label(egui::RichText::new(tr("유아실 호출 · 차량 이동처럼 짧은 알림을 예배당 화면·OBS 아래에 띠로 보입니다. 슬라이드는 그대로입니다.")).small().color(p.muted));
+            let now = self.core.lock().b.message.as_ref().map(|m| m.text.clone());
+            ui.horizontal_wrapped(|ui| {
+                match &now {
+                    Some(t) => {
+                        widgets::status_dot(ui, p.live, &tr("지금 보이는 중:"));
+                        ui.label(egui::RichText::new(t).strong());
+                        if ui.add(Btn::new(tr("숨기기")).icon("eye-off").kind(Kind::Danger).size(Size::Sm).tooltip(tr("예배당 화면·OBS 에서 메시지를 내립니다"))).clicked() { self.core.lock().clear_message(); }
+                    }
+                    None => { widgets::muted(ui, &tr("지금 보이는 메시지 없음")); }
+                }
+            });
+            ui.add_space(4.0);
             let tpls = self.core.lock().settings.get()["messageTemplates"].as_array().cloned().unwrap_or_default();
+            let del_id = egui::Id::unique("msg-tpl-del");
+            let del_target = egui::Id::unique("msg-tpl-del-target");
             ui.horizontal_wrapped(|ui| {
                 for t in &tpls {
-                    if ui.small_button("×").on_hover_text(wp_core::i18n::tr("이 틀 지우기")).clicked() {
-                        let id = t["id"].as_str().unwrap_or("").to_string();
-                        self.core.lock().delete_message_template(&id);
+                    let tid = t["id"].as_str().unwrap_or("").to_string();
+                    let on = self.tb.msg_tpl.as_ref().is_some_and(|c| c["id"] == tid.as_str());
+                    let r = ui.add(Btn::new(t["name"].as_str().unwrap_or("")).size(Size::Sm).selected(on).tooltip(tr("이 틀로 글 채우기")));
+                    // 지우기는 칩에 마우스를 올렸을 때만 뜨고, 누르면 아래에서 한 번 더 묻는다 (휴리스틱 평가 3번)
+                    if widgets::hover_ops_float(ui, egui::Id::unique(("msg-tpl", &tid)), r.rect, &[HoverOp::new("del", "x", tr("이 틀 지우기")).danger()]) == Some("del") {
+                        ui.data_mut(|d| d.insert_temp(del_target, (tid.clone(), t["name"].as_str().unwrap_or("").to_string())));
+                        widgets::confirm_arm(ui, del_id, true);
                     }
-                    if ui.button(t["name"].as_str().unwrap_or("")).clicked() {
+                    if r.clicked() {
                         let text = t["text"].as_str().unwrap_or("").to_string();
                         self.tb.msg_fields = wp_core::overlays::template_fields(&text).into_iter().map(|f| (f, String::new())).collect();
                         self.tb.msg_sec = t["seconds"].as_i64().unwrap_or(0);
@@ -412,36 +433,68 @@ impl App {
                         self.tb.msg_tpl = Some(t.clone());
                     }
                 }
+                if ui.add(Btn::new(tr("새 글")).icon("plus").kind(Kind::Ghost).size(Size::Sm)).clicked() {
+                    self.tb.msg_tpl = None;
+                    self.tb.msg_text.clear();
+                    self.tb.msg_fields.clear();
+                }
             });
-            ui.add(egui::TextEdit::multiline(&mut self.tb.msg_text).desired_rows(2).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("보일 글 ({이름} 같은 칸은 아래에서 채움)")));
+            if widgets::confirm_armed(ui, del_id) {
+                let (tid, name) = ui.data(|d| d.get_temp::<(String, String)>(del_target)).unwrap_or_default();
+                if widgets::confirm_row(ui, del_id, &wp_core::i18n::tr_args("'{1}' 틀을 지웁니다.", &[&name])) {
+                    self.core.lock().delete_message_template(&tid);
+                    if self.tb.msg_tpl.as_ref().is_some_and(|c| c["id"] == tid.as_str()) { self.tb.msg_tpl = None; }
+                }
+            }
+            ui.add(egui::TextEdit::multiline(&mut self.tb.msg_text).desired_rows(2).desired_width(f32::INFINITY).hint_text(tr("예: {이름} 어린이 부모님, 유아실로 와 주세요")));
             // 틀 버튼뿐 아니라 직접 입력하거나 고친 칸도 즉시 반영하고 기존 입력값은 유지한다.
             let fields = wp_core::overlays::template_fields(&self.tb.msg_text);
             self.tb.msg_fields = fields.into_iter().map(|key| {
                 let value = self.tb.msg_fields.iter().find(|(k, _)| k == &key).map(|(_, v)| v.clone()).unwrap_or_default();
                 (key, value)
             }).collect();
+            if self.tb.msg_fields.is_empty() {
+                widgets::muted(ui, &tr("채울 칸이 없습니다 (글에 {이름} 처럼 쓰면 여기에 '이름' 칸이 생깁니다)"));
+            }
             for (k, v) in self.tb.msg_fields.iter_mut() {
                 ui.horizontal(|ui| { ui.label(k.as_str()); ui.text_edit_singleline(v); });
             }
-            ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut self.tb.msg_sec).range(0..=3600).suffix(wp_core::i18n::tr("초 (0=계속)")));
-                ui.checkbox(&mut self.tb.msg_obs, wp_core::i18n::tr("OBS 자막에도"));
+            // 보내기 전 모습 (휴리스틱 평가 17번): 예배당 화면 16:9 아래 띠
+            let filled = wp_core::overlays::fill_template(&self.tb.msg_text, &self.tb.msg_fields);
+            ui.label(egui::RichText::new(tr("미리보기")).small().color(p.muted));
+            message_preview(ui, &filled);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(tr("표시 시간"));
+                let label = |s: i64| match s { 0 => tr("숨길 때까지 계속"), s if s % 60 == 0 => wp_core::i18n::tr_args("{1}분 뒤 숨김", &[&(s / 60)]), s => wp_core::i18n::tr_args("{1}초 뒤 숨김", &[&s]) };
+                egui::ComboBox::from_id_salt("msg-sec").selected_text(label(self.tb.msg_sec)).show_ui(ui, |ui| {
+                    for s in MSG_SECS { ui.selectable_value(&mut self.tb.msg_sec, s, label(s)); }
+                });
+                ui.add(egui::DragValue::new(&mut self.tb.msg_sec).range(0..=3600).suffix(tr("초"))).on_hover_text(tr("직접 정하기 (0이면 숨길 때까지 계속)"));
             });
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(wp_core::i18n::tr("보이기")).fill(Color32::from_rgb(0xb0, 0x2a, 0x2a))).clicked() {
-                    let text = wp_core::overlays::fill_template(&self.tb.msg_text, &self.tb.msg_fields);
+                ui.label(tr("보일 곳"));
+                let mut main = true;
+                ui.add_enabled(false, egui::Checkbox::new(&mut main, tr("예배당 화면"))).on_disabled_hover_text(tr("회중 메시지는 항상 예배당 화면에 보입니다"));
+                ui.checkbox(&mut self.tb.msg_obs, tr("OBS 자막에도"));
+            });
+            ui.horizontal(|ui| {
+                let empty = filled.trim().is_empty();
+                let tip = if empty { tr("보일 글을 먼저 쓰거나 위에서 틀을 고르세요") } else { tr("지금 바로 예배당 화면에 띠를 뛄웁니다") };
+                if ui.add(Btn::new(tr("예배당 화면에 보이기")).icon("megaphone").kind(Kind::Send).enabled(!empty).tooltip(tip)).clicked() {
                     let mut outs = vec!["main".to_string()];
                     if self.tb.msg_obs { outs.push("overlay".into()); }
-                    self.tb.note = err(self.core.lock().show_message(&text, &outs, self.tb.msg_sec));
+                    self.tb.note = err(self.core.lock().show_message(&filled, &outs, self.tb.msg_sec));
                 }
-                if ui.button(wp_core::i18n::tr("지우기")).clicked() { self.core.lock().clear_message(); }
-                if ui.button(wp_core::i18n::tr("틀로 저장")).clicked() {
+                if ui.add(Btn::new(tr("숨기기")).icon("eye-off").enabled(now.is_some()).tooltip(if now.is_some() { tr("메시지를 내립니다") } else { tr("지금 보이는 메시지가 없습니다") })).clicked() { self.core.lock().clear_message(); }
+                let can_save = !self.tb.msg_text.trim().is_empty();
+                if ui.add(Btn::new(tr("틀로 저장")).icon("plus").enabled(can_save).tooltip(if can_save { tr("자주 쓰는 알림을 틀로 저장해 두면 위 단추로 바로 불러옵니다") } else { tr("저장할 글을 먼저 쓰세요") })).clicked() {
                     let name: String = self.tb.msg_text.chars().take(12).collect();
                     let id = self.tb.msg_tpl.as_ref().and_then(|t| t["id"].as_str()).unwrap_or("").to_string();
                     let t = json!({ "id": id, "name": name, "text": self.tb.msg_text, "seconds": self.tb.msg_sec });
                     self.tb.note = err(self.core.lock().save_message_template(&t));
                 }
             });
+            if !self.tb.note.is_empty() { ui.label(egui::RichText::new(&self.tb.note).small().color(p.warn)); }
         });
         self.tb.message = open;
     }
@@ -449,7 +502,7 @@ impl App {
     // ---------------- 즉석 자막 ----------------
     fn quick_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.quick;
-        egui::Window::new(wp_core::i18n::tr("즉석 자막")).open(&mut open).default_size([420.0, 200.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "quick", wp_core::i18n::tr("즉석 자막"), [420.0, 200.0]).open(&mut open).show(ctx, |ui| {
             let r = ui.add(egui::TextEdit::multiline(&mut self.tb.quick_text).desired_rows(3).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("쓰고 Ctrl+Enter → 바로 송출")));
             let send = (r.has_focus() && ui.input(|i| i.modifiers.ctrl && i.key_pressed(Key::Enter))) | ui.button(wp_core::i18n::tr("바로 송출")).clicked();
             let add = ui.button(wp_core::i18n::tr("큐시트에 공지로 넣기")).clicked();
@@ -470,7 +523,7 @@ impl App {
     // ---------------- 무대 화면 ----------------
     fn stage_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.stage;
-        egui::Window::new(wp_core::i18n::tr("무대 화면")).open(&mut open).default_size([440.0, 360.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "stage", wp_core::i18n::tr("무대 화면"), [440.0, 360.0]).open(&mut open).show(ctx, |ui| {
             self.workspace_stage(ui);
         });
         self.tb.stage = open;
@@ -478,21 +531,51 @@ impl App {
 
     pub(crate) fn workspace_stage(&mut self, ui: &mut egui::Ui) {
             let (timer, port, presets) = { let c = self.core.lock(); (c.b.stage.timer_json(), c.port, c.settings.get()["stagePresets"].as_array().cloned().unwrap_or_default()) };
+            use crate::widgets::{self, Btn, Kind, Size};
+            use crate::theme::{pal, rich, Weight};
+            use wp_core::i18n::tr;
+            let p = pal();
             let rem = timer["remaining"].as_i64().unwrap_or(0);
-            ui.label(RichText::new(format!("타이머 {}{:02}:{:02} {}", if rem < 0 { "-" } else { "" }, rem.abs() / 60000, (rem.abs() / 1000) % 60, if timer["running"] == true { wp_core::i18n::tr_s("· 진행 중") } else if timer["duration"].as_i64().unwrap_or(0) > 0 { "· 멈춤" } else { "" })).size(20.0));
+            let running = timer["running"] == true;
+            let set = timer["duration"].as_i64().unwrap_or(0) > 0;
+            // 남은 시간을 크게 (휴리스틱 평가 16번): 넘기면 빨강, 1분 안쪽이면 주황
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.tb.timer_min).desired_width(50.0).hint_text(wp_core::i18n::tr("분")));
-                let m: f64 = self.tb.timer_min.parse().unwrap_or(30.0);
-                if ui.button(wp_core::i18n::tr("시작")).clicked() { self.tb.note = err(self.core.lock().stage_timer("start", m)); }
-                if ui.button(wp_core::i18n::tr("멈춤")).clicked() { let _ = self.core.lock().stage_timer("pause", 0.0); }
-                if ui.button(wp_core::i18n::tr("계속")).clicked() { let _ = self.core.lock().stage_timer("resume", 0.0); }
-                if ui.button(wp_core::i18n::tr("+1분")).clicked() { let _ = self.core.lock().stage_timer("add", 1.0); }
-                if ui.button(wp_core::i18n::tr("지우기")).clicked() { let _ = self.core.lock().stage_timer("reset", 0.0); }
+                let col = if !set { p.muted } else if rem < 0 { p.live } else if rem < 60_000 { p.warn } else { p.text };
+                ui.label(rich(timer_text(rem), 40.0, Weight::Bold, col));
+                ui.vertical(|ui| {
+                    ui.add_space(6.0);
+                    let st = if running { tr("진행 중") } else if set { tr("멈춤") } else { tr("타이머 꺼짐") };
+                    widgets::status_dot(ui, if running { p.pv } else if set { p.warn } else { p.muted2 }, &st);
+                    widgets::muted(ui, &tr("무대 화면에만 보입니다 (회중에게는 안 보임)"));
+                });
             });
+            // 빠른 단추: 누르면 그 시간으로 바로 시작
+            ui.horizontal_wrapped(|ui| {
+                for m in STAGE_QUICK_MIN {
+                    if ui.add(Btn::new(wp_core::i18n::tr_args("{1}분", &[&m])).icon("timer").size(Size::Sm).tooltip(wp_core::i18n::tr_args("{1}분 타이머를 바로 시작", &[&m]))).clicked() {
+                        self.tb.timer_min = m.to_string();
+                        self.tb.note = err(self.core.lock().stage_timer("start", m as f64));
+                    }
+                }
+                widgets::vsep(ui, 22.0);
+                let mut m: f64 = self.tb.timer_min.parse().unwrap_or(30.0);
+                if ui.add(egui::DragValue::new(&mut m).range(1.0..=180.0).speed(0.5).max_decimals(0).suffix(tr("분"))).on_hover_text(tr("직접 정하기 (1~180분)")).changed() { self.tb.timer_min = format!("{m}"); }
+                if ui.add(Btn::new(tr("시작")).icon("play").size(Size::Sm).kind(Kind::Primary)).clicked() { self.tb.note = err(self.core.lock().stage_timer("start", m)); }
+            });
+            ui.horizontal_wrapped(|ui| {
+                let why = tr("타이머를 먼저 시작하세요");
+                if ui.add(Btn::new(tr("일시정지")).icon("pause").size(Size::Sm).enabled(running).tooltip(if running { tr("잠시 멈춥니다") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("pause", 0.0); }
+                if ui.add(Btn::new(tr("계속")).icon("play").size(Size::Sm).enabled(set && !running).tooltip(if set && !running { tr("멈춘 곳부터 다시") } else if running { tr("이미 가고 있습니다") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("resume", 0.0); }
+                if ui.add(Btn::new(tr("−1분")).size(Size::Sm).enabled(set).tooltip(if set { tr("1분 줄이기") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("add", -1.0); }
+                if ui.add(Btn::new(tr("+1분")).size(Size::Sm).enabled(set).tooltip(if set { tr("1분 늘리기") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("add", 1.0); }
+                if ui.add(Btn::new(tr("초기화")).icon("rotate-ccw").size(Size::Sm).enabled(set).tooltip(if set { tr("타이머를 끕니다 (무대 화면에서 사라짐)") } else { why })).clicked() { let _ = self.core.lock().stage_timer("reset", 0.0); }
+            });
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.tb.stage_msg).hint_text(wp_core::i18n::tr("무대 메시지 (설교자에게만)")));
-                if ui.button(wp_core::i18n::tr("보내기")).clicked() { self.core.lock().stage_message(&self.tb.stage_msg.clone()); }
-                if ui.button(wp_core::i18n::tr("지우기")).clicked() { self.tb.stage_msg.clear(); self.core.lock().stage_message(""); }
+                ui.add(egui::TextEdit::singleline(&mut self.tb.stage_msg).hint_text(tr("무대 메시지 (설교자에게만)")));
+                let empty = self.tb.stage_msg.trim().is_empty();
+                if ui.add(Btn::new(tr("보내기")).size(Size::Sm).enabled(!empty).tooltip(if empty { tr("보낼 글을 먼저 쓰세요") } else { tr("무대 화면에 띄웁니다") })).clicked() { self.core.lock().stage_message(&self.tb.stage_msg.clone()); }
+                if ui.add(Btn::new(tr("메시지 내리기")).size(Size::Sm).tooltip(tr("무대 화면의 메시지를 없앱니다"))).clicked() { self.tb.stage_msg.clear(); self.core.lock().stage_message(""); }
             });
             ui.separator();
             ui.label(wp_core::i18n::tr("고정 (지금 슬라이드 대신 계속 보이기)"));
@@ -508,13 +591,25 @@ impl App {
                     self.tb.note = err(self.core.lock().save_stage_preset(&json!({ "mode": "text", "name": name, "text": self.tb.pin_text })));
                 }
             });
+            let pdel = egui::Id::unique("stage-preset-del");
+            let ptarget = egui::Id::unique("stage-preset-del-target");
             ui.horizontal_wrapped(|ui| {
-                for p in &presets {
-                    let r = ui.small_button(p["name"].as_str().unwrap_or(""));
-                    if r.clicked() { let _ = self.core.lock().stage_pin_set(Some(p)); }
-                    r.on_hover_text(wp_core::i18n::tr("오른쪽 클릭: 지우기")).context_menu(|ui| { if ui.button(wp_core::i18n::tr("이 프리셋 지우기")).clicked() { self.core.lock().delete_stage_preset(p["id"].as_str().unwrap_or("")); ui.close(); } }); // [트랙 A] deleteStagePreset
+                for sp in &presets {
+                    let pid = sp["id"].as_str().unwrap_or("").to_string();
+                    let r = ui.add(Btn::new(sp["name"].as_str().unwrap_or("")).size(Size::Sm).tooltip(tr("누르면 무대 화면에 이 글을 고정")));
+                    if r.clicked() { let _ = self.core.lock().stage_pin_set(Some(sp)); }
+                    // [트랙 A] deleteStagePreset: 마우스를 올리면 ×, 누르면 줄 안 확인
+                    let del = widgets::hover_ops_float(ui, egui::Id::unique(("stage-preset", &pid)), r.rect, &[widgets::HoverOp::new("del", "x", tr("이 프리셋 지우기")).danger()]) == Some("del");
+                    if del || r.secondary_clicked() {
+                        ui.data_mut(|d| d.insert_temp(ptarget, (pid.clone(), sp["name"].as_str().unwrap_or("").to_string())));
+                        widgets::confirm_arm(ui, pdel, true);
+                    }
                 }
             });
+            if widgets::confirm_armed(ui, pdel) {
+                let (pid, name) = ui.data(|d| d.get_temp::<(String, String)>(ptarget)).unwrap_or_default();
+                if widgets::confirm_row(ui, pdel, &wp_core::i18n::tr_args("'{1}' 프리셋을 지웁니다.", &[&name])) { self.core.lock().delete_stage_preset(&pid); }
+            }
             ui.separator();
             ui.horizontal(|ui| {
                 let running = self.tb.stage_child.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
@@ -529,14 +624,19 @@ impl App {
                         self.tb.stage_child = cmd.spawn().ok();
                     }
                 }
-                ui.label(RichText::new(format!("http://127.0.0.1:{port}/outputs/stage")).small());
+                let url = format!("http://127.0.0.1:{port}/outputs/stage");
+                ui.label(RichText::new(&url).small().color(p.muted)).on_hover_text(tr("다른 PC·태블릿 브라우저나 OBS 브라우저 소스에 이 주소를 넣으면 무대 화면이 나옵니다"));
+                if ui.add(Btn::new(tr("복사")).icon("copy").size(Size::Sm).tooltip(tr("무대 화면 주소 복사"))).clicked() {
+                    ui.ctx().copy_text(url);
+                    self.core.lock().notify(tr("무대 화면 주소를 복사했습니다."), "ok");
+                }
             });
     }
 
     // ---------------- 매크로 ----------------
     fn macros_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.macros;
-        egui::Window::new(wp_core::i18n::tr("매크로 (Alt+1~9)")).open(&mut open).default_size([420.0, 320.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "macros", wp_core::i18n::tr("매크로 (Alt+1~9)"), [420.0, 320.0]).open(&mut open).show(ctx, |ui| {
             let list = self.core.lock().settings.get()["macros"].as_array().cloned().unwrap_or_default();
             for (i, m) in list.iter().enumerate() {
                 ui.horizontal(|ui| {
@@ -546,7 +646,8 @@ impl App {
                         if let Err(e) = c.run_macro(&id) { c.notify(e.to_string(), "warn"); }
                     }
                     ui.label(RichText::new(actions_ko(&wp_core::overlays::macro_actions(m), m["music"].as_str().is_some_and(|x| !x.is_empty()))).small().color(Color32::GRAY));
-                    if ui.small_button(wp_core::i18n::tr("지우기")).clicked() { self.core.lock().delete_macro(&id); }
+                    let q = wp_core::i18n::tr_args("'{1}' 매크로를 지웁니다.", &[&(m["name"].as_str().unwrap_or(""))]);
+                    if crate::widgets::confirm_delete(ui, egui::Id::unique(("macro-del", &id)), &wp_core::i18n::tr("지우기"), &q) { self.core.lock().delete_macro(&id); }
                 });
             }
             ui.separator();
@@ -600,7 +701,7 @@ impl App {
                             if ui.selectable_label(m["id"] == cur.as_str(), m["name"].as_str().unwrap_or("")).clicked() { e["macroId"] = m["id"].clone(); changed = true; }
                         }
                     });
-                    if ui.small_button(wp_core::i18n::tr("지우기")).clicked() { del = true; }
+                    if crate::widgets::confirm_delete(ui, egui::Id::unique(("sched-del", e["id"].as_str().unwrap_or(""))), &wp_core::i18n::tr("지우기"), &wp_core::i18n::tr("이 예약을 지웁니다.")) { del = true; }
                 });
                 let id = e["id"].as_str().unwrap_or("").to_string();
                 if del { self.core.lock().delete_schedule(&id); }
@@ -617,7 +718,7 @@ impl App {
     // ---------------- 큐시트 관리 ----------------
     fn cues_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.cues;
-        egui::Window::new(wp_core::i18n::tr("큐시트 관리")).open(&mut open).default_size([460.0, 460.0]).show(ctx, |ui| {
+        crate::widgets::float_window(ctx, "cues", wp_core::i18n::tr("큐시트 관리"), [460.0, 460.0]).open(&mut open).show(ctx, |ui| {
             let (cue, trash, times) = { let c = self.core.lock(); (c.cue.clone(), c.trash_list(), c.planned_times()) };
             // 큐시트 없는 새 데이터 폴더에서도 가져오기를 시작할 수 있다.
                     if ui.button(wp_core::i18n::tr("가져오기…")).clicked() {
@@ -639,8 +740,9 @@ impl App {
                     }
                 });
                 ui.horizontal(|ui| {
-                    let mut p = cue.pinned; if ui.checkbox(&mut p, wp_core::i18n::tr("고정")).changed() { meta["pinned"] = json!(p); ch = true; }
-                    let mut t = cue.template; if ui.checkbox(&mut t, wp_core::i18n::tr("서식 (새 큐시트 바탕)")).changed() { meta["template"] = json!(t); ch = true; }
+                    // 낯선 항목에 설명 툴팁 (휴리스틱 평가 19번). Electron cues.js: pinned = 맨 위에 고정, template = 새 큐시트의 바탕
+                    let mut p = cue.pinned; if ui.checkbox(&mut p, wp_core::i18n::tr("목록 맨 위에 고정")).on_hover_text(wp_core::i18n::tr("큐시트 고르기 목록에서 날짜와 상관없이 맨 위에 둡니다")).changed() { meta["pinned"] = json!(p); ch = true; }
+                    let mut t = cue.template; if ui.checkbox(&mut t, wp_core::i18n::tr("서식 (새 큐시트 바탕)")).on_hover_text(wp_core::i18n::tr("켜 두면 새 큐시트를 만들 때 이 큐시트의 순서를 그대로 바탕으로 씁니다 (주일 예배처럼 매번 같은 순서일 때)")).changed() { meta["template"] = json!(t); ch = true; }
                 });
                 if ch { self.tb.note = err(self.core.lock().update_cue_meta(&meta)); }
                 ui.horizontal_wrapped(|ui| {
@@ -648,17 +750,17 @@ impl App {
                     if ui.button(wp_core::i18n::tr("내보내기…")).clicked() {
                         if let Some(p) = rfd::FileDialog::new().set_file_name(format!("{}.wpcue.json", cue.name)).save_file() { self.tb.note = err(self.core.lock().export_cue_file(&p)); }
                     }
-                    if ui.button(RichText::new(wp_core::i18n::tr("휴지통으로")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() { self.tb.note = err(self.core.lock().trash_cue(&cue.id)); self.sel = None; self.edit = None; }
+                    if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("휴지통으로")).icon("trash-2").kind(crate::widgets::Kind::Danger).tooltip(wp_core::i18n::tr("아래 휴지통에서 되살릴 수 있습니다"))).clicked() { self.tb.note = err(self.core.lock().trash_cue(&cue.id)); self.sel = None; self.edit = None; }
                 });
                 ui.separator();
-                ui.label(wp_core::i18n::tr("진행 시계 (순서별 예정 시간, 분)"));
+                ui.label(wp_core::i18n::tr("진행 시계 (순서별 예정 시간, 분)")).on_hover_text(wp_core::i18n::tr("순서마다 몇 분 걸릴지 적으면 시작 시각부터 각 순서의 예정 시각을 계산합니다"));
                 egui::ScrollArea::vertical().id_salt("durs").max_height(160.0).show(ui, |ui| {
                     for (i, it) in cue.items.iter().enumerate() {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(times.get(i).cloned().unwrap_or_default()).monospace());
                             duration_editor(self, ui, i, it);
                             ui.label(it["title"].as_str().unwrap_or(""));
-                            if i > 0 && ui.small_button(wp_core::i18n::tr("맨 위로")).clicked() { self.core.lock().move_item_to(i, 0); }
+                            if i > 0 && ui.small_button(wp_core::i18n::tr("첫 순서로")).on_hover_text(wp_core::i18n::tr("이 순서를 큐시트 맨 앞(1번)으로 옮깁니다")).clicked() { self.core.lock().move_item_to(i, 0); }
                         });
                     }
                 });
@@ -666,14 +768,21 @@ impl App {
             ui.separator();
             ui.label(wp_core::i18n::tr_args("휴지통 ({1}개)", &[&(trash.len())]));
             for t in &trash {
-                ui.horizontal(|ui| {
-                    ui.label(format!("{} · {}", t["name"].as_str().unwrap_or(""), t["serviceDate"].as_str().unwrap_or("")));
-                    let id = t["id"].as_str().unwrap_or("");
+                let id = t["id"].as_str().unwrap_or("");
+                let name = t["name"].as_str().unwrap_or("");
+                let cid = egui::Id::unique(("cue-purge", id));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(format!("{} · {}", name, t["serviceDate"].as_str().unwrap_or("")));
                     if ui.small_button(wp_core::i18n::tr("되살리기")).clicked() { self.tb.note = err(self.core.lock().restore_cue(id)); }
-                    if ui.small_button(wp_core::i18n::tr("영구 삭제")).clicked() { self.tb.note = err(self.core.lock().purge_cues(Some(id))); }
+                    // 영구 삭제는 되살릴 수 없으므로 줄 안 확인
+                    if crate::widgets::confirm_delete(ui, cid, &wp_core::i18n::tr("영구 삭제"), &wp_core::i18n::tr_args("'{1}' 큐시트가 아주 지워지고 되살릴 수 없습니다.", &[&name])) {
+                        self.tb.note = err(self.core.lock().purge_cues(Some(id)));
+                    }
                 });
             }
-            if !trash.is_empty() && ui.button(wp_core::i18n::tr("휴지통 비우기")).clicked() { self.tb.note = err(self.core.lock().purge_cues(None)); }
+            if !trash.is_empty() && crate::widgets::confirm_delete(ui, egui::Id::unique("cue-purge-all"), &wp_core::i18n::tr("휴지통 비우기"), &wp_core::i18n::tr_args("휴지통의 큐시트 {1}개가 아주 지워지고 되살릴 수 없습니다.", &[&(trash.len())])) {
+                self.tb.note = err(self.core.lock().purge_cues(None));
+            }
         });
         self.tb.cues = open;
     }
@@ -760,6 +869,67 @@ impl App {
                 self.edit = None;
             }
         }
+    }
+}
+
+/// 무대 타이머 빠른 단추 (분). 휴리스틱 평가 16번 · Electron stagepanel.js PRESETS 와 비슷하게
+const STAGE_QUICK_MIN: [u32; 4] = [5, 10, 15, 30];
+
+/// 회중 메시지 표시 시간 고르기 (초, 0 = 숨길 때까지 계속)
+const MSG_SECS: [i64; 5] = [0, 10, 30, 60, 300];
+
+/// 남은 시간 글 (밀리초 → "MM:SS", 넘으면 앞에 −). 1시간이 넘으면 "H:MM:SS"
+fn timer_text(ms: i64) -> String {
+    let s = ms.abs() / 1000;
+    let sign = if ms < 0 { "−" } else { "" };
+    if s >= 3600 { format!("{sign}{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60) } else { format!("{sign}{:02}:{:02}", s / 60, s % 60) }
+}
+
+/// 회중 메시지 보내기 전 모습: 예배당 화면(16:9) 아래에 띠. 실제 출력은 웹이 그리므로 자리·글 확인용 근사.
+fn message_preview(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    use crate::theme::{alpha, pal, font, Weight};
+    let p = pal();
+    let w = ui.available_width().min(260.0);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, w * 9.0 / 16.0), egui::Sense::hover());
+    let pt = ui.painter();
+    pt.rect_filled(rect, egui::CornerRadius::same(4), p.sunken);
+    pt.rect_stroke(rect, egui::CornerRadius::same(4), egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
+    pt.text(rect.center() - egui::vec2(0.0, rect.height() * 0.12), egui::Align2::CENTER_CENTER, wp_core::i18n::tr("(지금 슬라이드는 그대로)"), font(11.0, Weight::Regular), p.muted2);
+    if text.trim().is_empty() {
+        return resp.on_hover_text(wp_core::i18n::tr("글을 쓰면 여기에 보일 모습이 나옵니다"));
+    }
+    let band = egui::Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - rect.height() * 0.2), rect.max);
+    pt.rect_filled(band, egui::CornerRadius { nw: 0, ne: 0, sw: 4, se: 4 }, alpha(p.live, 0.85));
+    let g = pt.layout(text.replace('\n', " "), font(12.0, Weight::SemiBold), p.text, band.width() - 12.0);
+    pt.galley(egui::pos2(band.center().x - g.size().x / 2.0, band.center().y - g.size().y / 2.0), g, p.text);
+    resp.on_hover_text(wp_core::i18n::tr("회중에게 보일 모습 (예배당 화면 아래 띠)"))
+}
+
+#[cfg(test)]
+mod tests_ux {
+    use super::*;
+    #[test]
+    fn 남은_시간_글() {
+        assert_eq!(timer_text(0), "00:00");
+        assert_eq!(timer_text(5 * 60_000), "05:00");
+        assert_eq!(timer_text(-61_000), "−01:01");
+        assert_eq!(timer_text(3_723_000), "1:02:03");
+    }
+    #[test]
+    fn 빠른_단추_범위() {
+        // 모두 DragValue 범위(1~180분) 안, 표시 시간 첫 칸은 '계속'(0)
+        assert!(STAGE_QUICK_MIN.iter().all(|m| (1..=180).contains(m)));
+        assert_eq!(MSG_SECS[0], 0);
+    }
+    #[test]
+    fn 타이머_빠른단추와_빼기() {
+        // 빠른 단추가 부르는 코어 동작: start(5분) 뒤 add(-1) 이면 남은 시간이 4분 안쪽
+        let mut st = wp_core::overlays::Stage::default();
+        st.timer_action("start", 5.0).unwrap();
+        st.timer_action("pause", 0.0).unwrap();
+        st.timer_action("add", -1.0).unwrap();
+        let r = st.timer_json()["remaining"].as_i64().unwrap();
+        assert!(r <= 4 * 60_000 && r > 4 * 60_000 - 2_000, "{r}");
     }
 }
 
