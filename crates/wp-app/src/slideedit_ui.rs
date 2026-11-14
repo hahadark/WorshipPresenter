@@ -16,6 +16,8 @@ pub struct SlideEditUi {
     /// 공통('*') 편집 중
     common: bool,
     drag_slide: Option<usize>,
+    /// 다음에 열 때 고를 슬라이드 (ekey) — 격자의 ✎·＋ 단추가 정한다
+    pending_key: Option<String>,
     #[cfg(test)]
     pub(crate) observed: std::collections::BTreeMap<String, egui::Rect>,
 }
@@ -24,7 +26,63 @@ fn edit_key(slide: &Value) -> String {
     slide["ekey"].as_str().unwrap_or("0").to_string()
 }
 
+/// 편집기 목록에 보일 슬라이드 (건너뛴 것 포함, 글 순서는 원래 글 덩어리 단위)와 그 템플릿.
+/// 격자의 마우스 올림 단추도 같은 차례(ekey)로 동작하도록 함께 쓴다 (Electron slideedit.js sources).
+pub(crate) fn editor_list(c: &mut wp_core::core::Core, i: usize) -> Result<Option<(Value, Vec<Value>, Value)>, String> {
+    let Some(it) = c.cue.as_ref().and_then(|q| q.items.get(i)).cloned() else { return Ok(None) };
+    let d = c.item_deck(i)?;
+    let tpl = c.template_for_deck("main", Some(&d));
+    let ty = it["type"].as_str().unwrap_or("");
+    let slides = if matches!(ty, "song" | "text") {
+        // 편집 목록은 출력에서 나뉜 화면이 아니라 원래 글 덩어리 단위다.
+        let song = ty == "song";
+        let chunks = if song { wp_core::slides::lyrics_chunks(it["lyrics"].as_str().unwrap_or("")) } else { wp_core::slides::text_chunks(it["body"].as_str().unwrap_or(""), if it["roleLabels"].as_bool().unwrap_or(false) { 2 } else { 1 }) };
+        let raw = chunks.into_iter().map(|c| json!({"kind":"text","ref":it["title"],"label":c.label,"src":c.src,"parts":[{"text":c.text}]})).collect();
+        se::decorate(&it, raw, true)
+    } else if !is_chunk(ty) {
+        // 건너뛴 슬라이드도 보이게: 꾸미기 전 슬라이드를 다시 꾸민다 (잠깐 바꿔 끼워 만들고 되돌린다)
+        let mut bare = it.clone();
+        if let Some(o) = bare.as_object_mut() { o.remove("skip"); o.remove("slideOrder"); o.remove("extra"); if it["type"] != "hymn" { o.remove("edits"); } }
+        let orig = std::mem::replace(&mut c.cue.as_mut().unwrap().items[i], bare);
+        let raw = c.item_deck(i);
+        c.cue.as_mut().unwrap().items[i] = orig;
+        raw.map(|d2| se::decorate(&it, d2.slides, true)).unwrap_or(d.slides)
+    } else {
+        d.slides
+    };
+    Ok(Some((it, slides, tpl)))
+}
+
+/// 편집기 목록 줄의 마우스 올림 단추 (Electron slideedit.js opsHtml: 글 순서·덧붙인 슬라이드는 위로·아래로·복제·지우기,
+/// 그 밖 원래 슬라이드는 위로·아래로(성경 빼고)·건너뛰기/되살리기)
+fn list_ops(ty: &str, s: &Value) -> Vec<crate::widgets::HoverOp> {
+    use crate::widgets::HoverOp;
+    use wp_core::i18n::tr;
+    let mut v = vec![];
+    let free = is_chunk(ty) || s["xid"].is_string();
+    if free || ty != "bible" {
+        v.push(HoverOp::new("up", "arrow-up", tr("위로 (차례 바꾸기)")));
+        v.push(HoverOp::new("down", "arrow-down", tr("아래로 (차례 바꾸기)")));
+    }
+    if free {
+        v.push(HoverOp::new("dup", "copy", tr("복제 (꾸민 것도)")));
+        v.push(HoverOp::new("del", "trash-2", tr("이 슬라이드 지우기 (Ctrl+Z 로 되돌리기)")).danger());
+    } else if s["skipped"].as_bool().unwrap_or(false) {
+        v.push(HoverOp::new("skip", "eye", tr("다시 보이기 (송출에 넣기)")));
+    } else {
+        v.push(HoverOp::new("skip", "eye-off", tr("건너뛰기 (송출에서 빼기, 원래 내용은 그대로)")));
+    }
+    // 오른쪽 끝부터 놓으므로 거꾸로 (왼쪽→오른쪽: 위로 · 아래로 · 복제 · 지우기)
+    v.into_iter().rev().map(|o| o.right()).collect()
+}
+
 impl SlideEditUi {
+    /// 편집기를 열고 그 슬라이드(ekey)를 고른다 (격자 ✎ · ＋)
+    pub fn open_at(&mut self, key: &str) {
+        self.open = true;
+        self.common = false;
+        self.pending_key = Some(key.to_string());
+    }
     #[allow(clippy::too_many_arguments)]
     pub fn show(&mut self, ctx: &egui::Context, core: &Shared, sel: Option<usize>, web_dir: &std::path::Path, data_dir: &std::path::Path, acts: &mut Vec<Act>) {
         #[cfg(test)]
@@ -38,37 +96,14 @@ impl SlideEditUi {
                 ui.label(wp_core::i18n::tr("큐시트에서 순서를 먼저 고르세요."));
                 return;
             };
-            let (it, slides, tpl) = {
-                let mut c = core.lock();
-                let Some(it) = c.cue.as_ref().and_then(|q| q.items.get(i)).cloned() else { return };
-                // 건너뛴 슬라이드도 보이게: 꾸미기 전 슬라이드를 다시 꾸민다
-                let selected_deck = match c.item_deck(i) {
-                    Ok(d) => d,
-                    Err(e) => { ui.label(e); return; }
-                };
-                let tpl = c.template_for_deck("main", Some(&selected_deck));
-                let slides = match Ok::<_, String>(selected_deck) {
-                    Ok(d) if !is_chunk(it["type"].as_str().unwrap_or("")) => {
-                        let mut bare = it.clone();
-                        if let Some(o) = bare.as_object_mut() { o.remove("skip"); o.remove("slideOrder"); o.remove("extra"); if it["type"] != "hymn" { o.remove("edits"); } }
-                        // 꾸미기 전 슬라이드: 잠깐 바꿔 끼워 만들고 되돌린다
-                        let orig = std::mem::replace(&mut c.cue.as_mut().unwrap().items[i], bare);
-                        let raw = c.item_deck(i);
-                        c.cue.as_mut().unwrap().items[i] = orig;
-                        raw.map(|d2| se::decorate(&it, d2.slides, true)).unwrap_or(d.slides)
-                    }
-                    Ok(d) => d.slides,
-                    Err(e) => { ui.label(RichText::new(e).color(Color32::from_rgb(0xff, 0xb0, 0x4a))); return; }
-                };
-                (it, slides, tpl)
+            let (it, slides, tpl) = match editor_list(&mut core.lock(), i) {
+                Ok(Some(x)) => x,
+                Ok(None) => return,
+                Err(e) => { ui.label(RichText::new(e).color(crate::theme::pal().warn)); return; }
             };
-            // 편집 목록은 출력에서 나뉜 화면이 아니라 원래 글 덩어리 단위다.
-            let slides = if matches!(it["type"].as_str(),Some("song" | "text")) {
-                let song=it["type"]=="song";
-                let chunks=if song { wp_core::slides::lyrics_chunks(it["lyrics"].as_str().unwrap_or("")) } else { wp_core::slides::text_chunks(it["body"].as_str().unwrap_or(""),if it["roleLabels"].as_bool().unwrap_or(false) {2} else {1}) };
-                let raw=chunks.into_iter().map(|c| json!({"kind":"text","ref":it["title"],"label":c.label,"src":c.src,"parts":[{"text":c.text}]})).collect();
-                se::decorate(&it,raw,true)
-            } else { slides };
+            if let Some(key) = self.pending_key.take() {
+                if let Some(pos) = slides.iter().position(|s| edit_key(s) == key) { self.k = pos; }
+            }
             if slides.is_empty() { return; }
             self.k = self.k.min(slides.len() - 1);
             let ty = it["type"].as_str().unwrap_or("").to_string();
@@ -88,9 +123,23 @@ impl SlideEditUi {
                         let skipped = s["skipped"].as_bool().unwrap_or(false);
                         let lb = s["label"].as_str().filter(|x| !x.is_empty()).map(|x| format!("¶{x}")).or_else(|| s["ref"].as_str().map(String::from)).unwrap_or_default();
                         let mut txt = RichText::new(format!("{:>2}  {}", k + 1, lb));
-                        if skipped { txt = txt.strikethrough().color(Color32::GRAY); }
-                        if s["edit"].is_object() { txt = txt.color(Color32::from_rgb(0x8f, 0xb8, 0xff)); }
-                        let r = ui.add(egui::Button::selectable(k == self.k, txt).sense(Sense::click_and_drag()));
+                        if skipped { txt = txt.strikethrough().color(crate::theme::pal().muted2); }
+                        if s["edit"].is_object() { txt = txt.color(crate::theme::pal().hl); }
+                        // 줄 높이 30px: 마우스 올림 단추(26px)가 들어가게
+                        let r = ui.add(egui::Button::selectable(k == self.k, txt).min_size(Vec2::new(ui.available_width(), 30.0)).sense(Sense::click_and_drag()));
+                        if r.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+                        if let Some(op) = crate::widgets::hover_ops(ui, egui::Id::new(("se-ops", k)), r.rect, &list_ops(&ty, s)) {
+                            let keys: Vec<String> = slides.iter().map(edit_key).collect();
+                            match se::quick_op(&it, &keys, &edit_key(s), op) {
+                                Ok((a, pick)) => {
+                                    core.lock().b.typing = None; // 단추 한 번 = 실행 취소 한 번
+                                    new_it = Some(a);
+                                    self.pending_key = Some(pick);
+                                }
+                                Err(m) if !m.is_empty() => core.lock().notify(wp_core::i18n::tr(m), "info"),
+                                Err(_) => {}
+                            }
+                        }
                         #[cfg(test)]
                         self.observed.insert(format!("slide-{k}"), r.rect);
                         if r.drag_started() { self.drag_slide = Some(k); }

@@ -37,6 +37,8 @@ pub(crate) enum Act {
     OutputToggle,
     SetMonitor(usize),
     CuePreviewStep(i64),
+    /// 썸네일·목록의 마우스 올림 단추: (순서 번호, 슬라이드 ekey, 동작 edit·add·dup·del·skip·up·down)
+    SlideOp(usize, String, &'static str),
 }
 
 pub struct App {
@@ -66,8 +68,8 @@ pub(crate) struct Snap {
     pub(crate) preview: Option<Deck>,
     pub(crate) live: Option<Live>,
     cue_name: String,
-    cue_id: String,
-    items: Vec<Value>,
+    pub(crate) cue_id: String,
+    pub(crate) items: Vec<Value>,
     cues: Vec<CueSummary>,
     templates: Vec<(String, String)>,
     pub(crate) tpl_main: Value,
@@ -235,6 +237,50 @@ impl App {
                     let j = (i as i64 + d).clamp(0, (n - 1).max(0)) as usize;
                     self.sel = Some(j);
                     self.edit = None;
+                }
+                Act::SlideOp(i, key, op) => {
+                    use wp_core::i18n::tr;
+                    if op == "edit" {
+                        // grid.js .sg-edit → openPreviewSlide: 슬라이드 편집기를 그 장으로
+                        self.sel = Some(i);
+                        self.tc.slideedit.open_at(&key);
+                        continue;
+                    }
+                    // slideedit.js quickOp: 편집기 차례(건너뛴 것 포함)로 동작을 적용한다
+                    let list = match crate::slideedit_ui::editor_list(&mut c, i) {
+                        Ok(Some(x)) => x,
+                        Ok(None) => continue,
+                        Err(e) => { c.notify(e, "warn"); continue; }
+                    };
+                    let keys: Vec<String> = list.1.iter().map(crate::center_ui::slide_key).collect();
+                    match wp_core::slideedit::quick_op(&list.0, &keys, &key, op) {
+                        Ok((a, pick)) => {
+                            c.remember_items(); // 단추 한 번 = 실행 취소(Ctrl+Z) 한 번
+                            c.b.typing = None;
+                            if let Some(cue) = &mut c.cue { cue.items[i] = a; }
+                            c.save_cue();
+                            if c.preview_is_item(i) {
+                                let idx = c.pres.preview.as_ref().map(|p| p.index).unwrap_or(0);
+                                if let Ok(mut d) = c.item_deck(i) {
+                                    d.index = idx.min(d.slides.len().saturating_sub(1));
+                                    c.pres.preview = Some(d);
+                                }
+                            }
+                            match op {
+                                "del" => c.notify(tr("슬라이드를 지웠습니다. Ctrl+Z 로 되돌릴 수 있습니다."), "ok"),
+                                "skip" => c.notify(tr("건너뛰기를 바꿨습니다 (건너뛴 슬라이드는 송출에서 빠집니다). Ctrl+Z 로 되돌릴 수 있습니다."), "ok"),
+                                _ => {}
+                            }
+                            self.sel = Some(i);
+                            self.edit = None;
+                            if op == "add" {
+                                // 새 슬라이드: 편집기에서 바로 글 쓰기 (Electron quickOp)
+                                self.tc.slideedit.open_at(&pick);
+                            }
+                        }
+                        Err(m) if !m.is_empty() => c.notify(tr(m), "info"),
+                        Err(_) => {}
+                    }
                 }
                 Act::UpdateItem(i, it) => {
                     c.remember_typing(it["id"].as_str().unwrap_or("")); // [트랙 B] 실행 취소 묶음
@@ -787,8 +833,15 @@ impl App {
                 egui::ScrollArea::vertical().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).max_height(76.0).auto_shrink([false, true]).show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                        let item = crate::center_ui::deck_item(s, d);
                         for (k, sl) in d.slides.iter().enumerate() {
                             let r = thumb_chip(ui, &chip_label(k, &slide_chip_text(sl)), k == d.index, is_live).on_hover_text(slide_snippet(sl));
+                            if r.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+                            // 마우스 올림 단추 (격자와 같은 규칙, 칩이 작아 칩 위에 띄운다)
+                            let ops = crate::center_ui::slide_hover_ops(item.map(|x| x.1), sl, false);
+                            if let Some(op) = widgets::hover_ops_float(ui, egui::Id::new((if is_live { "lv-chip" } else { "pv-chip" }, k)), r.rect, &ops) {
+                                if let Some((i, _)) = item { acts.push(Act::SlideOp(i, crate::center_ui::slide_key(sl), op)); }
+                            }
                             if r.clicked() { acts.push(if is_live { Act::LiveGoto(k) } else { Act::PreviewIndex(k) }) }
                             if r.double_clicked() && !is_live { acts.push(Act::SendPreview) }
                             crate::parity2_ui::slide_menu(&self.core, &r, d, k, is_live, acts); // [트랙 A] 썸네일 오른쪽 클릭

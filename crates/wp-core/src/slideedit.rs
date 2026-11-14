@@ -520,6 +520,96 @@ pub fn move_order(it: &mut Value, n: usize, from: usize, to: usize) {
     set_or_remove(it, "slideOrder", if natural { Value::Null } else { json!(ord) });
 }
 
+/// 차례(seq: 원래 슬라이드 번호 · 덧붙인 슬라이드 "x<id>")를 순서에 적는다 (Electron slideedit.js applySeq).
+/// 덧붙인 것은 바로 앞 원래 슬라이드 번호(at)로, 원래 슬라이드 차례는 slideOrder 로 (원래 차례면 지움)
+fn apply_seq(it: &mut Value, seq: &[String], ex: &[Value]) {
+    let mut at: i64 = -1;
+    let (mut order, mut bases) = (vec![], vec![]);
+    for z in seq {
+        if let Some(id) = z.strip_prefix('x') {
+            if let Some(e) = ex.iter().find(|e| e["id"].as_str() == Some(id)) {
+                let mut e = e.clone();
+                e["at"] = json!(at);
+                order.push(e);
+            }
+        } else if let Ok(b) = z.parse::<usize>() {
+            at = b as i64;
+            bases.push(b);
+        }
+    }
+    set_or_remove(it, "extra", if order.is_empty() { Value::Null } else { json!(order) });
+    let natural = bases.iter().enumerate().all(|(i, k)| i == *k);
+    set_or_remove(it, "slideOrder", if natural { Value::Null } else { json!(bases) });
+}
+
+/// 격자·목록에 마우스를 올렸을 때 뜨는 단추의 동작 (Electron slideedit.js quickOp → slideOp · extraOp).
+/// `keys` 는 편집기 목록 차례(건너뛴 것 포함)의 ekey, `key` 는 누른 슬라이드의 ekey.
+/// op: add(이 다음에 새 슬라이드) · dup(복제) · del(지우기, 그 밖 종류의 원래 슬라이드는 건너뛰기) · skip · up · down.
+/// 돌려주는 값: (고친 순서, 고른 슬라이드의 새 ekey). 안 되면 사용자에게 보일 이유(한국어 원문).
+pub fn quick_op(it: &Value, keys: &[String], key: &str, op: &str) -> Result<(Value, String), &'static str> {
+    let ty = it["type"].as_str().unwrap_or("");
+    if is_chunk(ty) {
+        let n = keys.len();
+        let k: usize = key.parse().map_err(|_| "이 슬라이드는 고칠 수 없습니다.")?;
+        if op == "skip" { return Err("글 슬라이드는 건너뛰기 대신 지우기를 쓰세요."); }
+        if op == "del" && n <= 1 { return Err("마지막 슬라이드는 지울 수 없습니다. 순서 자체를 지우세요."); }
+        if (op == "up" && k == 0) || (op == "down" && k + 1 >= n) || (op != "add" && k >= n) { return Err(""); }
+        let (a, _) = apply_op(it, op, k);
+        let after = n + usize::from(op == "add" || op == "dup") - usize::from(op == "del");
+        let pick = match op { "add" | "dup" | "down" => k + 1, "up" => k - 1, _ => k.min(after.saturating_sub(1)) };
+        return Ok((a, pick.min(after.saturating_sub(1)).to_string()));
+    }
+    let pos = keys.iter().position(|x| x == key).ok_or("이 슬라이드를 찾지 못했습니다.")?;
+    let xid = key.strip_prefix('x');
+    let mut out = it.clone();
+    let mut ex: Vec<Value> = it["extra"].as_array().cloned().unwrap_or_default();
+    if (op == "del" || op == "skip") && xid.is_none() {
+        // 원래 슬라이드: 건너뛰기 ↔ 되살리기
+        let base: usize = key.parse().map_err(|_| "이 슬라이드는 고칠 수 없습니다.")?;
+        let skip: Vec<u64> = it["skip"].as_array().into_iter().flatten().filter_map(|x| x.as_u64()).collect();
+        let skipped = skip.contains(&(base as u64));
+        let live = keys.iter().filter(|x| !x.starts_with('x')).filter_map(|x| x.parse::<u64>().ok()).filter(|b| !skip.contains(b)).count();
+        if !skipped && live <= 1 && ex.is_empty() { return Err("모든 슬라이드를 건너뛸 수는 없습니다."); }
+        let (a, _) = apply_op(it, "skip", base);
+        return Ok((a, key.to_string()));
+    }
+    if op == "skip" { return Err("덧붙인 슬라이드는 건너뛰기 대신 지우기를 쓰세요."); }
+    if (op == "up" || op == "down") && xid.is_none() && ty == "bible" { return Err("성경 본문의 차례는 바꿀 수 없습니다. 덧붙인 슬라이드만 옮길 수 있습니다."); }
+    if op == "dup" && xid.is_none() { return Err("원래 슬라이드는 복제할 수 없습니다. ＋ 슬라이드로 사이에 새 슬라이드를 넣으세요."); }
+    let mut seq = keys.to_vec();
+    let pick;
+    match op {
+        "add" | "dup" => {
+            let t = crate::util::to36(crate::util::now_ms() as u64);
+            let id = format!("{}{}", &t[t.len().saturating_sub(6)..], &crate::util::to36(rand::random::<u32>() as u64 + 36 * 36 * 36)[..4]);
+            let src = if op == "dup" { ex.iter().find(|e| e["id"].as_str() == xid).cloned() } else { None };
+            ex.push(json!({ "id": &id, "at": 0, "text": src.as_ref().and_then(|s| s["text"].as_str()).unwrap_or("새 슬라이드") }));
+            if let Some(s) = &src {
+                let from = format!("x{}", s["id"].as_str().unwrap_or(""));
+                if let Some(e) = it["edits"].get(&from).cloned() { out["edits"][format!("x{id}")] = e; }
+            }
+            seq.insert(pos + 1, format!("x{id}"));
+            pick = format!("x{id}");
+        }
+        "del" => {
+            let id = xid.unwrap_or("");
+            seq.retain(|z| z != key);
+            ex.retain(|e| e["id"].as_str() != Some(id));
+            if let Some(o) = out["edits"].as_object_mut() { o.remove(key); if o.is_empty() { out.as_object_mut().unwrap().remove("edits"); } }
+            pick = keys.get(pos.saturating_sub(1)).filter(|x| x.as_str() != key).cloned().or_else(|| seq.first().cloned()).unwrap_or_else(|| "0".into());
+        }
+        "up" | "down" => {
+            let to = if op == "up" { pos.checked_sub(1) } else { Some(pos + 1).filter(|t| *t < seq.len()) };
+            let Some(to) = to else { return Err("") };
+            seq.swap(pos, to);
+            pick = key.to_string();
+        }
+        _ => return Err(""),
+    }
+    apply_seq(&mut out, &seq, &ex);
+    Ok((out, pick))
+}
+
 fn set_or_remove(it: &mut Value, k: &str, v: Value) {
     if v.is_null() { if let Some(o) = it.as_object_mut() { o.remove(k); } } else { it[k] = v; }
 }
@@ -574,6 +664,38 @@ mod tests {
         assert_eq!(refs, vec!["c", "a", "덧"]);
         assert_eq!(out[1]["bg"], json!("#ff0000"));
         assert_eq!(out[2]["ekey"], json!("xa1"));
+    }
+    #[test]
+    fn quick_ops_like_electron() {
+        // 글 순서: ＋ 뒤에 새 슬라이드, ✕ 지우기, 마지막 한 장은 못 지움
+        let it = json!({"type":"text","body":"가\n---\n나"});
+        let keys = vec!["0".to_string(), "1".to_string()];
+        let (a, pick) = quick_op(&it, &keys, "0", "add").unwrap();
+        assert_eq!(a["body"], json!("가\n---\n새 슬라이드\n---\n나"));
+        assert_eq!(pick, "1");
+        let (d, _) = quick_op(&it, &keys, "1", "del").unwrap();
+        assert_eq!(d["body"], json!("가"));
+        assert!(quick_op(&d, &["0".into()], "0", "del").is_err());
+        // 성경: ✕ = 건너뛰기, ＋ = 덧붙인 카드, 덧붙인 카드 복제·지우기
+        let b = json!({"type":"bible"});
+        let keys: Vec<String> = vec!["0".into(), "1".into(), "2".into()];
+        let (s, _) = quick_op(&b, &keys, "1", "del").unwrap();
+        assert_eq!(s["skip"], json!([1]));
+        let (s2, _) = quick_op(&s, &keys, "1", "skip").unwrap();
+        assert!(s2.get("skip").is_none());
+        assert!(quick_op(&b, &keys, "0", "dup").is_err());
+        let (x, pick) = quick_op(&b, &keys, "0", "add").unwrap();
+        assert_eq!(x["extra"][0]["at"], json!(0));
+        assert_eq!(x["extra"][0]["text"], json!("새 슬라이드"));
+        assert!(x.get("slideOrder").is_none());
+        let keys2: Vec<String> = vec!["0".into(), pick.clone(), "1".into(), "2".into()];
+        let (y, _) = quick_op(&x, &keys2, &pick, "dup").unwrap();
+        assert_eq!(y["extra"].as_array().unwrap().len(), 2);
+        let (z, _) = quick_op(&x, &keys2, &pick, "del").unwrap();
+        assert!(z.get("extra").is_none());
+        // 모두 건너뛰기는 막는다
+        let one = json!({"type":"image","skip":[1]});
+        assert!(quick_op(&one, &["0".into(), "1".into()], "0", "skip").is_err());
     }
     #[test]
     fn ops() {
