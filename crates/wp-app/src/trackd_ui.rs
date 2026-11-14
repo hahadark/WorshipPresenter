@@ -42,6 +42,11 @@ pub fn open(w: Win) {
     }
 }
 
+/// 그 창이 열려 있는지 (상태 점을 눌러 열었는지 시험용)
+pub fn is_open(w: Win) -> bool {
+    ST.lock().open.contains(&w)
+}
+
 /// 순서 편집칸(⚡ 송출할 때 자동으로)의 OBS 줄이 쓰는 상태: (설정에서 켬, 연결됨, 장면 목록).
 /// 출처는 `wp_core::obs::cached()` — 백그라운드 폴러(obs.enabled 면 10초마다)·OBS 창·자동 동작이 모두 같은 캐시를 쓴다
 /// (Electron `BCObs.state()` 와 같은 역할). OBS 창을 열지 않아도 장면 콤보가 채워진다.

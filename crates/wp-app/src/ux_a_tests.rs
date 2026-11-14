@@ -31,6 +31,11 @@ impl H {
         Self { ctx: egui::Context::default(), app: App::for_test(core, dir.clone()), dir, time: 0.0 }
     }
     fn frame(&mut self, events: Vec<Event>, f: Draw) {
+        let acts = self.raw_frame(events, f);
+        self.app.apply(acts);
+    }
+    /// 한 프레임 그리고 낸 Act 를 적용하지 않고 돌려준다 (출력 창을 실제로 띄우는 동작 확인용)
+    fn raw_frame(&mut self, events: Vec<Event>, f: Draw) -> Vec<Act> {
         self.time += 0.05;
         crate::widgets::HOVER_SEEN.with(|m| m.borrow_mut().clear());
         let snap = self.app.snap();
@@ -45,7 +50,18 @@ impl H {
             },
         );
         out.textures_delta.clear();
-        self.app.apply(acts);
+        acts
+    }
+    /// 이름 붙은 자리를 눌렀을 때 나온 Act (적용하지 않음)
+    fn click_acts(&mut self, name: &str, f: Draw) -> Vec<Act> {
+        self.raw_frame(vec![], f);
+        self.raw_frame(vec![], f);
+        let p = seen(name).unwrap_or_else(|| panic!("그린 자리 없음: {name}")).center();
+        let mut all = self.raw_frame(vec![Event::PointerMoved(p)], f);
+        for pressed in [true, false] {
+            all.extend(self.raw_frame(vec![Event::PointerButton { pos: p, button: PointerButton::Primary, pressed, modifiers: Default::default() }], f));
+        }
+        all
     }
     /// 두 번 그려 자리를 잡은 뒤 이름 붙은 자리를 실제 포인터로 누른다
     fn click(&mut self, name: &str, f: Draw) {
@@ -85,6 +101,58 @@ fn toast(app: &mut App, ctx: &egui::Context, _: &mut egui::Ui, s: &Snap, acts: &
 }
 fn two() -> Vec<Value> {
     vec![json!({ "id": "a", "type": "title", "title": "말씀 봉독" }), json!({ "id": "b", "type": "title", "title": "설교" })]
+}
+
+fn live(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    let d = s.live.as_ref().map(|l| l.deck.clone());
+    app.deck_view(ui, "LIVE", d.as_ref(), true, s.live.as_ref(), s, acts);
+}
+fn bottom(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    app.bottom_bar(ui, s, acts);
+}
+
+// ---------------- 3-1 예배당 화면 꺼짐 ----------------
+
+#[test]
+fn live_pane_band_appears_only_when_live_and_output_off() {
+    let mut h = H::new(two());
+    h.frame(vec![], live);
+    h.frame(vec![], live);
+    assert!(seen("live-output-on").is_none(), "송출한 것이 없으면 띠도 없다");
+    h.app.apply(vec![Act::PreviewItem(0), Act::SendPreview]);
+    let acts = h.click_acts("live-output-on", live);
+    assert!(acts.iter().any(|a| matches!(a, Act::OutputToggle)), "[지금 켜기] 는 예배당 화면을 켜야 함");
+}
+
+#[test]
+fn send_with_output_off_and_no_auto_toasts_turn_on_button() {
+    let mut h = H::new(two());
+    h.app.core.lock().settings.update(|d| d["output"]["autoOnSend"] = json!(false));
+    h.app.apply(vec![Act::PreviewItem(0), Act::SendPreview]);
+    let (msg, act) = h.toast();
+    assert!(msg.contains("예배당 화면이 꺼져"), "{msg}");
+    assert_eq!(act, Some("output-on"));
+    let acts = h.click_acts("toast-act", toast);
+    assert!(acts.iter().any(|a| matches!(a, Act::ToastAct("output-on"))));
+}
+
+#[test]
+fn status_dot_click_opens_output_settings() {
+    let mut h = H::new(two());
+    assert!(!crate::trackd_ui::is_open(crate::trackd_ui::Win::Output));
+    h.click("status-output", bottom);
+    assert!(crate::trackd_ui::is_open(crate::trackd_ui::Win::Output), "상태 점을 누르면 출력 설정 창");
+}
+
+#[test]
+fn status_fit_keeps_most_important_first() {
+    use crate::widgets::fit_status;
+    // 넓으면 모두 글까지
+    assert_eq!(fit_status(&[100.0, 80.0, 80.0], 1000.0, 14.0), vec![Some(true); 3]);
+    // 좁으면 앞(중요한) 것만 글, 나머지는 점
+    assert_eq!(fit_status(&[100.0, 80.0, 80.0], 9.0 * 3.0 + 28.0 + 105.0, 14.0), vec![Some(true), Some(false), Some(false)]);
+    // 점도 모자라면 뒤부터 빠진다 — 첫 항목(예배당 화면)은 끝까지 남는다
+    assert_eq!(fit_status(&[100.0, 80.0, 80.0], 20.0, 14.0), vec![Some(false), None, None]);
 }
 
 // ---------------- 3-2 · 2 되돌리기 ----------------

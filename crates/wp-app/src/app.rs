@@ -163,6 +163,14 @@ impl App {
     }
 
     fn apply(&mut self, acts: Vec<Act>) {
+        let sent = acts.iter().any(|a| matches!(a, Act::SendPreview | Act::SendItem(_) | Act::SendRef(..)));
+        self.apply_acts(acts);
+        if sent {
+            self.warn_output_off_after_send();
+        }
+    }
+
+    fn apply_acts(&mut self, acts: Vec<Act>) {
         for a in acts {
             let mut c = self.core.lock();
             match a {
@@ -792,6 +800,7 @@ impl App {
                     });
                 });
             });
+            if is_live { self.output_off_band(ui, deck.is_some(), acts); } // 예배당 화면 꺼짐 띠 [지금 켜기]
             ui.add_space(8.0); // .pane-head { margin-bottom: 8px }
             // ---- .screen: 16:9, 2px 테두리 (미리보기 pv · LIVE live · 숨김이면 점선), 둥글기 6
             let tpl = match (is_live, self.views.obs(is_live)) {
