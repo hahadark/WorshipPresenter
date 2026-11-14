@@ -201,11 +201,11 @@ impl App {
             r.request_focus(); // 돋보기·여백을 눌러도 칸으로
         }
         // 예전 검색 줄의 '송출 · 큐시트에 넣기' 단추 → 원본처럼 오른쪽 클릭 메뉴로 (ctxmenu.js '이 본문을 큐시트에 넣기')
-        let is_ref = self.result["mode"] == "reference" && self.result["ok"] == json!(true);
+        let is_ref = self.searched_bible_item().is_some();
         r.context_menu(|ui| {
-            if ui.add_enabled(is_ref, egui::Button::new(tr("이 본문을 큐시트에 넣기 (고른 순서 다음)"))).clicked() {
-                let title = self.result["passage"]["title"].clone();
-                acts.push(Act::AddItem("bible", Some(json!({ "title": "성경 봉독", "ref": self.search.trim(), "subtitle": title }))));
+            let b = ui.add_enabled(is_ref, egui::Button::new(tr("이 본문을 큐시트에 넣기 (고른 순서 다음)"))).on_disabled_hover_text(tr("장절(예: 요3:16)을 먼저 검색하세요"));
+            if b.clicked() {
+                self.add_searched_bible(acts);
                 ui.close();
             }
             if ui.button(tr("송출 (Ctrl+Enter)")).clicked() {

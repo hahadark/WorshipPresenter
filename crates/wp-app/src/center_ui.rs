@@ -430,7 +430,26 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
 
 impl App {
     /// 가운데 본문 패널 머리 줄(.center-head). `editor_on` 은 App 의 편집칸 켜짐 값
-    pub(crate) fn center_head(&mut self, ui: &mut egui::Ui, s: &Snap, editor_on: &mut bool) {
+    /// 지금 검색한 장절로 만든 성경 순서 (장절 검색 결과가 없으면 None).
+    /// 원본 ctxmenu.js '이 본문을 큐시트에 넣기': { title: '성경봉독', ref: 본문 제목 } — 번역본은 비워 두어(현재 번역본) 원본과 같게
+    pub(crate) fn searched_bible_item(&self) -> Option<Value> {
+        if self.result["mode"] != "reference" || self.result["ok"] != json!(true) {
+            return None;
+        }
+        let title = self.result["passage"]["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(String::from).unwrap_or_else(|| self.search.trim().to_string());
+        (!title.is_empty()).then(|| json!({ "title": tr("성경 봉독"), "ref": title }))
+    }
+
+    /// 검색한 장절을 고른 순서 다음에 넣고 알린다 (본문 패널 머리 · 검색칸 오른쪽 클릭 · 왼쪽 '성경' 단추)
+    pub(crate) fn add_searched_bible(&mut self, acts: &mut Vec<Act>) -> bool {
+        let Some(it) = self.searched_bible_item() else { return false };
+        let r = it["ref"].as_str().unwrap_or("").to_string();
+        acts.push(Act::AddItem("bible", Some(it)));
+        self.core.lock().notify(tr_args("'{1}' 을(를) 큐시트에 넣었습니다.", &[&r]), "ok");
+        true
+    }
+
+    pub(crate) fn center_head(&mut self, ui: &mut egui::Ui, s: &Snap, editor_on: &mut bool, acts: &mut Vec<Act>) {
         let mut st = load(ui.ctx());
         // 가운데에 무엇을 보일지: 큐시트 순서를 미리보기로 올리면 그 슬라이드, 검색하면 검색 결과 (Electron 은 마지막에 그린 쪽)
         let pk = s.preview.as_ref().map(|d| format!("{}:{}:{}", d.passage["cueId"], d.passage["cueIndex"], d.passage["title"])).unwrap_or_default();
@@ -462,7 +481,10 @@ impl App {
                     toggle_editor = true;
                 }
                 // 제목(굵게 15px) + 흐린 부가 글 — 넘치면 제목을 줄인다
-                let view_w = 250.0 + if matches!(st.view, SlideView::Grid | SlideView::All) { 100.0 } else { 0.0 };
+                // 검색한 장절을 보고 있을 때만 '＋ 큐시트에 넣기' (큐시트 순서를 보고 있을 때는 필요 없음)
+                let can_add = !st.cue_mode && self.searched_bible_item().is_some();
+                let add_w = if can_add { 140.0 } else { 0.0 };
+                let view_w = 250.0 + add_w + if matches!(st.view, SlideView::Grid | SlideView::All) { 100.0 } else { 0.0 };
                 let info_g = ui.painter().layout_no_wrap(info.clone(), theme::font(14.0, Weight::Regular), pal().muted);
                 let room = (row_width(ui) - view_w - info_g.size().x - 16.0).max(60.0);
                 ui.scope(|ui| {
@@ -471,6 +493,13 @@ impl App {
                 });
                 if !info.is_empty() {
                     ui.label(rich(&info, 14.0, Weight::Regular, pal().muted));
+                }
+                if can_add {
+                    let b = ui.add(Btn::new(tr("큐시트에 넣기")).icon("plus").size(Size::Sm).height(26.0).kind(widgets::Kind::Primary).tooltip(tr("검색한 본문을 성경 순서로 큐시트에 넣습니다 (고른 순서 다음에)")));
+                    widgets::mark("center-add-bible", b.rect);
+                    if b.clicked() {
+                        self.add_searched_bible(acts);
+                    }
                 }
                 let (l, g, a, al) = (tr("목록"), tr("격자"), tr("전체 격자"), tr("전체 목록"));
                 let mut v = st.view;

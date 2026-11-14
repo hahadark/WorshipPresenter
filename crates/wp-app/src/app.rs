@@ -496,7 +496,7 @@ impl App {
         // .center-head: '본문 | 주석' · '편집칸' · 제목 + 부가 글 · '목록 | 격자 | 전체 격자 | 전체 목록' (center_ui.rs)
         let mut editor_on = self.editor_on;
         ui.spacing_mut().item_spacing.y = 0.0;
-        self.center_head(ui, s, &mut editor_on);
+        self.center_head(ui, s, &mut editor_on, acts);
         self.editor_on = editor_on;
         // 원본처럼 순서를 골랐을 때만 편집칸을 보이고, 높이는 본문 패널의 절반 안쪽(control.css .cue-editor max-height 46%)으로 제한해 검색 결과가 가려지지 않게 한다.
         if let (true, Some(i)) = (self.editor_on, selected) {

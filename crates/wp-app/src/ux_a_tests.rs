@@ -155,6 +155,45 @@ fn status_fit_keeps_most_important_first() {
     assert_eq!(fit_status(&[100.0, 80.0, 80.0], 20.0, 14.0), vec![Some(false), None, None]);
 }
 
+// ---------------- 3-4 검색한 본문을 큐시트에 ----------------
+
+fn head(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    let mut on = true;
+    app.center_head(ui, s, &mut on, acts);
+}
+fn searched(h: &mut H) {
+    // 장절 검색 결과 (시험 DB 에는 본문이 없어 결과 모양만 넣는다)
+    h.app.search = "요3:16".into();
+    h.app.result = json!({ "ok": true, "mode": "reference", "passage": { "title": "요한복음 3:16", "verses": [] } });
+}
+
+#[test]
+fn center_head_add_button_inserts_searched_passage_after_selection() {
+    let mut h = H::new(two());
+    h.frame(vec![], head);
+    h.frame(vec![], head);
+    assert!(seen("center-add-bible").is_none(), "검색한 장절이 없으면 단추도 없다");
+    searched(&mut h);
+    h.app.sel = Some(0);
+    h.click("center-add-bible", head);
+    let items = h.items();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[1]["type"], "bible", "고른 순서(0) 다음에");
+    assert_eq!(items[1]["ref"], "요한복음 3:16");
+    assert!(h.toast().0.contains("요한복음 3:16"));
+}
+
+#[test]
+fn left_bible_button_fills_searched_reference() {
+    let mut h = H::new(two());
+    h.click("add-bible", cue);
+    assert_eq!(h.items().last().unwrap()["ref"].as_str().unwrap_or(""), "", "검색이 없으면 빈 성경 순서");
+    searched(&mut h);
+    h.app.sel = None;
+    h.click("add-bible", cue);
+    assert_eq!(h.items().last().unwrap()["ref"], "요한복음 3:16");
+}
+
 // ---------------- 3-2 · 2 되돌리기 ----------------
 
 #[test]
