@@ -36,6 +36,7 @@ mod actions_ui; // 순서 편집칸: 배경 음악 · ⚡ 송출할 때 자동�
 mod theme; // 디자인 기반: control.css 색·글꼴
 mod icons; // 디자인 기반: Lucide 아이콘
 mod widgets; // 디자인 기반: 공용 위젯
+mod cue_ui; // 디자인 2단계: 왼쪽 큐시트 패널
 
 use eframe::egui;
 use parking_lot::Mutex;
