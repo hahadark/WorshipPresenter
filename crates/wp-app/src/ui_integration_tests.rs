@@ -388,3 +388,80 @@ fn cue_row_hover_shows_pencil_and_send() {
     let live = app.snap().live.expect("▶ 를 누르면 송출");
     assert_eq!(live.deck.passage["cueIndex"], json!(0));
 }
+
+// ---------------- 본문 목록 보기 (Electron cue.js showSlideList · control.js 키보드) ----------------
+
+/// 목록 보기 + 전역 단축키(← → Enter)를 함께 한 프레임 (production 의 ui() 와 같은 차례: 단축키 먼저)
+fn list_body(app: &mut super::App, ui: &mut egui::Ui, s: &super::Snap, acts: &mut Vec<super::Act>) {
+    let typing = ui.ctx().egui_wants_keyboard_input();
+    app.shortcuts(ui.ctx(), acts, typing);
+    app.center_body(ui, s, acts);
+}
+fn key(k: egui::Key) -> Vec<Event> {
+    vec![Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]
+}
+fn list_click(h: &mut Harness, app: &mut super::App, name: &str, times: usize) {
+    let p = seen(name).unwrap_or_else(|| panic!("목록 줄이 그려져야 함: {name}")).center();
+    h.time += 1.0; // 앞의 누르기와 이어져 세 번 누르기로 세지 않게
+    panel_frame(h, app, vec![Event::PointerMoved(p)], list_body);
+    for _ in 0..times {
+        for pressed in [true, false] {
+            panel_frame(h, app, vec![Event::PointerButton { pos: p, button: PointerButton::Primary, pressed, modifiers: Default::default() }], list_body);
+        }
+    }
+    panel_frame(h, app, vec![], list_body);
+}
+fn list_harness() -> (Harness, super::App) {
+    let mut h = Harness::new(json!({"id":"list-test","type":"text","title":"광고","body":"첫째 소식\n---\n둘째 소식\n---\n셋째 소식"}));
+    h.ui.open = false;
+    let app = headless_app(&h);
+    app.core.lock().preview_item(0); // 준비: 그 순서를 미리보기 (큐시트에서 누른 것과 같음)
+    crate::center_ui::test_set_view(&h.ctx, crate::center_ui::SlideView::List, true);
+    (h, app)
+}
+
+#[test]
+fn list_click_previews_and_double_click_sends() {
+    let (mut h, mut app) = list_harness();
+    panel_frame(&mut h, &mut app, vec![], list_body);
+    panel_frame(&mut h, &mut app, vec![], list_body);
+    // 누르기 = 그 슬라이드 미리보기 (송출 안 됨)
+    list_click(&mut h, &mut app, "srow-1", 1);
+    assert_eq!(app.snap().preview.as_ref().unwrap().index, 1);
+    assert!(app.snap().live.is_none(), "한 번 누르기는 송출하지 않음");
+    // 두 번 누르기 = 그 슬라이드 송출
+    list_click(&mut h, &mut app, "srow-2", 2);
+    let live = app.snap().live.expect("두 번 누르면 송출");
+    assert_eq!(live.deck.index, 2);
+    assert_eq!(live.deck.passage["cueIndex"], json!(0));
+}
+
+#[test]
+fn list_keyboard_arrows_step_preview_and_enter_sends() {
+    let (mut h, mut app) = list_harness();
+    app.core.lock().add_item(json!({"id":"next","type":"title","title":"다음 순서"}), None);
+    app.core.lock().preview_item(0);
+    panel_frame(&mut h, &mut app, vec![], list_body);
+    panel_frame(&mut h, &mut app, vec![], list_body);
+    // 목록에 키보드가 없을 때 Enter = 미리보기 송출 (control.js 전역 Enter)
+    panel_frame(&mut h, &mut app, key(egui::Key::Enter), list_body);
+    assert_eq!(app.snap().live.expect("Enter 로 송출").deck.index, 0);
+    // → = 다음 슬라이드 미리보기
+    panel_frame(&mut h, &mut app, key(egui::Key::ArrowRight), list_body);
+    assert_eq!(app.snap().preview.as_ref().unwrap().index, 1);
+    panel_frame(&mut h, &mut app, key(egui::Key::ArrowLeft), list_body);
+    assert_eq!(app.snap().preview.as_ref().unwrap().index, 0);
+    // 줄을 누르면 키보드는 목록에: Enter 는 목록이 쓰므로 송출하지 않음 (#results 는 전역 Enter 에서 빠짐)
+    list_click(&mut h, &mut app, "srow-2", 1);
+    panel_frame(&mut h, &mut app, key(egui::Key::Enter), list_body);
+    assert_eq!(app.snap().live.as_ref().unwrap().deck.index, 0, "목록에 키보드가 있으면 Enter 로 송출하지 않음");
+    // 마지막 장에서 → = 다음 순서 미리보기 (stepPreview → previewStep)
+    panel_frame(&mut h, &mut app, key(egui::Key::ArrowRight), list_body);
+    let pv = app.snap().preview.clone().unwrap();
+    assert_eq!(pv.passage["cueIndex"], json!(1), "순서 끝에서 → 는 다음 순서");
+    assert_eq!(app.sel, Some(1));
+    // ← = 이전 순서의 마지막 장
+    panel_frame(&mut h, &mut app, key(egui::Key::ArrowLeft), list_body);
+    let pv = app.snap().preview.clone().unwrap();
+    assert_eq!((pv.passage["cueIndex"].clone(), pv.index), (json!(0), 2));
+}

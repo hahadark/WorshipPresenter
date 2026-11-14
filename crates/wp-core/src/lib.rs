@@ -1,5 +1,6 @@
 //! 워십프리젠터 Rust 판 코어
 pub mod books;
+pub mod groups; // 슬라이드 이름표 색·글 정리 (Electron shared/groups.js)
 pub mod core;
 pub mod db;
 pub mod hymnal; // [트랙 A]

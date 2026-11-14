@@ -222,6 +222,11 @@ impl App {
         if r.changed() {
             acts.push(Act::Search(self.search.clone()));
         }
+        // 검색칸에서 ↓: 키보드를 본문 목록으로 (control.js: #results.focus(), 고른 줄이 없으면 첫 줄)
+        if r.has_focus() && self.result["ok"] == json!(true) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::ArrowDown)) {
+            r.surrender_focus();
+            crate::center_ui::focus_results(ui.ctx());
+        }
         if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             if ui.input(|i| i.modifiers.ctrl) {
                 acts.push(Act::SendPreview)
