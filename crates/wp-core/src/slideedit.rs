@@ -458,12 +458,20 @@ pub fn set_card_text(it: &mut Value, key: &str, text: &str) {
 /// 보이는 슬라이드 키를 옮긴다. 덧붙임 at 는 바로 앞 원본 번호로 다시 계산한다.
 /// 글 덩어리의 편집도 함께 재번호화하며, 성경·부를 순서 지정 찬양은 원본처럼 막는다.
 pub fn move_slide(it: &Value, keys: &[String], from: usize, to: usize) -> Value {
-    let mut out = it.clone();
+    let out = it.clone();
     if from >= keys.len() || to >= keys.len() || from == to || it["type"] == "bible"
         || (it["type"] == "song" && !it["order"].as_str().unwrap_or("").trim().is_empty()) { return out; }
     let mut next = keys.to_vec();
     if next.iter().enumerate().any(|(i, k)| next[..i].contains(k)) { return out; }
     let moved = next.remove(from); next.insert(to, moved);
+    reorder(it, &next)
+}
+
+/// 편집기 목록 차례(건너뛴 것 포함)를 `next` 로 바꾼 순서. 글 덩어리는 글·꾸미기 번호를, 그 밖은 slideOrder·덧붙임 at 를 고친다
+/// (Electron slideedit.js moveSlides 의 적용 부분). 안 맞으면 그대로 돌려준다
+pub fn reorder(it: &Value, next: &[String]) -> Value {
+    let mut out = it.clone();
+    let next = next.to_vec();
     if is_chunk(it["type"].as_str().unwrap_or("")) {
         let Some(perm) = next.iter().map(|k| k.parse::<usize>().ok()).collect::<Option<Vec<_>>>() else { return out };
         let mut sorted = perm.clone(); sorted.sort();
@@ -610,6 +618,151 @@ pub fn quick_op(it: &Value, keys: &[String], key: &str, op: &str) -> Result<(Val
     Ok((out, pick))
 }
 
+/// 여러 장을 끌어 다른 슬라이드의 앞·뒤에 놓기 (Electron slideedit.js moveSlides).
+/// `keys` 는 편집기 목록 차례(건너뛴 것 포함)의 ekey, `moved` 는 옮길 ekey, `target` 은 놓을 자리의 ekey.
+/// 안 되면 사용자에게 보일 까닭 (빈 글이면 바뀐 것 없음)
+pub fn move_keys(it: &Value, keys: &[String], moved: &[String], target: &str, after: bool) -> Result<Value, &'static str> {
+    if it["type"] == "bible" {
+        return Err("성경 본문의 차례는 바꿀 수 없습니다.");
+    }
+    if it["type"] == "song" && !it["order"].as_str().unwrap_or("").trim().is_empty() {
+        return Err("부를 순서가 정해진 찬양입니다. 편집칸의 '부를 순서' 에서 차례를 바꾸세요.");
+    }
+    let mut mv: Vec<String> = vec![];
+    for k in moved {
+        if !mv.contains(k) {
+            mv.push(k.clone());
+        }
+    }
+    if mv.is_empty() || mv.iter().any(|k| k == target) {
+        return Err("");
+    }
+    let rest: Vec<String> = keys.iter().filter(|k| !mv.contains(k)).cloned().collect();
+    let Some(mut pos) = rest.iter().position(|k| k == target) else { return Err("") };
+    if after {
+        pos += 1;
+    }
+    // 옮길 것은 목록 차례대로
+    mv.sort_by_key(|k| keys.iter().position(|x| x == k).unwrap_or(usize::MAX));
+    let next: Vec<String> = rest[..pos].iter().chain(mv.iter()).chain(rest[pos..].iter()).cloned().collect();
+    if next == keys {
+        return Err("");
+    }
+    let out = reorder(it, &next);
+    if &out == it {
+        return Err("");
+    }
+    Ok(out)
+}
+
+/// 고른 여러 장 지우기 (Electron selAction('del')): 글 순서는 지우고, 그 밖 순서의 원래 슬라이드는 건너뛰기, 덞붙인 것은 지운다.
+/// 뒤에서부터 처리해 앞 번호가 밀리지 않게 한다. 돌려주는 것: (고친 순서, 처리한 장 수)
+pub fn delete_keys(it: &Value, keys: &[String], del: &[String]) -> Result<(Value, usize), &'static str> {
+    let chunk = is_chunk(it["type"].as_str().unwrap_or(""));
+    let num = |k: &str| k.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse::<u64>().unwrap_or(0);
+    let mut ds: Vec<String> = vec![];
+    for k in del {
+        if !ds.contains(k) {
+            ds.push(k.clone());
+        }
+    }
+    ds.sort_by(|a, b| num(b).cmp(&num(a)));
+    let mut cur = it.clone();
+    let mut keys = keys.to_vec();
+    let mut n = 0;
+    for k in ds {
+        let (a, _) = quick_op(&cur, &keys, &k, "del")?;
+        cur = a;
+        n += 1;
+        if chunk {
+            let len = keys.len().saturating_sub(1);
+            keys = (0..len).map(|x| x.to_string()).collect();
+        } else if k.starts_with('x') {
+            keys.retain(|x| x != &k);
+        }
+    }
+    Ok((cur, n))
+}
+
+/// 여러 장 함께 꾸미기 (Electron slideedit.js propagate): 기준 슬라이드에서 바뀐 것(before → after)만 다른 고른 슬라이드에 그대로.
+/// 글상자·그림·도형(items)은 id 별로 넣기·바꾸기·빼기, style·box 는 바뀐 항목만
+pub fn propagate(it: &mut Value, others: &[String], before: &Value, after: &Value) {
+    let empty = Map::new();
+    let b = before.as_object().unwrap_or(&empty);
+    let a = after.as_object().unwrap_or(&empty);
+    let mut fields: Vec<&String> = vec![];
+    for f in b.keys().chain(a.keys()) {
+        if !fields.contains(&f) {
+            fields.push(f);
+        }
+    }
+    for k in others.iter().filter(|k| k.as_str() != "*") {
+        if !it["edits"].is_object() {
+            it["edits"] = json!({});
+        }
+        if !it["edits"][k].is_object() {
+            it["edits"][k] = json!({});
+        }
+        let e = it["edits"][k].as_object_mut().unwrap();
+        for f in &fields {
+            let (bv, av) = (b.get(*f), a.get(*f));
+            if bv == av {
+                continue;
+            }
+            if f.as_str() == "items" {
+                let id = |x: &Value| x["id"].clone();
+                let bl = bv.and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                let al = av.and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                let mut list = e.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                for x in &bl {
+                    if !al.iter().any(|y| id(y) == id(x)) {
+                        list.retain(|y| id(y) != id(x));
+                    }
+                }
+                for x in &al {
+                    if bl.iter().any(|y| y == x) {
+                        continue;
+                    }
+                    match list.iter().position(|y| id(y) == id(x)) {
+                        Some(j) => list[j] = x.clone(),
+                        None => list.push(x.clone()),
+                    }
+                }
+                e.insert("items".into(), json!(list));
+                continue;
+            }
+            if (f.as_str() == "style" || f.as_str() == "box") && av.is_some_and(|v| v.is_object()) {
+                let bo = bv.and_then(|v| v.as_object()).cloned().unwrap_or_default();
+                let ao = av.and_then(|v| v.as_object()).cloned().unwrap_or_default();
+                let mut cur = e.get(*f).and_then(|v| v.as_object()).cloned().unwrap_or_default();
+                for s in bo.keys().chain(ao.keys()) {
+                    if bo.get(s) == ao.get(s) {
+                        continue;
+                    }
+                    match ao.get(s) {
+                        Some(v) => {
+                            cur.insert(s.clone(), v.clone());
+                        }
+                        None => {
+                            cur.remove(s);
+                        }
+                    }
+                }
+                e.insert((*f).clone(), Value::Object(cur));
+                continue;
+            }
+            match av {
+                Some(v) => {
+                    e.insert((*f).clone(), v.clone());
+                }
+                None => {
+                    e.remove(*f);
+                }
+            }
+        }
+    }
+}
+
 fn set_or_remove(it: &mut Value, k: &str, v: Value) {
     if v.is_null() { if let Some(o) = it.as_object_mut() { o.remove(k); } } else { it[k] = v; }
 }
@@ -723,6 +876,35 @@ mod tests {
         assert_eq!(apply_op(&only,"del",0).0,only);
         let mut edited=it.clone(); set_card_text(&mut edited,"1","바뀐 제목\n바뀐 부제");
         assert_eq!(slides::title_pages(&edited)[1],"바뀐 제목\n바뀐 부제");
+    }
+    #[test]
+    fn move_many_delete_many_and_propagate_like_electron() {
+        let k = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let it = json!({"type":"text","body":"a\n---\nb\n---\nc\n---\nd","edits":{"3":{"bg":"#fff"}}});
+        let keys = k(&["0", "1", "2", "3"]);
+        // a·c 를 d 뒤로 → b d a c (옮긴 것은 목록 차례대로), 꼾미기 번호도 따라감
+        let m = move_keys(&it, &keys, &k(&["2", "0"]), "3", true).unwrap();
+        assert_eq!(m["body"], "b\n---\nd\n---\na\n---\nc");
+        assert_eq!(m["edits"]["1"], json!({"bg":"#fff"}));
+        // 앞에 놓기
+        assert_eq!(move_keys(&it, &keys, &k(&["3"]), "0", false).unwrap()["body"], "d\n---\na\n---\nb\n---\nc");
+        // 제자리·자기 자신 위·성경은 안 됨
+        assert_eq!(move_keys(&it, &keys, &k(&["1"]), "0", true), Err(""));
+        assert_eq!(move_keys(&it, &keys, &k(&["1"]), "1", true), Err(""));
+        assert!(move_keys(&json!({"type":"bible"}), &keys, &k(&["1"]), "0", false).unwrap_err().contains("성경"));
+        // 그림: 원래 슬라이드 차례는 slideOrder 로
+        let img = json!({"type":"slideshow","images":["a","b","c"]});
+        assert_eq!(move_keys(&img, &k(&["0", "1", "2"]), &k(&["0"]), "2", true).unwrap()["slideOrder"], json!([1, 2, 0]));
+        // 여러 장 지우기: 글은 지우고, 그림은 건너뛰기
+        let (d, n) = delete_keys(&it, &keys, &k(&["1", "3"])).unwrap();
+        assert_eq!((d["body"].as_str().unwrap(), n), ("a\n---\nc", 2));
+        let (s, _) = delete_keys(&img, &k(&["0", "1", "2"]), &k(&["0", "2"])).unwrap();
+        assert_eq!(s["skip"], json!([0, 2]));
+        // 함께 꾸미기: 바뀐 것만 다른 슬라이드에
+        let mut p = json!({"edits":{"1":{"bg":"#000","style":{"size":50,"bold":true}}}});
+        propagate(&mut p, &k(&["1", "2"]), &json!({"style":{"size":60}}), &json!({"style":{"size":80},"hideMain":true,"items":[{"id":"t1","type":"text"}]}));
+        assert_eq!(p["edits"]["1"], json!({"bg":"#000","style":{"size":80,"bold":true},"hideMain":true,"items":[{"id":"t1","type":"text"}]}));
+        assert_eq!(p["edits"]["2"], json!({"style":{"size":80},"hideMain":true,"items":[{"id":"t1","type":"text"}]}));
     }
     #[test]
     fn drag_reorder_preserves_edits_and_extra_anchors() {
