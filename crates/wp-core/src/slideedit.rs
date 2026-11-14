@@ -655,6 +655,23 @@ pub fn move_keys(it: &Value, keys: &[String], moved: &[String], target: &str, af
     Ok(out)
 }
 
+/// `move_keys` 뒤 옮긴 슬라이드의 새 키 (새 자리에서 다시 고르려고): 글 덩어리는 번호가 새 자리로 바뀌고, 그 밖은 그대로
+pub fn keys_after_move(chunk: bool, keys: &[String], moved: &[String], target: &str, after: bool) -> Vec<String> {
+    let mut mv: Vec<String> = vec![];
+    for k in moved {
+        if !mv.contains(k) {
+            mv.push(k.clone());
+        }
+    }
+    mv.sort_by_key(|k| keys.iter().position(|x| x == k).unwrap_or(usize::MAX));
+    if !chunk {
+        return mv;
+    }
+    let rest: Vec<&String> = keys.iter().filter(|k| !mv.contains(k)).collect();
+    let pos = rest.iter().position(|k| k.as_str() == target).map(|p| if after { p + 1 } else { p }).unwrap_or(0);
+    (pos..pos + mv.len()).map(|x| x.to_string()).collect()
+}
+
 /// 고른 여러 장 지우기 (Electron selAction('del')): 글 순서는 지우고, 그 밖 순서의 원래 슬라이드는 건너뛰기, 덞붙인 것은 지운다.
 /// 뒤에서부터 처리해 앞 번호가 밀리지 않게 한다. 돌려주는 것: (고친 순서, 처리한 장 수)
 pub fn delete_keys(it: &Value, keys: &[String], del: &[String]) -> Result<(Value, usize), &'static str> {
@@ -886,6 +903,8 @@ mod tests {
         let m = move_keys(&it, &keys, &k(&["2", "0"]), "3", true).unwrap();
         assert_eq!(m["body"], "b\n---\nd\n---\na\n---\nc");
         assert_eq!(m["edits"]["1"], json!({"bg":"#fff"}));
+        assert_eq!(keys_after_move(true, &keys, &k(&["2", "0"]), "3", true), k(&["2", "3"]));
+        assert_eq!(keys_after_move(false, &keys, &k(&["2", "0"]), "3", true), k(&["0", "2"]));
         // 앞에 놓기
         assert_eq!(move_keys(&it, &keys, &k(&["3"]), "0", false).unwrap()["body"], "d\n---\na\n---\nb\n---\nc");
         // 제자리·자기 자신 위·성경은 안 됨

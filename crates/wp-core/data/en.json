@@ -3953,5 +3953,10 @@
  "글자·배경·로고를 모두 지움": "Clear text, background and logo",
  "슬라이드 {1}": "Slide {1}",
  "이 슬라이드 복제": "Duplicate this slide",
- "이 슬라이드 지우기": "Delete this slide"
+ "이 슬라이드 지우기": "Delete this slide",
+ "고른 {1}장 편집 (함께 꾸미기)": "Edit {1} selected (style together)",
+ "고른 {1}장 지우기": "Delete {1} selected",
+ "고른 {1}장 건너뛰기": "Skip {1} selected",
+ "고른 {1}장 편집": "Edit {1} selected",
+ "한 장만 (Esc)": "Just one (Esc)"
 }

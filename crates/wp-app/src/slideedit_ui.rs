@@ -18,6 +18,11 @@ pub struct SlideEditUi {
     drag_slide: Option<usize>,
     /// 다음에 열 때 고를 슬라이드 (ekey) — 격자의 ✎·＋ 단추가 정한다
     pending_key: Option<String>,
+    /// 여러 장 고르기 (slideedit.js S.multi · S.anchor): 고른 ekey 들, Shift 기준
+    pub(crate) multi: Vec<String>,
+    anchor: Option<String>,
+    /// Ctrl+A: 다음 프레임에 건너뛰지 않은 슬라이드 모두 고르기
+    want_all: bool,
     #[cfg(test)]
     pub(crate) observed: std::collections::BTreeMap<String, egui::Rect>,
 }
@@ -82,6 +87,27 @@ impl SlideEditUi {
         self.open = true;
         self.common = false;
         self.pending_key = Some(key.to_string());
+        self.multi.clear();
+        self.anchor = None;
+    }
+    /// 고른 여러 장을 함께 꾸미기로 열기 (본문 목록·격자의 '고른 N장 편집', slideedit.js open(i, key, keys))
+    pub fn open_many(&mut self, keys: &[String]) {
+        let Some(first) = keys.first() else { return };
+        self.open_at(first);
+        if keys.len() > 1 {
+            self.multi = keys.to_vec();
+            self.anchor = Some(first.clone());
+        }
+    }
+    /// 편집기 목록 키: Esc = 한 장만 (여러 장을 고른 중) · Ctrl+A = 모두 (slideedit.js 키 처리)
+    pub fn list_keys(&mut self, ctx: &egui::Context) {
+        use egui::{Key, Modifiers};
+        if self.multi.len() > 1 && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            self.multi.clear();
+        }
+        if !self.common && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::A)) {
+            self.want_all = true;
+        }
     }
     #[allow(clippy::too_many_arguments)]
     pub fn show(&mut self, ctx: &egui::Context, core: &Shared, sel: Option<usize>, web_dir: &std::path::Path, data_dir: &std::path::Path, acts: &mut Vec<Act>) {
@@ -106,6 +132,17 @@ impl SlideEditUi {
             }
             if slides.is_empty() { return; }
             self.k = self.k.min(slides.len() - 1);
+            if std::mem::take(&mut self.want_all) {
+                self.multi = slides.iter().filter(|s| !s["skipped"].as_bool().unwrap_or(false)).map(edit_key).collect();
+                if !self.multi.contains(&edit_key(&slides[self.k])) {
+                    if let Some(p) = slides.iter().position(|s| self.multi.first() == Some(&edit_key(s))) { self.k = p; }
+                }
+            }
+            // 고른 것에 지금 슬라이드가 없으면 한 장만 (draw)
+            let cur_key = edit_key(&slides[self.k]);
+            self.multi.retain(|k| slides.iter().any(|s| &edit_key(s) == k));
+            if self.common { self.multi.clear(); } else if !self.multi.contains(&cur_key) { self.multi = vec![cur_key.clone()]; self.anchor = Some(cur_key.clone()); }
+            let multi_on = !self.common && self.multi.len() > 1;
             let ty = it["type"].as_str().unwrap_or("").to_string();
             let chunk = is_chunk(&ty);
             let mut new_it: Option<Value> = None;
@@ -115,6 +152,12 @@ impl SlideEditUi {
                 ui.label(RichText::new(it["title"].as_str().unwrap_or("")).strong());
                 ui.label(RichText::new(wp_core::i18n::tr_args("슬라이드 {1}장", &[&(slides.len())])).small().color(Color32::GRAY));
                 ui.checkbox(&mut self.common, wp_core::i18n::tr("모든 슬라이드에 공통(*)"));
+                if multi_on {
+                    // se-multi-note
+                    let n = self.multi.len();
+                    ui.label(RichText::new(wp_core::i18n::tr_args("고른 슬라이드 {1}장", &[&n])).strong().color(crate::theme::pal().accent));
+                    ui.label(RichText::new(wp_core::i18n::tr_args("여기서 바꾸는 꾸미기·글상자·배경이 고른 {1}장에 함께 적용됩니다 (Esc: 한 장만)", &[&n])).small().color(crate::theme::pal().muted));
+                }
             });
             ui.separator();
             egui::Panel::left("se-list").default_size(300.0).show(ui, |ui| {
@@ -128,6 +171,19 @@ impl SlideEditUi {
                         // 줄 높이 30px: 마우스 올림 단추(26px)가 들어가게
                         let r = ui.add(egui::Button::selectable(k == self.k, txt).min_size(Vec2::new(ui.available_width(), 30.0)).sense(Sense::click_and_drag()));
                         if r.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+                        let key_k = edit_key(s);
+                        if multi_on && self.multi.contains(&key_k) {
+                            // .se-slide.msel: accent 테두리 · accent 18% 바탕
+                            let p = crate::theme::pal();
+                            ui.painter().rect(r.rect, 4.0, crate::theme::alpha(p.accent, 0.18), egui::Stroke::new(1.5, p.accent), egui::StrokeKind::Inside);
+                        }
+                        // 끌어 놓을 자리 표시선 (줄 위·아래)
+                        if self.drag_slide.is_some_and(|f| f != k) && r.contains_pointer() {
+                            if let Some(p) = ui.input(|i| i.pointer.interact_pos()) {
+                                let y = if p.y >= r.rect.center().y { r.rect.bottom() } else { r.rect.top() };
+                                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(3.0, crate::theme::pal().accent));
+                            }
+                        }
                         if let Some(op) = crate::widgets::hover_ops(ui, egui::Id::new(("se-ops", k)), r.rect, &list_ops(&ty, s)) {
                             let keys: Vec<String> = slides.iter().map(edit_key).collect();
                             match se::quick_op(&it, &keys, &edit_key(s), op) {
@@ -145,12 +201,50 @@ impl SlideEditUi {
                         if r.drag_started() { self.drag_slide = Some(k); }
                         if r.contains_pointer() && ui.input(|i| i.pointer.any_released()) {
                             if let Some(from) = self.drag_slide.take() {
+                                // slideedit.js moveSlides: 고른 것 중 하나를 끌면 고른 것 모두, 줄 가운데보다 아래면 뒤에
                                 let keys: Vec<String> = slides.iter().map(edit_key).collect();
-                                let a = se::move_slide(&it, &keys, from, k);
-                                if a != it { new_it = Some(a); self.k = k; }
+                                let fk = keys[from].clone();
+                                let moved = if multi_on && self.multi.contains(&fk) { self.multi.clone() } else { vec![fk.clone()] };
+                                let after = ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.y >= r.rect.center().y);
+                                match se::move_keys(&it, &keys, &moved, &key_k, after) {
+                                    Ok(a) => {
+                                        new_it = Some(a);
+                                        // 옮긴 것을 새 자리에서 고른 채로 (글 덩어리는 번호가 바뀜)
+                                        let nk = se::keys_after_move(chunk, &keys, &moved, &key_k, after);
+                                        if let Some(f) = nk.first() { self.pending_key = Some(f.clone()); }
+                                        self.multi = if nk.len() > 1 { nk } else { vec![] };
+                                    }
+                                    Err(m) if !m.is_empty() => core.lock().notify(wp_core::i18n::tr(m), "info"),
+                                    Err(_) => {}
+                                }
                             }
                         }
-                        if r.clicked() { self.k = k; }
+                        if r.clicked() {
+                            // 목록에서 고르기 (pickSlides): Shift = 기준부터 범위 · Ctrl = 더하기/빼기 · 그냥 = 한 장
+                            let m = ui.input(|i| i.modifiers);
+                            let keys: Vec<String> = slides.iter().map(edit_key).collect();
+                            if self.common {
+                                self.k = k;
+                            } else if m.shift && self.anchor.as_ref().is_some_and(|a| keys.contains(a)) {
+                                let a = keys.iter().position(|x| Some(x) == self.anchor.as_ref()).unwrap_or(k);
+                                self.multi = keys[a.min(k)..=a.max(k)].to_vec();
+                                self.k = k;
+                            } else if m.command {
+                                let mut ms = if self.multi.is_empty() { vec![edit_key(&slides[self.k])] } else { self.multi.clone() };
+                                if ms.contains(&key_k) && ms.len() > 1 {
+                                    ms.retain(|x| x != &key_k);
+                                    if self.k == k { if let Some(p) = slides.iter().position(|x| Some(&edit_key(x)) == ms.first()) { self.k = p; } }
+                                } else {
+                                    ms.push(key_k.clone());
+                                    self.k = k;
+                                }
+                                self.multi = ms;
+                            } else {
+                                self.multi = vec![key_k.clone()];
+                                self.anchor = Some(key_k.clone());
+                                self.k = k;
+                            }
+                        }
                         let src = s["src"].as_u64().unwrap_or(k as u64) as usize;
                         let base = s["base"].as_u64().map(|x| x as usize);
                         r.context_menu(|ui| {
@@ -354,6 +448,11 @@ impl SlideEditUi {
             if e != before {
                 let mut a = new_it.clone().unwrap_or_else(|| it.clone());
                 se::update_edit(&mut a, &key, |x| *x = e.clone());
+                // 여러 장 함께 꾸미기: 바뀐 것만 다른 고른 슬라이드에 (slideedit.js propagate)
+                if multi_on && self.multi.contains(&key) {
+                    let others: Vec<String> = self.multi.iter().filter(|k| **k != key).cloned().collect();
+                    se::propagate(&mut a, &others, &before, &e);
+                }
                 new_it = Some(a);
             }
             if let Some(a) = new_it {

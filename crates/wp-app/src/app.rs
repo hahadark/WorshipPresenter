@@ -41,6 +41,10 @@ pub(crate) enum Act {
     PreviewStep(i64),
     /// 썸네일·목록의 마우스 올림 단추: (순서 번호, 슬라이드 ekey, 동작 edit·add·dup·del·skip·up·down)
     SlideOp(usize, String, &'static str),
+    /// 고른 여러 장 지우기·건너뛰기 (slideedit.js selAction('del')): (순서 번호, ekey 들)
+    SlideDelMany(usize, Vec<String>),
+    /// 끌어서 여러 장 옮기기 (slideedit.js moveSlides): (순서 번호, 옮길 ekey 들, 놓을 자리 ekey, 그 뒤에)
+    SlideMove(usize, Vec<String>, String, bool),
     /// 알림에 붙은 단추 ("undo" 되돌리기 · "output-on" 예배당 화면 켜기)
     ToastAct(&'static str),
     /// 알림을 눌러 닫기
@@ -162,7 +166,7 @@ impl App {
         Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */ }
     }
 
-    fn snap(&self) -> Snap {
+    pub(crate) fn snap(&self) -> Snap {
         let c = self.core.lock();
         let s = c.settings.get();
         Snap {
@@ -331,6 +335,57 @@ impl App {
                         Err(_) => {}
                     }
                 }
+                act @ (Act::SlideDelMany(..) | Act::SlideMove(..)) => {
+                    let (i, del) = match &act { Act::SlideDelMany(i, d) | Act::SlideMove(i, d, _, _) => (*i, d.clone()), _ => continue };
+                    if del.is_empty() { continue; }
+                    use wp_core::i18n::{tr, tr_args};
+                    // 편집기 차례(건너뛴 것 포함)로 적용한다 (SlideOp 와 같음)
+                    let list = match crate::slideedit_ui::editor_list(&mut c, i) {
+                        Ok(Some(x)) => x,
+                        Ok(None) => continue,
+                        Err(e) => { c.notify(e, "warn"); continue; }
+                    };
+                    let keys: Vec<String> = list.1.iter().map(crate::center_ui::slide_key).collect();
+                    let chunk = wp_core::slideedit::is_chunk(list.0["type"].as_str().unwrap_or(""));
+                    let (res, moved) = match &act {
+                        Act::SlideMove(_, mv, target, after) => (wp_core::slideedit::move_keys(&list.0, &keys, mv, target, *after).map(|a| (a, mv.len())), true),
+                        _ => (wp_core::slideedit::delete_keys(&list.0, &keys, &del), false),
+                    };
+                    // 옮긴 슬라이드의 새 키 (글 덩어리는 번호가 바뀜)
+                    let new_keys = match &act {
+                        Act::SlideMove(_, mv, target, after) => wp_core::slideedit::keys_after_move(chunk, &keys, mv, target, *after),
+                        _ => vec![],
+                    };
+                    match res {
+                        Ok((a, n)) => {
+                            c.remember_items(); // 한 번 = 실행 취소(Ctrl+Z) 한 번
+                            c.b.typing = None;
+                            if let Some(cue) = &mut c.cue { cue.items[i] = a; }
+                            c.save_cue();
+                            if c.preview_is_item(i) {
+                                let idx = c.pres.preview.as_ref().map(|p| p.index).unwrap_or(0);
+                                if let Ok(mut d) = c.item_deck(i) {
+                                    // 옮긴 슬라이드를 새 자리에서 미리보기
+                                    let first = if moved { d.slides.iter().position(|s| new_keys.contains(&crate::center_ui::slide_key(s))) } else { None };
+                                    d.index = first.unwrap_or(idx).min(d.slides.len().saturating_sub(1));
+                                    c.pres.preview = Some(d);
+                                }
+                            }
+                            let msg = if moved {
+                                tr_args("슬라이드 {1}장의 차례를 바꿨습니다 (되돌리기 Ctrl+Z).", &[&n])
+                            } else if chunk {
+                                tr_args("슬라이드 {1}장을 지웠습니다.", &[&n])
+                            } else {
+                                tr_args("슬라이드 {1}장을 건너뛰기 (송출에서 빠짐) 했습니다.", &[&n])
+                            };
+                            c.notify(msg, "ok");
+                            self.sel = Some(i);
+                            self.edit = None;
+                        }
+                        Err(m) if !m.is_empty() => c.notify(tr(m), "info"),
+                        Err(_) => {}
+                    }
+                }
                 Act::UpdateItem(i, it) => {
                     c.remember_typing(it["id"].as_str().unwrap_or("")); // [트랙 B] 실행 취소 묶음
                     if let Some(cue) = &mut c.cue {
@@ -432,6 +487,8 @@ impl App {
         // [트랙 C] 설정 → 단축키에서 바꾼 키를 쓴다 (없으면 기본값)
         let st = self.core.lock().settings.get()["shortcuts"].clone();
         let st = serde_json::json!({ "shortcuts": st });
+        // 여러 장 고르기 키 (Esc·Delete·Ctrl+A·Ctrl+E) — 전역 Esc(보조 화면 끄기)보다 먼저
+        if !typing { self.msel_keys(ctx, acts); }
         let mut on = |id: &str, def: &str| (!typing || crate::keys::safe_while_typing(&st, id, def)) && crate::keys::pressed(ctx, &st, id, def);
         if on("prevSlide", "F5") { acts.push(Act::Step(-1)) }
         if on("nextSlide", "F6") { acts.push(Act::Step(1)) }

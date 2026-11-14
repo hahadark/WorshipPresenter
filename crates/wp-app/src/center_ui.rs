@@ -61,6 +61,220 @@ pub(crate) struct CenterState {
     scroll_sel: bool,
     /// 본문 목록 자리 (밖을 누르면 키보드를 놓는다)
     body_rect: Option<Rect>,
+    /// 여러 장 고르기 (slideedit.js M): 고른 순서 (큐시트 id, 순서 번호) · 고른 슬라이드(미리보기 차례) · Shift 기준
+    ms_item: Option<(String, usize)>,
+    ms: std::collections::BTreeSet<usize>,
+    ms_anchor: Option<usize>,
+    /// 끌어서 차례 바꾸기 (M.drag)
+    drag: Option<SlideDrag>,
+    /// 옮긴 뒤 새 자리에서 다시 고를 슬라이드 (순서 번호, ekey 들)
+    ms_after: Option<(usize, Vec<String>)>,
+}
+
+/// 끌어서 차례 바꾸기 중 (slideedit.js attachSel)
+#[derive(Clone, Debug)]
+struct SlideDrag {
+    /// 순서 번호
+    item: usize,
+    /// 옮길 슬라이드 (미리보기 차례): 고른 것 중 하나를 끌면 고른 것 모두
+    ks: Vec<usize>,
+    /// 누른 자리 (8px 넘게 움직여야 끌기)
+    start: Pos2,
+    moved: bool,
+    /// 놓을 자리 (슬라이드, 뒤에)
+    to: Option<(usize, bool)>,
+}
+
+/// 미리보기가 열린 큐시트의 순서이면 (순서 번호, 미리보기 차례, 슬라이드 수)
+fn pv_item(s: &Snap) -> Option<(usize, usize, usize)> {
+    let d = s.preview.as_ref()?;
+    deck_item(s, d).map(|(i, _)| (i, d.index, d.slides.len()))
+}
+
+/// 고른 것이 지금 미리보기 중인 순서의 것인가 (selValid)
+fn ms_valid(st: &CenterState, s: &Snap) -> bool {
+    match (pv_item(s), &st.ms_item) {
+        (Some((i, _, _)), Some((id, j))) => *j == i && *id == s.cue_id,
+        _ => false,
+    }
+}
+
+/// 고르기를 한 장(또는 없음)으로 (selReset)
+fn ms_reset(st: &mut CenterState, s: &Snap, k: Option<usize>) {
+    st.ms_item = pv_item(s).map(|(i, _, _)| (s.cue_id.clone(), i));
+    st.ms = k.into_iter().collect();
+    st.ms_anchor = k;
+}
+
+/// 여러 장을 고른 중이면 (순서 번호, 고른 슬라이드 차례) (selMany)
+fn ms_many(st: &CenterState, s: &Snap) -> Option<(usize, Vec<usize>)> {
+    let (i, _, n) = pv_item(s)?;
+    if !ms_valid(st, s) {
+        return None;
+    }
+    let ks: Vec<usize> = st.ms.iter().copied().filter(|k| *k < n).collect();
+    (ks.len() > 1).then_some((i, ks))
+}
+
+/// 목록·격자 누르기 (selClick): Shift = 기준부터 범위 · Ctrl = 더하기/빼기. true 면 고르기로 썼음 (미리보기 바꾸지 않음)
+fn ms_click(st: &mut CenterState, s: &Snap, k: usize, m: egui::Modifiers) -> bool {
+    let Some((_, pv, _)) = pv_item(s) else { return false };
+    if !ms_valid(st, s) {
+        ms_reset(st, s, Some(pv));
+    }
+    if m.shift {
+        let a = st.ms_anchor.unwrap_or(k);
+        st.ms = (a.min(k)..=a.max(k)).collect();
+        return true;
+    }
+    if m.command {
+        if st.ms.contains(&k) && st.ms.len() > 1 {
+            st.ms.remove(&k);
+        } else {
+            st.ms.insert(k);
+        }
+        return true;
+    }
+    ms_reset(st, s, Some(k));
+    false
+}
+
+/// 전체 격자·전체 목록 누르기 (selClickAll): 미리보기 중인 순서의 칸만 고르기, 다른 순서면 거기서 새로
+fn ms_click_all(st: &mut CenterState, s: &Snap, i: usize, k: usize, m: egui::Modifiers) -> bool {
+    if pv_item(s).map(|x| x.0) != Some(i) {
+        st.ms_item = Some((s.cue_id.clone(), i));
+        st.ms = [k].into_iter().collect();
+        st.ms_anchor = Some(k);
+        return false;
+    }
+    ms_click(st, s, k, m)
+}
+
+/// 고른 슬라이드 → 편집 키 (겹친 것은 하나로, 목록 차례대로)
+fn ms_keys(d: &Deck, ks: &[usize]) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for k in ks {
+        if let Some(sl) = d.slides.get(*k) {
+            let key = slide_key(sl);
+            if !out.contains(&key) {
+                out.push(key);
+            }
+        }
+    }
+    out
+}
+
+/// 끌기 시작: 고른 것 중 하나면 고른 것 모두
+fn drag_begin(ui: &egui::Ui, st: &mut CenterState, s: &Snap, item: usize, k: usize) {
+    let m = ui.input(|i| i.modifiers);
+    if m.shift || m.command || pv_item(s).map(|x| x.0) != Some(item) {
+        return;
+    }
+    let start = ui.input(|i| i.pointer.press_origin().or(i.pointer.interact_pos())).unwrap_or_default();
+    let ks = match ms_many(st, s) {
+        Some((i, ks)) if i == item && ks.contains(&k) => ks,
+        _ => vec![k],
+    };
+    st.drag = Some(SlideDrag { item, ks, start, moved: false, to: None });
+}
+
+/// 끌기 중: 놓을 자리(가장자리면 저절로 넘김)·표시선, 놓으면 차례 바꾸기.
+/// `cells` 는 그 순서의 (슬라이드, 칸), `grid` 면 좌우로 앞뒤 (목록은 위아래)
+fn drag_update(ui: &egui::Ui, st: &mut CenterState, s: &Snap, item: usize, cells: &[(usize, Rect)], grid: bool, acts: &mut Vec<Act>) {
+    let Some(mut d) = st.drag.clone() else { return };
+    if d.item != item {
+        return;
+    }
+    let (pos, down) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.primary_down()));
+    if let Some(p) = pos.filter(|_| down) {
+        if !d.moved && (p.x - d.start.x).abs() + (p.y - d.start.y).abs() >= 8.0 {
+            d.moved = true;
+        }
+        if d.moved {
+            let pl = pal();
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let pt = ui.painter();
+            for (k, r) in cells {
+                if d.ks.contains(k) {
+                    // .drag-src { opacity: .4 }
+                    pt.rect_filled(*r, CornerRadius::same(4), theme::alpha(pl.panel, 0.6));
+                }
+            }
+            d.to = None;
+            if let Some((k, r)) = cells.iter().find(|(k, r)| r.contains(p) && !d.ks.contains(k)) {
+                let after = if grid { p.x >= r.center().x } else { p.y >= r.center().y };
+                d.to = Some((*k, after));
+                // .drop-before / .drop-after: 격자는 칸 옆 세로 막대, 목록은 줄 위·아래 선 (accent)
+                let bar = if grid {
+                    let x = if after { r.right() + 5.0 } else { r.left() - 5.0 };
+                    Rect::from_min_max(Pos2::new(x - 2.0, r.top() - 3.0), Pos2::new(x + 2.0, r.bottom() + 3.0))
+                } else {
+                    let y = if after { r.bottom() } else { r.top() };
+                    Rect::from_min_max(Pos2::new(r.left(), y - 1.5), Pos2::new(r.right(), y + 1.5))
+                };
+                pt.rect_filled(bar, CornerRadius::same(2), pl.accent);
+                #[cfg(test)]
+                widgets::HOVER_SEEN.with(|m| m.borrow_mut().insert("drop-mark".into(), bar));
+            }
+            // 가장자리로 끌면 저절로 넘김
+            let clip = ui.clip_rect();
+            if p.y > clip.bottom() - 30.0 {
+                ui.scroll_with_delta(Vec2::new(0.0, -18.0));
+            } else if p.y < clip.top() + 30.0 {
+                ui.scroll_with_delta(Vec2::new(0.0, 18.0));
+            }
+            ui.ctx().request_repaint();
+        }
+        st.drag = Some(d);
+        return;
+    }
+    // 놓음
+    st.drag = None;
+    let (true, Some((t, after)), Some(dk)) = (d.moved, d.to, s.preview.as_ref()) else { return };
+    let mut ks = d.ks.clone();
+    ks.sort();
+    let moved = ms_keys(dk, &ks);
+    let Some(target) = dk.slides.get(t).map(slide_key) else { return };
+    if moved.is_empty() || moved.contains(&target) {
+        return;
+    }
+    // 옮긴 뒤 새 키: 글 덩어리(찬양·공지·제목)는 미리보기 키가 곳 덩어리 번호다
+    let chunk = s.items.get(item).is_some_and(|it| wp_core::slideedit::is_chunk(it["type"].as_str().unwrap_or("")));
+    let all = ms_keys(dk, &(0..dk.slides.len()).collect::<Vec<_>>());
+    let after_keys = wp_core::slideedit::keys_after_move(chunk, &all, &moved, &target, after);
+    acts.push(Act::SlideMove(item, moved, target, after));
+    st.ms_after = Some((item, after_keys));
+}
+
+/// 고른 슬라이드 메뉴 (ctxmenu.js slideMenu 의 selMany 갈래): 'edit' · 'del' · 'clear'
+fn multi_menu(resp: &Response, n: usize, chunk: bool) -> Option<&'static str> {
+    let mut out = None;
+    resp.context_menu(|ui| {
+        ui.set_min_width(230.0);
+        ui.label(rich(tr_args("고른 슬라이드 {1}장", &[&n]), 12.0, Weight::SemiBold, pal().muted));
+        if menu_btn(ui, Some("square-pen"), &tr_args("고른 {1}장 편집 (함께 꾸미기)", &[&n]), "Ctrl+E", true, false) {
+            out = Some("edit");
+        }
+        let (ic, l) = if chunk { ("trash-2", tr_args("고른 {1}장 지우기", &[&n])) } else { ("eye-off", tr_args("고른 {1}장 건너뛰기", &[&n])) };
+        if menu_btn(ui, Some(ic), &l, "Delete", true, true) {
+            out = Some("del");
+        }
+        ui.separator();
+        if menu_btn(ui, Some("x"), &tr("선택 해제"), "Esc", true, false) {
+            out = Some("clear");
+        }
+    });
+    out
+}
+
+/// 고른 슬라이드 지우기 확인 (글 순서: 가사·내용에서도 지워짐)
+fn ms_confirm_id() -> egui::Id {
+    egui::Id::new("msel-del-confirm")
+}
+
+/// 목록이 바뀌었는지 보는 열쇠 (검색 결과)
+fn res_key_of(r: &Value, n: usize) -> String {
+    format!("{}|{}|{}|{}", r["mode"], r["passage"]["title"], r["passage"]["versionName"], n)
 }
 
 /// 목록에서 누른 키 (control.js #results keydown)
@@ -189,6 +403,12 @@ pub(crate) fn test_set_view(ctx: &egui::Context, v: SlideView, cue_mode: bool) {
     st.view = v;
     st.cue_mode = cue_mode;
     save(ctx, st);
+}
+
+/// 시험용: 여러 장 고르기 상태 (고른 슬라이드 차례)
+#[cfg(test)]
+pub(crate) fn test_msel(ctx: &egui::Context) -> Vec<usize> {
+    load(ctx).ms.iter().copied().collect()
 }
 
 /// cue.js TYPE (종류 이름)
@@ -464,7 +684,7 @@ fn empty(ui: &mut egui::Ui, text: &str) {
 /// .results .srow — 슬라이드 목록 한 줄: 이름(4.5em, hl 12px 700) + 15px 글(줄바꿈 그대로). 미리보기면 pv 띠 + pv-bg.
 /// 이름표 색이 있으면(--gc) 이름이 그 색, 테두리 안쪽에 4px 그 색 띠. 찬송가·악보는 작은 그림(높이 90 이하, 너비 45% 이하, 흰 바탕) + 가사
 #[allow(clippy::too_many_arguments)]
-fn slide_row(ui: &mut egui::Ui, c: &paint::Ctx, label: &str, gc: Option<Color32>, body: &SrowBody, pv: bool, live: bool) -> Response {
+fn slide_row(ui: &mut egui::Ui, c: &paint::Ctx, label: &str, gc: Option<Color32>, body: &SrowBody, pv: bool, live: bool, msel: bool) -> Response {
     let p = pal();
     let w = row_width(ui);
     let lw = 15.0 * 4.5;
@@ -498,10 +718,13 @@ fn slide_row(ui: &mut egui::Ui, c: &paint::Ctx, label: &str, gc: Option<Color32>
         Lay::Text(_, g) => g.size().y.max(15.0 * 1.6),
     };
     let h = content_h + 16.0 + 1.0;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click_and_drag());
     if ui.is_rect_visible(rect) {
         let pt = ui.painter();
-        if pv {
+        if msel {
+            // #results .srow.msel: accent 16% 바탕
+            pt.rect_filled(rect, CornerRadius::ZERO, theme::mix(p.accent, 16.0, p.panel));
+        } else if pv {
             pt.rect_filled(rect, CornerRadius::ZERO, p.pv_bg);
         } else if resp.contains_pointer() {
             pt.rect_filled(rect, CornerRadius::ZERO, p.hover);
@@ -540,6 +763,10 @@ fn slide_row(ui: &mut egui::Ui, c: &paint::Ctx, label: &str, gc: Option<Color32>
                 ui.painter().galley(Pos2::new(x, top), g, p.text);
             }
         }
+        if msel {
+            // outline: 3px solid accent; outline-offset: -1px
+            ui.painter().rect_stroke(rect.shrink(1.0), CornerRadius::ZERO, Stroke::new(3.0, p.accent), StrokeKind::Inside);
+        }
     }
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -554,6 +781,8 @@ pub(crate) enum Hit {
     Pick(usize, bool),
     /// 마우스 올림 단추 (번호, 동작)
     Op(usize, &'static str),
+    /// 칸을 끌기 시작 (번호)
+    Drag(usize),
 }
 
 /// Electron slideedit.js EDITABLE: 슬라이드 편집기로 고칠 수 있는 순서 종류
@@ -719,7 +948,7 @@ pub(crate) fn slide_key(s: &Value) -> String {
 
 /// 슬라이드 썸네일 칸들 (.slide-grid / .cg-row). 누른 칸 또는 마우스 올림 단추
 #[allow(clippy::too_many_arguments)]
-fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value], tpl: &Value, version: &str, pv: Option<usize>, live: Option<usize>, size: f32, ops: &dyn Fn(&Value) -> Vec<widgets::HoverOp>) -> Option<Hit> {
+fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value], tpl: &Value, version: &str, pv: Option<usize>, live: Option<usize>, size: f32, ops: &dyn Fn(&Value) -> Vec<widgets::HoverOp>, msel: &dyn Fn(usize) -> bool, cells: &mut Vec<(usize, Rect)>) -> Option<Hit> {
     let p = pal();
     let gap = 10.0;
     let w = row_width(ui);
@@ -735,9 +964,13 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
         for (j, s) in chunk.iter().enumerate() {
             let k = row * cols + j;
             let r = Rect::from_min_size(Pos2::new(rr.left() + j as f32 * (cw + gap), rr.top()), Vec2::new(cw, ch));
-            let resp = ui.interact(r, id.with(k), Sense::click());
+            let resp = ui.interact(r, id.with(k), Sense::click_and_drag());
+            cells.push((k, r));
             #[cfg(test)]
             widgets::HOVER_SEEN.with(|m| m.borrow_mut().insert(format!("cell-{k}"), r));
+            if resp.drag_started_by(egui::PointerButton::Primary) {
+                out = Some(Hit::Drag(k));
+            }
             if resp.clicked() {
                 out = Some(Hit::Pick(k, false));
             }
@@ -753,7 +986,9 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
                 continue;
             }
             let pt = ui.painter();
-            pt.rect_filled(r, CornerRadius::same(6), if hot { p.hover } else { p.sunken });
+            let ms = msel(k);
+            // .sg-cell.msel: accent 16% 바탕
+            pt.rect_filled(r, CornerRadius::same(6), if ms { theme::mix(p.accent, 16.0, p.sunken) } else if hot { p.hover } else { p.sunken });
             let screen = Rect::from_min_size(r.min + Vec2::splat(3.0), Vec2::new(cw - 6.0, sh));
             paint::paint_slide(ui, c, screen, Some(s), tpl, version, true, false, false); // logo=로고 화면(F 로고 켜기) 아님
             let lab = slide_label(s);
@@ -768,6 +1003,10 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             ui.painter().rect_stroke(r, CornerRadius::same(6), Stroke::new(3.0, border), StrokeKind::Inside);
             if is_pv && is_live {
                 ui.painter().rect_stroke(r.expand(3.0), CornerRadius::same(8), Stroke::new(2.0, p.pv), StrokeKind::Inside);
+            }
+            if ms {
+                // outline: 3px solid accent
+                ui.painter().rect_stroke(r, CornerRadius::same(6), Stroke::new(3.0, p.accent), StrokeKind::Inside);
             }
             if let Some(op) = widgets::hover_ops(ui, id.with(("ops", k)), r, &ops(s)) {
                 out = Some(Hit::Op(k, op));
@@ -819,8 +1058,46 @@ impl App {
         let has_sel = self.sel.is_some_and(|i| i < self.core.lock().cue.as_ref().map(|c| c.items.len()).unwrap_or(0));
         let (title, info) = self.center_title(&st, s);
         let mut toggle_editor = false;
+        // 여러 장을 고른 중이면 머리 줄 자리에 '고른 슬라이드 N장' 줄 (.msel-bar: accent 24% 바탕 · 아래 2px accent)
+        let many = ms_many(&st, s);
+        let mut bar_act: Option<(&'static str, bool)> = None;
+        let fill = if many.is_some() { theme::mix(pal().accent, 24.0, pal().panel) } else { Color32::TRANSPARENT };
         // .center-head: padding 8px 12px · gap 8 · 아래 line
-        let head = egui::Frame::new().inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
+        let head = egui::Frame::new().fill(fill).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
+            if let Some((i, ks)) = &many {
+                let n = ks.len();
+                let chunk = s.items.get(*i).is_some_and(|it| wp_core::slideedit::is_chunk(it["type"].as_str().unwrap_or("")));
+                ui.horizontal(|ui| {
+                    ui.set_min_height(26.0);
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let cid = ms_confirm_id();
+                    if widgets::confirm_armed(ui, cid) {
+                        if widgets::confirm_row(ui, cid, &tr_args("고른 슬라이드 {1}장을 지울까요? (가사·내용에서도 지워집니다)", &[&n])) {
+                            bar_act = Some(("del", true));
+                        }
+                        return;
+                    }
+                    ui.label(rich(tr_args("고른 슬라이드 {1}장", &[&n]), 13.0, Weight::Bold, pal().text));
+                    let b = ui.add(Btn::new(tr_args("고른 {1}장 편집", &[&n])).icon("square-pen").size(Size::Sm).height(26.0).kind(widgets::Kind::Primary).tooltip(tr("고른 슬라이드를 함께 꾸미기 (Ctrl+E)")));
+                    widgets::mark("msel-edit", b.rect);
+                    if b.clicked() {
+                        bar_act = Some(("edit", false));
+                    }
+                    let (ic, l) = if chunk { ("trash-2", tr("지우기")) } else { ("eye-off", tr("건너뛰기")) };
+                    let b = ui.add(Btn::new(&l).icon(ic).size(Size::Sm).height(26.0).tooltip(format!("{l} (Delete)")));
+                    widgets::mark("msel-del", b.rect);
+                    if b.clicked() {
+                        bar_act = Some(("del", false));
+                    }
+                    let b = ui.add(Btn::new(tr("해제")).icon("x").size(Size::Sm).height(26.0).tooltip(tr("한 장만 (Esc)")));
+                    widgets::mark("msel-clear", b.rect);
+                    if b.clicked() {
+                        bar_act = Some(("clear", false));
+                    }
+                    ui.add(egui::Label::new(rich(tr("Shift+클릭 범위 · Ctrl+클릭 더하기/빼기 · 끌어서 차례 바꾸기"), 11.0, Weight::Regular, pal().muted)).truncate());
+                });
+                return;
+            }
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let cm_label = if st.cm_rows.is_empty() { tr("주석") } else { format!("{} ({})", tr("주석"), st.cm_rows.len()) };
@@ -866,9 +1143,16 @@ impl App {
             });
         });
         let r = head.response.rect;
-        ui.painter().hline(ui.max_rect().x_range(), r.bottom(), Stroke::new(1.0, pal().line));
+        if many.is_some() {
+            ui.painter().hline(ui.max_rect().x_range(), r.bottom() - 0.5, Stroke::new(2.0, pal().accent));
+        } else {
+            ui.painter().hline(ui.max_rect().x_range(), r.bottom(), Stroke::new(1.0, pal().line));
+        }
         if toggle_editor {
             *editor_on = !*editor_on;
+        }
+        if let Some((a, confirmed)) = bar_act {
+            self.msel_do(ui.ctx(), &mut st, s, a, confirmed, acts);
         }
         save(ui.ctx(), st);
     }
@@ -882,6 +1166,24 @@ impl App {
         let outside = ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !body.contains(p)));
         if outside || ui.ctx().egui_wants_keyboard_input() {
             st.kbd = false;
+        }
+        // 끌어 옮긴 뒤: 옮긴 슬라이드를 새 자리에서 고른 채로 (moveSlides 끝)
+        if let Some((i, keys)) = st.ms_after.take() {
+            if let (Some((j, _, _)), Some(d)) = (pv_item(s), s.preview.as_ref()) {
+                if i == j {
+                    let idx: Vec<usize> = d.slides.iter().enumerate().filter(|(_, sl)| keys.contains(&slide_key(sl))).map(|(k, _)| k).collect();
+                    if let Some(f) = idx.first() {
+                        ms_reset(&mut st, s, Some(*f));
+                        if idx.len() > 1 {
+                            st.ms = idx.into_iter().collect();
+                        }
+                    }
+                }
+            }
+        }
+        // 끌던 중 단추를 놓았는데 그 보기가 안 그려졌으면 끌기를 푼다
+        if st.drag.is_some() && !ui.input(|i| i.pointer.primary_down() || i.pointer.any_released()) {
+            st.drag = None;
         }
         if st.cm {
             self.cm_view(ui, &mut st, s);
@@ -959,7 +1261,7 @@ impl App {
         // 목록이 바뀌면 고른 줄·범위 초기화 (낱말 찾기는 첫 줄을 고른 채로 — showTextResults sel: 0)
         let reference = r["mode"] == "reference";
         let n_rows = if reference { r["passage"]["verses"].as_array().map(|v| v.len()) } else { r["results"].as_array().map(|v| v.len()) }.unwrap_or(0);
-        let rk = format!("{}|{}|{}|{}", r["mode"], r["passage"]["title"], r["passage"]["versionName"], n_rows);
+        let rk = res_key_of(&r, n_rows);
         if rk != st.res_key {
             st.res_key = rk;
             st.sel = (!reference && n_rows > 0).then_some(0);
@@ -1168,8 +1470,12 @@ impl App {
             st.anchor = None;
             st.range = None;
         }
-        let key = list_keys(ui.ctx(), st, verses.len(), false);
+        // 성경 순서도 원본은 검색 본문과 같은 절 목록(showPassageList)이라 Shift+↑↓ 범위가 된다
+        let key = list_keys(ui.ctx(), st, verses.len(), item_type == "bible");
         let mut menu_act: Option<MenuAct> = None;
+        let mut multi_act: Option<&'static str> = None;
+        let mut range_req: Option<usize> = None;
+        let chunk = item.is_some_and(|x| wp_core::slideedit::is_chunk(x.1["type"].as_str().unwrap_or("")));
         egui::ScrollArea::vertical().id_salt("results-item").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(6.0);
@@ -1191,11 +1497,12 @@ impl App {
                             acts.push(Act::PreviewIndex(k));
                         }
                     }
+                    Some(ListKey::Range(i)) => range_req = Some(i),
                     Some(ListKey::ToSearch) => {
                         st.kbd = false;
                         self.focus_search = true;
                     }
-                    _ => {}
+                    None => {}
                 }
                 let multi = verses.first().map(|v| v.1) != verses.last().map(|v| v.1);
                 let mut last_ch = -1;
@@ -1223,8 +1530,14 @@ impl App {
                     let idx = wp_core::slides::index_of_verse(&d.slides, ch, vn);
                     if resp.clicked() {
                         st.kbd = true;
-                        st.sel = Some(i);
-                        acts.push(Act::PreviewIndex(idx));
+                        if ui.input(|x| x.modifiers.shift) {
+                            // Shift+클릭: 처음 누른 절부터 여기까지를 범위로 미리보기 (control.js selectRange)
+                            range_req = Some(i);
+                        } else {
+                            st.anchor = Some(i);
+                            st.sel = Some(i);
+                            acts.push(Act::PreviewIndex(idx));
+                        }
                     }
                     if resp.double_clicked() {
                         acts.push(Act::PreviewIndex(idx));
@@ -1232,18 +1545,31 @@ impl App {
                     }
                 }
             } else {
+                let many = ms_many(st, s);
+                let mut cells: Vec<(usize, Rect)> = vec![];
                 for (k, sl) in d.slides.iter().enumerate() {
                     let l = sl["label"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| (k + 1).to_string());
-                    let resp = slide_row(ui, &c, &l, group_color(sl), &srow_body(sl, &item_type), k == d.index, live_same == Some(k));
+                    let msel = many.as_ref().is_some_and(|(_, ks)| ks.contains(&k));
+                    let resp = slide_row(ui, &c, &l, group_color(sl), &srow_body(sl, &item_type), k == d.index, live_same == Some(k), msel);
+                    cells.push((k, resp.rect));
                     #[cfg(test)]
                     widgets::HOVER_SEEN.with(|h| h.borrow_mut().insert(format!("srow-{k}"), resp.rect));
+                    if resp.drag_started_by(egui::PointerButton::Primary) {
+                        if let Some((i, _)) = item {
+                            drag_begin(ui, st, s, i, k);
+                        }
+                    }
                     if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("srow", k)), resp.rect, &slide_hover_ops(item.map(|x| x.1), sl, true)) {
                         if let Some((i, _)) = item {
                             acts.push(Act::SlideOp(i, slide_key(sl), op));
                         }
                     }
-                    // ctxmenu.js slideMenu
-                    if let Some(a) = slide_menu(&resp, k, sl, item, None, st.view) {
+                    // ctxmenu.js slideMenu (여러 장을 고른 중이면 고른 것 메뉴)
+                    if let Some((_, ks)) = &many {
+                        if let Some(a) = multi_menu(&resp, ks.len(), chunk) {
+                            multi_act = Some(a);
+                        }
+                    } else if let Some(a) = slide_menu(&resp, k, sl, item, None, st.view) {
                         menu_act = Some(a);
                     }
                     if k == d.index && st.scroll_key != scroll_key {
@@ -1252,12 +1578,18 @@ impl App {
                     }
                     if resp.clicked() {
                         st.kbd = true;
-                        acts.push(Act::PreviewIndex(k));
+                        // Shift·Ctrl+클릭 = 여러 장 고르기, 그냥 클릭 = 그 슬라이드 미리보기
+                        if !ms_click(st, s, k, ui.input(|i| i.modifiers)) {
+                            acts.push(Act::PreviewIndex(k));
+                        }
                     }
-                    if resp.double_clicked() {
+                    if resp.double_clicked() && !ui.input(|i| i.modifiers.shift || i.modifiers.command) {
                         acts.push(Act::PreviewIndex(k));
                         acts.push(Act::SendPreview);
                     }
+                }
+                if let Some((i, _)) = item {
+                    drag_update(ui, st, s, i, &cells, false, acts);
                 }
             }
             ui.add_space(6.0);
@@ -1265,6 +1597,104 @@ impl App {
         if let Some(a) = menu_act {
             self.menu_act(a, st, s, acts);
         }
+        if let Some(a) = multi_act {
+            self.msel_do(ui.ctx(), st, s, a, false, acts);
+        }
+        if let Some(i) = range_req {
+            self.cue_bible_range(st, d, &verses, i, acts);
+        }
+    }
+
+    /// 성경 순서 절 목록에서 Shift 범위 (control.js selectRange): 그 절들만 담은 본문을 미리보기로.
+    /// 원본처럼 목록은 그대로(검색한 본문 목록으로 이어서) 두고 범위만 표시한다
+    fn cue_bible_range(&mut self, st: &mut CenterState, d: &Deck, verses: &[((i64, i64, i64), i64, i64, String)], i: usize, acts: &mut Vec<Act>) {
+        if verses.is_empty() {
+            return;
+        }
+        let i = i.min(verses.len() - 1);
+        let full = json!({
+            "title": d.passage["title"], "book": d.passage["book"], "versionId": d.passage["versionId"], "versionName": d.passage["versionName"],
+            "verses": verses.iter().map(|(k, c, v, t)| json!({ "book": k.0, "chapter": c, "verse": v, "text": t })).collect::<Vec<_>>(),
+            "headings": [],
+        });
+        let a = *st.anchor.get_or_insert(st.sel.unwrap_or(i));
+        let rg = (a.min(i), a.max(i));
+        let Some((sub, short)) = range_passage(&full, rg.0, rg.1) else { return };
+        self.result = json!({ "ok": true, "mode": "reference", "passage": full });
+        // 검색 결과 목록이 되지만 고른 줄·범위는 그대로 (res_key 를 맞춰 초기화하지 않게)
+        st.res_key = res_key_of(&self.result, verses.len());
+        st.range = Some(rg);
+        st.sel = Some(i);
+        st.scroll_sel = true;
+        st.cue_mode = false;
+        self.search = short.clone();
+        st.seen_search = short.clone();
+        acts.push(Act::PreviewPassage(sub, short, None));
+    }
+
+    /// 고른 여러 장으로 하기 (slideedit.js selAction): 'edit' 함께 꾸미기 · 'del' 지우기/건너뛰기 · 'clear' 한 장만.
+    /// 글 순서(가사·내용에서 지워짐)를 지울 때는 먼저 묻는다 (`confirmed` 면 이미 물었음)
+    fn msel_do(&mut self, ctx: &egui::Context, st: &mut CenterState, s: &Snap, a: &str, confirmed: bool, acts: &mut Vec<Act>) {
+        let Some((i, ks)) = ms_many(st, s) else { return };
+        let Some(d) = s.preview.as_ref() else { return };
+        match a {
+            "clear" => ms_reset(st, s, Some(d.index)),
+            "edit" => {
+                self.sel = Some(i);
+                self.tc.slideedit.open_many(&ms_keys(d, &ks));
+            }
+            "del" => {
+                let chunk = s.items.get(i).is_some_and(|it| wp_core::slideedit::is_chunk(it["type"].as_str().unwrap_or("")));
+                if chunk && !confirmed {
+                    ctx.data_mut(|m| m.insert_temp(ms_confirm_id(), true));
+                    return;
+                }
+                ctx.data_mut(|m| m.insert_temp(ms_confirm_id(), false));
+                acts.push(Act::SlideDelMany(i, ms_keys(d, &ks)));
+                st.ms_item = None;
+                st.ms.clear();
+                st.ms_anchor = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// 여러 장 고르기 키 (slideedit.js selKey): Ctrl+A 모두 · Esc 한 장만 · Delete 지우기 · Ctrl+E 함께 꾸미기.
+    /// 전역 단축키(Esc = 보조 화면 끄기 등)보다 먼저 부른다. 슬라이드 편집기가 열려 있으면 편집기 목록이 먼저
+    pub(crate) fn msel_keys(&mut self, ctx: &egui::Context, acts: &mut Vec<Act>) {
+        use egui::{Key, Modifiers};
+        let (esc, del, all, edit) = ctx.input(|i| (i.key_pressed(Key::Escape), i.key_pressed(Key::Delete), i.modifiers.command && i.key_pressed(Key::A), i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::E)));
+        if !(esc || del || all || edit) {
+            return;
+        }
+        if self.tc.slideedit.open {
+            self.tc.slideedit.list_keys(ctx);
+            return;
+        }
+        let s = self.snap();
+        let mut st = load(ctx);
+        let many = ms_many(&st, &s);
+        if edit && many.is_some() {
+            ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::E));
+            self.msel_do(ctx, &mut st, &s, "edit", false, acts);
+        } else if st.kbd {
+            if all {
+                if let Some((_, pv, n)) = pv_item(&s) {
+                    ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::A));
+                    ms_reset(&mut st, &s, Some(pv));
+                    st.ms = (0..n).collect();
+                }
+            } else if many.is_some() && esc {
+                ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
+                ctx.data_mut(|m| m.insert_temp(ms_confirm_id(), false));
+                let pv = s.preview.as_ref().map(|d| d.index);
+                ms_reset(&mut st, &s, pv);
+            } else if many.is_some() && del {
+                ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Delete));
+                self.msel_do(ctx, &mut st, &s, "del", false, acts);
+            }
+        }
+        save(ctx, st);
     }
 
     /// 오른쪽 클릭 메뉴에서 고른 것 적용
@@ -1316,13 +1746,32 @@ impl App {
         let size = st.size;
         let item = deck_item(s, d);
         let ops = |sl: &Value| slide_hover_ops(item.map(|x| x.1), sl, false);
+        let many = ms_many(st, s);
+        let chunk = item.is_some_and(|x| wp_core::slideedit::is_chunk(x.1["type"].as_str().unwrap_or("")));
+        let mut multi_act: Option<&'static str> = None;
         egui::ScrollArea::vertical().id_salt("slide-grid").auto_shrink([false, false]).show(ui, |ui| {
             egui::Frame::new().inner_margin(Margin::same(10)).show(ui, |ui| {
-                match thumb_cells(ui, egui::Id::new("sg"), &c, &d.slides, &tpl, d.passage["versionName"].as_str().unwrap_or(""), Some(d.index), live.map(|l| l.deck.index), size, &ops) {
+                let msel = |k: usize| many.as_ref().is_some_and(|(_, ks)| ks.contains(&k));
+                let mut cells = vec![];
+                let hit = thumb_cells(ui, egui::Id::new("sg"), &c, &d.slides, &tpl, d.passage["versionName"].as_str().unwrap_or(""), Some(d.index), live.map(|l| l.deck.index), size, &ops, &msel, &mut cells);
+                // 여러 장을 고른 중 오른쪽 클릭 = 고른 것 메뉴
+                if let Some((_, ks)) = &many {
+                    for (k, r) in &cells {
+                        let resp = ui.interact(*r, egui::Id::new("sg").with(*k), Sense::click_and_drag());
+                        if let Some(a) = multi_menu(&resp, ks.len(), chunk) {
+                            multi_act = Some(a);
+                        }
+                    }
+                }
+                match hit {
                     Some(Hit::Pick(k, dbl)) => {
-                        acts.push(Act::PreviewIndex(k));
-                        if dbl {
+                        st.kbd = true;
+                        let m = ui.input(|i| i.modifiers);
+                        if dbl && !(m.shift || m.command) {
+                            acts.push(Act::PreviewIndex(k));
                             acts.push(Act::SendPreview);
+                        } else if !ms_click(st, s, k, m) {
+                            acts.push(Act::PreviewIndex(k));
                         }
                     }
                     Some(Hit::Op(k, op)) => {
@@ -1330,10 +1779,21 @@ impl App {
                             acts.push(Act::SlideOp(i, slide_key(sl), op));
                         }
                     }
+                    Some(Hit::Drag(k)) => {
+                        if let Some((i, _)) = item {
+                            drag_begin(ui, st, s, i, k);
+                        }
+                    }
                     None => {}
+                }
+                if let Some((i, _)) = item {
+                    drag_update(ui, st, s, i, &cells, true, acts);
                 }
             });
         });
+        if let Some(a) = multi_act {
+            self.msel_do(ui.ctx(), st, s, a, false, acts);
+        }
     }
 
     /// 전체 격자 · 전체 목록 (ProPresenter 방식): 큐시트의 모든 순서 슬라이드를 순서별 줄로
@@ -1365,6 +1825,7 @@ impl App {
         let scroll_key = format!("all:{:?}", pv.map(|x| x.0));
         let mut new_scroll = None;
         let mut menu_act: Option<MenuAct> = None;
+        let mut multi_act: Option<&'static str> = None;
         egui::ScrollArea::vertical().id_salt("cue-grid").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             egui::Frame::new().inner_margin(Margin { left: 10, right: 10, top: 4, bottom: 40 }).show(ui, |ui| {
@@ -1395,13 +1856,22 @@ impl App {
                             Ok(d) if !d.slides.is_empty() => {
                                 let pvk = pv.filter(|x| x.0 == i).map(|x| x.1);
                                 let lvk = lv.filter(|x| x.0 == i).map(|x| x.1);
+                                // 여러 장 고르기는 미리보기 중인 순서의 칸만
+                                let many = ms_many(st, s).filter(|x| x.0 == i);
+                                let chunk = wp_core::slideedit::is_chunk(it["type"].as_str().unwrap_or(""));
+                                let mut cells: Vec<(usize, Rect)> = vec![];
                                 let hit = if list {
                                     ui.add_space(4.0);
                                     let mut hit = None;
                                     for (k, sl) in d.slides.iter().enumerate() {
-                                        let r = all_line(ui, k, sl, pvk == Some(k), lvk == Some(k));
+                                        let msel = many.as_ref().is_some_and(|(_, ks)| ks.contains(&k));
+                                        let r = all_line(ui, k, sl, pvk == Some(k), lvk == Some(k), msel);
+                                        cells.push((k, r.rect));
                                         #[cfg(test)]
                                         widgets::HOVER_SEEN.with(|h| h.borrow_mut().insert(format!("cgl-{i}-{k}"), r.rect));
+                                        if r.drag_started_by(egui::PointerButton::Primary) {
+                                            hit = Some(Hit::Drag(k));
+                                        }
                                         if r.clicked() {
                                             hit = Some(Hit::Pick(k, false));
                                         }
@@ -1411,7 +1881,11 @@ impl App {
                                         if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("cgl", i, k)), r.rect, &slide_hover_ops(Some(it), sl, true)) {
                                             hit = Some(Hit::Op(k, op));
                                         }
-                                        if let Some(a) = slide_menu(&r, k, sl, Some((i, it)), Some(i), st.view) {
+                                        if let Some((_, ks)) = &many {
+                                            if let Some(a) = multi_menu(&r, ks.len(), chunk) {
+                                                multi_act = Some(a);
+                                            }
+                                        } else if let Some(a) = slide_menu(&r, k, sl, Some((i, it)), Some(i), st.view) {
                                             menu_act = Some(a);
                                         }
                                         ui.add_space(2.0);
@@ -1420,17 +1894,28 @@ impl App {
                                 } else {
                                     ui.add_space(8.0);
                                     let ops = |sl: &Value| slide_hover_ops(Some(it), sl, false);
-                                    thumb_cells(ui, egui::Id::new(("cg", i)), &c, &d.slides, &sec.tpl, d.passage["versionName"].as_str().unwrap_or(""), pvk, lvk, size, &ops)
+                                    let msel = |k: usize| many.as_ref().is_some_and(|(_, ks)| ks.contains(&k));
+                                    thumb_cells(ui, egui::Id::new(("cg", i)), &c, &d.slides, &sec.tpl, d.passage["versionName"].as_str().unwrap_or(""), pvk, lvk, size, &ops, &msel, &mut cells)
                                 };
                                 match hit {
                                     Some(Hit::Pick(k, dbl)) => {
-                                        self.sel = Some(i);
-                                        acts.push(Act::PreviewItem(i));
-                                        acts.push(Act::PreviewIndex(k));
-                                        if dbl {
+                                        st.kbd = true;
+                                        let m = ui.input(|x| x.modifiers);
+                                        // Shift·Ctrl+클릭 = 여러 장 고르기 (미리보기 중인 순서에서만, selClickAll)
+                                        if dbl && !(m.shift || m.command) {
+                                            self.sel = Some(i);
+                                            acts.push(Act::PreviewItem(i));
+                                            acts.push(Act::PreviewIndex(k));
                                             acts.push(Act::SendPreview);
+                                        } else if !ms_click_all(st, s, i, k, m) {
+                                            self.sel = Some(i);
+                                            if pvk.is_none() {
+                                                acts.push(Act::PreviewItem(i));
+                                            }
+                                            acts.push(Act::PreviewIndex(k));
                                         }
                                     }
+                                    Some(Hit::Drag(k)) => drag_begin(ui, st, s, i, k),
                                     Some(Hit::Op(k, op)) => {
                                         // grid.js: 그 슬라이드를 먼저 미리보기한 뒤 동작
                                         self.sel = Some(i);
@@ -1444,6 +1929,7 @@ impl App {
                                     }
                                     None => {}
                                 }
+                                drag_update(ui, st, s, i, &cells, !list, acts);
                             }
                             // .cg-empty: padding 10px 4px, 13px 흐리게 (음악은 스피커 아이콘)
                             Ok(_) => {
@@ -1493,6 +1979,9 @@ impl App {
         });
         if let Some(a) = menu_act {
             self.menu_act(a, st, s, acts);
+        }
+        if let Some(a) = multi_act {
+            self.msel_do(ui.ctx(), st, s, a, false, acts);
         }
     }
 
@@ -1647,7 +2136,7 @@ fn bible_verses(d: &Deck) -> Vec<((i64, i64, i64), i64, i64, String)> {
 }
 
 /// .cg-line (전체 목록 한 줄): 번호 hl 12px · 이름 muted 12px · 글 14px(줄 높이 1.4, 세 줄까지), 2px 테두리
-fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool) -> Response {
+fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool, msel: bool) -> Response {
     let p = pal();
     let w = row_width(ui);
     let kg = ui.painter().layout_no_wrap(format!("{}", k + 1), theme::font(12.0, Weight::Bold), p.hl);
@@ -1662,10 +2151,10 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool) -> Res
     tj.wrap.max_rows = 3;
     let tg = ui.painter().layout_job(tj);
     let h = tg.size().y.max(14.0 * 1.4) + 10.0;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click_and_drag());
     if ui.is_rect_visible(rect) {
         let pt = ui.painter();
-        pt.rect_filled(rect, CornerRadius::same(4), p.sunken);
+        pt.rect_filled(rect, CornerRadius::same(4), if msel { theme::mix(p.accent, 16.0, p.sunken) } else { p.sunken });
         let y0 = rect.top() + 5.0 + (14.0 * 1.4 - 12.0 * 1.3) / 2.0;
         pt.galley(Pos2::new(rect.left() + 8.0 + 12.0 * 1.6 - kg.size().x, y0), kg, p.hl);
         if let Some(g) = lg {
@@ -1685,6 +2174,10 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool) -> Res
         }
         if pv && live {
             pt.rect_stroke(rect.expand(1.0), CornerRadius::same(5), Stroke::new(2.0, p.pv), StrokeKind::Outside);
+        }
+        if msel {
+            // #cueGrid .msel: outline 3px accent
+            pt.rect_stroke(rect, CornerRadius::same(4), Stroke::new(3.0, p.accent), StrokeKind::Inside);
         }
     }
     if resp.hovered() {
