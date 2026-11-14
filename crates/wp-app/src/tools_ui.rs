@@ -111,7 +111,9 @@ pub fn show(ctx: &egui::Context, core: &Shared) {
             Tool::Devices => "Companion·장비",
             Tool::Lan => "내부망 출력",
         };
-        egui::Window::new(title).open(&mut keep).default_width(520.0).collapsible(false).show(ctx, |ui| match t {
+        // 떠 있는 창 기본 자리 (widgets::float_pos) · 제목 번역
+        let wid = egui::Id::unique(("wp-float", title));
+        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 520.0)).open(&mut keep).default_width(520.0).collapsible(false).show(ctx, |ui| match t {
             Tool::Remote => remote(ui, core),
             Tool::Trigger => trigger(ui, core),
             Tool::Devices => devices(ui, core),
@@ -239,9 +241,12 @@ fn devices(ui: &mut egui::Ui, core: &Shared) {
     {
         let mut s = ST.lock();
         ui.horizontal(|ui| {
-            ui.label(wp_core::i18n::tr("단추 위치"));
-            ui.add(egui::TextEdit::singleline(&mut s.comp_loc).hint_text("1/0/2, 2/1/0").desired_width(150.0));
-            if ui.button(wp_core::i18n::tr("눌러 보기")).clicked() {
+            // '1/0/2' 같은 값을 쉬운 말로 (휴리스틱 평가 12번)
+            ui.label(wp_core::i18n::tr("단추 자리 (페이지/줄/칸)"));
+            ui.add(egui::TextEdit::singleline(&mut s.comp_loc).hint_text("1/0/2, 2/1/0").desired_width(150.0))
+                .on_hover_text(wp_core::i18n::tr("Companion 화면의 단추 자리를 '페이지/줄/칸' 숫자로 씁니다. 예: 1/0/2 = 1페이지 맨 윗줄(0) 세 번째 칸(2). 여러 개는 쉼표로: 1/0/2, 1/1/0"));
+            let ok = !wp_core::companion::parse_locations(&s.comp_loc).is_empty();
+            if ui.add_enabled(ok, egui::Button::new(wp_core::i18n::tr("지금 한 번 눌러 보기"))).on_disabled_hover_text(wp_core::i18n::tr("단추 자리를 먼저 쓰세요 (예: 1/0/2)")).clicked() {
                 let (c2, loc) = (comp.clone(), s.comp_loc.clone());
                 drop(s);
                 run_bg(move || wp_core::companion::press(&c2, &loc));
@@ -258,15 +263,17 @@ fn devices(ui: &mut egui::Ui, core: &Shared) {
             ui.label(format!("{} · {} · {}:{}", d["name"].as_str().unwrap_or(""), kind, d["host"].as_str().unwrap_or(""), d["port"]));
             let mut s = ST.lock();
             ui.add(egui::TextEdit::singleline(&mut s.dv_action).hint_text(if d["kind"] == "x32" { "ch1 on, scene 3" } else { wp_core::i18n::tr_s("프리셋 번호·home") }).desired_width(140.0));
-            if ui.button(wp_core::i18n::tr("보내기")).clicked() {
+            if ui.add_enabled(!s.dv_action.trim().is_empty(), egui::Button::new(wp_core::i18n::tr("지금 한 번 보내 보기"))).on_disabled_hover_text(wp_core::i18n::tr("왼쪽 칸에 보낼 동작을 먼저 쓰세요")).clicked() {
                 let (all, id, act) = (devs.clone(), d["id"].as_str().unwrap_or("").to_string(), s.dv_action.clone());
                 drop(s);
                 run_bg(move || wp_core::devices::run(&all, &id, &act));
             } else {
                 drop(s);
             }
-            if ui.small_button(wp_core::i18n::tr("지우기")).clicked() {
-                del = d["id"].as_str().map(String::from);
+            let did = d["id"].as_str().unwrap_or("").to_string();
+            let q = wp_core::i18n::tr_args("'{1}' 장비 등록을 지웁니다.", &[&(d["name"].as_str().unwrap_or(""))]);
+            if crate::widgets::confirm_delete(ui, egui::Id::unique(("dev-del", &did)), &wp_core::i18n::tr("지우기"), &q) {
+                del = Some(did);
             }
         });
     }
@@ -309,9 +316,9 @@ fn devices(ui: &mut egui::Ui, core: &Shared) {
         }
     });
     if !s.msg.is_empty() {
-        ui.label(RichText::new(&s.msg).small().color(Color32::from_rgb(0xff, 0xd4, 0x79)));
+        ui.label(RichText::new(&s.msg).small().color(crate::theme::pal().warn));
     }
-    ui.label(RichText::new(wp_core::i18n::tr("X32: ch1 on · ch5 fader 0.75 · main off · scene 3 · dca1 off  /  PTZ: 프리셋 0~254 · home")).small().color(Color32::GRAY));
+    ui.label(RichText::new(wp_core::i18n::tr("보낼 동작 예 — X32 음향: ch1 on(1번 채널 켜기) · ch5 fader 0.75(5번 볼륨 75%) · main off · scene 3(장면 3) · dca1 off  /  PTZ 카메라: 프리셋 번호 0~254 · home(처음 자리)")).small().color(crate::theme::pal().muted));
 }
 
 fn lan(ui: &mut egui::Ui, core: &Shared) {
