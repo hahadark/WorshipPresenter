@@ -1,10 +1,10 @@
 //! [트랙 A] 기능 대조 2차: 남은 '일부' 채우기
-//!  - 성경 책 목록 창 (Ctrl+B, Electron control.js openBooks): 책 → 장 → 미리보기
+//!  - Ctrl+B (Electron control.js openBooks): 왼쪽 패널을 '성경 책' 쪽으로 (책·장 목록은 cue_ui::books)
 //!  - 종류 골라 붙여 넣기 창 (Ctrl+Shift+V, Electron paste.js pasteAs): 성경 · 찬양 · 공지 · 제목 · 슬라이드 · 그림
 //!  - 미리보기 · LIVE 썸네일 오른쪽 클릭 (Electron ctxmenu.js slideMenu)
 
 use crate::app::{Act, App};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -14,7 +14,6 @@ use wp_core::presentation::Deck;
 #[derive(Default)]
 struct St {
     books: bool,
-    book: Option<i64>,
     paste: bool,
     paste_text: String,
     paste_as: String,
@@ -26,7 +25,8 @@ static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
 pub fn shortcuts(app: &mut App, ctx: &egui::Context) {
     let st = json!({ "shortcuts": app.core.lock().settings.get()["shortcuts"].clone() });
     if crate::keys::pressed(ctx, &st, "openBooks", "Ctrl+B") {
-        ST.lock().books = true; // 닫기는 창의 X (한 프레임을 두 번 그려도 같은 결과)
+        crate::cue_ui::open_books(ctx);
+        crate::cue_ui::reveal_cue_pane(app);
     }
     // Ctrl+Shift+V: egui 는 Ctrl+V 를 Key 가 아니라 Paste 이벤트로 준다 → Shift 가 눌린 Paste 면 이 창으로
     let pasted = ctx.input(|i| if i.modifiers.shift { i.events.iter().find_map(|e| if let egui::Event::Paste(t) = e { Some(t.clone()) } else { None }) } else { None });
@@ -71,75 +71,11 @@ fn open_from_args() {
 pub fn show(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(open_from_args);
-    books_win(app, ctx);
+    if std::mem::take(&mut ST.lock().books) {
+        crate::cue_ui::open_books(ctx);
+        crate::cue_ui::reveal_cue_pane(app);
+    }
     paste_win(app, ctx, acts);
-}
-
-// ---------------- 성경 책 목록 ----------------
-fn books_win(app: &mut App, ctx: &egui::Context) {
-    let mut st = ST.lock();
-    if !st.books {
-        return;
-    }
-    let mut open = true;
-    let (structure, vname) = {
-        let mut c = app.core.lock();
-        let v = c.version_id();
-        let name = c.store.list_versions().into_iter().find(|x| x.id == v).map(|x| x.name).unwrap_or_default();
-        (c.store.get_structure(&v), name)
-    };
-    let mut pick: Option<(i64, i64)> = None;
-    egui::Window::new(wp_core::i18n::tr_args("성경 책 ({1}) — Ctrl+B", &[&vname])).open(&mut open).default_size([640.0, 520.0]).show(ctx, |ui| {
-        ui.columns(2, |cols| {
-            for (ci, (test, label)) in [("OT", "구약"), ("NT", "신약")].iter().enumerate() {
-                let ui = &mut cols[ci];
-                ui.label(RichText::new(wp_core::i18n::tr(label)).strong());
-                egui::ScrollArea::vertical().id_salt(format!("books-{test}")).max_height(220.0).show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        for b in structure.iter().filter(|b| b["testament"].as_str().unwrap_or("") == *test) {
-                            let id = b["id"].as_i64().unwrap_or(0);
-                            if ui.selectable_label(st.book == Some(id), b["name"].as_str().unwrap_or("")).clicked() {
-                                st.book = Some(id);
-                            }
-                        }
-                    });
-                });
-            }
-        });
-        ui.separator();
-        if let Some(b) = st.book.and_then(|id| structure.iter().find(|x| x["id"] == id)) {
-            ui.label(RichText::new(wp_core::i18n::tr_args("{1} — 장을 누르면 미리보기", &[&b["name"].as_str().unwrap_or("")])).strong().color(Color32::from_rgb(0xff, 0xd4, 0x79)));
-            egui::ScrollArea::vertical().id_salt("chapters").max_height(180.0).show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    for (k, n) in b["chapters"].as_array().into_iter().flatten().enumerate() {
-                        if n.as_i64().unwrap_or(0) > 0 && ui.add(egui::Button::new((k + 1).to_string()).min_size(egui::vec2(34.0, 24.0))).on_hover_text(wp_core::i18n::tr_args("{1}절", &[&n])).clicked() {
-                            pick = Some((b["id"].as_i64().unwrap_or(0), k as i64 + 1));
-                        }
-                    }
-                });
-            });
-        } else {
-            ui.label(RichText::new(wp_core::i18n::tr("책을 고르세요.")).color(Color32::GRAY));
-        }
-    });
-    if let Some((book, ch)) = pick {
-        let mut c = app.core.lock();
-        let v = c.version_id();
-        let r = c.store.get_chapter(&v, book, ch);
-        if r["ok"] == json!(true) {
-            let p = r["passage"].clone();
-            let q = p["title"].as_str().unwrap_or("").to_string();
-            c.preview_passage(&p, &q, None);
-            drop(c);
-            app.search = q.clone();
-            app.result = json!({ "ok": true, "mode": "reference", "passage": p });
-        } else {
-            c.notify(r["error"].as_str().unwrap_or(&wp_core::i18n::tr("본문을 찾지 못했습니다.")), "warn");
-        }
-    }
-    if !open {
-        st.books = false;
-    }
 }
 
 // ---------------- 종류 골라 붙여 넣기 ----------------
