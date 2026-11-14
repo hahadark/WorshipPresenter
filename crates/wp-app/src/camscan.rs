@@ -40,7 +40,7 @@ fn spawn(args: &[&str]) -> Result<Child, String> {
     let mut cmd = Command::new(crate::outwin::exe());
     cmd.args(args);
     crate::outwin::no_window(&mut cmd);
-    cmd.spawn().map_err(|e| format!("{}: {e}", tr("출력 창 프로그램을 띄우지 못했습니다")))
+    cmd.spawn().map_err(|e| format!("{}: {e}", tr("예배당 화면 프로그램을 띄우지 못했습니다")))
 }
 
 /// 도우미 페이지 주소 (query 는 percent-encoding)
@@ -134,7 +134,7 @@ pub fn scan_bar(ui: &mut egui::Ui, core: &Shared) {
         (t, e, c.camera_probing())
     };
     ui.horizontal_wrapped(|ui| {
-        if ui.add_enabled(!probing, egui::Button::new(tr("카메라 찾기"))).on_hover_text(tr("예배당 출력 창과 같은 브라우저로 연결된 카메라를 찾습니다. 카메라를 잠깐 켜고 바로 끕니다.")).clicked() {
+        if ui.add_enabled(!probing, egui::Button::new(tr("카메라 찾기"))).on_hover_text(tr("예배당 화면과 같은 브라우저로 연결된 카메라를 찾습니다. 카메라를 잠깐 켜고 바로 끕니다.")).clicked() {
             probe(core);
         }
         ui.label(RichText::new(text).small().color(if is_err { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::GRAY }));

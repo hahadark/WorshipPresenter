@@ -57,7 +57,7 @@ pub fn menus() -> Vec<Menu> {
             it("-", "-", ""),
             it("c:obsfull", "OBS 자막: 슬라이드 그대로 켜기·끄기", ""),
             it("c:obspip", "OBS 자막: 그림 슬라이드 작게 켜기·끄기", ""),
-            it("d:output", "출력 설정 (예배당 창 · 모니터 · OBS 숨김)", ""), // [트랙 D]
+            it("d:output", "출력 설정 (예배당 화면 · 모니터 · OBS 숨김)", ""), // [트랙 D]
         ] },
         Menu { label: "도구", items: vec![
             it("b:songs", "찬양 라이브러리", ""),
