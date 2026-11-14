@@ -80,20 +80,6 @@ impl App {
         }
     }
 
-    /// 빠른 설정 아래 줄 (panel_ui 에서 부름).
-    /// 찬양·라이브러리·오버레이·회중 메시지·즉석 자막·무대 화면·매크로·큐시트 관리·인쇄 단추는
-    /// '도구'·'큐시트' 메뉴와 아래 독 탭에 이미 있어 덜어냈다 (휴리스틱 평가 13번: 같은 기능 단추 중복).
-    /// 순서 변경 되돌리기는 큐시트 머리로 옮기기 전까지 여기 남긴다.
-    pub(crate) fn trackb_toolbar(&mut self, ui: &mut egui::Ui) {
-        use crate::widgets::{Btn, Size};
-        let p = crate::theme::pal();
-        ui.horizontal_wrapped(|ui| {
-            if ui.add(Btn::icon_only("undo-2").size(Size::Sm).tooltip(wp_core::i18n::tr("순서 변경 되돌리기 (Ctrl+Z)"))).clicked() { self.core.lock().undo_items(false); self.edit = None; }
-            if ui.add(Btn::icon_only("redo-2").size(Size::Sm).tooltip(wp_core::i18n::tr("순서 변경 다시 하기 (Ctrl+Y)"))).clicked() { self.core.lock().undo_items(true); self.edit = None; }
-            if !self.tb.note.is_empty() { ui.label(RichText::new(&self.tb.note).small().color(p.warn)); }
-        });
-    }
-
     pub(crate) fn trackb_windows(&mut self, ctx: &egui::Context) {
         // 점검용: --open songs,lib,overlays,message,quick,stage,macros,cues
         static ONCE: std::sync::Once = std::sync::Once::new();
@@ -627,8 +613,7 @@ impl App {
                 let url = format!("http://127.0.0.1:{port}/outputs/stage");
                 ui.label(RichText::new(&url).small().color(p.muted)).on_hover_text(tr("다른 PC·태블릿 브라우저나 OBS 브라우저 소스에 이 주소를 넣으면 무대 화면이 나옵니다"));
                 if ui.add(Btn::new(tr("복사")).icon("copy").size(Size::Sm).tooltip(tr("무대 화면 주소 복사"))).clicked() {
-                    ui.ctx().copy_text(url);
-                    self.core.lock().notify(tr("무대 화면 주소를 복사했습니다."), "ok");
+                    crate::widgets::copy_notice(ui.ctx(), url, tr("무대 화면 주소를 복사했습니다."));
                 }
             });
     }

@@ -467,11 +467,6 @@ pub(crate) fn basic_controls(ui: &mut egui::Ui, t: &mut Value) -> Out {
     out
 }
 
-/// .quick-head 의 '빠른 설정' 이름표 (13px 700)
-pub(crate) fn head_label(ui: &mut egui::Ui) {
-    ui.label(rich(tr("빠른 설정"), 13.0, Weight::Bold, pal().text));
-}
-
 /// 콤보(select) — 고른 값이 바뀌면 true
 pub(crate) fn select(ui: &mut egui::Ui, id: &str, cur: &mut String, opts: &[(String, String)], width: f32, tip: &str) -> bool {
     let shown = opts.iter().find(|o| o.0 == *cur).map(|o| o.1.clone()).unwrap_or_default();

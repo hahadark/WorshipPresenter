@@ -1393,13 +1393,13 @@ impl App {
                         let b = Btn::new(if hidden { tr("글자 보이기") } else { tr("글자 숨김") }).kbd("F10").size(Size::Tall).kind(if hidden { Kind::Warn } else { Kind::Default });
                         if ui.add(b.tooltip(tr("글자(슬라이드)만 숨기기·다시 보이기 (F10)"))).clicked() { acts.push(Act::ToggleClear) }
                         let more_on = s.hide_bg || s.logo;
-                        let more = ui.add(Btn::new(tr("지우기 ▾").trim_end_matches(" ▾")).caret().size(Size::Tall).kind(if more_on { Kind::Warn } else { Kind::Default }).tooltip(tr("배경 지우기 · 로고 화면")));
+                        let more = ui.add(Btn::new(tr("지우기 ▾").trim_end_matches(" ▾")).caret().size(Size::Tall).kind(if more_on { Kind::Warn } else { Kind::Default }).tooltip(tr("예배당 화면 비우기: 배경 지우기 · 로고 화면 (큐시트 순서는 그대로)")));
                         egui::Popup::menu(&more).frame(crate::menubar::drop_frame()).gap(2.0).show(|ui| {
                             ui.spacing_mut().item_spacing.y = 0.0;
                             if crate::menubar::item_row(ui, Some("image"), &tr("배경 지우기"), "", s.hide_bg.then_some(true)).clicked() { acts.push(Act::ToggleBg); ui.close(); }
                             if crate::menubar::item_row(ui, Some("flag"), &tr("로고 화면"), "", s.logo.then_some(true)).clicked() { acts.push(Act::ToggleLogo); ui.close(); }
                         });
-                        if ui.add(Btn::new(tr("모두 지우기")).kind(Kind::Danger).size(Size::Tall).tooltip(tr("글자·배경·로고를 모두 지움"))).clicked() { acts.push(Act::ClearAll) }
+                        if ui.add(Btn::new(tr("모두 지우기")).kind(Kind::Danger).size(Size::Tall).tooltip(tr("예배당 화면을 모두 비움: 글자·배경·로고 (큐시트 순서는 지우지 않음)"))).clicked() { acts.push(Act::ClearAll) }
                     });
                 });
             }
