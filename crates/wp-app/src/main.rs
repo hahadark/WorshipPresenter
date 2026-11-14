@@ -33,6 +33,9 @@ mod track_c; // [트랙 C]
 mod tools_ui;
 mod trackd_ui; // [트랙 D] // [트랙 D]
 mod actions_ui; // 순서 편집칸: 배경 음악 · ⚡ 송출할 때 자동으로
+mod theme; // 디자인 기반: control.css 색·글꼴
+mod icons; // 디자인 기반: Lucide 아이콘
+mod widgets; // 디자인 기반: 공용 위젯
 
 use eframe::egui;
 use parking_lot::Mutex;
@@ -74,25 +77,6 @@ fn seed_db() -> Option<PathBuf> {
     [exe_dir.join("bible.db"), PathBuf::from(r"F:\aside\WorshipCue\data\bible.db")].into_iter().find(|p| p.exists())
 }
 
-fn fonts(ctx: &egui::Context) {
-    let mut defs = egui::FontDefinitions::default();
-    let load = |p: &str| std::fs::read(p).ok();
-    if let Some(r) = load(r"C:\Windows\Fonts\malgun.ttf") {
-        defs.font_data.insert("malgun".into(), Arc::new(egui::FontData::from_owned(r)));
-        defs.families.get_mut(&egui::FontFamily::Proportional).unwrap().insert(0, "malgun".into());
-        defs.families.get_mut(&egui::FontFamily::Monospace).unwrap().push("malgun".into());
-    }
-    let bold = load(r"C:\Windows\Fonts\malgunbd.ttf");
-    let mut fam = vec![];
-    if let Some(b) = bold {
-        defs.font_data.insert("malgun-bold".into(), Arc::new(egui::FontData::from_owned(b)));
-        fam.push("malgun-bold".to_string());
-    }
-    fam.extend(defs.families[&egui::FontFamily::Proportional].iter().cloned());
-    defs.families.insert(egui::FontFamily::Name("bold".into()), fam);
-    ctx.set_fonts(defs);
-}
-
 fn main() -> anyhow::Result<()> {
     let data_dir = arg("--data").map(PathBuf::from).unwrap_or_else(|| dirs_data().join("WorshipPresenter-rs").join("data"));
     let _ = std::fs::create_dir_all(&data_dir);
@@ -128,6 +112,10 @@ fn main() -> anyhow::Result<()> {
         egui::IconData { rgba: i.into_raw(), width: w, height: h }
     });
     let mut vp = egui::ViewportBuilder::default().with_title("워십프리젠터 (Rust)").with_inner_size([1500.0, 920.0]).with_min_inner_size([1000.0, 640.0]);
+    // 점검용 --win 1600x960: 창 안쪽 크기를 고정 (기준 화면과 같은 크기로 --shot 비교)
+    if let Some((w, h)) = arg("--win").and_then(|s| { let (a, b) = s.split_once(['x', 'X'])?; Some((a.trim().parse::<f32>().ok()?, b.trim().parse::<f32>().ok()?)) }) {
+        vp = vp.with_inner_size([w, h]).with_min_inner_size([w, h]).with_max_inner_size([w, h]).with_resizable(false).with_position([0.0, 0.0]);
+    }
     if let Some(i) = icon {
         vp = vp.with_icon(Arc::new(i));
     }
@@ -137,9 +125,9 @@ fn main() -> anyhow::Result<()> {
         "worship-presenter-rs",
         opts,
         Box::new(move |cc| {
-            fonts(&cc.egui_ctx);
+            theme::install_fonts(&cc.egui_ctx); // Pretendard + 맑은 고딕(대체·슬라이드)
             egui_extras::install_image_loaders(&cc.egui_ctx);
-            cc.egui_ctx.set_theme(egui::Theme::Dark);
+            theme::apply(&cc.egui_ctx, theme::ThemeId::Dark); // 설정 테마는 첫 프레임에 apply_ui_prefs 가 다시 적용
             // 코어가 바뀌면 화면을 다시 그린다
             let ctx = cc.egui_ctx.clone();
             let mut rx = rx;

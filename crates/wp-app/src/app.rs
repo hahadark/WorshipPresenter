@@ -872,21 +872,34 @@ impl App {
  }
  pub(crate) fn workspace_controls(&mut self,ui:&mut egui::Ui,s:&Snap,acts:&mut Vec<Act>){
             ui.separator();
-            ui.vertical_centered(|ui| {
+            // 아래 송출 줄 (Electron footer.bottom): 이전 F5 · 다음 F6 · 송출 F9 | 글자 숨김 F10 · 지우기 ▾ · 모두 지우기
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let big = |t: &str| egui::Button::new(RichText::new(wp_core::i18n::tr(t)).size(15.0)).min_size(Vec2::new(78.0, 30.0));
-                if ui.add(big("◀ 이전 F5")).clicked() { acts.push(Act::Step(-1)) }
-                if ui.add(big("송출 F9").fill(Color32::from_rgb(0xb0, 0x2a, 0x2a))).clicked() { acts.push(Act::SendPreview) }
-                if ui.add(big("다음 F6 ▶")).clicked() { acts.push(Act::Step(1)) }
-                ui.separator();
-                let hidden = s.live.as_ref().is_some_and(|l| !l.visible);
-                if ui.add(big(if hidden { wp_core::i18n::tr_s("글자 보이기 F10") } else { wp_core::i18n::tr_s("글자 숨김 F10") }).selected(hidden)).clicked() { acts.push(Act::ToggleClear) }
-                if ui.add(big("배경 끄기").selected(s.hide_bg)).clicked() { acts.push(Act::ToggleBg) }
-                if ui.add(big("로고").selected(s.logo)).clicked() { acts.push(Act::ToggleLogo) }
-                if ui.add(big("모두 지우기")).clicked() { acts.push(Act::ClearAll) }
-            });
-            });
-            self.video_bar(ui); // [트랙 B] 영상 조작 줄
+                use crate::widgets::{Btn, Kind, Size};
+                use wp_core::i18n::tr;
+                ui.spacing_mut().item_spacing.x = 6.0; // .ft-group { gap: 6px }
+                if ui.add(Btn::new(tr("이전")).icon("skip-back").kbd("F5").size(Size::Big).tooltip(tr("이전 슬라이드 (F5)"))).clicked() { acts.push(Act::Step(-1)) }
+                if ui.add(Btn::new(tr("다음")).icon_end("skip-forward").kbd("F6").size(Size::Big).tooltip(tr("다음 슬라이드 (F6)"))).clicked() { acts.push(Act::Step(1)) }
+                if ui.add(Btn::new(tr("송출")).icon("play").kbd("F9").kind(Kind::Send).size(Size::Big).tooltip(tr("미리보기를 송출 (F9)"))).clicked() { acts.push(Act::SendPreview) }
+                ui.add_space(4.0); // .bottom { gap: 10px }
+                crate::widgets::group_frame().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0; // .clear-group { gap: 4px }
+                        let hidden = s.live.as_ref().is_some_and(|l| !l.visible);
+                        // 숨긴 동안은 .clear-group button.active (노랑)
+                        let b = Btn::new(if hidden { tr("글자 보이기") } else { tr("글자 숨김") }).kbd("F10").size(Size::Tall).kind(if hidden { Kind::Warn } else { Kind::Default });
+                        if ui.add(b.tooltip(tr("글자(슬라이드)만 숨기기·다시 보이기 (F10)"))).clicked() { acts.push(Act::ToggleClear) }
+                        let more_on = s.hide_bg || s.logo;
+                        let more = ui.add(Btn::new(tr("지우기 ▾").trim_end_matches(" ▾")).caret().size(Size::Tall).kind(if more_on { Kind::Warn } else { Kind::Default }).tooltip(tr("배경 지우기 · 로고 화면")));
+                        egui::Popup::menu(&more).show(|ui| {
+                            ui.set_min_width(160.0);
+                            if ui.add(egui::Button::selectable(s.hide_bg, tr("배경 지우기"))).clicked() { acts.push(Act::ToggleBg); ui.close(); }
+                            if ui.add(egui::Button::selectable(s.logo, tr("로고 화면"))).clicked() { acts.push(Act::ToggleLogo); ui.close(); }
+                        });
+                        if ui.add(Btn::new(tr("모두 지우기")).kind(Kind::Danger).size(Size::Tall).tooltip(tr("글자·배경·로고를 모두 지움"))).clicked() { acts.push(Act::ClearAll) }
+                    });
+                });
+            });            self.video_bar(ui); // [트랙 B] 영상 조작 줄
 
  }
 }
