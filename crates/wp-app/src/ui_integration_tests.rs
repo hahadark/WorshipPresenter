@@ -256,3 +256,135 @@ fn workspace_tab_drag_lock_and_settings_restore() {
     let restored = crate::workspace_ui::WorkspaceUi::new(restored_core.settings.get());
     assert_eq!(serde_json::to_value(&restored.state).unwrap(), saved);
 }
+
+// ---------------- 마우스 올림 아이콘 단추 (docs/ux-rules.md 3절) ----------------
+
+type PanelFn = fn(&mut super::App, &mut egui::Ui, &super::Snap, &mut Vec<super::Act>);
+
+/// 실제 App 화면 함수 하나를 한 프레임 그리고, 그 화면이 낸 Act 를 production 과 같은 apply 로 적용한다.
+fn panel_frame(h: &mut Harness, app: &mut super::App, events: Vec<Event>, f: PanelFn) {
+    h.time += 0.05;
+    crate::widgets::HOVER_SEEN.with(|m| m.borrow_mut().clear());
+    let snap = app.snap();
+    let mut acts = vec![];
+    let mut output = h.ctx.run_pass(
+        RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1600.0, 1100.0))),
+            time: Some(h.time),
+            events,
+            ..Default::default()
+        },
+        |ctx| {
+            ctx.root_ui(|root| {
+                egui::CentralPanel::default_margins().show(root, |ui| f(app, ui, &snap, &mut acts));
+            });
+        },
+    );
+    output.textures_delta.clear();
+    app.apply(acts);
+}
+fn seen(name: &str) -> Option<Rect> {
+    crate::widgets::HOVER_SEEN.with(|m| m.borrow().get(name).copied())
+}
+/// 마우스를 올려 단추가 생기는지 보고, 그 단추를 실제 포인터로 누른다
+fn hover_then_click(h: &mut Harness, app: &mut super::App, hover_at: Pos2, op: &str, f: PanelFn) {
+    panel_frame(h, app, vec![Event::PointerMoved(hover_at)], f);
+    panel_frame(h, app, vec![], f);
+    let r = seen(op).unwrap_or_else(|| panic!("마우스를 올렸는데 '{op}' 단추가 없음"));
+    assert!(r.width() >= 24.0 && r.height() >= 24.0, "단추는 24px 이상: {r:?}");
+    let p = r.center();
+    panel_frame(h, app, vec![Event::PointerMoved(p)], f);
+    for pressed in [true, false] {
+        panel_frame(h, app, vec![Event::PointerButton { pos: p, button: PointerButton::Primary, pressed, modifiers: Default::default() }], f);
+    }
+    panel_frame(h, app, vec![], f);
+}
+fn grid_body(app: &mut super::App, ui: &mut egui::Ui, s: &super::Snap, acts: &mut Vec<super::Act>) {
+    app.center_body(ui, s, acts);
+}
+fn cue_body(app: &mut super::App, ui: &mut egui::Ui, s: &super::Snap, acts: &mut Vec<super::Act>) {
+    app.cue_panel(ui, s, acts);
+}
+
+#[test]
+fn grid_hover_add_button_inserts_slide_and_undo_restores() {
+    let mut h = Harness::new(json!({"id":"grid-test","type":"text","title":"공지","body":"첫째\n---\n둘째"}));
+    h.ui.open = false;
+    let mut app = headless_app(&h);
+    app.core.lock().preview_item(0); // 준비: 그 순서를 미리보기
+    crate::center_ui::test_set_view(&h.ctx, crate::center_ui::SlideView::Grid, false);
+    panel_frame(&mut h, &mut app, vec![], grid_body);
+    panel_frame(&mut h, &mut app, vec![], grid_body);
+    assert!(seen("add").is_none(), "마우스를 올리기 전에는 단추가 없어야 함");
+    let cell = seen("cell-0").expect("격자 칸이 그려져야 함");
+    hover_then_click(&mut h, &mut app, cell.center() + Vec2::new(0.0, 20.0), "add", grid_body);
+    assert_eq!(h.item()["body"], json!("첫째\n---\n새 슬라이드\n---\n둘째"));
+    assert!(app.tc.slideedit.open, "＋ 다음에는 슬라이드 편집기가 새 장으로 열림 (Electron quickOp)");
+    h.assert_saved();
+    // 단추 한 번 = 실행 취소 한 번
+    assert!(app.core.lock().undo_items(false));
+    assert_eq!(h.item()["body"], json!("첫째\n---\n둘째"));
+}
+
+#[test]
+fn grid_hover_skip_on_bible_like_item_and_edit_opens_editor() {
+    // 그림 순서: 지울 수 없는 종류라 ✕ 대신 건너뛰기(눈) · 복제 없음
+    let mut h = Harness::new(json!({"id":"img-test","type":"slideshow","title":"그림","images":["a.png","b.png"]}));
+    h.ui.open = false;
+    let mut app = headless_app(&h);
+    app.core.lock().preview_item(0);
+    crate::center_ui::test_set_view(&h.ctx, crate::center_ui::SlideView::Grid, false);
+    panel_frame(&mut h, &mut app, vec![], grid_body);
+    panel_frame(&mut h, &mut app, vec![], grid_body);
+    let cell = seen("cell-1").expect("둘째 칸");
+    panel_frame(&mut h, &mut app, vec![Event::PointerMoved(cell.center())], grid_body);
+    assert!(seen("del").is_none() && seen("dup").is_none(), "그림 원래 슬라이드는 지우기·복제 대신 건너뛰기");
+    hover_then_click(&mut h, &mut app, cell.center(), "skip", grid_body);
+    assert_eq!(h.item()["skip"], json!([1]));
+    h.assert_saved();
+    let cell = seen("cell-0").expect("첫째 칸");
+    hover_then_click(&mut h, &mut app, cell.center(), "edit", grid_body);
+    assert!(app.tc.slideedit.open, "✎ 는 슬라이드 편집기를 연다");
+    assert_eq!(app.sel, Some(0));
+}
+
+#[test]
+fn editor_list_hover_delete_button() {
+    let mut h = Harness::new(json!({"id":"se-del","type":"text","title":"공지","body":"하나\n---\n둘\n---\n셋"}));
+    let p = h.point("slide-1");
+    h.frame(vec![Event::PointerMoved(p)]);
+    h.frame(vec![]);
+    let r = seen("del").expect("편집기 목록 줄에 마우스를 올리면 지우기 단추");
+    assert!(seen("up").is_some() && seen("down").is_some() && seen("dup").is_some());
+    let q = r.center();
+    h.frame(vec![Event::PointerMoved(q)]);
+    h.button(q, PointerButton::Primary, true);
+    h.button(q, PointerButton::Primary, false);
+    h.frame(vec![]);
+    assert_eq!(h.item()["body"], json!("하나\n---\n셋"));
+    h.assert_saved();
+}
+
+#[test]
+fn cue_row_hover_shows_pencil_and_send() {
+    let mut h = Harness::new(json!({"id":"cue-send","type":"title","title":"환영합니다"}));
+    h.ui.open = false;
+    let mut app = headless_app(&h);
+    app.sel = None; // 고른 줄이 아니어도 마우스를 올리면 보여야 함
+    panel_frame(&mut h, &mut app, vec![], cue_body);
+    panel_frame(&mut h, &mut app, vec![], cue_body);
+    assert!(seen("cue-send-0").is_none());
+    // 첫 줄 자리는 연필 단추 자리로 알 수 없으니, 패널 위쪽부터 내려가며 줄을 찾는다
+    let mut at = None;
+    for y in (40..600).step_by(8) {
+        let p = Pos2::new(300.0, y as f32);
+        panel_frame(&mut h, &mut app, vec![Event::PointerMoved(p)], cue_body);
+        if seen("cue-send-0").is_some() { at = Some(p); break; }
+    }
+    let at = at.expect("순서 줄에 마우스를 올리면 ▶ 단추가 생겨야 함");
+    assert!(seen("cue-edit-0").is_some());
+    assert!(app.snap().live.is_none());
+    hover_then_click(&mut h, &mut app, at, "cue-send-0", cue_body);
+    let live = app.snap().live.expect("▶ 를 누르면 송출");
+    assert_eq!(live.deck.passage["cueIndex"], json!(0));
+}

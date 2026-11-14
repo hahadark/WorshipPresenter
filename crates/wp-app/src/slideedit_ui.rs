@@ -117,7 +117,7 @@ impl SlideEditUi {
                 ui.checkbox(&mut self.common, wp_core::i18n::tr("모든 슬라이드에 공통(*)"));
             });
             ui.separator();
-            egui::Panel::left("se-list").default_size(220.0).show(ui, |ui| {
+            egui::Panel::left("se-list").default_size(300.0).show(ui, |ui| {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for (k, s) in slides.iter().enumerate() {
                         let skipped = s["skipped"].as_bool().unwrap_or(false);

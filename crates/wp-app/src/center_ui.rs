@@ -78,6 +78,15 @@ fn save(ctx: &egui::Context, st: CenterState) {
     ctx.data_mut(|d| d.insert_temp(sid(), st));
 }
 
+/// 시험용: 보기 방식을 정한다 (격자·전체 격자·목록)
+#[cfg(test)]
+pub(crate) fn test_set_view(ctx: &egui::Context, v: SlideView, cue_mode: bool) {
+    let mut st = load(ctx);
+    st.view = v;
+    st.cue_mode = cue_mode;
+    save(ctx, st);
+}
+
 /// cue.js TYPE (종류 이름)
 pub(crate) fn type_name(t: &str) -> &'static str {
     match t {
@@ -375,6 +384,8 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             let k = row * cols + j;
             let r = Rect::from_min_size(Pos2::new(rr.left() + j as f32 * (cw + gap), rr.top()), Vec2::new(cw, ch));
             let resp = ui.interact(r, id.with(k), Sense::click());
+            #[cfg(test)]
+            widgets::HOVER_SEEN.with(|m| m.borrow_mut().insert(format!("cell-{k}"), r));
             if resp.clicked() {
                 out = Some(Hit::Pick(k, false));
             }
