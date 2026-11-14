@@ -1181,6 +1181,17 @@ impl App {
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         crate::system_ui::inject(ctx, raw); // [트랙 B] 점검용 --draw-test (켜지 않으면 아무것도 안 함)
+        // 점검용 --hover X,Y : 그 자리에 마우스가 있는 것처럼 (마우스 올림 단추 스크린샷용, 매 프레임)
+        static HOVER: once_cell::sync::Lazy<Option<egui::Pos2>> = once_cell::sync::Lazy::new(|| {
+            let a: Vec<String> = std::env::args().collect();
+            let v = a.iter().position(|x| x == "--hover").and_then(|i| a.get(i + 1))?;
+            let (x, y) = v.split_once(',')?;
+            Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
+        });
+        if let Some(p) = *HOVER {
+            let _ = ctx;
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
