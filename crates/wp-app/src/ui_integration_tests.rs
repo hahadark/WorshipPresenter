@@ -465,3 +465,153 @@ fn list_keyboard_arrows_step_preview_and_enter_sends() {
     let pv = app.snap().preview.clone().unwrap();
     assert_eq!((pv.passage["cueIndex"].clone(), pv.index), (json!(0), 2));
 }
+
+// ---------------- 여러 장 고르기 · 끌어서 차례 바꾸기 (slideedit.js attachSel · selAction · moveSlides) ----------------
+
+/// 머리 줄('고른 N장' 줄)과 본문을 함께 (production 처럼 단축키 먼저)
+fn head_body(app: &mut super::App, ui: &mut egui::Ui, s: &super::Snap, acts: &mut Vec<super::Act>) {
+    let typing = ui.ctx().egui_wants_keyboard_input();
+    app.shortcuts(ui.ctx(), acts, typing);
+    let mut on = false;
+    app.center_head(ui, s, &mut on, acts);
+    app.center_body(ui, s, acts);
+}
+/// panel_frame + 누른 꾸밈 키 (Shift·Ctrl)
+fn frame_m(h: &mut Harness, app: &mut super::App, mut events: Vec<Event>, mods: egui::Modifiers) {
+    events.insert(0, Event::ModifiersChanged(mods));
+    h.time += 0.05;
+    crate::widgets::HOVER_SEEN.with(|m| m.borrow_mut().clear());
+    let snap = app.snap();
+    let mut acts = vec![];
+    let mut output = h.ctx.run_pass(
+        RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1600.0, 1100.0))), time: Some(h.time), events, ..Default::default() },
+        |ctx| {
+            ctx.root_ui(|root| {
+                egui::CentralPanel::default_margins().show(root, |ui| head_body(app, ui, &snap, &mut acts));
+            });
+        },
+    );
+    output.textures_delta.clear();
+    app.apply(acts);
+}
+fn mclick(h: &mut Harness, app: &mut super::App, name: &str, mods: egui::Modifiers) {
+    let p = seen(name).unwrap_or_else(|| panic!("그려져야 함: {name}")).center();
+    h.time += 1.0; // 두 번 누르기로 세지 않게
+    frame_m(h, app, vec![Event::PointerMoved(p)], mods);
+    for pressed in [true, false] {
+        frame_m(h, app, vec![Event::PointerButton { pos: p, button: PointerButton::Primary, pressed, modifiers: mods }], mods);
+    }
+    frame_m(h, app, vec![], egui::Modifiers::NONE);
+}
+fn mkey(h: &mut Harness, app: &mut super::App, k: egui::Key, mods: egui::Modifiers) {
+    frame_m(h, app, vec![Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: mods }], mods);
+    frame_m(h, app, vec![], egui::Modifiers::NONE);
+}
+/// 실제 포인터로 끌어 놓기. 놓기 전에 표시선이 보였는지 돌려준다
+fn drag_drop(h: &mut Harness, app: &mut super::App, from: Pos2, to: Pos2) -> bool {
+    let none = egui::Modifiers::NONE;
+    h.time += 1.0;
+    frame_m(h, app, vec![Event::PointerMoved(from)], none);
+    frame_m(h, app, vec![Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: none }], none);
+    frame_m(h, app, vec![Event::PointerMoved(from.lerp(to, 0.3))], none);
+    frame_m(h, app, vec![Event::PointerMoved(to)], none);
+    frame_m(h, app, vec![Event::PointerMoved(to)], none);
+    let mark = seen("drop-mark").is_some();
+    frame_m(h, app, vec![Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: none }], none);
+    frame_m(h, app, vec![], none);
+    frame_m(h, app, vec![], none);
+    mark
+}
+const SHIFT: egui::Modifiers = egui::Modifiers::SHIFT;
+const CTRL: egui::Modifiers = egui::Modifiers::COMMAND;
+
+#[test]
+fn list_multi_select_shift_ctrl_esc_and_delete_with_confirm() {
+    let (mut h, mut app) = list_harness();
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    mclick(&mut h, &mut app, "srow-0", egui::Modifiers::NONE);
+    assert!(seen("msel-edit").is_none(), "한 장만 고르면 '고른 N장' 줄이 없다");
+    // Shift+클릭 = 범위 (미리보기는 그대로)
+    mclick(&mut h, &mut app, "srow-2", SHIFT);
+    assert_eq!(crate::center_ui::test_msel(&h.ctx), vec![0, 1, 2]);
+    assert_eq!(app.snap().preview.as_ref().unwrap().index, 0, "Shift+클릭은 미리보기를 바꾸지 않음");
+    assert!(seen("msel-edit").is_some() && seen("msel-del").is_some() && seen("msel-clear").is_some(), "'고른 3장' 줄과 단추");
+    // Ctrl+클릭 = 빼기
+    mclick(&mut h, &mut app, "srow-1", CTRL);
+    assert_eq!(crate::center_ui::test_msel(&h.ctx), vec![0, 2]);
+    // Esc = 한 장만 (보조 화면 끄기 같은 전역 Esc 보다 먼저)
+    mkey(&mut h, &mut app, egui::Key::Escape, egui::Modifiers::NONE);
+    assert_eq!(crate::center_ui::test_msel(&h.ctx), vec![0]);
+    assert!(seen("msel-edit").is_none());
+    // Ctrl+A = 모두
+    mkey(&mut h, &mut app, egui::Key::A, CTRL);
+    assert_eq!(crate::center_ui::test_msel(&h.ctx), vec![0, 1, 2]);
+    // 다시 둘만 고르고 Delete: 글 순서는 내용에서 지워지므로 먼저 묻는다
+    mclick(&mut h, &mut app, "srow-1", egui::Modifiers::NONE);
+    mclick(&mut h, &mut app, "srow-2", SHIFT);
+    assert_eq!(crate::center_ui::test_msel(&h.ctx), vec![1, 2]);
+    mkey(&mut h, &mut app, egui::Key::Delete, egui::Modifiers::NONE);
+    assert_eq!(h.item()["body"], json!("첫째 소식\n---\n둘째 소식\n---\n셋째 소식"), "묻기 전에는 지우지 않음");
+    let yes = seen("confirm-yes").expect("'정말 지우기' 확인").center();
+    frame_m(&mut h, &mut app, vec![Event::PointerMoved(yes)], egui::Modifiers::NONE);
+    for pressed in [true, false] {
+        frame_m(&mut h, &mut app, vec![Event::PointerButton { pos: yes, button: PointerButton::Primary, pressed, modifiers: Default::default() }], egui::Modifiers::NONE);
+    }
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    assert_eq!(h.item()["body"], json!("첫째 소식"));
+    h.assert_saved();
+    assert!(crate::center_ui::test_msel(&h.ctx).len() <= 1, "지운 뒤 고르기는 풀림");
+}
+
+#[test]
+fn list_drag_moves_slide_with_drop_line() {
+    let (mut h, mut app) = list_harness();
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    let from = seen("srow-0").unwrap().center();
+    let r2 = seen("srow-2").unwrap();
+    let mark = drag_drop(&mut h, &mut app, from, r2.center() + Vec2::new(0.0, r2.height() / 4.0));
+    assert!(mark, "끄는 동안 놓을 자리 표시선");
+    assert_eq!(h.item()["body"], json!("둘째 소식\n---\n셋째 소식\n---\n첫째 소식"));
+    h.assert_saved();
+    let pv = app.snap().preview.clone().unwrap();
+    assert_eq!(pv.index, 2, "옮긴 슬라이드를 새 자리에서 미리보기");
+}
+
+#[test]
+fn grid_drag_moves_selected_slides_together() {
+    let (mut h, mut app) = list_harness();
+    crate::center_ui::test_set_view(&h.ctx, crate::center_ui::SlideView::Grid, true);
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    mclick(&mut h, &mut app, "cell-0", egui::Modifiers::NONE);
+    mclick(&mut h, &mut app, "cell-1", CTRL);
+    assert_eq!(crate::center_ui::test_msel(&h.ctx), vec![0, 1]);
+    let from = seen("cell-0").unwrap().center();
+    let c2 = seen("cell-2").unwrap();
+    assert!(drag_drop(&mut h, &mut app, from, c2.center() + Vec2::new(c2.width() / 4.0, 0.0)));
+    // 고른 두 장이 셋째 뒤로 (목록 차례대로)
+    assert_eq!(h.item()["body"], json!("셋째 소식\n---\n첫째 소식\n---\n둘째 소식"));
+    h.assert_saved();
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    assert_eq!(crate::center_ui::test_msel(&h.ctx), vec![1, 2], "옮긴 두 장을 새 자리에서 고른 채로");
+}
+
+#[test]
+fn drag_is_blocked_for_song_with_singing_order() {
+    let mut h = Harness::new(json!({"id":"song-order","type":"song","title":"찬양","lyrics":"[1절]\n하나\n\n[2절]\n둘","order":"2절 1절"}));
+    h.ui.open = false;
+    let mut app = headless_app(&h);
+    app.core.lock().preview_item(0);
+    crate::center_ui::test_set_view(&h.ctx, crate::center_ui::SlideView::List, true);
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    frame_m(&mut h, &mut app, vec![], egui::Modifiers::NONE);
+    let before = h.item();
+    let from = seen("srow-0").expect("슬라이드 줄").center();
+    let r1 = seen("srow-1").expect("둘째 줄");
+    drag_drop(&mut h, &mut app, from, r1.center() + Vec2::new(0.0, r1.height() / 4.0));
+    assert_eq!(h.item(), before, "부를 순서가 정해진 찬양은 차례를 바꾸지 않음");
+    let toast = h.core.lock().toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+    assert!(toast.contains("부를 순서"), "까닭을 알림: {toast}");
+}
