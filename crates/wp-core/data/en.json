@@ -3568,5 +3568,10 @@
  "설치 실행 실패: {1}": "Installer launch failed: {1}",
  "새 버전 {1}이 나왔습니다 (도움말 → 새 버전)": "Version {1} is available (Help → New version)",
  "릴리스 설명 열기": "Open release notes",
- "요소": "Element"
+ "요소": "Element",
+ "글자 보이기": "Show text",
+ "미리보기를 송출 (F9)": "Send the preview live (F9)",
+ "지우기 ▾": "Clear ▾",
+ "배경 지우기 · 로고 화면": "Clear background · Logo screen",
+ "글자·배경·로고를 모두 지움": "Clear text, background and logo"
 }

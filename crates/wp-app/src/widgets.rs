@@ -89,11 +89,12 @@ pub struct Btn {
     tooltip: Option<String>,
     text_color: Option<Color32>,
     icon_color: Option<Color32>,
+    caret: bool,
 }
 
 impl Btn {
     pub fn new(text: impl Into<String>) -> Self {
-        Btn { text: text.into(), icon: None, icon_end: None, kbd: None, kind: Kind::Default, size: Size::Md, selected: false, enabled: true, weight: None, min_width: 0.0, height: None, square: false, tooltip: None, text_color: None, icon_color: None }
+        Btn { text: text.into(), icon: None, icon_end: None, kbd: None, kind: Kind::Default, size: Size::Md, selected: false, enabled: true, weight: None, min_width: 0.0, height: None, square: false, tooltip: None, text_color: None, icon_color: None, caret: false }
     }
     /// 아이콘만 있는 정사각형 단추 (.icon-btn: 34×34, 아이콘 18)
     pub fn icon_only(name: &str) -> Self {
@@ -110,6 +111,11 @@ impl Btn {
     /// 글 뒤 아이콘 (예: 다음 ▷|)
     pub fn icon_end(mut self, name: &str) -> Self {
         self.icon_end = Some(name.into());
+        self
+    }
+    /// 글 뒤 작은 ▾ (펼침 메뉴 단추: 지우기 ▾)
+    pub fn caret(mut self) -> Self {
+        self.caret = true;
         self
     }
     /// 오른쪽 kbd 칩 (단축키)
@@ -207,26 +213,32 @@ impl Widget for Btn {
             _ => Weight::Regular,
         });
         let tg = (!self.text.is_empty()).then(|| layout(ui, &self.text, theme::font(fs, weight)));
-        let kg = self.kbd.as_deref().map(|k| layout(ui, k, theme::font(kfs, Weight::Regular)));
-        // 너비: 여백 + [아이콘 + 간격] + 글 + [간격 + 끝 아이콘] + [간격 + kbd] + 여백
-        let gap = 0.4 * fs; // .ic { margin-right: .4em }
-        let mut w = 0.0;
+        let kg = self.kbd.as_deref().map(|k| layout(ui, k, theme::font(kfs, weight)) /* kbd { font: inherit } */);
+        // css: button { gap: 2px } · .big { gap: 4px } · 앞 아이콘 margin-right .4em (.big 은 margin-left 2px 도)
+        //      .ic-end { margin-left: .3em } · kbd { margin-left: 4px } (.big kbd 6px) · .big.send { padding-right: 14px }
+        let big = self.size == Size::Big;
+        let fgap = if big { 4.0 } else { 2.0 };
+        let (ic_l, ic_r) = if big { (2.0, 0.4 * fs) } else { (0.0, 0.4 * fs) };
+        let (end_l, end_r) = if big { (2.0, 2.0) } else { (0.3 * fs, 0.0) };
+        // 그릴 조각: (너비, 앞 여백) — 조각 사이에는 flex gap
+        let mut parts: Vec<f32> = vec![];
         if self.icon.is_some() {
-            w += ic;
-            if tg.is_some() {
-                w += gap;
-            }
+            parts.push(ic_l + ic + if tg.is_some() { ic_r } else { 0.0 });
         }
         if let Some(g) = &tg {
-            w += g.size().x;
+            parts.push(g.size().x);
+        }
+        if self.caret {
+            parts.push(0.3 * fs + 7.0);
         }
         if self.icon_end.is_some() {
-            w += 0.3 * fs + ic;
+            parts.push(end_l + ic + end_r);
         }
         if let Some(g) = &kg {
-            w += kgap + kbd_size(g).x;
+            parts.push(kgap + kbd_size(g).x);
         }
-        let size = if self.square { Vec2::splat(h) } else { Vec2::new((w + 2.0 * pad).max(self.min_width), h) };
+        let w: f32 = parts.iter().sum::<f32>() + fgap * parts.len().saturating_sub(1) as f32;
+        let (pad_l, pad_r) = if self.kind == Kind::Send && big { (pad, 14.0) } else { (pad, pad) };        let size = if self.square { Vec2::splat(h) } else { Vec2::new((w + pad_l + pad_r).max(self.min_width), h) };
         let sense = if self.enabled { Sense::click() } else { Sense::hover() };
         let (rect, mut resp) = ui.allocate_exact_size(size, sense);
         if ui.is_rect_visible(rect) {
@@ -249,23 +261,30 @@ impl Widget for Btn {
                 // :focus-visible { outline: 2px solid accent; outline-offset: 1px }
                 pt.rect_stroke(r.expand(3.0), CornerRadius::same(theme::RADIUS + 3), Stroke::new(2.0, p.accent), StrokeKind::Inside);
             }
-            let mut x = if self.square { r.center().x - ic / 2.0 } else { r.center().x - w / 2.0 };
+            let mut x = if self.square { r.center().x - ic / 2.0 } else { r.left() + pad_l + ((r.width() - pad_l - pad_r) - w).max(0.0) / 2.0 };
             let cy = r.center().y;
             if let Some(n) = &self.icon {
+                x += ic_l;
                 icons::paint(ui, Rect::from_min_size(Pos2::new(x, cy - ic / 2.0), Vec2::splat(ic)), n, icol);
-                x += ic + if tg.is_some() { gap } else { 0.0 };
+                x += ic + if tg.is_some() { ic_r + fgap } else { 0.0 };
             }
             if let Some(g) = tg {
                 let gw = g.size().x;
                 pt.galley(Pos2::new(x, cy - g.size().y / 2.0), g, fg);
-                x += gw;
+                x += gw + fgap;
+            }
+            if self.caret {
+                // ▾ (작은 아래 삼각형, 가운데 높이)
+                x += 0.3 * fs;
+                let c = Pos2::new(x + 3.5, cy + 0.5);
+                pt.add(egui::Shape::convex_polygon(vec![Pos2::new(c.x - 3.5, c.y - 2.0), Pos2::new(c.x + 3.5, c.y - 2.0), Pos2::new(c.x, c.y + 2.5)], fg, Stroke::NONE));
+                x += 7.0 + fgap;
             }
             if let Some(n) = &self.icon_end {
-                x += 0.3 * fs;
+                x += end_l;
                 icons::paint(ui, Rect::from_min_size(Pos2::new(x, cy - ic / 2.0), Vec2::splat(ic)), n, icol);
-                x += ic;
-            }
-            if let Some(g) = kg {
+                x += ic + end_r + fgap;
+            }            if let Some(g) = kg {
                 x += kgap;
                 let ks = kbd_size(&g);
                 let (kf, kb) = if self.kind == Kind::Send { (alpha(Color32::WHITE, 0.8), alpha(Color32::WHITE, 0.4)) } else { (p.muted, p.line) };
