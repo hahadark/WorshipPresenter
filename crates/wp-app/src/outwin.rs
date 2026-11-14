@@ -58,7 +58,7 @@ impl OutWin {
                 })
                 .collect(),
             Err(e) => {
-                self.error = format!("출력 창 프로그램을 찾지 못했습니다: {e}");
+                self.error = format!("예배당 화면 프로그램을 찾지 못했습니다: {e}");
                 vec![]
             }
         };
@@ -95,7 +95,7 @@ impl OutWin {
                 self.child = Some(c);
                 self.error.clear();
             }
-            Err(e) => self.error = format!("출력 창을 열지 못했습니다: {e}"),
+            Err(e) => self.error = format!("예배당 화면을 열지 못했습니다: {e}"),
         }
     }
 

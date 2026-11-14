@@ -6,7 +6,7 @@
 //! - 실행은 `wp_core::trackd::run_item_actions` (여기서는 호출하지 않음). '보내 보기'·'눌러 보기'는 그 자리에서 한 번 보낸다.
 //! - OBS 장면 목록: 도구 → OBS 원격 조작 창의 상태 캐시(`trackd_ui::obs_state`)에 장면이 있으면 콤보, 없으면 글 입력.
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -122,7 +122,7 @@ fn spawn_notify(f: impl FnOnce() -> Result<String, String> + Send + 'static) {
 pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
     let mut ch = false;
     let settings = core.lock().settings.get().clone();
-    let gray = |s: String| RichText::new(s).small().color(Color32::GRAY);
+    let gray = |s: String| RichText::new(s).small().color(crate::theme::pal().muted);
 
     // ---- 배경 음악 (Electron: 송출하면 반복 재생, 다른 화면을 송출하면 서서히 꺼짐) ----
     ui.label(RichText::new(tr("배경 음악")).small());
@@ -158,7 +158,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
     ui.label(RichText::new(tr("자동 동작")).small());
     ui.horizontal_wrapped(|ui| {
         let head = format!("⚡ {}{} {}", tr("송출할 때 자동으로"), if n > 0 { format!(" ({n})") } else { String::new() }, if st.open { "▴" } else { "▾" });
-        let b = egui::Button::new(if n > 0 { RichText::new(head).color(Color32::from_rgb(0xf0, 0x9a, 0x4a)) } else { RichText::new(head) });
+        let b = egui::Button::new(if n > 0 { RichText::new(head).color(crate::theme::pal().warn) } else { RichText::new(head) });
         if ui.add(b).clicked() {
             st.open = !st.open;
         }
@@ -191,7 +191,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
                 ch = true;
             }
             let mut cs = e["actions"]["clearStage"].as_bool().unwrap_or(false);
-            if ui.checkbox(&mut cs, tr("메시지 지우기")).changed() {
+            if ui.checkbox(&mut cs, tr("메시지 내리기")).on_hover_text(tr("무대 화면에 떠 있는 메시지를 없앱니다")).changed() {
                 set_action(e, "clearStage", json!(cs));
                 ch = true;
             }
@@ -202,7 +202,8 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
         ui.horizontal(|ui| {
             ch |= combo(ui, e, "logo", &[keep.clone(), ("on".into(), tr("켜기")), ("off".into(), tr("끄기"))], 90.0);
             ui.label(tr("배경"));
-            ch |= combo(ui, e, "bg", &[keep.clone(), ("hide".into(), tr("지우기")), ("show".into(), tr("다시 보이기"))], 110.0);
+            // '지우기'는 화면 비우기·삭제와 헷갈려 '끄기' (요약 문구 '배경 끄기'와 같게)
+            ch |= combo(ui, e, "bg", &[keep.clone(), ("hide".into(), tr("끄기")), ("show".into(), tr("다시 보이기"))], 110.0);
         });
         ui.end_row();
         // 오버레이
@@ -287,10 +288,10 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
         }
         ui.end_row();
         // OBS (Electron obsActHtml): 연결돼 있으면 장면 목록 콤보, 아니면 글 입력
-        ui.label("OBS");
+        ui.label("OBS").on_hover_text(tr("이 순서를 송출할 때 OBS 장면을 바꾸거나 방송·녹화를 시작·종료합니다"));
         ui.horizontal_wrapped(|ui| {
             let (enabled, connected, scenes) = crate::trackd_ui::obs_state(&settings);
-            ui.label(tr("장면"));
+            ui.label(tr("OBS 장면"));
             if scenes.is_empty() {
                 let mut sc = e["actions"]["obsScene"].as_str().unwrap_or("").to_string();
                 if ui.add(egui::TextEdit::singleline(&mut sc).desired_width(120.0).hint_text(tr("장면 이름"))).changed() {
@@ -315,15 +316,21 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
             }
         });
         ui.end_row();
-        // Companion
-        ui.label("Companion");
+        // Companion (휴리스틱 평가 12번: '1/0/2' 같은 값을 쉬운 말로 설명)
+        ui.label(tr("Companion 단추")).on_hover_text(tr("스트림덱 Companion 의 단추를 이 순서를 송출할 때 대신 눌러 줍니다"));
         ui.horizontal_wrapped(|ui| {
             let mut cp = e["actions"]["companion"].as_str().unwrap_or("").to_string();
-            if ui.add(egui::TextEdit::singleline(&mut cp).desired_width(200.0).hint_text(tr("단추 위치 (예: 1/0/2 · 여러 개는 쉼표)"))).changed() {
+            if ui.add(egui::TextEdit::singleline(&mut cp).desired_width(200.0).hint_text(tr("페이지/줄/칸 (예: 1/0/2)")))
+                .on_hover_text(tr("Companion 화면의 단추 자리를 '페이지/줄/칸' 숫자로 씁니다. 예: 1/0/2 = 1페이지 맨 윗줄(0) 세 번째 칸(2). 여러 개는 쉼표로: 1/0/2, 1/1/0"))
+                .changed() {
                 set_action(e, "companion", json!(cp));
                 ch = true;
             }
-            if ui.button(tr("눌러 보기")).on_hover_text(tr("지금 눌러 보기")).clicked() {
+            let ok = !wp_core::companion::parse_locations(&cp).is_empty();
+            if ui.add_enabled(ok, egui::Button::new(tr("지금 한 번 눌러 보기")))
+                .on_hover_text(tr("설정한 Companion 단추를 지금 눌러 제대로 동작하는지 확인합니다"))
+                .on_disabled_hover_text(tr("왼쪽 칸에 단추 자리를 먼저 쓰세요 (예: 1/0/2)"))
+                .clicked() {
                 let conf = settings["companion"].clone();
                 let loc = cp.clone();
                 spawn_notify(move || {
@@ -358,7 +365,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
                     set_device_action(e, &id, &a);
                     ch = true;
                 }
-                if ui.button(tr("보내 보기")).clicked() {
+                if ui.add_enabled(!a.trim().is_empty(), egui::Button::new(tr("지금 한 번 보내 보기"))).on_disabled_hover_text(tr("보낼 동작을 먼저 쓰세요")).clicked() {
                     let devices = settings["devices"].clone();
                     let (id2, a2, name2) = (id.clone(), a.clone(), name.clone());
                     spawn_notify(move || wp_core::devices::run(&devices, &id2, &a2).map(|_| wp_core::i18n::tr_args("{1}: 보냈습니다.", &[&name2])).map_err(|e| format!("{name2}: {e}")));

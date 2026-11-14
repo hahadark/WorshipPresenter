@@ -1,7 +1,9 @@
 //! [트랙 C] 송출 기록(Ctrl+H) · 사용 기록(저작권 보고 CSV) · 정보·라이선스 창
 
 use crate::app::Act;
-use eframe::egui::{self, Color32, RichText};
+use crate::theme::pal;
+use crate::widgets;
+use eframe::egui::{self, RichText};
 use wp_core::core::Shared;
 use wp_core::usage;
 
@@ -42,14 +44,16 @@ impl HistoryUi {
         if self.open {
             let hist = core.lock().settings.get()["history"].as_array().cloned().unwrap_or_default();
             let mut open = self.open;
-            egui::Window::new(wp_core::i18n::tr("송출 기록")).open(&mut open).default_size([520.0, 520.0]).show(ctx, |ui| {
-                ui.horizontal(|ui| {
+            widgets::float_window(ctx, "history", wp_core::i18n::tr("송출 기록"), [520.0, 520.0]).open(&mut open).show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(wp_core::i18n::tr_args("{1}개 (최근 300개)", &[&(hist.len())]));
-                    if ui.button(wp_core::i18n::tr("기록 지우기")).clicked() {
+                    // 되살릴 수 없으므로 줄 안에서 한 번 더 묻는다 (휴리스틱 평가 3번)
+                    let q = wp_core::i18n::tr_args("송출 기록 {1}개가 지워지고 되살릴 수 없습니다.", &[&(hist.len())]);
+                    if !hist.is_empty() && widgets::confirm_delete(ui, egui::Id::unique("hist-clear"), &wp_core::i18n::tr("기록 지우기"), &q) {
                         wp_core::templates::clear_history(&mut core.lock().settings);
                     }
                 });
-                ui.label(RichText::new(wp_core::i18n::tr("누르면 미리보기, 두 번 누르면 송출")).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("누르면 미리보기, 두 번 누르면 송출")).small().color(pal().muted));
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for h in &hist {
                         let q = h["query"].as_str().unwrap_or("").to_string();
@@ -70,7 +74,7 @@ impl HistoryUi {
         if self.usage_open {
             let mut open = self.usage_open;
             let f = usage::Filter { from: self.from.trim().into(), to: self.to.trim().into(), kinds: vec![], q: self.q.clone() };
-            egui::Window::new(wp_core::i18n::tr("사용 기록 (저작권 보고)")).open(&mut open).default_size([720.0, 540.0]).show(ctx, |ui| {
+            widgets::float_window(ctx, "usage", wp_core::i18n::tr("사용 기록 (저작권 보고)"), [720.0, 540.0]).open(&mut open).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(wp_core::i18n::tr("부터"));
                     ui.add(egui::TextEdit::singleline(&mut self.from).hint_text("2026-11-01").desired_width(90.0));
@@ -87,12 +91,23 @@ impl HistoryUi {
                             self.msg = match std::fs::write(&p, csv) { Ok(()) => format!("저장했습니다: {}", p.display()), Err(e) => format!("저장 실패: {e}") };
                         }
                     }
-                    if ui.button(RichText::new(wp_core::i18n::tr("모두 지우기")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
+                    ui.label(RichText::new(&self.msg).small());
+                });
+                // 저작권 보고 자료라 되살릴 수 없다: 줄 안 확인 + 먼저 CSV 로 보관하라는 안내 (휴리스틱 평가 3번)
+                let all = usage::list(&core.lock().store.db, &usage::Filter::default()).len();
+                let q = wp_core::i18n::tr_args("사용 기록 {1}줄이 모두 지워지고 되살릴 수 없습니다. 먼저 'CSV 저장…'으로 보관해 두세요.", &[&all]);
+                let id = egui::Id::unique("usage-clear");
+                if widgets::confirm_armed(ui, id) {
+                    if widgets::confirm_row(ui, id, &q) {
                         let n = usage::clear(&core.lock().store.db, "");
                         self.msg = wp_core::i18n::tr_args("{1}줄을 지웠습니다.", &[&n]);
                     }
-                    ui.label(RichText::new(&self.msg).small());
-                });
+                } else {
+                    let tip = if all > 0 { wp_core::i18n::tr("누르면 한 번 더 묻습니다") } else { wp_core::i18n::tr("지울 사용 기록이 없습니다") };
+                    if ui.add(widgets::Btn::new(wp_core::i18n::tr("모두 지우기")).icon("trash-2").kind(widgets::Kind::Danger).size(widgets::Size::Sm).enabled(all > 0).tooltip(tip)).clicked() {
+                        widgets::confirm_arm(ui, id, true);
+                    }
+                }
                 ui.separator();
                 let db = &core.lock().store.db;
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -121,7 +136,7 @@ impl HistoryUi {
         }
         if self.about_open {
             let mut open = self.about_open;
-            egui::Window::new(wp_core::i18n::tr("정보")).open(&mut open).default_size([520.0, 420.0]).show(ctx, |ui| {
+            widgets::float_window(ctx, "about", wp_core::i18n::tr("정보"), [520.0, 420.0]).open(&mut open).show(ctx, |ui| {
                 ui.heading(wp_core::i18n::tr("워십프리젠터 (Rust 판)"));
                 ui.label(wp_core::i18n::tr_args("버전 {1} · 라이선스 GPL-3.0-or-later", &[&(env!("CARGO_PKG_VERSION"))]));
                 ui.separator();

@@ -19,6 +19,7 @@ static EXTRA: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         ("주보 → 큐시트", "Bulletin → cue sheet"),
         ("출력 설정 (예배당 화면 · OBS)", "Output settings (sanctuary · OBS)"),
         ("출력 설정 (예배당 창 · 모니터 · OBS 숨김)", "Output settings (window · monitor · OBS hide)"),
+        ("출력 설정 (예배당 화면 · 모니터 · OBS 숨김)", "Output settings (sanctuary · monitor · OBS hide)"),
         ("찬양 라이브러리", "Song library"),
         ("그림 · 음악 · 영상 라이브러리", "Image · audio · video library"),
         ("Companion · 장비 (X32 · PTZ)", "Companion · devices (X32 · PTZ)"),

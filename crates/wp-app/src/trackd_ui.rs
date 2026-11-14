@@ -141,7 +141,9 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
             Win::Obs => "OBS 원격 조작",
             Win::Update => "새 버전",
         };
-        egui::Window::new(wp_core::i18n::tr(title)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
+        // 떠 있는 창 기본 자리: 큐시트·메뉴줄을 가리지 않게 (widgets::float_pos)
+        let wid = egui::Id::unique(("wp-float", title));
+        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),
@@ -428,7 +430,7 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
             ui.spinner();
         }
         if en {
-            ui.label(RichText::new(wp_core::i18n::tr_args("{1}초마다 자동으로 확인합니다", &[&wp_core::obs::POLL_SECS])).small().color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr_args("{1}초마다 자동으로 확인합니다", &[&wp_core::obs::POLL_SECS])).small().color(crate::theme::pal().muted));
         }
     });
     if check {
@@ -439,14 +441,14 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
     // 상태는 폴러·동작·연결 확인이 모두 남기는 한 캐시에서 (순서 편집칸 장면 콤보와 같은 출처)
     let st = wp_core::obs::cached();
     if !s.obs_err.is_empty() {
-        ui.label(RichText::new(format!("✗ {}", s.obs_err)).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+        ui.label(RichText::new(format!("✗ {}", s.obs_err)).color(crate::theme::pal().danger_text));
     }
     let at = st["at"].as_i64().unwrap_or(0);
     let ago = if at > 0 { wp_core::i18n::tr_args(" ({1}초 전 확인)", &[&((wp_core::util::now_ms() - at).max(0) / 1000)]) } else { String::new() };
     if let Some(e) = st["error"].as_str() {
-        ui.label(RichText::new(format!("✗ {e}{ago}")).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+        ui.label(RichText::new(format!("✗ {e}{ago}")).color(crate::theme::pal().danger_text));
     } else if st["connected"] == true {
-        ui.label(RichText::new(wp_core::i18n::tr_args("✓ 연결됨 · 지금 장면: {1} · 방송 {2} · 녹화 {3}", &[&(st["scene"].as_str().unwrap_or("")), &(if st["streaming"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") }), &(if st["recording"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") })]) + &ago).color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+        ui.label(RichText::new(wp_core::i18n::tr_args("✓ 연결됨 · 지금 장면: {1} · 방송 {2} · 녹화 {3}", &[&(st["scene"].as_str().unwrap_or("")), &(if st["streaming"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") }), &(if st["recording"] == true { wp_core::i18n::tr_s("중") } else { wp_core::i18n::tr_s("꺼짐") })]) + &ago).color(crate::theme::pal().ok_text));
         let mut act = None;
         ui.horizontal_wrapped(|ui| {
             for sc in st["scenes"].as_array().into_iter().flatten().filter_map(|x| x.as_str()) {
@@ -479,7 +481,8 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
             ui.label(wp_core::i18n::tr("OBS 확인 중…"));
         });
     }
-    ui.label(RichText::new(wp_core::i18n::tr("큐시트 순서의 '송출할 때 자동으로'(actions)에 obsScene · obsStream · obsRecord 를 두면 그 순서를 송출할 때 OBS 가 같이 움직입니다.")).small().color(Color32::GRAY));
+    // 개발자 용어(actions·obsScene) 대신 화면에 보이는 이름으로 (휴리스틱 평가 12번)
+    ui.label(RichText::new(wp_core::i18n::tr("순서 편집칸의 '⚡ 송출할 때 자동으로'에서 OBS 장면·방송·녹화를 고르면, 그 순서를 송출할 때 OBS 도 함께 바뀝니다.")).small().color(crate::theme::pal().muted));
 }
 
 /// 한글 입력 자동 전환 (설정 imeAuto, 윈도우): 글 입력칸에 새로 들어가면 입력기를 한글로.
