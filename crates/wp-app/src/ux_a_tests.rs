@@ -194,6 +194,25 @@ fn left_bible_button_fills_searched_reference() {
     assert_eq!(h.items().last().unwrap()["ref"], "요한복음 3:16");
 }
 
+// ---------------- 3-5 OBS 주소 복사 ----------------
+
+fn obs(_: &mut App, _: &egui::Context, ui: &mut egui::Ui, _: &Snap, _: &mut Vec<Act>) {
+    crate::trackd_ui::obs_urls(ui, 37528);
+}
+
+#[test]
+fn output_settings_obs_urls_copy_with_notice() {
+    let mut h = H::new(two());
+    h.frame(vec![], obs);
+    for i in 0..3 {
+        assert!(seen(&format!("obs-copy-{i}")).is_some(), "주소 {i} 의 [복사]");
+    }
+    h.click("obs-copy-1", obs);
+    let msg = crate::widgets::take_copied(&h.ctx).expect("복사하면 알림이 남아야 함");
+    assert!(msg.contains("투명 자막") && msg.contains("복사했습니다"), "{msg}");
+    assert!(crate::widgets::take_copied(&h.ctx).is_none(), "한 번 꺼내면 지워짐");
+}
+
 // ---------------- 3-2 · 2 되돌리기 ----------------
 
 #[test]

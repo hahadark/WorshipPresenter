@@ -334,6 +334,46 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
             app.out.open(port, app.monitor, true);
         }
     });
+    ui.separator();
+    let port = core.lock().port;
+    obs_urls(ui, port);
+}
+
+/// OBS 에 넣을 주소 3줄 + [복사] (원본 설정 → 출력 'OBS 브라우저 소스 주소' 와 같은 역할, 평가 5번).
+/// 복사하면 '… 주소를 복사했습니다' 알림
+pub(crate) fn obs_urls(ui: &mut egui::Ui, port: u16) {
+    use crate::theme::{self, pal, Weight};
+    use crate::widgets::{self, Btn, Size};
+    use wp_core::i18n::tr;
+    let p = pal();
+    ui.label(theme::rich(tr("OBS에 넣을 주소"), 14.0, Weight::Bold, p.text));
+    ui.add_space(4.0);
+    for (i, (label, path)) in [("예배당 화면 그대로", "/outputs/main"), ("투명 자막", "/outputs/overlay"), ("무대 화면", "/outputs/stage")].into_iter().enumerate() {
+        let url = format!("http://127.0.0.1:{port}{path}");
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            ui.allocate_ui_with_layout(egui::vec2(120.0, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(120.0);
+                ui.add(egui::Label::new(theme::rich(tr(label), 13.0, Weight::Regular, p.text2)).truncate());
+            });
+            egui::Frame::new().fill(p.sunken).stroke(egui::Stroke::new(1.0, p.line)).corner_radius(egui::CornerRadius::same(4)).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+                ui.set_min_width(300.0);
+                ui.add(egui::Label::new(egui::RichText::new(&url).monospace().color(p.text)).selectable(true));
+            });
+            let b = ui.add(Btn::new(tr("복사")).icon("copy").size(Size::Sm).height(26.0).tooltip(tr("주소를 복사해 OBS 브라우저 소스에 붙여 넣습니다")));
+            widgets::mark(&format!("obs-copy-{i}"), b.rect);
+            if b.clicked() {
+                widgets::copy_notice(ui.ctx(), url.clone(), crate::track_c::obs_copied_msg(label));
+            }
+        });
+    }
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.label(theme::rich(tr("OBS → 소스 ＋ → 브라우저 → 주소 붙여 넣기 · 너비·높이 1920×1080"), 12.0, Weight::Regular, p.muted));
+        if ui.link(tr("도움말 › OBS 연결 안내")).clicked() {
+            crate::parity_ui::handle_menu("a:help-obs");
+        }
+    });
 }
 
 /// OBS 창의 동작·연결 확인을 백그라운드에서 (코어 잠금 없이). 상태는 `obs::status` 가 캐시에 남기고, 동작 오류만 BG 로 돌려준다

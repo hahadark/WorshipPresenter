@@ -1283,6 +1283,11 @@ impl eframe::App for App {
             self.apply(acts);
             ctx.request_repaint();
         }
+        // 복사한 뒤 '복사했습니다' 알림 (widgets::copy_notice 를 쓴 모든 복사 지점)
+        if let Some(m) = crate::widgets::take_copied(&ctx) {
+            self.core.lock().notify(m, "ok");
+            ctx.request_repaint();
+        }
         if self.last_flush.elapsed().as_secs_f32() > 1.0 {
             self.core.lock().flush();
             self.last_flush = Instant::now();

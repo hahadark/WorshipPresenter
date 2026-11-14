@@ -668,6 +668,19 @@ thread_local! {
     pub(crate) static HOVER_SEEN: std::cell::RefCell<std::collections::BTreeMap<String, Rect>> = Default::default();
 }
 
+/// 클립보드에 복사하고 알림을 남긴다 (모든 복사 지점 공용). 알림은 다음에 App 이 `take_copied` 로 꺼내 띄운다.
+/// core 를 받지 않는 메뉴·창에서도 쓸 수 있게 egui 임시 자료에 둔다
+pub fn copy_notice(ctx: &egui::Context, text: impl Into<String>, msg: impl Into<String>) {
+    ctx.copy_text(text.into());
+    let m: String = msg.into();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("wp-copied"), m));
+}
+
+/// `copy_notice` 가 남긴 알림 글 (한 번 꺼내면 지워짐)
+pub fn take_copied(ctx: &egui::Context) -> Option<String> {
+    ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new("wp-copied")))
+}
+
 /// 합성 입력 시험용: 이름 붙은 위젯 자리를 남긴다 (시험 빌드가 아니면 아무것도 안 함)
 #[allow(unused_variables)]
 pub fn mark(name: &str, rect: Rect) {

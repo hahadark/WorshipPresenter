@@ -324,11 +324,11 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 pub fn verse_menu(resp: &egui::Response, reference: &str, text: &str) {
     resp.context_menu(|ui| {
         if ui.button(wp_core::i18n::tr("장절·본문 복사")).clicked() {
-            ui.ctx().copy_text(format!("{reference} {text}"));
+            crate::widgets::copy_notice(ui.ctx(), format!("{reference} {text}"), wp_core::i18n::tr("복사했습니다."));
             ui.close();
         }
         if ui.button(wp_core::i18n::tr("장절만 복사")).clicked() {
-            ui.ctx().copy_text(reference.to_string());
+            crate::widgets::copy_notice(ui.ctx(), reference, wp_core::i18n::tr("복사했습니다."));
             ui.close();
         }
     });
