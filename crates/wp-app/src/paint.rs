@@ -11,6 +11,36 @@ pub struct Ctx<'a> {
     pub data_dir: &'a Path,
 }
 
+/// 마지막으로 그린 슬라이드에서 본문·장절·로고·글 영역이 놓인 자리 (템플릿 편집 캔버스가 누른 곳을 알아낼 때 씀)
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Hits {
+    /// 글 영역 (여백 안쪽)
+    pub area: Option<Rect>,
+    /// 본문 글 덩어리
+    pub body: Option<Rect>,
+    /// 장절 줄
+    pub reference: Option<Rect>,
+    /// 로고 그림
+    pub logo: Option<Rect>,
+}
+
+thread_local! {
+    static HITS: std::cell::Cell<Hits> = std::cell::Cell::new(Hits::default());
+}
+
+/// 바로 앞 paint_slide 가 기록한 자리를 꺼낸다 (꺼내면 비워짐)
+pub fn take_hits() -> Hits {
+    HITS.with(|h| h.replace(Hits::default()))
+}
+
+fn hit_set(f: impl FnOnce(&mut Hits)) {
+    HITS.with(|h| {
+        let mut v = h.get();
+        f(&mut v);
+        h.set(v);
+    });
+}
+
 fn num(v: &Value, d: f32) -> f32 {
     v.as_f64().map(|x| x as f32).unwrap_or(d)
 }
@@ -119,7 +149,7 @@ fn paint_gradient(p: &egui::Painter, rect: Rect, g: &str, th: f32) {
         let part = &g[i..];
         let cols = regex_lite_hex(part);
         if let (Some(c1), Some(c2)) = (cols.first(), cols.get(1)) {
-            let center = Pos2::new(rect.center().x, rect.top() + rect.height() * 0.35);
+            let center = if part.contains("at center") || part.contains("circle") { rect.center() } else { Pos2::new(rect.center().x, rect.top() + rect.height() * 0.35) };
             let n = 18;
             for k in (0..n).rev() {
                 let f = (k as f32 + 1.0) / n as f32;
@@ -128,12 +158,29 @@ fn paint_gradient(p: &egui::Painter, rect: Rect, g: &str, th: f32) {
             }
         }
     } else if g.contains("linear-gradient") && hex.len() >= 2 && !g.contains("to top,") {
+        // 방향: 'Ndeg' · 'to right' 등 (없으면 위→아래 180deg). 여러 색은 고르게 나눠 잇는다
+        let deg = linear_angle(g);
+        let (s, c) = deg.to_radians().sin_cos();
+        let dir = Vec2::new(s, -c); // CSS: 0deg = 위쪽, 시계 방향
+        let half = (rect.width() * s.abs() + rect.height() * c.abs()) / 2.0;
         let n = 24;
-        for k in 0..n {
-            let f0 = k as f32 / n as f32;
-            let r = Rect::from_min_max(Pos2::new(rect.left(), rect.top() + rect.height() * f0), Pos2::new(rect.right(), rect.top() + rect.height() * (f0 + 1.0 / n as f32) + 1.0));
-            p.rect_filled(r, 0.0, lerp(hex[0], hex[hex.len() - 1], f0));
+        let mut mesh = egui::Mesh::default();
+        for yi in 0..=n {
+            for xi in 0..=n {
+                let pt = Pos2::new(rect.left() + rect.width() * xi as f32 / n as f32, rect.top() + rect.height() * yi as f32 / n as f32);
+                let f = if half > 0.0 { ((pt - rect.center()).dot(dir) / (2.0 * half) + 0.5).clamp(0.0, 1.0) } else { 0.0 };
+                mesh.colored_vertex(pt, multi_lerp(&hex, f));
+            }
         }
+        for yi in 0..n {
+            for xi in 0..n {
+                let i = (yi * (n + 1) + xi) as u32;
+                let w = (n + 1) as u32;
+                mesh.add_triangle(i, i + 1, i + w + 1);
+                mesh.add_triangle(i, i + w + 1, i + w);
+            }
+        }
+        p.add(mesh);
     }
     // 아래 띠: linear-gradient(to top, #D8102F 0 14px, transparent 14px)
     if let Some(i) = g.find("to top,") {
@@ -143,6 +190,39 @@ fn paint_gradient(p: &egui::Painter, rect: Rect, g: &str, th: f32) {
             p.rect_filled(Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - hh), rect.max), 0.0, col);
         }
     }
+}
+
+/// linear-gradient 의 각도 (도). 'to right' = 90, 'to bottom right' = 135 …, 없으면 180
+pub fn linear_angle(g: &str) -> f32 {
+    let Some(i) = g.find("linear-gradient(") else { return 180.0 };
+    let first = g[i + 16..].split(',').next().unwrap_or("").trim();
+    if let Some(d) = first.strip_suffix("deg") {
+        return d.trim().parse().unwrap_or(180.0);
+    }
+    match first {
+        "to top" => 0.0,
+        "to right" => 90.0,
+        "to left" => 270.0,
+        "to bottom right" | "to right bottom" => 135.0,
+        "to bottom left" | "to left bottom" => 225.0,
+        "to top right" | "to right top" => 45.0,
+        "to top left" | "to left top" => 315.0,
+        _ => 180.0,
+    }
+}
+
+fn multi_lerp(cols: &[Color32], f: f32) -> Color32 {
+    if cols.len() < 2 {
+        return cols.first().copied().unwrap_or(Color32::BLACK);
+    }
+    let x = f * (cols.len() - 1) as f32;
+    let k = (x.floor() as usize).min(cols.len() - 2);
+    lerp(cols[k], cols[k + 1], x - k as f32)
+}
+
+/// CSS 글에서 #색들을 차례대로
+pub fn hex_colors(s: &str) -> Vec<Color32> {
+    regex_lite_hex(s)
 }
 
 fn regex_lite_hex(s: &str) -> Vec<Color32> {
@@ -223,7 +303,9 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
             let pos = lg["position"].as_str().unwrap_or("top-right");
             let x = if pos.ends_with("left") { rect.left() + m } else if pos.ends_with("center") { rect.center().x - sz / 2.0 } else { rect.right() - m - sz };
             let y = if pos.starts_with("bottom") { rect.bottom() - m - sz } else { rect.top() + m };
-            draw_image(ui, c, Rect::from_min_size(Pos2::new(x, y), Vec2::splat(sz)), u, false);
+            let lr = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(sz));
+            hit_set(|h| h.logo = Some(lr));
+            draw_image(ui, c, lr, u, false);
         }
     }
     let Some(s) = slide else { return };
@@ -411,6 +493,9 @@ fn paint_text(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32, vers
         job.append(&format!("\n{}", ft), 0.0, fmt(size * 0.45, fcol.gamma_multiply(0.8), crate::theme::slide_family(false), 1.4));
     }
     let galley = p.layout_job(job);
+    // 장절 줄이 몇 번째 줄인지 (위면 첫 줄, 아래면 번역본·꼬리말 앞 마지막 줄)
+    let tail_rows = usize::from(vl["show"].as_bool().unwrap_or(false) && !version_name.is_empty()) + usize::from(s["footer"].as_str().is_some_and(|x| !x.is_empty()));
+    let ref_row = if show_ref && pos == "top" { galley.rows.first().map(|r| r.rect()) } else if show_ref && pos == "bottom" { galley.rows.iter().rev().nth(tail_rows).map(|r| r.rect()) } else { None };
     let size_v = galley.size() + Vec2::splat(2.0 * bpad);
     let block = place(area, Vec2::new(if boxed { area.width().min(size_v.x.max(wrap + 2.0 * bpad)) } else { size_v.x }, size_v.y), t);
     if boxed {
@@ -427,6 +512,15 @@ fn paint_text(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32, vers
         _ => inner.center().x, // 가운데 정렬 galley 는 x=0 이 가운데
     };
     let origin = Pos2::new(gx, inner.top());
+    {
+        let grect = galley.rect.translate(origin.to_vec2());
+        let rr = ref_row.map(|r| r.translate(origin.to_vec2()));
+        hit_set(|h| {
+            h.area = Some(area);
+            h.body = Some(if boxed { block } else { grect });
+            h.reference = rr;
+        });
+    }
     if t["shadow"]["enabled"].as_bool().unwrap_or(false) {
         let off = Vec2::new(num(&t["shadow"]["x"], 0.0), num(&t["shadow"]["y"], 3.0)) * sc;
         p.galley_with_override_text_color(origin + off + Vec2::splat(0.5), galley.clone(), Color32::from_black_alpha(170));
@@ -449,7 +543,8 @@ fn paint_text(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32, vers
             Align::RIGHT => (area.right(), if pos == "fixed-top" { Align2::RIGHT_TOP } else { Align2::RIGHT_BOTTOM }),
             _ => (rect.center().x, if pos == "fixed-top" { Align2::CENTER_TOP } else { Align2::CENTER_BOTTOM }),
         };
-        p.text(Pos2::new(x, y), a2, rt, rfmt.font_id.clone(), rfmt.color);
+        let rr = p.text(Pos2::new(x, y), a2, rt, rfmt.font_id.clone(), rfmt.color);
+        hit_set(|h| h.reference = Some(rr));
     }
     let _ = Stroke::NONE;
 }
@@ -470,6 +565,11 @@ fn paint_title(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32) {
     }
     let g = p.layout_job(job);
     let o = Pos2::new(area.center().x, area.center().y - g.size().y / 2.0);
+    let br = g.rect.translate(o.to_vec2());
+    hit_set(|h| {
+        h.area = Some(area);
+        h.body = Some(br);
+    });
     if t["shadow"]["enabled"].as_bool().unwrap_or(false) {
         p.galley_with_override_text_color(o + Vec2::new(0.0, 2.0 * sc + 0.5), g.clone(), Color32::from_black_alpha(170));
     }

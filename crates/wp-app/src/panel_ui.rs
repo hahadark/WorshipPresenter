@@ -128,7 +128,7 @@ impl App {
                     ui.label(crate::theme::rich(&self.tb.note, 12.0, crate::theme::Weight::Regular, crate::theme::pal().muted));
                 }
                 if ui.add(crate::widgets::Btn::new(format!("{} ▸", tr("자세히"))).tooltip(tr("굵기·줄 간격·여백·장절 색 등 모든 디자인 항목"))).clicked() {
-                    self.tc.templates.open = true;
+                    self.tc.templates.open_with(&old_id); // 지금 고른 템플릿으로 편집기 열기
                 }
                 if ui.add(crate::widgets::Btn::new(format!("{} {}", tr(if collapsed { "펴기" } else { "접기" }), if collapsed { "▸" } else { "▾" })).tooltip(tr("빠른 설정 접기/펴기"))).clicked() {
                     collapsed = !collapsed;
@@ -166,7 +166,7 @@ impl App {
             });
         }
         if out.more {
-            self.tc.templates.open = true;
+            self.tc.templates.open_with(&old_id);
         }
         if out.changed && !out.fin {
             ui.data_mut(|d| d.insert_temp(draft_id, tpl.clone()));
