@@ -479,7 +479,7 @@ impl App {
             });
             ui.horizontal(|ui| {
                 let empty = filled.trim().is_empty();
-                let tip = if empty { tr("보일 글을 먼저 쓰거나 위에서 틀을 고르세요") } else { tr("지금 바로 예배당 화면에 띠를 뛄웁니다") };
+                let tip = if empty { tr("보일 글을 먼저 쓰거나 위에서 틀을 고르세요") } else { tr("지금 바로 예배당 화면에 띠를 띄웁니다") };
                 if ui.add(Btn::new(tr("예배당 화면에 보이기")).icon("megaphone").kind(Kind::Send).enabled(!empty).tooltip(tip)).clicked() {
                     let mut outs = vec!["main".to_string()];
                     if self.tb.msg_obs { outs.push("overlay".into()); }
@@ -565,7 +565,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 let why = tr("타이머를 먼저 시작하세요");
                 if ui.add(Btn::new(tr("일시정지")).icon("pause").size(Size::Sm).enabled(running).tooltip(if running { tr("잠시 멈춥니다") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("pause", 0.0); }
-                if ui.add(Btn::new(tr("계속")).icon("play").size(Size::Sm).enabled(set && !running).tooltip(if set && !running { tr("멈춘 곳부터 다시") } else if running { tr("이미 가고 있습니다") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("resume", 0.0); }
+                if ui.add(Btn::new(tr("계속")).icon("play").size(Size::Sm).enabled(set && !running).tooltip(if set && !running { tr("멈춘 곳부터 다시") } else if running { tr("이미 진행 중입니다") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("resume", 0.0); }
                 if ui.add(Btn::new(tr("−1분")).size(Size::Sm).enabled(set).tooltip(if set { tr("1분 줄이기") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("add", -1.0); }
                 if ui.add(Btn::new(tr("+1분")).size(Size::Sm).enabled(set).tooltip(if set { tr("1분 늘리기") } else { why.clone() })).clicked() { let _ = self.core.lock().stage_timer("add", 1.0); }
                 if ui.add(Btn::new(tr("초기화")).icon("rotate-ccw").size(Size::Sm).enabled(set).tooltip(if set { tr("타이머를 끕니다 (무대 화면에서 사라짐)") } else { why })).clicked() { let _ = self.core.lock().stage_timer("reset", 0.0); }
@@ -920,6 +920,21 @@ mod tests_ux {
         // 모두 DragValue 범위(1~180분) 안, 표시 시간 첫 칸은 '계속'(0)
         assert!(STAGE_QUICK_MIN.iter().all(|m| (1..=180).contains(m)));
         assert_eq!(MSG_SECS[0], 0);
+    }
+    #[test]
+    fn 회중_메시지_미리보기는_16대_9() {
+        let ctx = egui::Context::default();
+        let mut seen = vec![];
+        for text in ["", "홍길동 어린이 부모님, 유아실로 와 주세요"] {
+            let mut out = ctx.run_pass(Default::default(), |ctx| {
+                egui::Area::new(egui::Id::unique("t-msg-prev")).show(ctx, |ui| { seen.push(message_preview(ui, text).rect); });
+            });
+            out.textures_delta.clear();
+        }
+        for r in seen {
+            assert!((r.width() / r.height() - 16.0 / 9.0).abs() < 0.01, "{r:?}");
+            assert!(r.width() <= 260.0);
+        }
     }
     #[test]
     fn 타이머_빠른단추와_빼기() {
