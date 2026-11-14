@@ -29,7 +29,6 @@ fn remember(ui: &mut egui::Ui, key: &str, value: String) {
 
 impl App {
     pub(crate) fn quick_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-        self.workspace_controls(ui, s, acts);
         let mut slot = selection(ui, "quick-target", "main");
         ui.horizontal_wrapped(|ui| {
             for (id, label) in TARGETS {

@@ -2,7 +2,9 @@
 //! 다른 트랙도 `menus()` 의 목록에 항목을 더하고, 고른 id 를 자기 처리기에서 받으면 된다.
 //! 항목 id 는 "트랙:동작" 처럼 짓는다 (예: "c:settings").
 
-use eframe::egui::{self, RichText};
+use crate::icons;
+use crate::theme::{self, Weight, alpha, pal};
+use eframe::egui::{self, Align2, CornerRadius, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
 
 pub struct Item {
     pub id: &'static str,
@@ -89,28 +91,211 @@ pub fn menus() -> Vec<Menu> {
     ]
 }
 
+
+/// 메뉴 항목 아이콘 (Electron menubar.js 의 `ic` 와 같은 Lucide 이름). 원본에 없는 항목은 가까운 것으로
+pub fn icon_of(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "c:import-bible" => "book-open",
+        "c:usage" => "chart-column",
+        "b:sync" => "refresh-cw",
+        "c:settings" => "settings",
+        "c:slideedit" => "square-pen",
+        "b:cues" => "folder-open",
+        "b:undo" => "undo-2",
+        "b:redo" => "redo-2",
+        "b:print" => "file-text",
+        "c:history" => "history",
+        "b:quick" => "text",
+        "b:message" => "megaphone",
+        "b:overlays" => "layers",
+        "b:stage" => "presentation",
+        "b:macros" => "sparkles",
+        "b:draw" => "brush",
+        "w:workspaces" => "columns-2",
+        "c:commentary" => "book-open",
+        "c:templates" => "palette",
+        "c:themes" => "palette",
+        "c:obsfull" | "c:obspip" => "picture-in-picture-2",
+        "d:output" => "monitor",
+        "b:songs" => "music",
+        "b:lib" => "library",
+        "b:cameras" => "camera",
+        "d:remote" => "smartphone",
+        "d:trigger" => "gamepad-2",
+        "d:devices" => "sliders-horizontal",
+        "d:lan" => "radio",
+        "d:obs" => "radio",
+        "d:bulletin" => "clipboard-paste",
+        "a:home" => "globe",
+        "a:points" => "presentation",
+        "a:preservice" => "images",
+        "b:diagnose" => "list-checks",
+        "b:logbundle" => "download",
+        "b:logs" => "folder-open",
+        "a:help-manual" => "book",
+        "a:help-readme" => "image",
+        "a:help-obs" => "video",
+        "a:help-keys" => "keyboard",
+        "a:help-news" => "sparkles",
+        "a:help-issue" => "bug",
+        "c:about" => "info",
+        "d:update" => "download",
+        _ => return None,
+    })
+}
+
+// control.css .menubar / .mb-top / .mb-drop / .mb-item (2차 다듬기 값: 989~1001줄)
+const TOP_PAD: Vec2 = Vec2::new(11.0, 4.0);
+const TOP_FONT: f32 = 13.0;
+const ITEM_FONT: f32 = 13.0;
+const ITEM_H: f32 = 28.0;
+const DROP_W: f32 = 290.0;
+
+/// 펼친 메뉴 틀 (.mb-drop: panel2 바탕 · line 테두리 · 둥글기 8 · 안쪽 6 · 그림자)
+pub fn drop_frame() -> egui::Frame {
+    let p = pal();
+    egui::Frame::new()
+        .fill(p.panel2)
+        .stroke(Stroke::new(1.0, p.line))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(egui::Margin::same(6))
+        .shadow(egui::Shadow { offset: [0, 10], blur: 30, spread: 0, color: alpha(egui::Color32::BLACK, if p.dark { 0.6 } else { 0.18 }) })
+}
+
+/// 메뉴 줄 맨 위 글자 단추 (.mb-top: 테두리·바탕 없음, 13px 500 text2, hover·열림 때 hover 바탕)
+fn top_button(ui: &mut Ui, id: egui::Id, text: &str, open: bool) -> Response {
+    let p = pal();
+    let g = ui.painter().layout_no_wrap(text.to_string(), theme::font(TOP_FONT, Weight::Medium), p.text2);
+    let size = Vec2::new(g.size().x + TOP_PAD.x * 2.0, (g.size().y + TOP_PAD.y * 2.0).max(24.0));
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let resp = ui.interact(rect, id, Sense::click());
+    if ui.is_rect_visible(rect) {
+        if open || resp.hovered() {
+            ui.painter().rect_filled(rect, CornerRadius::same(4), p.hover);
+        }
+        ui.painter().galley(rect.center() - g.size() / 2.0, g, p.text2);
+    }
+    resp
+}
+
+/// 펼친 메뉴의 한 줄 (.mb-item: 18px 아이콘 칸 · 글 · 오른쪽 kbd, hover 때 sel 바탕).
+/// `check` 가 Some 이면 아이콘 칸에 ✓ (원본의 '✓ ' 앞글자)
+pub fn item_row(ui: &mut Ui, icon: Option<&str>, label: &str, key: &str, check: Option<bool>) -> Response {
+    let p = pal();
+    let w = ui.available_width().max(DROP_W - 12.0);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, ITEM_H), Sense::click());
+    if !ui.is_rect_visible(rect) {
+        return resp;
+    }
+    let hov = resp.hovered() || resp.has_focus();
+    let pt = ui.painter();
+    if hov {
+        pt.rect_filled(rect, CornerRadius::same(4), p.sel);
+    }
+    let ic_rect = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 9.0, rect.center().y), Vec2::splat(16.0));
+    let ic_col = if hov { p.text } else { p.muted };
+    match (check, icon) {
+        (Some(true), _) => icons::paint(ui, ic_rect, "check", p.text),
+        (_, Some(name)) => icons::paint(ui, ic_rect, name, ic_col),
+        _ => {}
+    }
+    let x = rect.left() + 8.0 + 18.0 + 9.0;
+    pt.text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, label, theme::font(ITEM_FONT, Weight::Regular), p.text);
+    if !key.is_empty() {
+        pt.text(Pos2::new(rect.right() - 10.0, rect.center().y), Align2::RIGHT_CENTER, key, theme::font(11.0, Weight::Regular), p.muted);
+    }
+    resp
+}
+
+/// 구분선 (.mb-sep: 1px line, 바깥 5px 4px)
+pub fn sep(ui: &mut Ui) {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 11.0), Sense::hover());
+    ui.painter().hline((r.left() + 4.0)..=(r.right() - 4.0), r.center().y, Stroke::new(1.0, pal().line));
+}
+
+/// 작은 제목 (.mb-head: 11px 700 muted)
+pub fn head(ui: &mut Ui, text: &str) {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::hover());
+    ui.painter().text(Pos2::new(r.left() + 10.0, r.bottom() - 4.0), Align2::LEFT_BOTTOM, text, theme::font(11.0, Weight::Bold), pal().muted);
+}
+
+static TEST_OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// 메뉴 줄을 그리고, 누른 항목 id 를 돌려준다
-pub fn show(ui: &mut egui::Ui, menus: &[Menu]) -> Option<&'static str> {
+pub fn show(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
+    show_with(ui, menus, |_, _| {})
+}
+
+/// 메뉴 줄 + 메뉴마다 끝에 붙이는 동적 항목(`extra(메뉴 이름, ui)`, 예: 보기 → 출력 템플릿 고르기)
+pub fn show_with(ui: &mut Ui, menus: &[Menu], mut extra: impl FnMut(&str, &mut Ui)) -> Option<&'static str> {
     let mut picked = None;
+    let ctx = ui.ctx().clone();
+    ui.spacing_mut().interact_size.y = 24.0; // 줄 높이 = .mb-top 높이 (기본 34 이면 메뉴 줄이 두꺼워짐)
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0; // .menubar { gap: 0 }
+        let ids: Vec<egui::Id> = menus.iter().map(|m| ui.id().with(("mb-top", m.label))).collect();
+        let any_open = ids.iter().any(|id| egui::Popup::is_id_open(&ctx, id.with("popup")));
         for m in menus {
             if m.items.is_empty() {
                 continue;
             }
-            ui.menu_button(wp_core::i18n::tr(m.label), |ui| { // [트랙 D] 영어 화면
+            let label = wp_core::i18n::tr(m.label); // [트랙 D] 영어 화면
+            let id = ui.id().with(("mb-top", m.label));
+            let pid = id.with("popup");
+            let open = egui::Popup::is_id_open(&ctx, pid);
+            let resp = top_button(ui, id, &label, open);
+            // 다른 메뉴가 열려 있으면 올리기만 해도 옮겨 연다 (원본 메뉴 줄 동작)
+            if any_open && !open && resp.hovered() {
+                egui::Popup::open_id(&ctx, pid);
+            }
+            // 점검용: --open-menu 보기 → 처음에 그 메뉴를 펼친 채로 (스크린샷 비교)
+            if !TEST_OPENED.load(std::sync::atomic::Ordering::Relaxed)
+                && std::env::args().position(|x| x == "--open-menu").and_then(|i| std::env::args().nth(i + 1)).is_some_and(|x| x == m.label)
+                && ctx.cumulative_pass_nr() > 3
+            {
+                TEST_OPENED.store(true, std::sync::atomic::Ordering::Relaxed);
+                egui::Popup::open_id(&ctx, pid);
+            }
+            // 펼침 너비: 가장 긴 줄에 맞춘다 (최소 290)
+            let mut w: f32 = DROP_W - 12.0;
+            for i in &m.items {
+                if i.id == "-" {
+                    continue;
+                }
+                let tw = ui.painter().layout_no_wrap(wp_core::i18n::tr(i.label), theme::font(ITEM_FONT, Weight::Regular), pal().text).size().x;
+                let kw = if i.key.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(i.key.to_string(), theme::font(11.0, Weight::Regular), pal().muted).size().x + 12.0 };
+                w = w.max(35.0 + tw + kw + 18.0);
+            }
+            egui::Popup::menu(&resp).id(pid).frame(drop_frame()).gap(2.0).show(|ui| {
+                ui.set_width(w);
+                ui.spacing_mut().item_spacing.y = 0.0;
                 for i in &m.items {
                     if i.id == "-" {
-                        ui.separator();
+                        sep(ui);
                         continue;
                     }
-                    let text = if i.key.is_empty() { wp_core::i18n::tr(i.label) } else { format!("{}      {}", wp_core::i18n::tr(i.label), i.key) }; // [트랙 D] 영어 화면
-                    if ui.button(RichText::new(text)).clicked() {
+                    if item_row(ui, icon_of(i.id), &wp_core::i18n::tr(i.label), i.key, None).clicked() {
                         picked = Some(i.id);
                         ui.close();
                     }
                 }
+                extra(m.label, ui);
             });
         }
     });
     picked
+}
+
+/// 옆으로 펼치는 하위 메뉴 줄 (.mb-hassub: 오른쪽 chevron-right 14px). `content` 가 하위 메뉴 내용
+pub fn sub_row<R>(ui: &mut Ui, icon: Option<&str>, label: &str, content: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    let resp = item_row(ui, icon, label, "", None);
+    let ar = Rect::from_center_size(Pos2::new(resp.rect.right() - 10.0 - 7.0, resp.rect.center().y), Vec2::splat(14.0));
+    icons::paint(ui, ar, "chevron-right", pal().muted);
+    egui::containers::menu::SubMenu::new()
+        .show(ui, &resp, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.set_min_width(220.0); // .mb-sub { min-width: 220px }
+            content(ui)
+        })
+        .map(|r| r.inner)
 }

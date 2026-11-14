@@ -320,63 +320,6 @@ impl App {
             if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Space)) { acts.push(Act::Step(1)) }
         }
     }
-    fn top_bar(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(wp_core::i18n::tr("워십프리젠터")).strong().size(16.0));
-            ui.label(RichText::new(wp_core::i18n::tr("Rust 판 미리보기")).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
-            ui.separator();
-            ui.label(wp_core::i18n::tr("번역본"));
-            let vname = self.versions.iter().find(|v| v.id == s.version).map(|v| v.name.clone()).unwrap_or_default();
-            egui::ComboBox::from_id_salt("ver").selected_text(vname).width(120.0).show_ui(ui, |ui| {
-                for v in &self.versions {
-                    if ui.selectable_label(v.id == s.version, &v.name).clicked() {
-                        acts.push(Act::SetVersion(v.id.clone()));
-                    }
-                }
-            });
-            ui.separator();
-            for (slot, label, active) in [("main", "예배당", &s.active_main), ("overlay", "OBS 자막", &s.active_overlay)] {
-                ui.label(wp_core::i18n::tr(label));
-                let name = s.templates.iter().find(|t| &t.0 == active).map(|t| t.1.clone()).unwrap_or_default();
-                egui::ComboBox::from_id_salt(slot).selected_text(name).width(170.0).show_ui(ui, |ui| {
-                    for (id, n) in &s.templates {
-                        if ui.selectable_label(id == active, n).clicked() {
-                            acts.push(Act::SetTemplate(slot, id.clone()));
-                        }
-                    }
-                });
-            }
-            ui.separator();
-            if ui.selectable_label(s.preview_mode, wp_core::i18n::tr("미리보기 거쳐 송출")).on_hover_text(wp_core::i18n::tr("끄면 누른 본문·순서를 바로 송출합니다")).clicked() {
-                acts.push(Act::TogglePreviewMode);
-            }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let running = self.out.running();
-                let btn = egui::Button::new(if running { wp_core::i18n::tr_s("예배당 화면 끄기") } else { wp_core::i18n::tr_s("예배당 화면 켜기") }).fill(if running { Color32::from_rgb(0x2e, 0x7d, 0x4f) } else { Color32::from_rgb(0x33, 0x38, 0x44) });
-                if ui.add(btn).on_hover_text("Ctrl+Shift+F").clicked() {
-                    acts.push(Act::OutputToggle);
-                }
-                let mname = self.out.monitors.iter().find(|m| m.index == self.monitor).map(|m| format!("{} {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s(" (주)") } else { "" })).unwrap_or_else(|| "모니터".into());
-                egui::ComboBox::from_id_salt("mon").selected_text(mname).show_ui(ui, |ui| {
-                    for m in self.out.monitors.clone() {
-                        let t = format!("{} {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s(" (주 모니터)") } else { "" });
-                        if ui.selectable_label(m.index == self.monitor, t).clicked() {
-                            acts.push(Act::SetMonitor(m.index));
-                        }
-                    }
-                });
-                ui.menu_button(wp_core::i18n::tr("OBS 주소"), |ui| {
-                    for (label, path) in [("예배당 화면 그대로", "/outputs/main"), ("투명 자막", "/outputs/overlay"), ("무대 화면", "/outputs/stage")] {
-                        let url = format!("http://127.0.0.1:{}{}", s.port, path);
-                        if ui.button(wp_core::i18n::tr_args("{1}: {2}  (복사)", &[&label, &url])).clicked() {
-                            ui.ctx().copy_text(url);
-                        }
-                    }
-                });
-            });
-        });
-    }
-
     pub(crate) fn cue_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         ui.horizontal(|ui| {
             ui.label(RichText::new(wp_core::i18n::tr("큐시트")).strong());
@@ -482,8 +425,7 @@ impl App {
     }
 
     pub(crate) fn main_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-        // 원본은 검색칸이 맨 위 도구줄에 있어 편집칸을 켜도 늘 보인다 → 검색칸을 먼저 그린다.
-        self.search_bar(ui, s, acts);
+        // 검색칸은 원본처럼 머리 줄(topbar_ui::search_bar)에 있다.
         let selected = self.sel.filter(|i| *i < s.items.len());
         if selected.is_some() {
             ui.horizontal(|ui| {
@@ -600,33 +542,9 @@ impl App {
         }
     }
 
+    /// 검색 결과만 (검색칸은 머리 줄 topbar_ui::search_bar)
     pub(crate) fn search_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-        self.search_bar(ui, s, acts);
         self.search_results(ui, s, acts);
-    }
-
-    /// 성경 검색칸 줄 (입력·송출·큐시트에 넣기)
-    pub(crate) fn search_bar(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-        ui.horizontal(|ui| {
-            let id = egui::Id::new("search-box");
-            let r = ui.add(egui::TextEdit::singleline(&mut self.search).id(id).hint_text(wp_core::i18n::tr("장절(요3:16, 시 23) 또는 낱말 — Ctrl+K")).desired_width(ui.available_width() - 190.0).font(egui::TextStyle::Heading));
-            if self.focus_search {
-                r.request_focus();
-                self.focus_search = false;
-            }
-            if r.changed() {
-                acts.push(Act::Search(self.search.clone()));
-            }
-            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                if ui.input(|i| i.modifiers.ctrl) { acts.push(Act::SendPreview) }
-                else if self.result["mode"] == "reference" && self.result["ok"] == json!(true) && !s.preview_mode { acts.push(Act::SendPreview) }
-            }
-            if ui.button(wp_core::i18n::tr("송출 (Ctrl+Enter)")).clicked() { acts.push(Act::SendPreview) }
-            if ui.button(wp_core::i18n::tr("큐시트에 넣기")).clicked() && self.result["mode"] == "reference" && self.result["ok"] == json!(true) {
-                let title = self.result["passage"]["title"].clone();
-                acts.push(Act::AddItem("bible", Some(json!({ "title": "성경 봉독", "ref": self.search.trim(), "subtitle": title }))));
-            }
-        });
     }
 
     /// 성경 검색 결과 (장절 본문 또는 낱말 찾기 목록)
@@ -787,40 +705,21 @@ impl eframe::App for App {
         self.run_test(&ctx, &mut acts);
         let s = self.snap();
 
-        crate::track_c::menu_bar(self, ui); // [트랙 C] 메뉴 줄 (트랙 B·D 항목도 여기서 연다)
+        crate::track_c::menu_bar(self, ui, &mut acts); // [트랙 C] 메뉴 줄 (트랙 B·D 항목도 여기서 연다)
         crate::track_c::windows(self, &ctx, &mut acts); // [트랙 C] 설정·템플릿·기록 창
         let s = self.snap(); // [트랙 C] 창에서 바뀐 것 반영
-        egui::Panel::top("top").show(ui, |ui| {
-            ui.add_space(4.0);
+        // 머리 줄 (header.top: panel 바탕 · 아래 line) — topbar_ui.rs
+        let pf = crate::theme::pal().panel;
+        egui::Panel::top("top").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::TOP_MARGIN)).show(ui, |ui| {
             self.top_bar(ui, &s, &mut acts);
-            ui.add_space(4.0);
         });
-        egui::Panel::bottom("status").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let n = |c: &str| s.outputs.iter().filter(|o| o.0 == c).count();
-                ui.label(RichText::new(wp_core::i18n::tr_args("출력 연결  예배당 {1} · OBS 자막 {2} · 무대 {3}", &[&(n("main")), &(n("overlay")), &(n("stage"))])).small());
-                ui.separator();
-                ui.label(RichText::new(format!("http://127.0.0.1:{}", s.port)).small().color(Color32::GRAY));
-                // [트랙 D] OBS 연결/방송/녹화/끊김 (설정에서 켰을 때만, 캐시는 obs 폴러가 채움)
-                if let Some((t, warn)) = crate::trackd_ui::obs_status_line(self.core.lock().settings.get()) { ui.separator(); ui.label(RichText::new(t).small().color(if warn { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::from_rgb(0x8a, 0xe0, 0xa8) })); }
-                if !self.out.error.is_empty() {
-                    ui.separator();
-                    ui.label(RichText::new(&self.out.error).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
-                }
-                if let Some((msg, kind, at)) = &s.toast {
-                    if wp_core::util::now_ms() - at < 8000 {
-                        ui.separator();
-                        let col = match *kind { "error" => Color32::from_rgb(0xff, 0x8a, 0x8a), "warn" => Color32::from_rgb(0xff, 0xb0, 0x4a), _ => Color32::from_rgb(0x8a, 0xe0, 0xa8) };
-                        ui.label(RichText::new(msg).small().color(col));
-                    }
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(RichText::new(wp_core::i18n::tr("F5 이전 · F6 다음 · F9 송출 · F10 숨김 · Ctrl+↑↓ 순서")).small().color(Color32::GRAY));
-                });
-            });
+        // 아래 송출 줄 (footer.bottom: 창 맨 아래 전체 폭, panel 바탕 · 위 line) — topbar_ui.rs
+        egui::Panel::bottom("status").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::BOTTOM_MARGIN)).show(ui, |ui| {
+            self.bottom_bar(ui, &s, &mut acts);
         });
+        self.toast(&ctx, &s);
         if std::mem::take(&mut self.editor_reveal) { self.reveal_editor_panel(); }
-        self.workspace_bar(ui);
+        self.workspace_window(&ctx); // 작업공간 · 패널 배치 창 (고르기는 머리 줄)
         egui::CentralPanel::default_margins().show(ui, |ui| { self.workspace_content(ui, &s, &mut acts); });
         if std::mem::take(&mut self.editor_reveal) {
             self.reveal_editor_panel();
@@ -870,18 +769,19 @@ impl App {
             }
 
  }
+ /// 아래 송출 줄 앞부분 (Electron footer.bottom): 이전 F5 · 다음 F6 · 송출 F9 | 글자 숨김 F10 · 지우기 ▾ · 모두 지우기.
+ /// 가로 줄 안에서 부른다 (topbar_ui::bottom_bar).
  pub(crate) fn workspace_controls(&mut self,ui:&mut egui::Ui,s:&Snap,acts:&mut Vec<Act>){
-            ui.separator();
-            // 아래 송출 줄 (Electron footer.bottom): 이전 F5 · 다음 F6 · 송출 F9 | 글자 숨김 F10 · 지우기 ▾ · 모두 지우기
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
+            {
                 use crate::widgets::{Btn, Kind, Size};
                 use wp_core::i18n::tr;
+                // 묶음(48)과 높이를 맞추려 위아래 4px (가로 줄 가운데 맞춤이 먹지 않아 틀로)
+                egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 4)).show(ui, |ui| { ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0; // .ft-group { gap: 6px }
                 if ui.add(Btn::new(tr("이전")).icon("skip-back").kbd("F5").size(Size::Big).tooltip(tr("이전 슬라이드 (F5)"))).clicked() { acts.push(Act::Step(-1)) }
                 if ui.add(Btn::new(tr("다음")).icon_end("skip-forward").kbd("F6").size(Size::Big).tooltip(tr("다음 슬라이드 (F6)"))).clicked() { acts.push(Act::Step(1)) }
                 if ui.add(Btn::new(tr("송출")).icon("play").kbd("F9").kind(Kind::Send).size(Size::Big).tooltip(tr("미리보기를 송출 (F9)"))).clicked() { acts.push(Act::SendPreview) }
-                ui.add_space(4.0); // .bottom { gap: 10px }
+                }); });
                 crate::widgets::group_frame().show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0; // .clear-group { gap: 4px }
@@ -891,15 +791,15 @@ impl App {
                         if ui.add(b.tooltip(tr("글자(슬라이드)만 숨기기·다시 보이기 (F10)"))).clicked() { acts.push(Act::ToggleClear) }
                         let more_on = s.hide_bg || s.logo;
                         let more = ui.add(Btn::new(tr("지우기 ▾").trim_end_matches(" ▾")).caret().size(Size::Tall).kind(if more_on { Kind::Warn } else { Kind::Default }).tooltip(tr("배경 지우기 · 로고 화면")));
-                        egui::Popup::menu(&more).show(|ui| {
-                            ui.set_min_width(160.0);
-                            if ui.add(egui::Button::selectable(s.hide_bg, tr("배경 지우기"))).clicked() { acts.push(Act::ToggleBg); ui.close(); }
-                            if ui.add(egui::Button::selectable(s.logo, tr("로고 화면"))).clicked() { acts.push(Act::ToggleLogo); ui.close(); }
+                        egui::Popup::menu(&more).frame(crate::menubar::drop_frame()).gap(2.0).show(|ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            if crate::menubar::item_row(ui, Some("image"), &tr("배경 지우기"), "", s.hide_bg.then_some(true)).clicked() { acts.push(Act::ToggleBg); ui.close(); }
+                            if crate::menubar::item_row(ui, Some("flag"), &tr("로고 화면"), "", s.logo.then_some(true)).clicked() { acts.push(Act::ToggleLogo); ui.close(); }
                         });
                         if ui.add(Btn::new(tr("모두 지우기")).kind(Kind::Danger).size(Size::Tall).tooltip(tr("글자·배경·로고를 모두 지움"))).clicked() { acts.push(Act::ClearAll) }
                     });
                 });
-            });            self.video_bar(ui); // [트랙 B] 영상 조작 줄
+            }
 
  }
 }
@@ -916,6 +816,9 @@ impl Drop for App {
 #[cfg(test)]
 #[path = "ui_integration_tests.rs"]
 mod ui_integration_tests;
+/// 머리 줄 · 아래 송출 줄 · 상태 · 알림 (Snap 의 private 필드를 읽도록 자식 모듈)
+#[path = "topbar_ui.rs"]
+mod topbar_ui;
 /// 두 모니터의 보기 전환은 실제 송출 설정을 변경하지 않는다.
 #[derive(Default)]
 struct MonitorViews { preview_obs: bool, live_obs: bool }

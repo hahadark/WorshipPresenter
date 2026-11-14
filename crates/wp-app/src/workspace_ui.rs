@@ -37,61 +37,10 @@ impl WorkspaceUi {
     }
 }
 impl App {
-    pub(crate) fn workspace_bar(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::top("workspace-toolbar").show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(tr("작업공간"));
-                let current = self
-                    .workspace
-                    .state
-                    .saved
-                    .iter()
-                    .find(|s| s.id == self.workspace.state.active)
-                    .map(|s| s.name.as_str())
-                    .unwrap_or_else(|| {
-                        Workspace::BUILTINS
-                            .iter()
-                            .find(|(id, _)| *id == self.workspace.state.active)
-                            .map(|(_, name)| *name)
-                            .unwrap_or("기본")
-                    })
-                    .to_string();
-                let mut pick = None;
-                egui::ComboBox::from_id_salt("workspace-select")
-                    .selected_text(if self.workspace.state.active.starts_with("b-") {
-                        tr(&current)
-                    } else {
-                        current
-                    })
-                    .show_ui(ui, |ui| {
-                        for (id, name) in Workspace::BUILTINS {
-                            if ui
-                                .selectable_label(self.workspace.state.active == id, tr(name))
-                                .clicked()
-                            {
-                                pick = Some(id.to_string())
-                            }
-                        }
-                        for s in &self.workspace.state.saved {
-                            if ui
-                                .selectable_label(self.workspace.state.active == s.id, &s.name)
-                                .clicked()
-                            {
-                                pick = Some(s.id.clone())
-                            }
-                        }
-                    });
-                if let Some(id) = pick {
-                    self.workspace.state.select(&id)
-                }
-                if ui.button(tr("저장 · 관리 · 패널")).clicked() {
-                    self.workspace.open = true
-                }
-                ui.checkbox(&mut self.workspace.state.locked, tr("배치 잠금"));
-            });
-        });
+    /// 작업공간 · 패널 배치 창 (고르기는 머리 줄 topbar_ui::workspace_picker, 원본 .ws-pick)
+    pub(crate) fn workspace_window(&mut self, ctx: &egui::Context) {
         let mut open = self.workspace.open;
-        egui::Window::new(tr("작업공간 · 패널 배치")).open(&mut open).show(ui.ctx(),|ui|{
+        egui::Window::new(tr("작업공간 · 패널 배치")).open(&mut open).show(ctx,|ui|{
    ui.label(tr("제목을 끌어 다른 패널의 좌·우·위·아래에 놓습니다. 경계선을 끌면 크기가 바뀝니다."));
    ui.add_enabled_ui(!self.workspace.state.locked,|ui|{ui.horizontal_wrapped(|ui|{for p in Pane::ALL{let mut visible=self.workspace.state.visible(p);if ui.checkbox(&mut visible,tr(p.title())).changed(){self.workspace.state.toggle(p)}}});
    if ui.button(tr("기본 배치로 복원")).clicked(){self.workspace.state.select("b-default")}});
@@ -107,11 +56,7 @@ impl App {
     pub(crate) fn workspace_content(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         #[cfg(test)]
         self.workspace.observed.clear();
-        // 송출 조작은 패널을 모두 숨겨도 접근할 수 있다.
-        if !self.workspace.state.quick_rendered() {
-            egui::Panel::bottom("workspace-controls")
-                .show(ui, |ui| self.workspace_controls(ui, s, acts));
-        }
+        // 송출 조작은 늘 보이는 아래 송출 줄(topbar_ui::bottom_bar)에 있다.
         self.workspace.targets = Pane::ALL
             .into_iter()
             .filter(|p| self.workspace.state.visible(*p))

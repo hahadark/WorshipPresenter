@@ -60,9 +60,47 @@ pub fn handle_menu(app: &mut App, id: &str) {
     }
 }
 
-/// 상단 메뉴 줄 (top 패널 위). 다른 트랙 항목 id 는 돌려준다
-pub fn menu_bar(app: &mut App, ui: &mut egui::Ui) {
-    let picked = egui::Panel::top("menubar").show(ui, |ui| menubar::show(ui, &menubar::menus())).inner;
+/// 상단 메뉴 줄 (top 패널 위, control.css .menubar: menubar 바탕 · 아래 line 1px · 안쪽 3px 6px).
+/// 정적 항목은 menubar::menus(), 상태에 따라 바뀌는 항목(미리보기 끄기 ✓·보조 화면·출력 템플릿·OBS 주소)은 여기서 덧붙인다.
+pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
+    use wp_core::i18n::tr;
+    let p = crate::theme::pal();
+    let (preview_off, templates, active_main, active_overlay, port) = {
+        let c = app.core.lock();
+        let s = c.settings.get();
+        let tpls: Vec<(String, String)> = c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
+        (s["previewMode"].as_bool() == Some(false), tpls, s["activeTemplates"]["main"].as_str().unwrap_or("").to_string(), s["activeTemplates"]["overlay"].as_str().unwrap_or("").to_string(), c.port)
+    };
+    let frame = egui::Frame::new().fill(p.menubar).inner_margin(egui::Margin::symmetric(6, 3));
+    let picked = egui::Panel::top("menubar").frame(frame).show(ui, |ui| {
+        menubar::show_with(ui, &menubar::menus(), |m, ui| match m {
+            "송출" => {
+                menubar::sep(ui);
+                // 원본 송출 메뉴: '미리보기 끄기 (클릭하면 바로 송출)' ✓ · '보조 화면(예배당) 켜기·끄기'
+                if menubar::item_row(ui, None, &tr("미리보기 끄기 (클릭하면 바로 송출)"), "", Some(preview_off)).clicked() { acts.push(Act::TogglePreviewMode); ui.close(); }
+                if menubar::item_row(ui, Some("monitor"), &tr("보조 화면(예배당) 켜기·끄기"), "Ctrl+Shift+F", None).clicked() { acts.push(Act::OutputToggle); ui.close(); }
+            }
+            "보기" => {
+                // Rust 판 머리 줄에 있던 출력 템플릿 고르기 · OBS 주소 (원본은 빠른 설정 · 설정 → 출력)
+                menubar::sep(ui);
+                menubar::head(ui, &tr("출력"));
+                for (slot, label, active) in [("main", "예배당 화면 템플릿", &active_main), ("overlay", "OBS 자막 템플릿", &active_overlay)] {
+                    menubar::sub_row(ui, Some("palette"), &tr(label), |ui| {
+                        for (id, n) in &templates {
+                            if menubar::item_row(ui, None, n, "", Some(id == active)).clicked() { acts.push(Act::SetTemplate(slot, id.clone())); ui.close(); }
+                        }
+                    });
+                }
+                menubar::sub_row(ui, Some("copy"), &tr("OBS 주소 복사"), |ui| {
+                    for (label, path) in [("예배당 화면 그대로", "/outputs/main"), ("투명 자막", "/outputs/overlay"), ("무대 화면", "/outputs/stage")] {
+                        let url = format!("http://127.0.0.1:{port}{path}");
+                        if menubar::item_row(ui, None, &tr(label), &url, None).clicked() { ui.ctx().copy_text(url); ui.close(); }
+                    }
+                });
+            }
+            _ => {}
+        })
+    }).inner;
     if let Some(id) = picked {
         handle_menu(app, id);
     }
