@@ -312,6 +312,20 @@ impl App {
                                         });
                                         ui.close()
                                     }
+                                    // 예전 ▾ 펼침에 있던 묶음 동작은 여기(탭 오른쪽 클릭)로
+                                    ui.separator();
+                                    if ui.button(tr("그룹 전체 독립창")).clicked() {
+                                        self.workspace.float_group = Some(p);
+                                        ui.close();
+                                    }
+                                    ui.menu_button(tr("그룹 전체 병합"), |ui| {
+                                        for target in self.workspace.targets.clone() {
+                                            if !panes.contains(&target) && ui.button(tr(target.title())).clicked() {
+                                                self.workspace.merge_group = Some((p, target));
+                                                ui.close();
+                                            }
+                                        }
+                                    });
                                 });
                             });
                         }
@@ -329,41 +343,22 @@ impl App {
                         if head.popout {
                             self.workspace.float_group = Some(p);
                         }
-                        // ▾ 펼침: 접기 · 그룹 전체 독립창 · 그룹 전체 병합
+                        // ▾ = 접기·펼치기 바로 (원본 dock.js headerActions: 누르면 toggleCollapse, 다른 메뉴 없음)
                         if let Some(fr) = &head.fold_resp {
-                            egui::Popup::menu(fr).show(|ui| {
-                                ui.set_min_width(180.0);
-                                if ui
-                                    .add_enabled(
-                                        foldable || *collapsed,
-                                        egui::Button::new(tr(if *collapsed {
-                                            "펼치기"
-                                        } else {
-                                            "접기"
-                                        })),
-                                    )
-                                    .clicked()
-                                {
+                            let fr = fr.clone().on_hover_text(tr(if *collapsed {
+                                "펼치기"
+                            } else if foldable {
+                                "접기"
+                            } else {
+                                "위·아래로 나뉜 패널만 접을 수 있습니다."
+                            }));
+                            if fr.clicked() {
+                                if foldable || *collapsed {
                                     *collapsed = !*collapsed;
-                                    ui.close();
+                                } else {
+                                    self.core.lock().notify(tr("위·아래로 나뉜 패널만 접을 수 있습니다."), "info");
                                 }
-                                ui.separator();
-                                if ui.button(tr("그룹 전체 독립창")).clicked() {
-                                    self.workspace.float_group = Some(p);
-                                    ui.close();
-                                }
-                                ui.menu_button(tr("그룹 전체 병합"), |ui| {
-                                    // 렌더 전에 수집한 대상에서 자기 그룹을 제외한다.
-                                    for target in self.workspace.targets.clone() {
-                                        if !panes.contains(&target) {
-                                            if ui.button(tr(target.title())).clicked() {
-                                                self.workspace.merge_group = Some((p, target));
-                                                ui.close();
-                                            }
-                                        }
-                                    }
-                                });
-                            });
+                            }
                         }
                         if !self.workspace.state.locked {
                             if let Some(payload) = egui::DragAndDrop::payload::<Pane>(ui.ctx()) {

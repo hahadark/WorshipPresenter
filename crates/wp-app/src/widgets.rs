@@ -529,7 +529,7 @@ pub fn panel_tabs_dock(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize,
                 let s = 3.0;
                 pt.add(egui::Shape::convex_polygon(vec![Pos2::new(c.x - s, c.y - s * 0.6), Pos2::new(c.x + s, c.y - s * 0.6), Pos2::new(c.x, c.y + s * 0.7)], fg, Stroke::NONE));
                 out.fold |= resp.clicked();
-                out.fold_resp = Some(resp.on_hover_text(wp_core::i18n::tr("패널 메뉴 (접기 · 그룹)")));
+                out.fold_resp = Some(resp); // 툴팁은 접을 수 있는지에 따라 workspace_ui 가 단다
             } else {
                 // ⧉ 두 겹 네모
                 let a = Rect::from_min_size(c + Vec2::new(-6.0, -6.0), Vec2::splat(8.0));
