@@ -583,3 +583,119 @@ pub fn muted(ui: &mut Ui, text: &str) -> Response {
 pub fn text_at(ui: &Ui, pos: Pos2, align: Align2, text: &str, size: f32, w: Weight, color: Color32) -> Rect {
     ui.painter().text(pos, align, text, theme::font(size, w), color)
 }
+
+// ---------------- 마우스 올림 아이콘 단추 (docs/ux-rules.md 3\uc808 '\uc378\ub124\uc77c\u00b7\ubaa9\ub85d') ----------------
+
+/// 썸네일·목록 줄에 마우스를 올리면 뜨는 아이콘 단추 하나
+#[derive(Clone, Debug)]
+pub struct HoverOp {
+    /// 동작 이름 (edit · add · dup · skip · del · up · down · send · cue · bg …)
+    pub op: &'static str,
+    /// Lucide 아이콘 이름
+    pub icon: &'static str,
+    /// 툴팁 (필수)
+    pub tip: String,
+    /// 마우스를 올리면 빨갛게 (지우기)
+    pub danger: bool,
+    /// 오른쪽 위 모서리에 둔다 (✎ 편집처럼). 아니면 왼쪽 위
+    pub right: bool,
+}
+
+impl HoverOp {
+    pub fn new(op: &'static str, icon: &'static str, tip: impl Into<String>) -> Self {
+        Self { op, icon, tip: tip.into(), danger: false, right: false }
+    }
+    pub fn danger(mut self) -> Self {
+        self.danger = true;
+        self
+    }
+    pub fn right(mut self) -> Self {
+        self.right = true;
+        self
+    }
+}
+
+/// 마우스 올림 단추 크기 (피츠의 법칙: 24px 이상)
+pub const HOVER_BTN: f32 = 26.0;
+
+#[cfg(test)]
+thread_local! {
+    /// 합성 입력 시험용: 이번 프레임에 그린 마우스 올림 단추 자리 (동작 이름 → 자리, 마지막에 그린 것)
+    pub(crate) static HOVER_SEEN: std::cell::RefCell<std::collections::BTreeMap<String, Rect>> = Default::default();
+}
+
+/// 반투명 바탕 아이콘 단추 하나 (control.css .sg-ops button: rgba(15,18,24,.85) 바탕 · 흰 글자 · 지우기는 빨강)
+pub fn overlay_btn(ui: &Ui, id: egui::Id, rect: Rect, icon: &str, tip: &str, danger: bool) -> Response {
+    let p = pal();
+    let resp = ui.interact(rect, id, Sense::click());
+    let hov = resp.hovered();
+    let bg = if hov && danger { p.live } else if hov { p.accent_strong } else { alpha(p.sunken, 0.86) };
+    let pt = ui.painter();
+    pt.rect_filled(rect, CornerRadius::same(5), bg);
+    pt.rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, alpha(p.line2, 0.9)), StrokeKind::Inside);
+    icons::paint(ui, rect.shrink(5.5), icon, if hov { Color32::WHITE } else { p.text2 });
+    if hov {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp.on_hover_text(tip)
+}
+
+/// 칸(`cell`) 안 모서리에 단추들을 그린다 — 마우스가 칸 위에 있을 때만. 누른 동작 이름을 돌려준다.
+/// 칸의 클릭 반응(ui.interact)을 먼저 만든 뒤 부르면 단추가 그 위에 놓여 단추만 눌린다.
+pub fn hover_ops(ui: &Ui, id: egui::Id, cell: Rect, ops: &[HoverOp]) -> Option<&'static str> {
+    if ops.is_empty() || !ui.rect_contains_pointer(cell) {
+        return None;
+    }
+    let s = HOVER_BTN.min(cell.height() - 4.0).max(16.0);
+    let inset = if cell.height() >= s + 12.0 { 6.0 } else { ((cell.height() - s) / 2.0).max(0.0) };
+    let (mut lx, mut rx) = (cell.left() + inset, cell.right() - inset);
+    let y = cell.top() + inset;
+    let mut out = None;
+    for o in ops {
+        let r = if o.right {
+            rx -= s;
+            let r = Rect::from_min_size(Pos2::new(rx, y), Vec2::splat(s));
+            rx -= 4.0;
+            r
+        } else {
+            let r = Rect::from_min_size(Pos2::new(lx, y), Vec2::splat(s));
+            lx += s + 4.0;
+            r
+        };
+        #[cfg(test)]
+        HOVER_SEEN.with(|m| m.borrow_mut().insert(o.op.to_string(), r));
+        if overlay_btn(ui, id.with(o.op), r, o.icon, &o.tip, o.danger).clicked() {
+            out = Some(o.op);
+        }
+    }
+    out
+}
+
+/// 작은 칩·줄처럼 단추를 안에 넣기 어려운 것: 칩 오른쪽 위에 떠 있는 단추 줄 (앞 레이어).
+/// 칩과 단추 줄 어디에 마우스가 있어도 보인다.
+pub fn hover_ops_float(ui: &Ui, id: egui::Id, anchor: Rect, ops: &[HoverOp]) -> Option<&'static str> {
+    if ops.is_empty() {
+        return None;
+    }
+    let s = HOVER_BTN;
+    let w = ops.len() as f32 * (s + 4.0) - 4.0;
+    // 칩 위로 겹치게 (칩에서 단추로 옮겨 가는 동안 끊기지 않게)
+    let bar = Rect::from_min_size(Pos2::new((anchor.right() - w).max(anchor.left() - w * 0.5), anchor.top() - s + 6.0), Vec2::new(w, s));
+    let hot = ui.ctx().pointer_hover_pos().is_some_and(|q| anchor.contains(q) || bar.expand(2.0).contains(q));
+    if !hot || !ui.is_rect_visible(anchor) {
+        return None;
+    }
+    let mut out = None;
+    egui::Area::new(id.with("float")).order(egui::Order::Foreground).fixed_pos(bar.min).interactable(true).show(ui.ctx(), |ui| {
+        let (_, _) = ui.allocate_exact_size(bar.size(), Sense::hover());
+        for (j, o) in ops.iter().enumerate() {
+            let r = Rect::from_min_size(Pos2::new(bar.left() + j as f32 * (s + 4.0), bar.top()), Vec2::splat(s));
+            #[cfg(test)]
+            HOVER_SEEN.with(|m| m.borrow_mut().insert(o.op.to_string(), r));
+            if overlay_btn(ui, id.with(o.op), r, o.icon, &o.tip, o.danger).clicked() {
+                out = Some(o.op);
+            }
+        }
+    });
+    out
+}

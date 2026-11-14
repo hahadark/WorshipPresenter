@@ -3,7 +3,10 @@
 //! 화면에 보이는 칸만 요청한다 (ScrollArea::show_rows).
 
 use crate::app::App;
+use crate::theme::pal;
+use crate::widgets::{self, HoverOp};
 use eframe::egui::{self, Color32, RichText, Sense, Stroke, Vec2};
+use wp_core::i18n::tr;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -85,6 +88,15 @@ fn file_uri(p: &Path) -> String {
     format!("file:///{}", p.to_string_lossy().replace('\\', "/").trim_start_matches('/'))
 }
 
+/// 그림 하나를 바로 송출할 덱 (큐시트 연결 없음, slides.rs 그림 슬라이드와 같은 모양)
+pub fn image_deck(f: &Value) -> wp_core::presentation::Deck {
+    wp_core::presentation::Deck {
+        passage: json!({"title":f["name"],"itemTitle":f["name"],"itemType":"image","cueIndex":-1,"cueId":""}),
+        slides: vec![json!({"kind":"image","image":f["url"],"ref":f["name"],"label":"이미지","parts":[]})],
+        index: 0,
+    }
+}
+
 const CELL_W: f32 = 168.0;
 const IMG_H: f32 = CELL_W * 9.0 / 16.0;
 const ROW_H: f32 = IMG_H + 58.0;
@@ -93,6 +105,7 @@ impl App {
     /// 그림·영상 격자: 썸네일 · 이름 · [순서로] [배경] (LIVE 배경이면 빨간 테두리)
     pub(crate) fn lib_grid(&mut self, ui: &mut egui::Ui, files: &[Value]) {
         let ctx = ui.ctx().clone();
+        let p = pal();
         let live_url = self.core.lock().layers.media.as_ref().and_then(|m| m["url"].as_str().map(String::from)).unwrap_or_default();
         let per_row = ((ui.available_width() + 8.0) / (CELL_W + 8.0)).floor().max(1.0) as usize;
         let files: Vec<&Value> = files.iter().take(1000).collect();
@@ -109,6 +122,8 @@ impl App {
                         ui.vertical(|ui| {
                             ui.set_width(CELL_W);
                             let (rect, resp) = ui.allocate_exact_size(Vec2::new(CELL_W, IMG_H), Sense::click());
+                            let hot = ui.rect_contains_pointer(rect);
+                            if resp.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
                             ui.painter().rect_filled(rect, 4.0, Color32::BLACK);
                             match get(&ctx, &self.data_dir, &path) {
                                 Some(t) => {
@@ -123,18 +138,27 @@ impl App {
                                     }
                                 }
                                 None => {
-                                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, if video { "🎞 영상" } else { "…" }, egui::FontId::proportional(14.0), Color32::GRAY);
+                                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, if video { tr("영상") } else { "…".into() }, egui::FontId::proportional(14.0), p.muted);
                                 }
                             }
                             if video {
-                                ui.painter().text(rect.left_bottom() + Vec2::new(6.0, -6.0), egui::Align2::LEFT_BOTTOM, "🎞", egui::FontId::proportional(14.0), Color32::WHITE);
+                                crate::icons::paint(ui, egui::Rect::from_min_size(rect.left_bottom() + Vec2::new(6.0, -22.0), Vec2::splat(16.0)), "film", Color32::WHITE);
                             }
-                            ui.painter().rect_stroke(rect, 4.0, if on { Stroke::new(2.5, Color32::from_rgb(0xe0, 0x3c, 0x3c)) } else if resp.hovered() { Stroke::new(1.5, Color32::from_rgb(0x5b, 0x9c, 0xf6)) } else { Stroke::new(1.0, Color32::from_gray(60)) }, egui::StrokeKind::Inside);
+                            ui.painter().rect_stroke(rect, 4.0, if on { Stroke::new(2.5, p.live) } else if hot { Stroke::new(2.0, p.accent) } else { Stroke::new(1.0, p.line) }, egui::StrokeKind::Inside);
+                            // 마우스 올림 단추 (docs/ux-rules.md 3절): 큐시트에 넣기 · 송출 배경으로(끄기) · 바로 송출
+                            let ops = [
+                                HoverOp::new("cue", "file-plus", tr("큐시트에 넣기 (고른 순서 다음, 두 번 눌러도)")),
+                                if on { HoverOp::new("bgoff", "monitor-off", tr("송출 배경 끄기")).danger() } else { HoverOp::new("bg", "layers", tr("지금 송출 화면의 배경으로 바로 (슬라이드와 따로)")) },
+                                HoverOp::new("send", "play", tr(if video { "이 영상 바로 송출 (큐시트에 넣지 않고)" } else { "이 그림 바로 송출 (큐시트에 넣지 않고)" })),
+                            ];
+                            if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("lib-ops", url.as_str())), rect, &ops) {
+                                act = Some((op, (*f).clone()));
+                            }
                             let name = f["name"].as_str().unwrap_or("").to_string();
                             if resp.double_clicked() {
                                 act = Some(("cue", (*f).clone()));
                             }
-                            ui.add(egui::Label::new(RichText::new(if on { format!("● {name}") } else { name.clone() }).small().color(if on { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::LIGHT_GRAY })).truncate()).on_hover_text(f["path"].as_str().unwrap_or(""));
+                            ui.add(egui::Label::new(RichText::new(if on { format!("● {name}") } else { name.clone() }).small().color(if on { p.danger_text } else { p.text2 })).truncate()).on_hover_text(f["path"].as_str().unwrap_or(""));
                             ui.horizontal(|ui| {
                                 if ui.small_button(wp_core::i18n::tr("순서로")).on_hover_text(wp_core::i18n::tr("고른 순서 다음에 넣기 (두 번 눌러도)")).clicked() {
                                     act = Some(("cue", (*f).clone()));
@@ -165,6 +189,11 @@ impl App {
                     self.add_lib_item(x);
                 }
                 "bg" => self.core.lock().set_background_media(Some(json!({ "type": if video { "video" } else { "image" }, "url": url, "label": name, "fit": "cover" }))),
+                "send" => {
+                    // 바로 송출: 큐시트에 넣지 않고 이 그림·영상 한 장 (영상은 media_ui::video_deck 과 같은 모양)
+                    let deck = if video { crate::media_ui::video_deck(&f) } else { image_deck(&f) };
+                    self.core.lock().send_deck(deck);
+                }
                 _ => self.core.lock().set_background_media(None),
             }
         }

@@ -78,6 +78,15 @@ fn save(ctx: &egui::Context, st: CenterState) {
     ctx.data_mut(|d| d.insert_temp(sid(), st));
 }
 
+/// 시험용: 보기 방식을 정한다 (격자·전체 격자·목록)
+#[cfg(test)]
+pub(crate) fn test_set_view(ctx: &egui::Context, v: SlideView, cue_mode: bool) {
+    let mut st = load(ctx);
+    st.view = v;
+    st.cue_mode = cue_mode;
+    save(ctx, st);
+}
+
 /// cue.js TYPE (종류 이름)
 pub(crate) fn type_name(t: &str) -> &'static str {
     match t {
@@ -285,7 +294,7 @@ fn slide_row(ui: &mut egui::Ui, label: &str, text: &str, pv: bool, live: bool) -
         let pt = ui.painter();
         if pv {
             pt.rect_filled(rect, CornerRadius::ZERO, p.pv_bg);
-        } else if resp.hovered() {
+        } else if resp.contains_pointer() {
             pt.rect_filled(rect, CornerRadius::ZERO, p.hover);
         }
         if pv {
@@ -305,9 +314,60 @@ fn slide_row(ui: &mut egui::Ui, label: &str, text: &str, pv: bool, live: bool) -
     resp
 }
 
-/// 슬라이드 썸네일 칸들 (.slide-grid / .cg-row). 누른 칸 (번호, 두 번 누름)
+/// 썸네일·목록에서 누른 것
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Hit {
+    /// 칸을 누름 (번호, 두 번 누름)
+    Pick(usize, bool),
+    /// 마우스 올림 단추 (번호, 동작)
+    Op(usize, &'static str),
+}
+
+/// Electron slideedit.js EDITABLE: 슬라이드 편집기로 고칠 수 있는 순서 종류
+const EDITABLE: &[&str] = &["song", "text", "title", "bible", "hymn", "image", "video", "slideshow", "camera", "blank"];
+
+/// 슬라이드에 마우스를 올리면 뜨는 단추 (grid.js .sg-edit · .sg-ops, slideedit.js extraOp 규칙).
+/// 글 순서(찬양·공지·제목)와 덧붙인 슬라이드: ＋ · 복제 · ✕ 지우기 / 그 밖(성경·찬송가·그림 등 지울 수 없는 것): ＋ · 건너뛰기.
+/// 모두 ✎ 편집(오른쪽 위). 큐시트 순서가 아니거나(검색한 본문) 음악이면 없음. `all_right` 면 모두 오른쪽에 (목록 줄).
+pub(crate) fn slide_hover_ops(it: Option<&Value>, s: &Value, all_right: bool) -> Vec<widgets::HoverOp> {
+    use widgets::HoverOp;
+    let Some(it) = it else { return vec![] };
+    let ty = it["type"].as_str().unwrap_or("");
+    if !EDITABLE.contains(&ty) {
+        return vec![];
+    }
+    let mut v = vec![HoverOp::new("add", "plus", tr("이 다음에 새 슬라이드"))];
+    if wp_core::slideedit::is_chunk(ty) || s["xid"].is_string() {
+        v.push(HoverOp::new("dup", "copy", tr("복제 (꾸민 것도)")));
+        v.push(HoverOp::new("del", "trash-2", tr("이 슬라이드 지우기 (Ctrl+Z 로 되돌리기)")).danger());
+    } else {
+        v.push(HoverOp::new("skip", "eye-off", tr("건너뛰기 (송출에서 빼기, 원래 내용은 그대로 · 슬라이드 편집에서 다시 보이기)")));
+    }
+    v.push(HoverOp::new("edit", "pencil", tr("이 슬라이드 편집 (Ctrl+E)")).right());
+    if all_right {
+        // 오른쪽 끝부터 놓으므로 거꾸로 (왼쪽→오른쪽: ＋ · 복제/건너뛰기 · 지우기 · ✎)
+        v = v.into_iter().rev().map(|o| o.right()).collect();
+    }
+    v
+}
+
+/// 미리보기·송출 덱이 열린 큐시트의 순서이면 그 번호와 순서
+pub(crate) fn deck_item<'a>(s: &'a Snap, d: &Deck) -> Option<(usize, &'a Value)> {
+    let i = cue_index(d)?;
+    if d.passage["cueId"].as_str() != Some(s.cue_id.as_str()) {
+        return None;
+    }
+    s.items.get(i).map(|it| (i, it))
+}
+
+/// 슬라이드의 편집 키 (decorate 가 붙인 ekey)
+pub(crate) fn slide_key(s: &Value) -> String {
+    s["ekey"].as_str().map(String::from).unwrap_or_else(|| s["src"].as_u64().unwrap_or(0).to_string())
+}
+
+/// 슬라이드 썸네일 칸들 (.slide-grid / .cg-row). 누른 칸 또는 마우스 올림 단추
 #[allow(clippy::too_many_arguments)]
-fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value], tpl: &Value, version: &str, pv: Option<usize>, live: Option<usize>, size: f32) -> Option<(usize, bool)> {
+fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value], tpl: &Value, version: &str, pv: Option<usize>, live: Option<usize>, size: f32, ops: &dyn Fn(&Value) -> Vec<widgets::HoverOp>) -> Option<Hit> {
     let p = pal();
     let gap = 10.0;
     let w = row_width(ui);
@@ -324,12 +384,16 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             let k = row * cols + j;
             let r = Rect::from_min_size(Pos2::new(rr.left() + j as f32 * (cw + gap), rr.top()), Vec2::new(cw, ch));
             let resp = ui.interact(r, id.with(k), Sense::click());
+            #[cfg(test)]
+            widgets::HOVER_SEEN.with(|m| m.borrow_mut().insert(format!("cell-{k}"), r));
             if resp.clicked() {
-                out = Some((k, false));
+                out = Some(Hit::Pick(k, false));
             }
             if resp.double_clicked() {
-                out = Some((k, true));
+                out = Some(Hit::Pick(k, true));
             }
+            // 단추 위에 있어도 칸은 마우스 올림 상태로 (테두리·바탕 강조가 깜빡이지 않게)
+            let hot = resp.contains_pointer();
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
@@ -337,7 +401,7 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
                 continue;
             }
             let pt = ui.painter();
-            pt.rect_filled(r, CornerRadius::same(6), p.sunken);
+            pt.rect_filled(r, CornerRadius::same(6), if hot { p.hover } else { p.sunken });
             let screen = Rect::from_min_size(r.min + Vec2::splat(3.0), Vec2::new(cw - 6.0, sh));
             paint::paint_slide(ui, c, screen, Some(s), tpl, version, true, false, false); // logo=로고 화면(F 로고 켜기) 아님
             let lab = slide_label(s);
@@ -348,10 +412,13 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             let lg = ui.painter().layout_job(lj);
             ui.painter().galley(Pos2::new(r.left() + 9.0, screen.bottom() + 3.0), lg, p.muted);
             let (is_pv, is_live) = (pv == Some(k), live == Some(k));
-            let border = if is_live { p.live } else if is_pv { p.pv } else if resp.hovered() { p.line2 } else { Color32::TRANSPARENT };
+            let border = if is_live { p.live } else if is_pv { p.pv } else if hot { p.line2 } else { Color32::TRANSPARENT };
             ui.painter().rect_stroke(r, CornerRadius::same(6), Stroke::new(3.0, border), StrokeKind::Inside);
             if is_pv && is_live {
                 ui.painter().rect_stroke(r.expand(3.0), CornerRadius::same(8), Stroke::new(2.0, p.pv), StrokeKind::Inside);
+            }
+            if let Some(op) = widgets::hover_ops(ui, id.with(("ops", k)), r, &ops(s)) {
+                out = Some(Hit::Op(k, op));
             }
         }
         ui.add_space(gap - ui.spacing().item_spacing.y);
@@ -623,6 +690,11 @@ impl App {
                 for (k, sl) in d.slides.iter().enumerate() {
                     let l = sl["label"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| (k + 1).to_string());
                     let resp = slide_row(ui, &l, &slide_text(sl, false), k == d.index, live_same == Some(k));
+                    if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("srow", k)), resp.rect, &slide_hover_ops(deck_item(s, d).map(|x| x.1), sl, true)) {
+                        if let Some((i, _)) = deck_item(s, d) {
+                            acts.push(Act::SlideOp(i, slide_key(sl), op));
+                        }
+                    }
                     if k == d.index && st.scroll_key != scroll_key {
                         resp.scroll_to_me(None);
                         st.scroll_key = scroll_key.clone();
@@ -650,13 +722,23 @@ impl App {
         });
         let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
         let size = st.size;
+        let item = deck_item(s, d);
+        let ops = |sl: &Value| slide_hover_ops(item.map(|x| x.1), sl, false);
         egui::ScrollArea::vertical().id_salt("slide-grid").auto_shrink([false, false]).show(ui, |ui| {
             egui::Frame::new().inner_margin(Margin::same(10)).show(ui, |ui| {
-                if let Some((k, dbl)) = thumb_cells(ui, egui::Id::new("sg"), &c, &d.slides, &tpl, d.passage["versionName"].as_str().unwrap_or(""), Some(d.index), live.map(|l| l.deck.index), size) {
-                    acts.push(Act::PreviewIndex(k));
-                    if dbl {
-                        acts.push(Act::SendPreview);
+                match thumb_cells(ui, egui::Id::new("sg"), &c, &d.slides, &tpl, d.passage["versionName"].as_str().unwrap_or(""), Some(d.index), live.map(|l| l.deck.index), size, &ops) {
+                    Some(Hit::Pick(k, dbl)) => {
+                        acts.push(Act::PreviewIndex(k));
+                        if dbl {
+                            acts.push(Act::SendPreview);
+                        }
                     }
+                    Some(Hit::Op(k, op)) => {
+                        if let (Some((i, _)), Some(sl)) = (item, d.slides.get(k)) {
+                            acts.push(Act::SlideOp(i, slide_key(sl), op));
+                        }
+                    }
+                    None => {}
                 }
             });
         });
@@ -741,25 +823,43 @@ impl App {
                                     for (k, sl) in d.slides.iter().enumerate() {
                                         let r = all_line(ui, k, sl, pvk == Some(k), lvk == Some(k));
                                         if r.clicked() {
-                                            hit = Some((k, false));
+                                            hit = Some(Hit::Pick(k, false));
                                         }
                                         if r.double_clicked() {
-                                            hit = Some((k, true));
+                                            hit = Some(Hit::Pick(k, true));
+                                        }
+                                        if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("cgl", i, k)), r.rect, &slide_hover_ops(Some(it), sl, true)) {
+                                            hit = Some(Hit::Op(k, op));
                                         }
                                         ui.add_space(2.0);
                                     }
                                     hit
                                 } else {
                                     ui.add_space(8.0);
-                                    thumb_cells(ui, egui::Id::new(("cg", i)), &c, &d.slides, &sec.tpl, d.passage["versionName"].as_str().unwrap_or(""), pvk, lvk, size)
+                                    let ops = |sl: &Value| slide_hover_ops(Some(it), sl, false);
+                                    thumb_cells(ui, egui::Id::new(("cg", i)), &c, &d.slides, &sec.tpl, d.passage["versionName"].as_str().unwrap_or(""), pvk, lvk, size, &ops)
                                 };
-                                if let Some((k, dbl)) = hit {
-                                    self.sel = Some(i);
-                                    acts.push(Act::PreviewItem(i));
-                                    acts.push(Act::PreviewIndex(k));
-                                    if dbl {
-                                        acts.push(Act::SendPreview);
+                                match hit {
+                                    Some(Hit::Pick(k, dbl)) => {
+                                        self.sel = Some(i);
+                                        acts.push(Act::PreviewItem(i));
+                                        acts.push(Act::PreviewIndex(k));
+                                        if dbl {
+                                            acts.push(Act::SendPreview);
+                                        }
                                     }
+                                    Some(Hit::Op(k, op)) => {
+                                        // grid.js: 그 슬라이드를 먼저 미리보기한 뒤 동작
+                                        self.sel = Some(i);
+                                        if pvk.is_none() {
+                                            acts.push(Act::PreviewItem(i));
+                                        }
+                                        acts.push(Act::PreviewIndex(k));
+                                        if let Some(sl) = d.slides.get(k) {
+                                            acts.push(Act::SlideOp(i, slide_key(sl), op));
+                                        }
+                                    }
+                                    None => {}
                                 }
                             }
                             Ok(_) => {
@@ -930,7 +1030,7 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool) -> Res
             pt.galley(Pos2::new(rect.left() + 8.0 + 12.0 * 1.6 + 10.0, y0), g, p.muted);
         }
         pt.galley(Pos2::new(rect.left() + x_text, rect.top() + 5.0), tg, p.text);
-        let border = if live { p.live } else if pv { p.pv } else if resp.hovered() { p.line2 } else { Color32::TRANSPARENT };
+        let border = if live { p.live } else if pv { p.pv } else if resp.contains_pointer() { p.line2 } else { Color32::TRANSPARENT };
         pt.rect_stroke(rect, CornerRadius::same(4), Stroke::new(2.0, border), StrokeKind::Inside);
     }
     if resp.hovered() {

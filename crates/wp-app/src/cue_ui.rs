@@ -247,6 +247,8 @@ pub struct RowState {
 pub struct RowOut {
     pub resp: egui::Response,
     pub edit: bool,
+    /// 마우스 올림 ▶ 단추: 이 순서 송출
+    pub send: bool,
 }
 
 const NO_W: f32 = 18.0;
@@ -274,14 +276,29 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
     }
     let h = 1.0 + 7.0 + body_h.max(ICO) + 7.0 + 1.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click_and_drag());
-    let hovered = resp.hovered();
+    // 단추 위에 있어도 줄은 마우스 올림 상태 (docs/ux-rules.md 3절: 고른 줄만이 아니라 올린 줄에도 연필·송출)
+    let hovered = ui.rect_contains_pointer(rect);
     let mut edit = false;
-    // 연필 단추 (.cue-edit: 고른 줄·마우스 올린 줄에서만 보임)
+    let mut send = false;
+    // 연필 단추 (.cue-edit: 고른 줄·마우스 올린 줄에서만 보임) · 그 왼쪽 ▶ 송출 (마우스 올린 줄)
     let inner_r = rect.right() - 1.0 - 6.0;
     let edit_rect = Rect::from_min_size(Pos2::new(inner_r - EDIT_W, rect.top() + 8.0), Vec2::new(EDIT_W, EDIT_H));
+    let send_rect = edit_rect.translate(Vec2::new(-(EDIT_W + 4.0), 0.0));
+    let sr = hovered.then(|| ui.interact(send_rect, resp.id.with("send"), Sense::click()).on_hover_text(tr(if ty == "audio" { "이 음악 재생 (두 번 누르기와 같음)" } else { "이 순서 바로 송출 (두 번 누르기와 같음)" })));
+    if sr.as_ref().is_some_and(|r| r.clicked()) {
+        send = true;
+    }
     let er = ui.interact(edit_rect, resp.id.with("edit"), Sense::click()).on_hover_text(tr("이 순서 고치기 (F2)"));
     if er.clicked() {
         edit = true;
+    }
+    #[cfg(test)]
+    if hovered {
+        crate::widgets::HOVER_SEEN.with(|m| {
+            let mut m = m.borrow_mut();
+            m.insert(format!("cue-edit-{i}"), edit_rect);
+            m.insert(format!("cue-send-{i}"), send_rect);
+        });
     }
     if ui.is_rect_visible(rect) {
         let pt = ui.painter();
@@ -312,7 +329,7 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         icons::paint(ui, Rect::from_center_size(ico.center(), Vec2::splat(16.0)), icons::for_type(ty), ink);
         x += ICO + GAP;
         // 오른쪽: 연필 단추 자리 + 예정 시각
-        let mut right = inner_r - EDIT_W - GAP;
+        let mut right = inner_r - EDIT_W - GAP - if hovered { EDIT_W + 4.0 } else { 0.0 };
         if let Some((t, dur)) = &st.time {
             let a = widgets::text_at(ui, Pos2::new(right - 4.0, top), Align2::RIGHT_TOP, t, 12.0, Weight::Regular, p.muted);
             if *dur > 0 {
@@ -340,11 +357,17 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
             pt.rect(edit_rect, CornerRadius::same(theme::RADIUS), eb, Stroke::new(p.border_w, ebd), StrokeKind::Inside);
             icons::paint(ui, Rect::from_center_size(edit_rect.center(), Vec2::splat(16.0)), "pencil", p.text);
         }
+        if let Some(sr) = &sr {
+            let h = sr.hovered();
+            let (eb, ebd) = if h { (p.live, p.live) } else { (p.panel2, p.line) };
+            pt.rect(send_rect, CornerRadius::same(theme::RADIUS), eb, Stroke::new(p.border_w, ebd), StrokeKind::Inside);
+            icons::paint(ui, Rect::from_center_size(send_rect.center(), Vec2::splat(16.0)), "play", if h { Color32::WHITE } else { p.text });
+        }
     }
-    if hovered || er.hovered() {
+    if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    RowOut { resp, edit }
+    RowOut { resp, edit, send }
 }
 
 /// 예정 시간 분 표기
