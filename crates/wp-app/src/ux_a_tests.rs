@@ -239,6 +239,61 @@ fn studio_split_button_picks_mode_and_band_returns() {
     assert!(preview_mode(&h), "띠의 [미리보기로 돌아가기]");
 }
 
+// ---------------- 3-8 편집칸 높이 · 크게 · 순서 삭제 ----------------
+
+fn main(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    app.main_panel(ui, s, acts);
+}
+fn frac(h: &H) -> Option<f64> {
+    h.app.core.lock().settings.get()["rsEditorFrac"].as_f64()
+}
+
+#[test]
+fn editor_splitter_drag_changes_and_remembers_height() {
+    let mut h = H::new(two());
+    h.app.sel = Some(0);
+    h.frame(vec![], main);
+    h.frame(vec![], main);
+    let r = seen("editor-split").expect("편집칸 아래 구분선");
+    let from = r.center();
+    let to = from + Vec2::new(0.0, 120.0);
+    h.frame(vec![Event::PointerMoved(from)], main);
+    h.frame(vec![Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Default::default() }], main);
+    for k in 1..=4 {
+        h.frame(vec![Event::PointerMoved(from.lerp(to, k as f32 / 4.0))], main);
+    }
+    h.frame(vec![Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Default::default() }], main);
+    h.frame(vec![], main);
+    let f = frac(&h).expect("놓으면 높이를 설정에 기억");
+    assert!(f > 0.5, "아래로 끌면 커져야 함: {f}");
+    h.frame(vec![], main);
+    let r2 = seen("editor-split").unwrap();
+    assert!(r2.center().y > from.y + 60.0, "다시 그려도 바뀐 높이 그대로");
+}
+
+#[test]
+fn editor_big_button_fills_panel_and_back() {
+    let mut h = H::new(two());
+    h.app.sel = Some(0);
+    h.click("editor-big", main);
+    assert!(super::editor_big(&h.ctx));
+    assert!(seen("editor-split").is_none(), "크게 보면 구분선·검색 결과가 없다");
+    h.click("editor-big", main);
+    assert!(!super::editor_big(&h.ctx));
+    assert!(seen("editor-split").is_some());
+}
+
+#[test]
+fn editor_delete_button_removes_with_undo_toast() {
+    let mut h = H::new(two());
+    h.app.sel = Some(1);
+    h.click("editor-del", main);
+    assert_eq!(h.items().len(), 1);
+    let (msg, act) = h.toast();
+    assert!(msg.contains("'설교' 순서를 삭제"), "{msg}");
+    assert_eq!(act, Some("undo"));
+}
+
 // ---------------- 3-2 · 2 되돌리기 ----------------
 
 #[test]

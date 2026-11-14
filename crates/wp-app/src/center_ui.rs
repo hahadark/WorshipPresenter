@@ -1079,10 +1079,12 @@ pub(crate) struct CeHead {
     pub dup: bool,
     pub del: bool,
     pub close: bool,
+    /// '크게' / '작게' 누름
+    pub big: bool,
 }
 
-/// .ce-head: 종류 아이콘(26×26 sunken, hl) · 'N번 성경' · (빈 칸) · ▲ ▼ · 파란 '슬라이드 편집' · 복제 · 지우기 · ✕
-pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, saved: &str) -> CeHead {
+/// .ce-head: 종류 아이콘(26×26 sunken, hl) · 'N. 순서 이름' + 종류 꼬리표 · (빈 칸) · ▲ ▼ · 파란 '슬라이드 편집' · 복제 | 순서 삭제 | 크게 · ✕
+pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved: &str, big_on: bool) -> CeHead {
     let p = pal();
     let mut h = CeHead::default();
     ui.horizontal(|ui| {
@@ -1090,12 +1092,27 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, saved: &str) -> CeH
         let (r, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
         ui.painter().rect_filled(r, CornerRadius::same(6), p.sunken);
         icons::paint(ui, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icons::for_type(ty), p.hl);
-        ui.label(rich(tr_args("{1}번 {2}", &[&(i + 1), &tr(type_name(ty))]), 14.0, Weight::Bold, p.text));
+        // 목록에서 누른 이름 그대로 ('6. 설교') + 종류 꼬리표 (평가 20번). 이름이 없으면 예전처럼 'N번 종류'
+        let title = title.trim();
+        if title.is_empty() {
+            ui.label(rich(tr_args("{1}번 {2}", &[&(i + 1), &tr(type_name(ty))]), 14.0, Weight::Bold, p.text));
+        } else {
+            ui.add(egui::Label::new(rich(format!("{}. {title}", i + 1), 14.0, Weight::Bold, p.text)).truncate().selectable(false));
+            ui.label(rich(tr(type_name(ty)), 12.0, Weight::Regular, p.muted));
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // 오른쪽부터: ✕ · 지우기 · 복제 · 슬라이드 편집 · ▼ · ▲ · 저장 표시
+            // 오른쪽부터: ✕ · 크게 | 순서 삭제 | 복제 · 슬라이드 편집 · ▼ · ▲ · 저장 표시
             let sm = |t: &str| Btn::new(t).size(Size::Sm).height(26.0);
             h.close = ui.add(Btn::icon_only("x").size(Size::Sm).height(26.0).tooltip(tr("편집칸 닫기"))).clicked();
-            h.del = ui.add(sm(&tr("지우기")).tooltip(tr("이 순서 지우기 (Delete)"))).clicked();
+            let br = ui.add(sm(&if big_on { tr("작게") } else { tr("크게") }).icon("maximize").selected(big_on).tooltip(if big_on { tr("편집칸을 원래 높이로 (검색 결과가 다시 보임)") } else { tr("편집칸이 본문 패널 전체를 쓰게 (긴 가사·공지 고칠 때)") }));
+            widgets::mark("editor-big", br.rect);
+            h.big = br.clicked();
+            widgets::vsep(ui, 20.0);
+            // 되돌릴 수 있지만 큰 변화라 빨간 휴지통 + '순서 삭제', 복제와 구분선으로 떼어 둔다 (평가 9번)
+            let dr = ui.add(sm(&tr("순서 삭제")).icon("trash-2").icon_color(p.live).kind(widgets::Kind::Danger).tooltip(tr("이 순서를 큐시트에서 삭제 (Delete) — 알림의 [되돌리기] 나 Ctrl+Z 로 되살림")));
+            widgets::mark("editor-del", dr.rect);
+            h.del = dr.clicked();
+            widgets::vsep(ui, 20.0);
             h.dup = ui.add(sm(&tr("복제")).tooltip(tr("이 순서 복제"))).clicked();
             if ty != "audio" {
                 h.slide_edit = ui.add(sm(&tr("슬라이드 편집")).icon("square-pen").kind(crate::widgets::Kind::Primary).tooltip(tr("슬라이드마다 글상자 위치·꾸미기, 글·그림·도형 덧붙이기 (Ctrl+E)"))).clicked();

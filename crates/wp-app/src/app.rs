@@ -498,15 +498,50 @@ impl App {
         ui.spacing_mut().item_spacing.y = 0.0;
         self.center_head(ui, s, &mut editor_on, acts);
         self.editor_on = editor_on;
-        // 원본처럼 순서를 골랐을 때만 편집칸을 보이고, 높이는 본문 패널의 절반 안쪽(control.css .cue-editor max-height 46%)으로 제한해 검색 결과가 가려지지 않게 한다.
+        // 원본처럼 순서를 골랐을 때만 편집칸을 보인다. 높이는 기본 본문 패널의 46%(control.css .cue-editor max-height 46%),
+        // 아래 구분선을 끌어 바꾸고(설정 rsEditorFrac 에 기억, 두 번 누르면 처음대로), 머리의 '크게' 로 본문 패널 전체를 쓴다 (평가 8번).
+        let mut big = false;
         if let (true, Some(i)) = (self.editor_on, selected) {
-            let h = (ui.available_height() * 0.46).max(160.0);
-            ui.allocate_ui(egui::vec2(ui.available_width(), h), |ui| {
+            big = editor_big(ui.ctx());
+            let avail = ui.available_height();
+            let frac_id = egui::Id::new("editor-frac-drag");
+            let saved = self.core.lock().settings.get()["rsEditorFrac"].as_f64().unwrap_or(EDITOR_FRAC as f64) as f32;
+            let frac = ui.data(|d| d.get_temp::<f32>(frac_id)).unwrap_or(saved);
+            let h = if big { avail } else { editor_height(avail, frac) };
+            let w = ui.available_width();
+            ui.allocate_ui(egui::vec2(w, h), |ui| {
                 ui.set_max_height(h);
+                if !big { ui.set_min_height(h); }
                 self.editor(ui, i, &s.items[i], acts);
             });
+            if !big {
+                // 끌어서 높이를 바꾸는 구분선 (8px, 가운데 손잡이)
+                let p = crate::theme::pal();
+                let (r, resp) = ui.allocate_exact_size(egui::vec2(w, 8.0), Sense::click_and_drag());
+                crate::widgets::mark("editor-split", r);
+                let resp = resp.on_hover_text(wp_core::i18n::tr("끌어서 편집칸 높이 바꾸기 (두 번 누르면 처음 높이)"));
+                let hot = resp.hovered() || resp.dragged();
+                if hot { ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical); }
+                let c = r.center();
+                ui.painter().line_segment([egui::pos2(c.x - 20.0, c.y), egui::pos2(c.x + 20.0, c.y)], egui::Stroke::new(3.0, if hot { p.accent } else { p.line2 }));
+                if resp.dragged() {
+                    let nf = ((h + resp.drag_delta().y) / avail.max(1.0)).clamp(EDITOR_FRAC_MIN, EDITOR_FRAC_MAX);
+                    ui.data_mut(|d| d.insert_temp(frac_id, nf));
+                }
+                if resp.drag_stopped() {
+                    let nf = ui.data(|d| d.get_temp::<f32>(frac_id)).unwrap_or(frac);
+                    self.core.lock().settings.update(|d| d["rsEditorFrac"] = json!(nf));
+                    ui.data_mut(|d| d.remove::<f32>(frac_id));
+                }
+                if resp.double_clicked() {
+                    self.core.lock().settings.update(|d| d["rsEditorFrac"] = json!(EDITOR_FRAC));
+                    ui.data_mut(|d| d.remove::<f32>(frac_id));
+                }
+            }
         }
-        self.center_body(ui, s, acts);
+        if !big {
+            self.center_body(ui, s, acts);
+        }
     }
 
     /// 순서 편집칸 (Electron cue.js renderEditor): 머리 줄 카드 + 이름표-입력칸 2단. 입력하면 바로 저장
@@ -557,7 +592,7 @@ impl App {
         let frame = egui::Frame::new().fill(p.panel2).inner_margin(egui::Margin { left: 14, right: 14, top: 8, bottom: 10 }).show(ui, |ui| {
             ui.set_width(full - 28.0);
             ui.spacing_mut().item_spacing.y = 0.0;
-            head = ce_head(ui, i, &ty, "");
+            head = ce_head(ui, i, &ty, it["title"].as_str().unwrap_or(""), "", editor_big(ui.ctx()));
             if ty == "camera" {
                 scan_bar(ui, &self.core);
             }
@@ -740,6 +775,11 @@ impl App {
         }
         if head.close {
             self.editor_on = false;
+            set_editor_big(ui.ctx(), false);
+        }
+        if head.big {
+            let b = editor_big(ui.ctx());
+            set_editor_big(ui.ctx(), !b);
         }
         if head.slide_edit {
             acts.push(Act::PreviewItem(i));
@@ -1174,6 +1214,24 @@ fn layer_chip(ui: &mut egui::Ui, ly: &Layer) -> egui::Response {
     pt.galley(xr.center() - xg.size() / 2.0, xg, xfg);
     if hovered { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
     resp.on_hover_text(ly.tip.clone())
+}
+
+/// 편집칸 높이: 본문 패널에서 차지하는 비율 (기본·최소·최대)
+const EDITOR_FRAC: f32 = 0.46;
+const EDITOR_FRAC_MIN: f32 = 0.2;
+const EDITOR_FRAC_MAX: f32 = 0.85;
+
+/// 비율 → 편집칸 높이 (너무 작거나 검색 결과를 다 덮지 않게)
+fn editor_height(avail: f32, frac: f32) -> f32 {
+    (avail * frac.clamp(EDITOR_FRAC_MIN, EDITOR_FRAC_MAX)).clamp(160.0_f32.min(avail), (avail - 80.0).max(160.0))
+}
+
+/// '크게': 편집칸이 본문 패널 전체를 쓰는지 (창을 닫으면 처음처럼)
+pub(crate) fn editor_big(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::new("editor-big"))).unwrap_or(false)
+}
+fn set_editor_big(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("editor-big"), on));
 }
 
 static SHOT_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
