@@ -189,14 +189,10 @@ fn pos_grid(ui: &mut egui::Ui, valign: &str, col_align: &str) -> Option<(&'stati
             let on = *v == valign && *a == col_align;
             let (bg, border) = if on { (p.sel, p.accent) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
             ui.painter().rect(cr, CornerRadius::same(3), bg, Stroke::new(1.0, border), StrokeKind::Inside);
-            // 안쪽 막대 (높이 4, 너비 60%, 왼쪽·가운데·오른쪽 맞춤)
-            let bw = cw * 0.6;
-            let bx = match *a {
-                "left" => cr.left() + 3.0,
-                "right" => cr.right() - 3.0 - bw,
-                _ => cr.center().x - bw / 2.0,
-            };
-            ui.painter().rect_filled(Rect::from_min_size(Pos2::new(bx, cr.center().y - 2.0), Vec2::new(bw, 4.0)), CornerRadius::same(2), if on { p.text } else { p.muted2 });
+            // 안쪽 표시: Electron 에서는 <i> 가 폭 없는 격자 칸에 들어가 왼쪽·오른쪽 칸에만 작은 세로 점(2×5)으로 보인다
+            if *a != "center" {
+                ui.painter().rect_filled(Rect::from_center_size(cr.center(), Vec2::new(2.0, 5.0)), CornerRadius::same(1), if on { p.text } else { p.muted2 });
+            }
             if resp.clicked() {
                 out = Some((*v, *a));
             }
