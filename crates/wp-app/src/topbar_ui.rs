@@ -302,7 +302,7 @@ impl App {
             if qon {
                 q = q.text_color(pal().accent).icon_color(pal().accent).selected(true);
             }
-            if ui.add(q).clicked() {
+            if egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 7)).show(ui, |ui| ui.add(q)).inner.clicked() {
                 self.tb.quick = !qon;
             }
             // 보조 화면 꺼짐/켜짐 (.big.output-toggle, 켜짐 = pv 바탕·테두리)
@@ -312,7 +312,7 @@ impl App {
                 .size(Size::Big)
                 .kind(if running { Kind::Pv } else { Kind::Default })
                 .tooltip(tr("보조 모니터(예배당 화면) 전체 화면 출력을 켜고 끕니다"));
-            if ui.add(b).clicked() {
+            if egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 4)).show(ui, |ui| ui.add(b)).inner.clicked() {
                 acts.push(Act::OutputToggle);
             }
             widgets::vsep(ui, 24.0);

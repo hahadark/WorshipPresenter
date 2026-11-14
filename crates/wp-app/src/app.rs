@@ -775,12 +775,13 @@ impl App {
             {
                 use crate::widgets::{Btn, Kind, Size};
                 use wp_core::i18n::tr;
-                ui.scope(|ui| {
+                // 묶음(48)과 높이를 맞추려 위아래 4px (가로 줄 가운데 맞춤이 먹지 않아 틀로)
+                egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 4)).show(ui, |ui| { ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0; // .ft-group { gap: 6px }
                 if ui.add(Btn::new(tr("이전")).icon("skip-back").kbd("F5").size(Size::Big).tooltip(tr("이전 슬라이드 (F5)"))).clicked() { acts.push(Act::Step(-1)) }
                 if ui.add(Btn::new(tr("다음")).icon_end("skip-forward").kbd("F6").size(Size::Big).tooltip(tr("다음 슬라이드 (F6)"))).clicked() { acts.push(Act::Step(1)) }
                 if ui.add(Btn::new(tr("송출")).icon("play").kbd("F9").kind(Kind::Send).size(Size::Big).tooltip(tr("미리보기를 송출 (F9)"))).clicked() { acts.push(Act::SendPreview) }
-                });
+                }); });
                 crate::widgets::group_frame().show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0; // .clear-group { gap: 4px }
