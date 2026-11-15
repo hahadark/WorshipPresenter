@@ -159,6 +159,14 @@ impl App {
                             if crate::widgets::click2(ui, ("lib-thumb", url.as_str()), &resp) == crate::widgets::Click::Double {
                                 act = Some(("cue", (*f).clone()));
                             }
+                            // ctxmenu.js libraryMenu: 큐시트에 넣기 (더블클릭) · 그 칸의 단추들
+                            let mops = [
+                                if on { crate::ctx_ui::LibOp::new("bgoff", Some("monitor-off"), tr("송출 배경 끄기")).danger() } else { crate::ctx_ui::LibOp::new("bg", Some("layers"), tr("지금 송출 화면의 배경으로 바로 (슬라이드와 따로)")) },
+                                crate::ctx_ui::LibOp::new("send", Some("play"), tr(if video { "이 영상 바로 송출 (큐시트에 넣지 않고)" } else { "이 그림 바로 송출 (큐시트에 넣지 않고)" })),
+                            ];
+                            if let Some(op) = crate::ctx_ui::lib_menu(&resp, &name, true, &mops) {
+                                act = Some((op, (*f).clone()));
+                            }
                             ui.add(egui::Label::new(RichText::new(if on { format!("● {name}") } else { name.clone() }).small().color(if on { p.danger_text } else { p.text2 })).truncate()).on_hover_text(f["path"].as_str().unwrap_or(""));
                             ui.horizontal(|ui| {
                                 if ui.small_button(wp_core::i18n::tr("순서로")).on_hover_text(wp_core::i18n::tr("고른 순서 다음에 넣기 (두 번 눌러도)")).clicked() {

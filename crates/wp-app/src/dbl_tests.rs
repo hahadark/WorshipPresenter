@@ -522,3 +522,92 @@ fn dbl_library_image_cell_adds_image_item_once() {
     h.frame(vec![], lib);
     assert_eq!(count(&h, "image"), 1, "두 번 = 그림 순서로 넣기 (한 번만)");
 }
+
+// ---------------- 12·13) 오른쪽 클릭 메뉴: '▶ 바로 송출' · '큐시트에 넣기 (더블클릭)' (ctxmenu.js:141, 205) ----------------
+
+fn rclick(h: &mut H, name: &str, f: super::auditc_tests::Draw) {
+    h.frame(vec![], f);
+    h.frame(vec![], f);
+    let p = seen(name).unwrap_or_else(|| panic!("그린 자리 없음: {name}")).center();
+    h.frame(vec![Event::PointerMoved(p)], f);
+    for pressed in [true, false] {
+        h.frame(vec![Event::PointerButton { pos: p, button: PointerButton::Secondary, pressed, modifiers: Default::default() }], f);
+    }
+    h.frame(vec![], f);
+    h.frame(vec![], f);
+}
+/// 열린 메뉴의 항목을 누른다
+fn menu_pick(h: &mut H, item: &str, f: super::auditc_tests::Draw) {
+    let p = seen(item).unwrap_or_else(|| panic!("메뉴 항목 없음: {item} (있는 것: {:?})", widgets::HOVER_SEEN.with(|m| m.borrow().keys().filter(|k| k.starts_with("menu")).cloned().collect::<Vec<_>>()))).center();
+    h.click_at(p, f);
+    h.frame(vec![], f);
+    h.frame(vec![], f);
+}
+fn searched(h: &mut H) {
+    h.app.search = "요3:16-17".into();
+    h.app.apply(vec![Act::Search("요3:16-17".into())]);
+    crate::center_ui::test_set_view(&h.ctx, SlideView::List, false);
+}
+
+#[test]
+fn verse_menu_send_now_goes_live_like_double_click() {
+    let mut h = H::new(titles());
+    searched(&mut h);
+    rclick(&mut h, "row-1", center_only);
+    assert!(seen("menu-preview").is_some() && seen("menu-cue").is_some(), "본문 줄 메뉴: 미리보기 · 바로 송출 · 큐시트에 넣기");
+    menu_pick(&mut h, "menu-send", center_only);
+    let c = h.app.core.lock();
+    let l = c.pres.live.as_ref().expect("▶ 바로 송출 = 송출");
+    assert!(serde_json::to_string(&l.deck.slides[l.deck.index]).unwrap().contains("보내신"));
+}
+
+#[test]
+fn verse_menu_add_to_cue_inserts_bible_item_after_selection() {
+    let mut h = H::new(titles());
+    searched(&mut h);
+    h.app.sel = Some(0);
+    rclick(&mut h, "row-0", center_only);
+    menu_pick(&mut h, "menu-cue", center_only);
+    let its = items(&h);
+    assert_eq!(its.len(), 4);
+    assert_eq!(its[1]["type"], json!("bible"), "고른 순서 다음에: {:?}", types(&h));
+    assert!(its[1]["ref"].as_str().unwrap().contains("3:16"), "{}", its[1]);
+    assert_eq!(live(&h), None, "넣기는 송출하지 않는다 (미리보기 방식)");
+}
+
+#[test]
+fn slide_row_and_grid_cell_menu_send_now() {
+    for (view, name) in [(SlideView::List, "srow-2"), (SlideView::Grid, "cell-2"), (SlideView::AllList, "cgl-0-2")] {
+        let mut h = H::new(titles());
+        h.app.apply(vec![Act::PreviewItem(0)]);
+        crate::center_ui::test_set_view(&h.ctx, view, true);
+        rclick(&mut h, name, center_only);
+        menu_pick(&mut h, "menu:바로 송출", center_only);
+        assert_eq!(live(&h), Some((0, 2)), "{name}: 오른쪽 메뉴 '바로 송출'");
+    }
+}
+
+#[test]
+fn library_menu_add_to_cue_for_song_hymn_music_image() {
+    let mut h = H::new(titles());
+    h.app.core.lock().save_song(&json!({ "title": "은혜 아니면", "lyrics": "은혜 아니면 살아갈 수가 없네" })).unwrap();
+    let root = h.app.core.lock().data_dir.clone();
+    for (d, f) in [("찬송가", "010 전능왕 오셔서.pps"), ("음악", "전주.mp3"), ("그림", "배경.png")] {
+        std::fs::create_dir_all(root.join(d)).unwrap();
+        std::fs::write(root.join(d).join(f), b"x").unwrap();
+    }
+    wp_core::hymns::add_folder(&mut h.app.core.lock(), &root.join("찬송가"), None).unwrap();
+    h.app.core.lock().add_lib_folder("audio", &root.join("음악")).unwrap();
+    h.app.core.lock().add_lib_folder("image", &root.join("그림")).unwrap();
+    for (tab, row, ty) in [("songs", "song-row-은혜 아니면", "song"), ("hymns", "hymn-row-0", "hymn"), ("audio", "lib-audio-0", "audio"), ("images", "lib-cell-배경.png", "image")] {
+        lib_tab(&h, tab);
+        h.frame(vec![], lib);
+        h.frame(vec![], lib);
+        let row = if tab == "images" { widgets::HOVER_SEEN.with(|m| m.borrow().keys().find(|k| k.starts_with("lib-cell-")).cloned()).unwrap_or_else(|| panic!("그림 칸 없음: {:?}", widgets::HOVER_SEEN.with(|m| m.borrow().keys().cloned().collect::<Vec<_>>()))) } else { row.to_string() };
+        let row = row.as_str();
+        rclick(&mut h, row, lib);
+        menu_pick(&mut h, "menu-cue", lib);
+        assert_eq!(count(&h, ty), 1, "{tab} 탭: 오른쪽 메뉴 '큐시트에 넣기 (더블클릭)'");
+        h.app.core.lock().pick.forget_last();
+    }
+}

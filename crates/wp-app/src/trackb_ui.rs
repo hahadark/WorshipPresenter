@@ -210,10 +210,12 @@ impl App {
             let id = s["id"].as_str().unwrap_or("").to_string();
             let (row, edit, add) = song_row(ui, s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or(""), sel.as_deref() == Some(id.as_str()));
             crate::widgets::mark(&format!("song-row-{}", s["title"].as_str().unwrap_or("")), row.rect);
-            if add {
+            // ctxmenu.js libraryMenu: 큐시트에 넣기 (더블클릭) · 그 줄의 단추(고치기)
+            let menu = crate::ctx_ui::lib_menu(&row, s["title"].as_str().unwrap_or(""), true, &[crate::ctx_ui::LibOp::new("edit", Some("pencil"), tr("고치기"))]);
+            if add || menu == Some("cue") {
                 let it = self.core.lock().song_item(&id);
                 if let Some(it) = it { self.add_to_cue(it); }
-            } else if edit.clicked() {
+            } else if edit.clicked() || menu == Some("edit") {
                 self.tb.song_edit = self.core.lock().get_song(&id);
             } else {
                 // library.js:84 한 번 = 고르기, 두 번 = 큐시트에 넣기 (넣기는 한 번만)
@@ -331,6 +333,11 @@ impl App {
                             crate::widgets::Click::Single => sel = url.clone(),
                             crate::widgets::Click::Double => { sel = url.clone(); add = Some(f.clone()); }
                             crate::widgets::Click::None => {}
+                        }
+                        match crate::ctx_ui::lib_menu(&row, &name, true, &[crate::ctx_ui::LibOp::new("play", Some("play"), wp_core::i18n::tr("바로 재생 (조작 PC)"))]) {
+                            Some("cue") => add = Some(f.clone()),
+                            Some("play") => crate::music_ui::play_now(&url, &name),
+                            _ => {}
                         }
                         ui.weak(f["folder"].as_str().unwrap_or(""));
                         if ui.small_button(wp_core::i18n::tr("순서로")).on_hover_text(wp_core::i18n::tr("음악 순서로 큐시트에 넣기 (두 번 눌러도)")).clicked() { add = Some(f.clone()); }

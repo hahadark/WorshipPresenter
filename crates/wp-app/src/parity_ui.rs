@@ -319,16 +319,3 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     *KEYS_OPEN.lock() = open;
 }
 
-/// 성경 결과 한 절: 오른쪽 클릭 → 장절·본문 복사
-pub fn verse_menu(resp: &egui::Response, reference: &str, text: &str) {
-    resp.context_menu(|ui| {
-        if ui.button(wp_core::i18n::tr("장절·본문 복사")).clicked() {
-            crate::widgets::copy_notice(ui.ctx(), format!("{reference} {text}"), wp_core::i18n::tr("복사했습니다."));
-            ui.close();
-        }
-        if ui.button(wp_core::i18n::tr("장절만 복사")).clicked() {
-            crate::widgets::copy_notice(ui.ctx(), reference, wp_core::i18n::tr("복사했습니다."));
-            ui.close();
-        }
-    });
-}

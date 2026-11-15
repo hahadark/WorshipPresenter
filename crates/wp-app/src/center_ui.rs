@@ -834,7 +834,7 @@ pub(crate) enum MenuAct {
 }
 
 /// 메뉴 한 줄 (선 아이콘 + 글 + 오른쪽 키 설명)
-fn menu_btn(ui: &mut egui::Ui, icon: Option<&str>, label: &str, key: &str, enabled: bool, danger: bool) -> bool {
+pub(crate) fn menu_btn(ui: &mut egui::Ui, icon: Option<&str>, label: &str, key: &str, enabled: bool, danger: bool) -> bool {
     let p = pal();
     let color = if danger { p.danger_text } else { p.text };
     let mut b = match icon {
@@ -845,6 +845,7 @@ fn menu_btn(ui: &mut egui::Ui, icon: Option<&str>, label: &str, key: &str, enabl
         b = b.shortcut_text(rich(key, 12.0, Weight::Regular, p.muted));
     }
     let r = ui.add_enabled(enabled, b);
+    widgets::mark(&format!("menu:{label}"), r.rect);
     if r.clicked() {
         ui.close();
         return true;
@@ -1397,7 +1398,22 @@ impl App {
                         resp.scroll_to_me(None);
                         st.scroll_sel = false;
                     }
-                    crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", p["book"]["name"].as_str().unwrap_or(""), c, n), v["text"].as_str().unwrap_or(""));
+                    let vref = format!("{} {}:{}", p["book"]["name"].as_str().unwrap_or(""), c, n);
+                    match crate::ctx_ui::verse_menu(&resp, &format!("{} · {}", p["title"].as_str().unwrap_or(""), tr_args("{1}절", &[&vn])), &vref, v["text"].as_str().unwrap_or("")) {
+                        Some(crate::ctx_ui::VerseAct::Preview) => {
+                            st.sel = Some(i);
+                            activate(i, self, &mut st, acts);
+                        }
+                        Some(crate::ctx_ui::VerseAct::Send) => {
+                            st.sel = Some(i);
+                            activate(i, self, &mut st, acts);
+                            acts.push(Act::SendPreview);
+                        }
+                        Some(crate::ctx_ui::VerseAct::AddCue) => {
+                            self.add_searched_bible(acts);
+                        }
+                        None => {}
+                    }
                     let click = widgets::click2(ui, ("res-verse", c, n), &resp);
                     let shift = ui.input(|x| x.modifiers.shift);
                     if click == widgets::Click::Double && !shift {
@@ -1458,7 +1474,24 @@ impl App {
                         resp.scroll_to_me(None);
                         st.scroll_sel = false;
                     }
-                    crate::parity_ui::verse_menu(&resp, v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or(""));
+                    let vref = v["ref"].as_str().unwrap_or("");
+                    match crate::ctx_ui::verse_menu(&resp, vref, vref, v["text"].as_str().unwrap_or("")) {
+                        Some(crate::ctx_ui::VerseAct::Preview) => {
+                            st.sel = Some(i);
+                            acts.push(Act::PreviewRef(q.clone(), None));
+                        }
+                        Some(crate::ctx_ui::VerseAct::Send) => {
+                            st.sel = Some(i);
+                            acts.push(Act::SendRef(q.clone(), None));
+                        }
+                        Some(crate::ctx_ui::VerseAct::AddCue) => {
+                            // ctxmenu.js: 그 절을 미리보기한 뒤 { title: '성경봉독', ref: 본문 제목 } 을 넣는다
+                            let r = if vref.is_empty() { q.clone() } else { vref.to_string() };
+                            acts.push(Act::AddItem("bible", Some(json!({ "title": tr("성경 봉독"), "ref": r }))));
+                            self.core.lock().notify(tr_args("'{1}' 을(를) 큐시트에 넣었습니다.", &[&r]), "ok");
+                        }
+                        None => {}
+                    }
                     match widgets::click2(ui, ("res-text", &q), &resp) {
                         widgets::Click::Single => {
                             st.kbd = true;
@@ -1557,8 +1590,27 @@ impl App {
                         resp.scroll_to_me(None);
                         st.scroll_sel = false;
                     }
-                    crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", d.passage["book"]["name"].as_str().unwrap_or(""), ch, vn), text);
                     let idx = wp_core::slides::index_of_verse(&d.slides, ch, vn);
+                    let vref = format!("{} {}:{}", d.passage["book"]["name"].as_str().unwrap_or(""), ch, vn);
+                    match crate::ctx_ui::verse_menu(&resp, &format!("{} · {}", d.passage["title"].as_str().unwrap_or(""), tr_args("{1}절", &[&label])), &vref, text) {
+                        Some(crate::ctx_ui::VerseAct::Preview) => {
+                            st.sel = Some(i);
+                            acts.push(Act::PreviewIndex(idx));
+                        }
+                        Some(crate::ctx_ui::VerseAct::Send) => {
+                            st.sel = Some(i);
+                            acts.push(Act::PreviewIndex(idx));
+                            acts.push(Act::SendPreview);
+                        }
+                        Some(crate::ctx_ui::VerseAct::AddCue) => {
+                            let r = d.passage["title"].as_str().unwrap_or("").to_string();
+                            if !r.is_empty() {
+                                acts.push(Act::AddItem("bible", Some(json!({ "title": tr("성경 봉독"), "ref": r }))));
+                                self.core.lock().notify(tr_args("'{1}' 을(를) 큐시트에 넣었습니다.", &[&r]), "ok");
+                            }
+                        }
+                        None => {}
+                    }
                     let click = widgets::click2(ui, ("cue-verse", ch, vn), &resp);
                     let shift = ui.input(|x| x.modifiers.shift);
                     if click == widgets::Click::Double && !shift {
@@ -1787,6 +1839,7 @@ impl App {
         let many = ms_many(st, s);
         let chunk = item.is_some_and(|x| wp_core::slideedit::is_chunk(x.1["type"].as_str().unwrap_or("")));
         let mut multi_act: Option<&'static str> = None;
+        let mut menu_act: Option<MenuAct> = None;
         egui::ScrollArea::vertical().id_salt("slide-grid").auto_shrink([false, false]).show(ui, |ui| {
             egui::Frame::new().inner_margin(Margin::same(10)).show(ui, |ui| {
                 let msel = |k: usize| many.as_ref().is_some_and(|(_, ks)| ks.contains(&k));
@@ -1798,6 +1851,14 @@ impl App {
                         let resp = ui.interact(*r, egui::Id::new("sg").with(*k), Sense::click_and_drag());
                         if let Some(a) = multi_menu(&resp, ks.len(), chunk) {
                             multi_act = Some(a);
+                        }
+                    }
+                } else {
+                    // 한 장 오른쪽 클릭 = 슬라이드 메뉴 (ctxmenu.js: #slideGrid .sg-cell → slideMenu)
+                    for (k, r) in &cells {
+                        let resp = ui.interact(*r, egui::Id::new("sg").with(*k), Sense::click_and_drag());
+                        if let Some(a) = d.slides.get(*k).and_then(|sl| slide_menu(&resp, *k, sl, item, None, st.view)) {
+                            menu_act = Some(a);
                         }
                     }
                 }
@@ -1831,6 +1892,9 @@ impl App {
         });
         if let Some(a) = multi_act {
             self.msel_do(ui.ctx(), st, s, a, false, acts);
+        }
+        if let Some(a) = menu_act {
+            self.menu_act(a, st, s, acts);
         }
     }
 
@@ -1932,7 +1996,19 @@ impl App {
                                     ui.add_space(8.0);
                                     let ops = |sl: &Value| slide_hover_ops(Some(it), sl, false);
                                     let msel = |k: usize| many.as_ref().is_some_and(|(_, ks)| ks.contains(&k));
-                                    thumb_cells(ui, egui::Id::new(("cg", i)), &c, &d.slides, &sec.tpl, d.passage["versionName"].as_str().unwrap_or(""), pvk, lvk, size, &ops, &msel, &mut cells)
+                                    let hit = thumb_cells(ui, egui::Id::new(("cg", i)), &c, &d.slides, &sec.tpl, d.passage["versionName"].as_str().unwrap_or(""), pvk, lvk, size, &ops, &msel, &mut cells);
+                                    // 전체 격자 칸 오른쪽 클릭 (ctxmenu.js: #cueGrid .sg-cell — 그 순서의 그 슬라이드)
+                                    for (k, r) in &cells {
+                                        let resp = ui.interact(*r, egui::Id::new(("cg", i)).with(*k), Sense::click_and_drag());
+                                        if let Some((_, ks)) = &many {
+                                            if let Some(a) = multi_menu(&resp, ks.len(), chunk) {
+                                                multi_act = Some(a);
+                                            }
+                                        } else if let Some(a) = d.slides.get(*k).and_then(|sl| slide_menu(&resp, *k, sl, Some((i, it)), Some(i), st.view)) {
+                                            menu_act = Some(a);
+                                        }
+                                    }
+                                    hit
                                 };
                                 match hit {
                                     Some(Hit::Pick(k, dbl)) => {

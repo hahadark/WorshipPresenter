@@ -235,7 +235,8 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             if k == sel && key_move != 0 { row.scroll_to_me(None); }
             let click = crate::widgets::click2(ui, ("lib-hymn", src.as_str(), k, h["file"].as_str().unwrap_or(""), h["number"].as_i64()), &row);
             if click == crate::widgets::Click::Single { sel = k; }
-            if plus.clicked() || click == crate::widgets::Click::Double || (key_enter && k == sel) {
+            let menu = crate::ctx_ui::lib_menu(&row, h["title"].as_str().or(h["label"].as_str()).unwrap_or(""), true, &[]);
+            if plus.clicked() || menu == Some("cue") || click == crate::widgets::Click::Double || (key_enter && k == sel) {
                 sel = k;
                 if src == "ppt" {
                     // 제목은 "10장 전능왕 오셔서" (cue.js 1527) · 번호 없으면 null
