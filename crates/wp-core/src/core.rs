@@ -189,7 +189,8 @@ impl Core {
         std::fs::create_dir_all(&media_dir)?;
         let store = BibleStore::open(&data_dir.join("bible.db"))?;
         let _ = crate::usage::ensure(&store.db); // [트랙 C] 사용 기록 표
-        let settings = Settings::load(&data_dir);
+        let mut settings = Settings::load(&data_dir);
+        crate::dpapi::adopt_electron_secrets(&mut settings, legacy_data_dir().as_deref()); // [갈래 D] 1.x 에서 잠가 둔 AI 키·OBS 비밀번호 이어받기
         crate::firstrun::mark("설정 읽기");
         let (tx, _) = broadcast::channel(256);
         let port = settings.get()["port"].as_u64().unwrap_or(37528) as u16;
