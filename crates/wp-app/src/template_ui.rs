@@ -317,7 +317,8 @@ impl TemplateUi {
                 ui.painter().rect_stroke(thumb, CornerRadius::same(2), Stroke::new(1.0, p.line), StrokeKind::Outside);
                 // 이름 + 배지
                 let x0 = thumb.right() + 8.0;
-                let name = shown["name"].as_str().unwrap_or("");
+                let name = wp_core::i18n::tr_name(shown["name"].as_str().unwrap_or(""));
+            let name = name.as_str();
                 let mut job = egui::text::LayoutJob::simple(name.to_string(), theme::font(13.0, if on { Weight::SemiBold } else { Weight::Regular }), p.text, r.right() - x0 - 4.0);
                 job.wrap.max_rows = 2;
                 let g = ui.painter().layout_job(job);

@@ -225,7 +225,7 @@ impl App {
         ui.data_mut(|d| d.insert_temp(sel_id, sel));
         if !self.tb.note.is_empty() {
             ui.add_space(4.0);
-            ui.label(rich(self.tb.note.clone(), 12.0, Weight::Regular, p.muted));
+            ui.label(rich(wp_core::i18n::tr_dyn(&self.tb.note), 12.0, Weight::Regular, p.muted));
         }
         if let Some(mut e) = self.tb.song_edit.take() {
             let mut close = false;
@@ -483,7 +483,7 @@ impl App {
                     self.tb.note = err(self.core.lock().save_message_template(&t));
                 }
             });
-            if !self.tb.note.is_empty() { ui.label(egui::RichText::new(&self.tb.note).small().color(p.warn)); }
+            if !self.tb.note.is_empty() { ui.label(egui::RichText::new(wp_core::i18n::tr_dyn(&self.tb.note)).small().color(p.warn)); }
         });
         self.tb.message = open;
     }
@@ -882,7 +882,7 @@ impl App {
         self.music_bar(ui);
         if !self.tb.note.is_empty() {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(&self.tb.note).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                ui.label(RichText::new(wp_core::i18n::tr_dyn(&self.tb.note)).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
                 if ui.small_button(wp_core::i18n::tr("닫기")).clicked() { self.tb.note.clear(); }
             });
         }

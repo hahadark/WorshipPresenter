@@ -227,7 +227,7 @@ impl App {
         MUSIC.with_borrow_mut(|m| {
             if !m.err.is_empty() {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(&m.err).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+                    ui.label(RichText::new(wp_core::i18n::tr_dyn(&m.err)).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
                     if ui.small_button(wp_core::i18n::tr("닫기")).clicked() { m.err.clear(); }
                 });
             }

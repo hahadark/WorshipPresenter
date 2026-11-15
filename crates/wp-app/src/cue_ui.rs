@@ -427,9 +427,14 @@ fn add_btn(ui: &mut egui::Ui, w: f32, ic: Option<&str>, ink: Color32, label: &st
         let (bd, fg) = if active { (p.accent, p.accent) } else { (bd, p.text) };
         let pt = ui.painter();
         pt.rect(r, CornerRadius::same(theme::RADIUS), bg, Stroke::new(p.border_w, bd), StrokeKind::Inside);
-        let g = ui.painter().layout_no_wrap(label.to_string(), theme::font(12.0, Weight::Regular), fg);
+        let mut g = ui.painter().layout_no_wrap(label.to_string(), theme::font(12.0, Weight::Regular), fg);
         let icw = if ic.is_some() { 15.0 + 5.0 } else { 0.0 };
         let endw = if more { 2.0 + 13.0 } else { 0.0 };
+        // 단추보다 글이 넓으면(영어 'Announcement') 잘리지 않게 글자를 줄인다
+        let room = (w - 10.0 - icw - endw).max(8.0);
+        if g.size().x > room {
+            g = ui.painter().layout_no_wrap(label.to_string(), theme::font((12.0 * room / g.size().x).max(8.0), Weight::Regular), fg);
+        }
         let total = icw + g.size().x + endw;
         let mut x = r.center().x - total / 2.0;
         let cy = r.center().y;

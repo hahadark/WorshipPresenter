@@ -63,6 +63,27 @@ pub fn tr(s: &str) -> String {
     DICT.get(s).cloned().unwrap_or_else(|| s.to_string())
 }
 
+/// 기본 템플릿·테마 이름처럼 자료에 든 이름: 사전에 있는 것만 영어로 (사용자가 지은 이름은 그대로).
+/// 테마를 적용해 생긴 "레드 쉴드 · 예배당" · "… · OBS 자막" 꼴도 앞·뒤를 따로 옮긴다.
+pub fn tr_name(s: &str) -> String {
+    if !is_en() {
+        return s.to_string();
+    }
+    let t = tr(s);
+    if t != s {
+        return t;
+    }
+    for suf in [" · 예배당", " · OBS 자막"] {
+        if let Some(base) = s.strip_suffix(suf) {
+            let b = tr(base);
+            if b != base {
+                return format!("{b}{}", tr(suf));
+            }
+        }
+    }
+    t
+}
+
 /// &'static str 그대로 쓰는 자리(if/else 가지 등)용: 번역한 글을 한 번만 만들어 두고 같은 것을 돌려준다
 pub fn tr_s(s: &'static str) -> &'static str {
     if !is_en() {
@@ -83,6 +104,16 @@ pub fn tr_s(s: &'static str) -> &'static str {
 /// 사전에 글 그대로 있으면 그것, 없으면 {N} 자리가 있는 문구를 정규식으로 맞춰 자리를 옮겨 채운다.
 /// 맞는 것이 없으면 그대로. 알림은 자주 같은 글이 다시 그려지므로 마지막 몇 개를 기억해 둔다.
 pub fn tr_dyn(s: &str) -> String {
+    dyn_inner(s, 0)
+}
+
+/// tr_dyn 과 같지만 채워진 자리 안의 글도 다시 옮긴다 ("모니터 2대 · 출력 꺼짐 — …" 처럼 문구 안에 문구가 든 것).
+/// 프로그램이 만든 글(연결 점검 결과)에만 쓴다 — 사용자 글이 사전 문구와 같으면 그것도 옮겨지므로.
+pub fn tr_dyn_deep(s: &str) -> String {
+    dyn_inner(s, 3)
+}
+
+fn dyn_inner(s: &str, deep: u8) -> String {
     if !is_en() || s.is_empty() {
         return s.to_string();
     }
@@ -127,7 +158,9 @@ pub fn tr_dyn(s: &str) -> String {
         out
     });
     static RECENT: Lazy<parking_lot::Mutex<Vec<(String, String)>>> = Lazy::new(|| parking_lot::Mutex::new(vec![]));
-    if let Some(v) = RECENT.lock().iter().find(|x| x.0 == s) {
+    // 깊은 번역은 결과가 다를 수 있어 기억 칸의 열쇠를 따로 쓴다
+    let key = if deep > 0 { format!("\u{1}{s}") } else { s.to_string() };
+    if let Some(v) = RECENT.lock().iter().find(|x| x.0 == key) {
         return v.1.clone();
     }
     let t = tr(s);
@@ -140,7 +173,7 @@ pub fn tr_dyn(s: &str) -> String {
                 let mut args: Vec<String> = vec![String::new(); order.iter().copied().max().unwrap_or(0)];
                 for (k, &i) in order.iter().enumerate() {
                     if let (Some(slot), Some(m)) = (i.checked_sub(1).and_then(|i| args.get_mut(i)), c.get(k + 1)) {
-                        *slot = m.as_str().to_string();
+                        *slot = if deep > 1 && m.as_str().chars().any(|ch| ('가'..='힣').contains(&ch)) { dyn_inner(m.as_str(), deep - 1) } else { m.as_str().to_string() };
                     }
                 }
                 let refs: Vec<&dyn std::fmt::Display> = args.iter().map(|a| a as &dyn std::fmt::Display).collect();
@@ -149,10 +182,10 @@ pub fn tr_dyn(s: &str) -> String {
             .unwrap_or_else(|| s.to_string())
     };
     let mut r = RECENT.lock();
-    if r.len() >= 16 {
+    if r.len() >= 64 {
         r.remove(0);
     }
-    r.push((s.to_string(), out.clone()));
+    r.push((key, out.clone()));
     out
 }
 
@@ -217,6 +250,14 @@ mod tests {
         assert_eq!(tr("파일"), "파일");
         assert_eq!(with_lang(b"<html lang=\"ko\"><head></head>".to_vec()), b"<html lang=\"ko\"><head></head>".to_vec());
         set_lang("en");
+        // [감사 E] 기본 템플릿·테마 이름은 영어로, 사용자가 지은 이름은 그대로
+        assert_eq!(tr_name("일반 예배"), "Standard service");
+        assert_eq!(tr_name("레드 쉴드 · 예배당"), "Red Shield · Sanctuary");
+        assert_eq!(tr_name("우리 교회 템플릿"), "우리 교회 템플릿");
+        // [감사 E] 문구 안에 든 문구도 옮긴다 (연결 점검 결과). 얕은 번역은 자리를 그대로 둔다
+        assert!(!tr_dyn_deep("모니터 2대 · 출력 꺼짐 — '예배당 화면 켜기' 로 켭니다").chars().any(|c| ('가'..='힣').contains(&c)), "{}", tr_dyn_deep("모니터 2대 · 출력 꺼짐 — '예배당 화면 켜기' 로 켭니다"));
+        assert_eq!(tr_dyn("저장 실패: 디스크 가득"), "Save failed: 디스크 가득");
+        assert_eq!(tr_dyn("'찬양' 순서 삭제"), "Delete item '찬양'");
         assert_eq!(tr("파일"), "File");
         assert_eq!(tr("새 버전"), "New version");
         assert_eq!(tr("홍길동"), "홍길동");

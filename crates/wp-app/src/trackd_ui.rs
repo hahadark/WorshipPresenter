@@ -185,7 +185,7 @@ pub fn toggled(core: &Shared, before: bool, after: bool) {
 fn note(ui: &mut egui::Ui, s: &St) {
     if !s.msg.is_empty() {
         let col = if s.msg.starts_with('✗') { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::from_rgb(0x8a, 0xe0, 0xa8) };
-        ui.label(RichText::new(&s.msg).color(col));
+        ui.label(RichText::new(wp_core::i18n::tr_dyn(&s.msg)).color(col));
     }
 }
 
@@ -376,12 +376,14 @@ pub(crate) fn obs_urls(ui: &mut egui::Ui, port: u16) {
         let url = format!("http://127.0.0.1:{port}{path}");
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            ui.allocate_ui_with_layout(egui::vec2(120.0, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.set_min_width(120.0);
-                ui.add(egui::Label::new(theme::rich(tr(label), 13.0, Weight::Regular, p.text2)).truncate());
+            // 영어 이름은 길다 ('Transparent lower third') — 잘리지 않게 칸을 넓히고, 그래도 잘리면 마우스를 올려 볼 수 있게
+            let lw = if wp_core::i18n::is_en() { 164.0 } else { 120.0 };
+            ui.allocate_ui_with_layout(egui::vec2(lw, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(lw);
+                ui.add(egui::Label::new(theme::rich(tr(label), 13.0, Weight::Regular, p.text2)).truncate()).on_hover_text(tr(label));
             });
             egui::Frame::new().fill(p.sunken).stroke(egui::Stroke::new(1.0, p.line)).corner_radius(egui::CornerRadius::same(4)).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
-                ui.set_min_width(300.0);
+                ui.set_min_width(if wp_core::i18n::is_en() { 270.0 } else { 300.0 });
                 ui.add(egui::Label::new(egui::RichText::new(&url).monospace().color(p.text)).selectable(true));
             });
             let b = ui.add(Btn::new(tr("복사")).icon("copy").size(Size::Sm).height(26.0).tooltip(tr("주소를 복사해 OBS 브라우저 소스에 붙여 넣습니다")));
@@ -463,7 +465,7 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
     // 상태는 폴러·동작·연결 확인이 모두 남기는 한 캐시에서 (순서 편집칸 장면 콤보와 같은 출처)
     let st = wp_core::obs::cached();
     if !s.obs_err.is_empty() {
-        ui.label(RichText::new(format!("✗ {}", s.obs_err)).color(crate::theme::pal().danger_text));
+        ui.label(RichText::new(format!("✗ {}", wp_core::i18n::tr_dyn(&s.obs_err))).color(crate::theme::pal().danger_text));
     }
     let at = st["at"].as_i64().unwrap_or(0);
     ui.ctx().request_repaint_after(std::time::Duration::from_secs(1)); // 'N초 전 확인' 이 보이는 동안

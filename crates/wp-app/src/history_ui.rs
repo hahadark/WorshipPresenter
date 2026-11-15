@@ -92,7 +92,7 @@ impl HistoryUi {
                             self.msg = match std::fs::write(&p, csv) { Ok(()) => format!("저장했습니다: {}", p.display()), Err(e) => format!("저장 실패: {e}") };
                         }
                     }
-                    ui.label(RichText::new(&self.msg).small());
+                    ui.label(RichText::new(wp_core::i18n::tr_dyn(&self.msg)).small());
                 });
                 // 저작권 보고 자료라 되살릴 수 없다: 줄 안 확인 + 먼저 CSV 로 보관하라는 안내 (휴리스틱 평가 3번)
                 let all = usage::list(&core.lock().store.db, &usage::Filter::default()).len();

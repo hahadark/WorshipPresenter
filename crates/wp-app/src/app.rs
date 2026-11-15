@@ -197,7 +197,7 @@ impl App {
             cue_id: c.cue.as_ref().map(|x| x.id.clone()).unwrap_or_default(),
             items: c.cue.as_ref().map(|x| x.items.clone()).unwrap_or_default(),
             cues: c.cues.clone(),
-            templates: c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect(),
+            templates: c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect(),
             preview_main: c.template_for_deck("main", c.pres.preview.as_ref()),
             // 'OBS 전체'(obsFull) 면 OBS 화면도 예배당 템플릿으로 (core.output_payload 와 같게)
             preview_overlay: c.template_for_deck(if c.obs_full { "main" } else { "overlay" }, c.pres.preview.as_ref()),
@@ -736,7 +736,7 @@ impl App {
         // 고를 거리: 번역본 · 템플릿
         let mut versions = vec![(String::new(), tr("현재 번역본"))];
         versions.extend(self.versions.iter().map(|v| (v.id.clone(), v.name.clone())));
-        let tpls: Vec<(String, String)> = self.core.lock().settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
+        let tpls: Vec<(String, String)> = self.core.lock().settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect();
         // 장절 확인 글 ('✓ 시편 23:1-6 (6절)') — 장절·번역본이 바뀔 때만 다시 찾는다
         let ref_msg = if ty == "bible" {
             let (r, v) = self.edit.as_ref().map(|(_, e)| (e["ref"].as_str().unwrap_or("").to_string(), e["versionId"].as_str().unwrap_or("").to_string())).unwrap_or_default();

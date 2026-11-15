@@ -183,7 +183,7 @@ impl ThemeUi {
 
 /// 순서 편집칸: 이 순서에만 쓸 템플릿 (예배당 · OBS 자막) · 테마로 한 번에
 pub fn item_templates(ui: &mut egui::Ui, e: &mut serde_json::Value, core: &Shared) -> bool {
-    let tpls: Vec<(String, String)> = core.lock().settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
+    let tpls: Vec<(String, String)> = core.lock().settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect();
     let mut ch = false;
     ui.label(RichText::new(wp_core::i18n::tr("이 순서에만 쓸 템플릿 (비우면 기본)")).small());
     for (key, label, salt) in [("tplMain", "예배당", "it-tm"), ("tplOverlay", "OBS 자막", "it-to")] {

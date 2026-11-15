@@ -23,9 +23,9 @@ pub fn shortcut_conflicts(s: &Value) -> Vec<(String, String)> {
             continue;
         }
         if let Some((other, _)) = sc.iter().find(|(o, v)| *o != id && norm(v.as_str().unwrap_or("")) == k) {
-            out.push((id.clone(), format!("'{}' 와 같은 키", other)));
+            out.push((id.clone(), wp_core::i18n::tr_args("'{1}' 와 같은 키", &[&other])));
         } else if reserved.contains(&k) {
-            out.push((id.clone(), "다른 프로그램(예약 키)과 겹침".into()));
+            out.push((id.clone(), wp_core::i18n::tr("다른 프로그램(예약 키)과 겹침")));
         }
     }
     out
@@ -100,7 +100,7 @@ impl SettingsUi {
                         ui.label(wp_core::i18n::tr("등록 상태"));
                         let reg: Vec<String> = ws["registered"].as_array().into_iter().flatten().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect();
                         let fail: Vec<String> = ws["failed"].as_array().into_iter().flatten().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect();
-                        ui.label(RichText::new(if !ws["available"].as_bool().unwrap_or(false) { "이 운영체제에서는 쓸 수 없음".to_string() } else if !ws["enabled"].as_bool().unwrap_or(false) { "꺼짐".to_string() } else { format!("등록 {}개{}{}", reg.len(), if fail.is_empty() { String::new() } else { format!(" · 다른 프로그램이 쓰는 키: {}", fail.join(", ")) }, if reg.is_empty() { String::new() } else { format!(" ({})", reg.join(", ")) }) }).small().color(if fail.is_empty() { crate::theme::pal().muted } else { crate::theme::pal().warn }));
+                        ui.label(RichText::new(if !ws["available"].as_bool().unwrap_or(false) { wp_core::i18n::tr("이 운영체제에서는 쓸 수 없음") } else if !ws["enabled"].as_bool().unwrap_or(false) { wp_core::i18n::tr("꺼짐") } else { wp_core::i18n::tr_args("등록 {1}개{2}{3}", &[&reg.len(), &(if fail.is_empty() { String::new() } else { wp_core::i18n::tr_args(" · 다른 프로그램이 쓰는 키: {1}", &[&fail.join(", ")]) }), &(if reg.is_empty() { String::new() } else { format!(" ({})", reg.join(", ")) })]) }).small().color(if fail.is_empty() { crate::theme::pal().muted } else { crate::theme::pal().warn }));
                         ui.end_row();
                         ch |= check(ui, &mut data, &["imeAuto"], "가사·공지·즉석 자막 칸에 들어가면 한글 입력으로 (윈도우)");
                         ui.end_row();

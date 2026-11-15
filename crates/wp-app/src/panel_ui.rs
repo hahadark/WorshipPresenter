@@ -115,7 +115,7 @@ impl App {
                 let labels: Vec<(String, String)> = TARGETS.iter().map(|(id, l)| (id.to_string(), tr(l))).collect();
                 let items: Vec<(String, &str)> = labels.iter().map(|(id, l)| (id.clone(), l.as_str())).collect();
                 crate::widgets::segmented_with(ui, &mut slot, &items, crate::widgets::SegStyle { font: 13.0, pad: egui::vec2(9.0, 4.0), fill: false, radius: 6 });
-                let tpl_opts: Vec<(String, String)> = list.iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
+                let tpl_opts: Vec<(String, String)> = list.iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect();
                 crate::quick_ui::select(ui, "quick-template", &mut selected, &tpl_opts, 170.0, "이 출력에 쓸 템플릿");
                 if ui.add(crate::widgets::Btn::new(tr("테마")).tooltip(tr("구세군 테마 고르기"))).clicked() {
                     self.tc.themes.open = true;
@@ -296,7 +296,7 @@ impl App {
         for tpl in list {
             let id = tpl["id"].as_str().unwrap_or("");
             if ui
-                .selectable_label(selected == id, tpl["name"].as_str().unwrap_or(""))
+                .selectable_label(selected == id, wp_core::i18n::tr_name(tpl["name"].as_str().unwrap_or("")))
                 .clicked()
             {
                 selected = id.into();
