@@ -167,6 +167,12 @@ fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
 pub fn installed_copy() -> bool {
     std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("Uninstall WorshipPresenter.exe").is_file())).unwrap_or(false)
 }
+/// 받아 둔 설치 파일(update-cache)을 지금 쓰고 있나 (읽기만 한다): 받는 중·검증 중이거나, 설치하려고 받아 둔 파일이 있으면 true.
+/// 켠 뒤 옛 설치 파일을 정리할 때 이 파일들을 지우지 않으려고 본다
+pub fn cache_in_use() -> bool {
+    let state = UPDATE.lock()["state"].as_str().unwrap_or("").to_string();
+    matches!(state.as_str(), "downloading" | "verifying" | "ready" | "installing") || READY.lock().is_some()
+}
 pub const PORTABLE_NOTE: &str = "설치 없이 쓰는 판(포터블)은 스스로 바꾸지 않습니다. 릴리스 페이지에서 새 Portable.zip 을 받거나 설치 파일로 설치하세요.";
 pub fn status(settings: &Value) -> Value {
     let mut u = UPDATE.lock().clone();
