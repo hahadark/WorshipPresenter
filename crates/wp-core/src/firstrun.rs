@@ -290,6 +290,128 @@ pub fn start_installer_cleanup(data_dir: &Path) {
         .ok();
 }
 
+// ---------------- 1.x 폴더에만 있는 파일 챙기기 ----------------
+// 붙여 넣은 PPT(pasted)·베들레헴 찬송가(hymnal)는 처음에 복사하지 않고 1.x 폴더를 그대로 읽는다(첫 실행을 빠르게).
+// 그래서 사용자가 %APPDATA%\WorshipCue 를 지우면 그 PPT 순서가 '파일 없음'이 되고 다시 만들 수도 없다.
+// → 켠 뒤 한가할 때 이 판 자료 폴더로 복사해 두고, 1.x 쪽 파일이 없어졌으면 큐시트가 복사본을 가리키게 고친다.
+// 1.x 폴더는 읽기만 한다. PPT 그림 캐시(hymn-cache)는 다시 만들 수 있어 복사하지 않는다.
+
+/// 1.x 자료 폴더에서 챙겨 둘 폴더
+pub const KEEP_DIRS: [&str; 2] = ["pasted", "hymnal"];
+
+fn copy_missing(src: &Path, dst: &Path, done: &mut (usize, usize, u64)) {
+    let Ok(rd) = std::fs::read_dir(src) else { return };
+    for e in rd.flatten() {
+        let (from, to) = (e.path(), dst.join(e.file_name()));
+        match e.file_type() {
+            Ok(t) if t.is_dir() => copy_missing(&from, &to, done),
+            // 이미 있으면 손대지 않는다 (이 판에서 새로 가져온 찬송가를 옛것으로 덮지 않게)
+            Ok(t) if t.is_file() && !to.exists() => {
+                // 임시 이름으로 다 쓴 뒤 이름을 바꾼다: 복사 도중 꺼져도 반쪽 파일이 진짜 이름으로 남지 않게
+                let mut part = to.clone().into_os_string();
+                part.push(".part");
+                let part = PathBuf::from(part);
+                let r = std::fs::create_dir_all(dst).and_then(|_| std::fs::copy(&from, &part)).and_then(|n| std::fs::rename(&part, &to).map(|_| n));
+                match r {
+                    Ok(n) => {
+                        done.0 += 1;
+                        done.2 += n;
+                    }
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&part);
+                        done.1 += 1;
+                        log::warn!("1.x 파일을 챙기지 못함: {} ({e})", from.display());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 1.x 폴더의 pasted·hymnal 가운데 이 판 자료 폴더에 없는 파일을 복사한다. → (복사한 수, 실패한 수, 바이트)
+pub fn keep_legacy_files(data_dir: &Path, old: &Path) -> (usize, usize, u64) {
+    let mut done = (0, 0, 0);
+    if same_dir(old, data_dir) {
+        return done;
+    }
+    for d in KEEP_DIRS {
+        let from = old.join(d);
+        if from.is_dir() {
+            copy_missing(&from, &data_dir.join(d), &mut done);
+        }
+    }
+    done
+}
+
+/// 켠 뒤 잠시 있다가(켜는 시간·첫 조작을 느리게 하지 않게) 백그라운드로 챙긴다
+pub fn start_keep_legacy_files(data_dir: &Path) {
+    let Some(old) = crate::core::legacy_data_dir().filter(|o| o.is_dir()) else { return };
+    let data_dir = data_dir.to_path_buf();
+    std::thread::Builder::new()
+        .name("keep-legacy".into())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            let t0 = std::time::Instant::now();
+            let (ok, failed, bytes) = keep_legacy_files(&data_dir, &old);
+            if ok + failed > 0 {
+                log::info!("1.x 폴더에만 있던 파일 챙김: {ok}개 {}MB, 실패 {failed}개, {}ms ({} → {})", bytes / 1_048_576, t0.elapsed().as_millis(), old.display(), data_dir.display());
+            }
+        })
+        .ok();
+}
+
+/// 큐시트 안의 `<1.x 자료>\pasted\…` 경로 가운데 그 파일이 없어졌고 이 판 자료 폴더에 복사본이 있는 것을 복사본으로 바꾼다.
+/// 1.x 파일이 그대로 있으면 아무것도 바꾸지 않는다(1.x 가 만들어 둔 PPT 그림 캐시를 계속 쓴다). 고친 큐시트 수를 돌려준다.
+/// updated_at 은 그대로 둔다 (내용이 아니라 이 PC 의 파일 자리만 바뀐 것이라 '이 판에서 고침'으로 세지 않게).
+pub fn repoint_pasted(db: &rusqlite::Connection, data_dir: &Path, old: &Path) -> usize {
+    if same_dir(old, data_dir) {
+        return 0;
+    }
+    let norm = |s: &str| s.replace('/', "\\").to_lowercase();
+    let prefix = norm(&old.join("pasted").to_string_lossy()).trim_end_matches('\\').to_string() + "\\";
+    let n_prefix = prefix.chars().count();
+    let rows: Vec<(String, String)> = db
+        .prepare("SELECT id, items FROM Cuesheets WHERE items LIKE '%pasted%'")
+        .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect())
+        .unwrap_or_default();
+    fn strings<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
+        match v {
+            Value::String(s) => out.push(s),
+            Value::Array(a) => a.iter().for_each(|x| strings(x, out)),
+            Value::Object(o) => o.values().for_each(|x| strings(x, out)),
+            _ => {}
+        }
+    }
+    let mut fixed = 0;
+    for (id, items) in rows {
+        let Ok(v) = serde_json::from_str::<Value>(&items) else { continue };
+        let mut all = vec![];
+        strings(&v, &mut all);
+        let mut text = items.clone();
+        for s in all {
+            if !norm(s).starts_with(&prefix) || Path::new(s).exists() {
+                continue;
+            }
+            let rel: String = s.chars().skip(n_prefix).collect();
+            let new = data_dir.join("pasted").join(&rel);
+            if !new.is_file() {
+                continue;
+            }
+            // 글 그대로 바꾼다 (JSON 을 다시 쓰면 키 순서가 바뀔 수 있다)
+            let esc = |x: &str| serde_json::to_string(x).unwrap_or_default();
+            text = text.replace(&esc(s), &esc(&new.to_string_lossy()));
+        }
+        if text != items && serde_json::from_str::<Value>(&text).is_ok() && db.execute("UPDATE Cuesheets SET items = ?1 WHERE id = ?2", [&text, &id]).is_ok() {
+            fixed += 1;
+        }
+    }
+    if fixed > 0 {
+        log::info!("1.x 폴더에서 없어진 붙여 넣은 PPT {fixed}개 큐시트를 이 판 복사본으로 연결 ({})", data_dir.join("pasted").display());
+    }
+    fixed
+}
+
 // ---------------- 켜는 시간 재기 ----------------
 static MARKS: once_cell::sync::Lazy<parking_lot::Mutex<Vec<(&'static str, u64)>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(vec![]));
 static FRAMES: AtomicU32 = AtomicU32::new(0);
@@ -682,6 +804,63 @@ mod tests {
         for (id, at) in cues {
             c.execute("INSERT OR REPLACE INTO Cuesheets(id, items, updated_at, created_at) VALUES(?1,'[]',?2,?2)", [id, at]).unwrap();
         }
+    }
+
+    #[test]
+    fn keeps_legacy_only_files_and_repoints_when_old_is_gone() {
+        let (old, new) = (tmp("ko"), tmp("kn"));
+        std::fs::create_dir_all(old.join("pasted")).unwrap();
+        std::fs::create_dir_all(old.join("hymnal")).unwrap();
+        std::fs::create_dir_all(old.join("hymn-cache").join("k")).unwrap();
+        std::fs::write(old.join("pasted").join("clip-가.pptx"), b"ppt-a").unwrap();
+        std::fs::write(old.join("pasted").join("clip-b.pptx"), b"ppt-b").unwrap();
+        std::fs::write(old.join("hymnal").join("hymn.hdb"), b"old-hdb").unwrap();
+        std::fs::write(old.join("hymnal").join("hymn.cmp"), b"old-cmp").unwrap();
+        std::fs::write(old.join("hymn-cache").join("k").join("meta.json"), b"{}").unwrap();
+        // 이 판에서 새로 가져온 찬송가는 덮지 않는다
+        std::fs::create_dir_all(new.join("hymnal")).unwrap();
+        std::fs::write(new.join("hymnal").join("hymn.hdb"), b"newer").unwrap();
+        let a = old.join("pasted").join("clip-가.pptx").to_string_lossy().to_string();
+        let b = old.join("pasted").join("clip-b.pptx").to_string_lossy().replace('\\', "/"); // 슬래시로 적힌 경로도
+        let gone = old.join("pasted").join("never-copied.pptx").to_string_lossy().to_string();
+        let q = |s: &str| serde_json::to_string(s).unwrap();
+        // 키 순서가 가나다순이 아닌 글 (Electron 이 쓴 그대로 남는지 보려고)
+        let items = format!(r#"[{{"z":1,"type":"hymn","file":{},"a":2}},{{"type":"hymn","file":{}}},{{"type":"hymn","file":{}}},{{"type":"hymn","file":"D:\\찬송가\\pasted\\1.pptx"}}]"#, q(&a), q(&b), q(&gone));
+        let c = rusqlite::Connection::open(new.join("bible.db")).unwrap();
+        c.execute_batch("CREATE TABLE Cuesheets(id TEXT PRIMARY KEY, items TEXT, updated_at TEXT);").unwrap();
+        c.execute("INSERT INTO Cuesheets VALUES('c1', ?1, 't0')", [&items]).unwrap();
+        c.execute("INSERT INTO Cuesheets VALUES('c2', '[]', 't0')", []).unwrap();
+        let get = |c: &rusqlite::Connection| c.query_row("SELECT items, updated_at FROM Cuesheets WHERE id='c1'", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).unwrap();
+
+        // 복사본이 아직 없으면 아무것도 안 바꾼다
+        assert_eq!(repoint_pasted(&c, &new, &old), 0);
+        assert_eq!(keep_legacy_files(&new, &old), (3, 0, 5 + 5 + 7));
+        assert_eq!(std::fs::read(new.join("pasted").join("clip-가.pptx")).unwrap(), b"ppt-a");
+        assert_eq!(std::fs::read(new.join("hymnal").join("hymn.hdb")).unwrap(), b"newer");
+        assert_eq!(std::fs::read(new.join("hymnal").join("hymn.cmp")).unwrap(), b"old-cmp");
+        assert!(!new.join("hymn-cache").exists());
+        assert!(!std::fs::read_dir(new.join("pasted")).unwrap().flatten().any(|e| e.file_name().to_string_lossy().ends_with(".part")));
+        assert_eq!(keep_legacy_files(&new, &old), (0, 0, 0)); // 두 번째는 할 일 없음
+        // 1.x 파일이 그대로 있으면 큐시트를 안 바꾼다 (1.x 캐시를 계속 쓴다)
+        assert_eq!(repoint_pasted(&c, &new, &old), 0);
+        assert_eq!(get(&c).0, items);
+        // 1.x 폴더는 그대로
+        assert_eq!(std::fs::read(old.join("hymnal").join("hymn.hdb")).unwrap(), b"old-hdb");
+        assert_eq!(std::fs::read_dir(old.join("pasted")).unwrap().count(), 2);
+
+        // 사용자가 1.x 폴더를 지움 → 복사본으로 연결
+        std::fs::remove_dir_all(&old).unwrap();
+        assert_eq!(repoint_pasted(&c, &new, &old), 1);
+        let (now, at) = get(&c);
+        assert_eq!(at, "t0");
+        let v: Value = serde_json::from_str(&now).unwrap();
+        assert_eq!(v[0]["file"], json!(new.join("pasted").join("clip-가.pptx").to_string_lossy()));
+        assert_eq!(v[1]["file"], json!(new.join("pasted").join("clip-b.pptx").to_string_lossy()));
+        assert_eq!(v[2]["file"], json!(gone)); // 복사본이 없는 것은 그대로
+        assert_eq!(v[3]["file"], "D:\\찬송가\\pasted\\1.pptx"); // 다른 폴더는 그대로
+        assert!(now.find("\"z\"").unwrap() < now.find("\"type\"").unwrap(), "키 순서 유지: {now}");
+        assert!(Path::new(v[0]["file"].as_str().unwrap()).is_file());
+        assert_eq!(repoint_pasted(&c, &new, &old), 0); // 다시 불러도 그대로
     }
 
     #[test]

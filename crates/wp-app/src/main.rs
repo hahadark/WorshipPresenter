@@ -223,6 +223,11 @@ fn prepare(data_dir: PathBuf, web: PathBuf) -> anyhow::Result<(wp_core::core::Sh
     if arg("--data").is_none() {
         wp_core::firstrun::start_installer_cleanup(&shared.lock().data_dir);
     }
+    // 1.x 폴더에만 있는 붙여 넣은 PPT·찬송가 자료를 이 판 폴더로 챙겨 둔다 (1.x 폴더를 지워도 큐시트가 안 깨지게).
+    // 점검 실행(--data)은 임시 폴더마다 280MB 가 쌓이지 않게 건너뛴다 (시험할 때는 WP_KEEP_LEGACY=1)
+    if arg("--data").is_none() || std::env::var_os("WP_KEEP_LEGACY").is_some() {
+        wp_core::firstrun::start_keep_legacy_files(&shared.lock().data_dir);
+    }
 
     // 웹 서버 (출력 화면) — 따로 tokio 실행기
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;

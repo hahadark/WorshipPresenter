@@ -189,6 +189,9 @@ impl Core {
         std::fs::create_dir_all(&media_dir)?;
         let store = BibleStore::open(&data_dir.join("bible.db"))?;
         let _ = crate::usage::ensure(&store.db); // [트랙 C] 사용 기록 표
+        if let Some(old) = legacy_data_dir() {
+            crate::firstrun::repoint_pasted(&store.db, &data_dir, &old); // [갈래 D] 1.x 폴더가 지워졌으면 붙여 넣은 PPT 를 이 판 복사본으로
+        }
         let mut settings = Settings::load(&data_dir);
         crate::dpapi::adopt_electron_secrets(&mut settings, legacy_data_dir().as_deref()); // [갈래 D] 1.x 에서 잠가 둔 AI 키·OBS 비밀번호 이어받기
         crate::firstrun::mark("설정 읽기");
