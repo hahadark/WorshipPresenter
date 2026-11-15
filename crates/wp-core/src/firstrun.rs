@@ -56,6 +56,97 @@ pub fn content_stamp(db: &Path) -> String {
     out.join(";")
 }
 
+/// 쓰는 동안 저절로 바뀌는 설정 칸 (포트·검색 기록·마지막에 연 것·통계·화면 배치). '사용자가 설정을 고쳤나' 를 볼 때는 뺀다.
+/// 여기 없는 칸이 저절로 바뀌면 묻는 쪽으로 기운다 (말없이 바꾸는 것보다 안전한 쪽)
+const VOLATILE_SETTINGS: [&str; 12] =
+    ["port", "history", "activeCueId", "versionId", "parallelVersionId", "searchMode", "skipVersion", "telemetryDay", "telemetryId", "cueMgr", "thumbsFold", "rsEditorFrac"];
+
+/// 키 순서와 상관없이 같은 내용이면 같은 글이 되게
+fn canon(v: &Value, out: &mut String) {
+    match v {
+        Value::Object(o) => {
+            let mut keys: Vec<&String> = o.keys().collect();
+            keys.sort();
+            out.push('{');
+            for k in keys {
+                out.push_str(&serde_json::to_string(k).unwrap_or_default());
+                out.push(':');
+                canon(&o[k.as_str()], out);
+                out.push(',');
+            }
+            out.push('}');
+        }
+        Value::Array(a) => {
+            out.push('[');
+            for x in a {
+                canon(x, out);
+                out.push(',');
+            }
+            out.push(']');
+        }
+        x => out.push_str(&x.to_string()),
+    }
+}
+
+/// 설정 지문: 템플릿·단축키·출력 설정처럼 사용자가 고친 내용만 본다. 읽기만 한다.
+/// 1.x 가 쓴 파일과 이 판이 다시 쓴 파일(기본값 채움·템플릿 다듬기)이 같은 지문이 되도록 settings.rs 의 읽기와 같은 다듬기를 거친다.
+/// 파일이 없으면 "-", 깨졌으면 "?"
+pub fn settings_stamp(dir: &Path) -> String {
+    use crate::settings::{deep_merge_defaults, merge_into, normalize_template, DEFAULTS};
+    use sha2::{Digest, Sha256};
+    let Ok(txt) = std::fs::read_to_string(dir.join("settings.json")) else { return "-".into() };
+    let Some(raw) = serde_json::from_str::<Value>(txt.trim_start_matches('\u{feff}')).ok().filter(|v| v.is_object()) else { return "?".into() };
+    let mut d = deep_merge_defaults(&DEFAULTS, &raw);
+    let mut sc = DEFAULTS["shortcuts"].clone();
+    merge_into(&mut sc, &raw["shortcuts"]);
+    d["shortcuts"] = sc;
+    let mut tpls: Vec<Value> = match raw["templates"].as_array() {
+        Some(a) if !a.is_empty() => a.iter().map(normalize_template).collect(),
+        _ => DEFAULTS["templates"].as_array().cloned().unwrap_or_default(),
+    };
+    if !tpls.iter().any(|t| t["id"] == "overlay-lyrics") {
+        if let Some(p) = DEFAULTS["templates"].as_array().and_then(|a| a.iter().find(|t| t["id"] == "overlay-lyrics")) {
+            tpls.push(normalize_template(p));
+        }
+    }
+    d["templates"] = json!(tpls);
+    if let Some(o) = d.as_object_mut() {
+        for k in VOLATILE_SETTINGS {
+            o.remove(k);
+        }
+    }
+    // 오버레이가 지금 켜져 있는지는 쓰는 동안 바뀌는 상태 ('모두 지우기' 가 끈다)
+    for o in d["overlays"].as_array_mut().into_iter().flatten() {
+        if let Some(o) = o.as_object_mut() {
+            o.remove("on");
+        }
+    }
+    let mut text = String::new();
+    canon(&d, &mut text);
+    let mut h = Sha256::new();
+    h.update(text.as_bytes());
+    h.finalize().iter().take(12).map(|b| format!("{b:02x}")).collect()
+}
+
+/// 성경 번역본·주석 지문 (개수 | 마지막 가져온 시각 | 절·항목 수). 표가 없으면 빈 것과 같게. 읽기만 한다
+fn library_stamp(db: &Path) -> String {
+    let c = rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok();
+    [("BibleVersions", "verse_count"), ("Commentaries", "entry_count")]
+        .iter()
+        .map(|(t, n)| {
+            let sql = format!("SELECT count(*) || '|' || ifnull(max(imported_at),'') || '|' || ifnull(sum({n}),0) FROM {t}");
+            let v = c.as_ref().and_then(|c| c.query_row(&sql, [], |r| r.get::<_, String>(0)).ok()).unwrap_or_else(|| "0||0".into());
+            format!("{t}:{v}")
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// 큐시트·찬양 말고 사용자가 바꿀 수 있는 것(설정·템플릿·성경 번역본·주석)의 지문
+pub fn extra_stamp(dir: &Path) -> String {
+    format!("settings:{};{}", settings_stamp(dir), library_stamp(&dir.join("bible.db")))
+}
+
 fn count_of(stamp: &str, table: &str) -> i64 {
     stamp.split(';').find_map(|p| p.strip_prefix(&format!("{table}:"))).and_then(|v| v.split('|').next()).and_then(|n| n.parse().ok()).unwrap_or(0)
 }
@@ -108,6 +199,9 @@ pub fn write_marker(data_dir: &Path, old: &Path, how: &str) {
         "electron": content_stamp(&old.join("bible.db")),
         "electronSettingsMtime": mtime_ms(&old.join("settings.json")),
         "rust": content_stamp(&data_dir.join("bible.db")),
+        // 2.x 에서 설정·성경 번역본만 고친 것도 '이 판에서 고침'으로 보려고 (없는 표시 파일은 예전 판이 쓴 것)
+        "electronExtra": extra_stamp(old),
+        "rustExtra": extra_stamp(data_dir),
         "app": env!("CARGO_PKG_VERSION"),
     });
     let tmp = data_dir.join(format!("{MARKER}.tmp"));
@@ -140,12 +234,30 @@ pub fn recheck(data_dir: &Path, old: Option<&Path>) -> Recheck {
     let info = |reason: &str| info_of(reason, old, data_dir, &e_now, &r_now);
     match read_marker(data_dir) {
         Some(m) => {
-            let e_changed = m["electron"].as_str() != Some(e_now.as_str())
-                || mtime_ms(&old.join("settings.json")) > m["electronSettingsMtime"].as_i64().unwrap_or(0) + 2000;
+            let (e_extra, r_extra) = (extra_stamp(old), extra_stamp(data_dir));
+            // 예전 판이 쓴 표시 파일에는 설정·성경 지문이 없다
+            let has_extra = m["electronExtra"].is_string() && m["rustExtra"].is_string();
+            let e_db_changed = m["electron"].as_str() != Some(e_now.as_str());
+            let e_changed = e_db_changed
+                || if has_extra {
+                    // 1.x 를 켜기만 해도 설정 파일 시각은 바뀐다 → 내용(저절로 바뀌는 칸 제외)으로 본다
+                    m["electronExtra"].as_str() != Some(e_extra.as_str())
+                } else {
+                    mtime_ms(&old.join("settings.json")) > m["electronSettingsMtime"].as_i64().unwrap_or(0) + 2000
+                };
             if !e_changed {
                 return Recheck::Nothing;
             }
-            if m["rust"].as_str() == Some(r_now.as_str()) {
+            if !has_extra && !e_db_changed && m["rust"].as_str() == Some(r_now.as_str()) && e_extra == r_extra {
+                // 예전 표시 파일 + 1.x 설정 파일 시각만 바뀜 + 두 쪽 설정·성경이 지금 같다 → 가져올 것도 잃을 것도 없다. 표시만 새로 적는다
+                write_marker(data_dir, old, m["how"].as_str().unwrap_or("existing"));
+                return Recheck::Nothing;
+            }
+            // 묻지 않고 바꾸는 것은 '1.x 에서 그대로 복사해 온 뒤 이 판에서 아무것도 고치지 않았다'가 확실할 때만:
+            // 큐시트·찬양뿐 아니라 설정·템플릿·성경 번역본도 그대로여야 하고(예전 표시 파일은 알 수 없으니 묻는다),
+            // '지금 자료 그대로 쓰기'를 골랐거나(kept) 원래 있던 2.x 자료(existing)는 1.x 와 다른 자료이므로 늘 묻는다
+            let r_untouched = m["rust"].as_str() == Some(r_now.as_str()) && has_extra && m["rustExtra"].as_str() == Some(r_extra.as_str()) && m["how"] == "migrated";
+            if r_untouched {
                 Recheck::Reimport("가져온 뒤 1.x 판 자료가 바뀌었고 이 판에서는 아직 고친 것이 없습니다".into())
             } else {
                 Recheck::Ask(info("both"))
@@ -236,16 +348,35 @@ pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
 
 // ---------------- 옛 설치 파일 정리 ----------------
 /// 받아 둔 설치 파일을 지운다 (설치판에서만 부른다).
-/// - update_cache: 이 판이 받아 둔 설치 파일(자료 폴더\update-cache). 켤 때는 받는 중인 것이 없으므로 모두 지운다
+/// - update_cache: 이 판이 받아 둔 설치 파일(자료 폴더\update-cache)의 설치 파일·받다 만 파일을 모두 지운다.
+///   지금 받는 중이거나 설치하려고 받아 둔 파일이 있을 수 있으면 cleanup_installers_guarded 를 쓴다
 /// - electron_cache: Electron 판 자동 업데이트가 남긴 폴더(%LOCALAPPDATA%\worshipcue-updater, 옛 설치 파일 100MB 이상).
 ///   그 안에 설치 파일·블록맵·pending 말고 다른 것이 있으면 손대지 않는다
 pub fn cleanup_installers(update_cache: &Path, electron_cache: Option<&Path>) -> u64 {
+    cleanup_impl(update_cache, electron_cache, false, None)
+}
+
+/// 켠 뒤에 부르는 정리: 이번 실행의 업데이트 받기와 부딪치지 않게 한다.
+/// - in_use(받는 중·검증 중·설치 준비됨)이면 update_cache 는 아예 건드리지 않는다
+/// - 그렇지 않아도 started(이 프로그램이 켜진 시각) 뒤에 만들어졌거나 바뀐 파일은 남긴다
+///   (상태를 본 직후에 받기가 시작돼도 그 파일은 지우지 않게). 옛 실행이 남긴 것만 지운다
+pub fn cleanup_installers_guarded(update_cache: &Path, electron_cache: Option<&Path>, in_use: bool, started: std::time::SystemTime) -> u64 {
+    cleanup_impl(update_cache, electron_cache, in_use, Some(started))
+}
+
+fn cleanup_impl(update_cache: &Path, electron_cache: Option<&Path>, in_use: bool, started: Option<std::time::SystemTime>) -> u64 {
     let mut freed = 0u64;
-    if let Ok(rd) = std::fs::read_dir(update_cache) {
+    if in_use {
+        log::info!("업데이트 파일을 받는 중이거나 설치 준비가 되어 있어 받아 둔 설치 파일 정리를 건너뜁니다");
+    } else if let Ok(rd) = std::fs::read_dir(update_cache) {
         for e in rd.flatten() {
             let p = e.path();
             let name = e.file_name().to_string_lossy().to_string();
-            if p.is_file() && (name.ends_with("-Setup.exe") || name.ends_with(".part")) {
+            // 시각을 읽지 못하면 이번 실행의 것일 수 있으니 남긴다
+            let from_this_run = started.is_some_and(|s| {
+                e.metadata().map(|m| [m.created(), m.modified()].into_iter().any(|t| t.map(|t| t >= s).unwrap_or(true))).unwrap_or(true)
+            });
+            if p.is_file() && !from_this_run && (name.ends_with("-Setup.exe") || name.ends_with(".part")) {
                 let len = e.metadata().map(|m| m.len()).unwrap_or(0);
                 if std::fs::remove_file(&p).is_ok() {
                     freed += len;
@@ -281,11 +412,13 @@ pub fn start_installer_cleanup(data_dir: &Path) {
         return;
     }
     let cache = data_dir.join("update-cache");
+    // 이 프로그램이 켜진 시각 (여유 5초): 그 뒤에 생긴 파일은 이번 실행이 받은 것
+    let started = std::time::SystemTime::now() - std::time::Duration::from_millis(since_process_start_ms() + 5000);
     std::thread::Builder::new()
         .name("cleanup".into())
         .spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(20));
-            cleanup_installers(&cache, dirs::data_local_dir().map(|d| d.join("worshipcue-updater")).as_deref());
+            cleanup_installers_guarded(&cache, dirs::data_local_dir().map(|d| d.join("worshipcue-updater")).as_deref(), crate::updates::cache_in_use(), started);
         })
         .ok();
 }
@@ -299,24 +432,61 @@ pub fn start_installer_cleanup(data_dir: &Path) {
 /// 1.x 자료 폴더에서 챙겨 둘 폴더
 pub const KEEP_DIRS: [&str; 2] = ["pasted", "hymnal"];
 
+/// 다 쓴 임시 파일(part)을 진짜 이름(to)으로 놓는다. 그 이름의 파일이 이미 있으면 덮지 않고 false.
+/// 윈도우의 이름 바꾸기(rename)는 있던 파일을 말없이 덮으므로 쓰지 않는다: 하드 링크는 대상이 있으면 실패한다(확인과 놓기가 한 동작).
+/// 하드 링크를 못 만드는 디스크(FAT·일부 네트워크 폴더)에서는 '새로 만들기 전용'으로 열어 옮겨 쓴다.
+/// 어느 쪽이든 임시 파일은 지운다
+fn place_no_clobber(part: &Path, to: &Path) -> std::io::Result<bool> {
+    use std::io::ErrorKind::AlreadyExists;
+    let r = match std::fs::hard_link(part, to) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == AlreadyExists || to.exists() => Ok(false),
+        Err(_) => match std::fs::OpenOptions::new().write(true).create_new(true).open(to) {
+            Err(e) if e.kind() == AlreadyExists => Ok(false),
+            Err(e) => Err(e),
+            Ok(mut out) => {
+                let r = std::fs::File::open(part).and_then(|mut i| std::io::copy(&mut i, &mut out)).and_then(|_| out.sync_all());
+                drop(out);
+                if r.is_err() {
+                    let _ = std::fs::remove_file(to); // 방금 우리가 새로 만든 반쪽 파일만 (create_new 가 성공했으므로 남의 파일이 아니다)
+                }
+                r.map(|_| true)
+            }
+        },
+    };
+    let _ = std::fs::remove_file(part);
+    r
+}
+
 fn copy_missing(src: &Path, dst: &Path, done: &mut (usize, usize, u64)) {
+    copy_missing_with(src, dst, done, &mut |_| {})
+}
+
+/// before_place: 임시 파일을 다 쓰고 진짜 이름으로 놓기 직전에 부른다 (시험에서 '그 사이 같은 이름 파일이 생김'을 만든다)
+fn copy_missing_with(src: &Path, dst: &Path, done: &mut (usize, usize, u64), before_place: &mut dyn FnMut(&Path)) {
     let Ok(rd) = std::fs::read_dir(src) else { return };
     for e in rd.flatten() {
         let (from, to) = (e.path(), dst.join(e.file_name()));
         match e.file_type() {
-            Ok(t) if t.is_dir() => copy_missing(&from, &to, done),
+            Ok(t) if t.is_dir() => copy_missing_with(&from, &to, done, before_place),
             // 이미 있으면 손대지 않는다 (이 판에서 새로 가져온 찬송가를 옛것으로 덮지 않게)
             Ok(t) if t.is_file() && !to.exists() => {
                 // 임시 이름으로 다 쓴 뒤 이름을 바꾼다: 복사 도중 꺼져도 반쪽 파일이 진짜 이름으로 남지 않게
                 let mut part = to.clone().into_os_string();
                 part.push(".part");
                 let part = PathBuf::from(part);
-                let r = std::fs::create_dir_all(dst).and_then(|_| std::fs::copy(&from, &part)).and_then(|n| std::fs::rename(&part, &to).map(|_| n));
+                // 진짜 이름으로 놓을 때는 덮지 않는다: 위에서 '없음'을 확인한 뒤 복사하는 사이(큰 파일은 몇 초)에
+                // 이 판에서 같은 이름의 찬송가를 새로 가져왔을 수 있다
+                let r = std::fs::create_dir_all(dst).and_then(|_| std::fs::copy(&from, &part)).and_then(|n| {
+                    before_place(&to);
+                    place_no_clobber(&part, &to).map(|placed| placed.then_some(n))
+                });
                 match r {
-                    Ok(n) => {
+                    Ok(Some(n)) => {
                         done.0 += 1;
                         done.2 += n;
                     }
+                    Ok(None) => log::info!("1.x 파일을 챙기는 사이 같은 이름의 새 파일이 생겨 그대로 둠: {}", to.display()),
                     Err(e) => {
                         let _ = std::fs::remove_file(&part);
                         done.1 += 1;
@@ -863,8 +1033,11 @@ mod tests {
         assert_eq!(repoint_pasted(&c, &new, &old), 0); // 다시 불러도 그대로
     }
 
+    /// '묻기' 상태(ASK)는 프로세스에 하나뿐이라, 그것을 쓰는 시험끼리 겹치지 않게
+    static ASK_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
     #[test]
     fn stamp_and_marker_flow() {
+        let _ask = ASK_LOCK.lock();
         let (old, new) = (tmp("o"), tmp("n"));
         db_with(&old, &[("a", "2026-11-01")]);
         std::fs::write(old.join("settings.json"), "{}").unwrap();
@@ -955,6 +1128,237 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
+    // ---- 다시 가져오기 판단: 설정·성경 번역본만 고친 경우 ----
+    /// 1.x 자료와 그것을 그대로 복사해 온 2.x 자료 (표시 파일 how=migrated)
+    fn migrated_pair(tag: &str) -> (PathBuf, PathBuf) {
+        let (old, new) = (tmp(&format!("{tag}o")), tmp(&format!("{tag}n")));
+        db_with(&old, &[("a", "2026-11-01")]);
+        std::fs::write(old.join("settings.json"), r#"{"port":37528,"output":{"autoOnSend":true},"templates":[{"id":"t1","name":"예배당"}]}"#).unwrap();
+        assert!(crate::core::prepare_data_dir_from(&new, Some(&old), None).unwrap().is_some());
+        assert_eq!(read_marker(&new).unwrap()["how"], "migrated");
+        (old, new)
+    }
+    /// 이 판이 설정을 읽고 f 로 고쳐 저장한다 (실제와 같이 기본값이 채워지고 템플릿이 다듬어진 모양으로 저장됨)
+    fn rust_saves(dir: &Path, f: impl FnOnce(&mut Value)) {
+        let mut s = crate::settings::Settings::load(dir);
+        s.update(f);
+        s.save_now().unwrap();
+    }
+    fn add_cue(dir: &Path, id: &str, at: &str) {
+        db_with(dir, &[(id, at)]);
+    }
+    fn cleanup(dirs: &[&PathBuf]) {
+        for d in dirs {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+    #[test]
+    fn only_source_changed_reimports_and_keeps_previous_data() {
+        let (old, new) = migrated_pair("src");
+        // 이 판에서는 쓰기만 했다: 저절로 바뀌는 칸(포트·검색 기록·통계·마지막 큐시트)만 바뀌고 파일은 이 판 모양으로 다시 써짐
+        rust_saves(&new, |d| {
+            d["port"] = json!(37529);
+            d["history"] = json!([{ "at": 1, "title": "요 3:16" }]);
+            d["telemetryDay"] = json!("2026-11-16");
+            d["telemetryId"] = json!("abc");
+            d["activeCueId"] = json!("a");
+        });
+        assert_eq!(recheck(&new, Some(&old)), Recheck::Nothing, "1.x 가 그대로면 아무 일도 없다");
+        // 1.x 를 켜기만 해서 설정 파일 시각·포트만 바뀜 → 다시 가져오지도 묻지도 않는다
+        std::fs::write(old.join("settings.json"), r#"{"port":40000,"history":[1],"output":{"autoOnSend":true},"templates":[{"id":"t1","name":"예배당"}]}"#).unwrap();
+        assert_eq!(recheck(&new, Some(&old)), Recheck::Nothing);
+        // 1.x 에서 큐시트를 더 만듦 → 묻지 않고 다시 가져오되, 전에 쓰던 자료는 pre-reimport 에 남는다
+        add_cue(&old, "b", "2026-11-14");
+        assert!(matches!(recheck(&new, Some(&old)), Recheck::Reimport(_)));
+        let note = crate::core::prepare_data_dir_from(&new, Some(&old), None).unwrap().unwrap();
+        assert!(note.contains(ASIDE_DIR), "{note}");
+        assert_eq!(count_of(&content_stamp(&new.join("bible.db")), "Cuesheets"), 2);
+        let kept: Vec<_> = std::fs::read_dir(new.join(ASIDE_DIR)).unwrap().flatten().map(|e| e.path()).collect();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(count_of(&content_stamp(&kept[0].join("bible.db")), "Cuesheets"), 1);
+        assert!(std::fs::read_to_string(kept[0].join("settings.json")).unwrap().contains("37529"));
+        // 1.x 설정을 실제로 고침(템플릿 이름) + 이 판은 그대로 → 다시 가져오기
+        assert_eq!(recheck(&new, Some(&old)), Recheck::Nothing);
+        std::fs::write(old.join("settings.json"), r#"{"port":40000,"output":{"autoOnSend":true},"templates":[{"id":"t1","name":"본당"}]}"#).unwrap();
+        assert!(matches!(recheck(&new, Some(&old)), Recheck::Reimport(_)));
+        cleanup(&[&old, &new]);
+    }
+    #[test]
+    fn rust_settings_only_change_asks_and_keeps_data() {
+        let (old, new) = migrated_pair("set");
+        // 이 판에서 설정만 고침 (큐시트·찬양은 그대로)
+        rust_saves(&new, |d| d["output"]["autoOnSend"] = json!(false));
+        assert_eq!(read_marker(&new).unwrap()["rust"], json!(content_stamp(&new.join("bible.db"))), "큐시트·찬양 지문은 그대로");
+        let before = std::fs::read_to_string(new.join("settings.json")).unwrap();
+        add_cue(&old, "b", "2026-11-14");
+        // 고치기 전에는 여기서 Reimport 가 나와 방금 고친 설정이 1.x 것으로 되돌아갔다
+        let Recheck::Ask(v) = recheck(&new, Some(&old)) else { panic!("설정만 고쳤어도 묻기여야 함") };
+        assert_eq!(v["reason"], "both");
+        // 켜는 흐름 전체: 묻기만 하고 자료는 그대로
+        let _ask = ASK_LOCK.lock();
+        assert!(crate::core::prepare_data_dir_from(&new, Some(&old), None).unwrap().is_none());
+        assert_eq!(ask().unwrap()["reason"], "both");
+        set_ask(None);
+        assert_eq!(std::fs::read_to_string(new.join("settings.json")).unwrap(), before);
+        assert_eq!(count_of(&content_stamp(&new.join("bible.db")), "Cuesheets"), 1);
+        assert!(!new.join(ASIDE_DIR).exists());
+        // 템플릿만 고친 경우도 묻는다
+        let (old2, new2) = migrated_pair("tpl");
+        rust_saves(&new2, |d| d["templates"][0]["name"] = json!("본당 자막"));
+        add_cue(&old2, "b", "2026-11-14");
+        assert!(matches!(recheck(&new2, Some(&old2)), Recheck::Ask(_)));
+        // '지금 자료 그대로 쓰기' 뒤에는 다시 묻지 않고, 1.x 가 또 바뀌어도 말없이 바꾸지 않고 묻는다
+        set_ask(Some(info_of("both", &old2, &new2, "", "")));
+        keep_current(&new2);
+        assert_eq!(recheck(&new2, Some(&old2)), Recheck::Nothing);
+        add_cue(&old2, "c", "2026-11-15");
+        assert!(matches!(recheck(&new2, Some(&old2)), Recheck::Ask(_)), "그대로 쓰기로 한 자료는 저절로 바꾸지 않는다");
+        cleanup(&[&old, &new, &old2, &new2]);
+    }
+    #[test]
+    fn rust_bible_version_change_asks() {
+        let (old, new) = migrated_pair("bib");
+        let c = rusqlite::Connection::open(new.join("bible.db")).unwrap();
+        c.execute_batch("CREATE TABLE IF NOT EXISTS BibleVersions(id TEXT PRIMARY KEY, name TEXT, imported_at TEXT, verse_count INTEGER); CREATE TABLE IF NOT EXISTS Commentaries(id TEXT PRIMARY KEY, name TEXT, imported_at TEXT, entry_count INTEGER);").unwrap();
+        drop(c);
+        // 빈 표가 생긴 것(이 판이 열면서 만드는 표)은 바뀐 것으로 치지 않는다
+        add_cue(&old, "b", "2026-11-14");
+        assert!(matches!(recheck(&new, Some(&old)), Recheck::Reimport(_)));
+        // 이 판에서 번역본을 가져옴 → 묻기
+        let c = rusqlite::Connection::open(new.join("bible.db")).unwrap();
+        c.execute("INSERT INTO BibleVersions VALUES('nkrv','개역개정','2026-11-16T10:00:00Z',31102)", []).unwrap();
+        drop(c);
+        assert!(matches!(recheck(&new, Some(&old)), Recheck::Ask(_)));
+        cleanup(&[&old, &new]);
+    }
+    #[test]
+    fn old_marker_without_settings_stamp_is_conservative() {
+        // 2.0.x 가 쓴 표시 파일: 설정·성경 지문이 없다
+        let old_marker = |old: &Path, new: &Path| {
+            let m = json!({ "from": old.to_string_lossy(), "at": "2026-11-15T00:00:00Z", "how": "migrated", "electron": content_stamp(&old.join("bible.db")), "electronSettingsMtime": 1000, "rust": content_stamp(&new.join("bible.db")), "app": "2.0.1" });
+            std::fs::write(new.join(MARKER), m.to_string()).unwrap();
+        };
+        // 1.x 설정 파일 시각만 새롭고 두 쪽 내용이 같다 → 묻지 않고 표시 파일만 새 모양으로
+        let (old, new) = migrated_pair("om1");
+        rust_saves(&new, |d| d["port"] = json!(37530));
+        old_marker(&old, &new);
+        assert_eq!(recheck(&new, Some(&old)), Recheck::Nothing);
+        let m = read_marker(&new).unwrap();
+        assert!(m["rustExtra"].is_string() && m["how"] == "migrated");
+        add_cue(&old, "b", "2026-11-14");
+        assert!(matches!(recheck(&new, Some(&old)), Recheck::Reimport(_)), "새 표시 파일이 된 뒤에는 전처럼 저절로");
+        // 이 판 설정이 1.x 와 다르다(언제 고쳤는지 알 수 없음) → 묻는다
+        let (old2, new2) = migrated_pair("om2");
+        rust_saves(&new2, |d| d["output"]["autoOnSend"] = json!(false));
+        old_marker(&old2, &new2);
+        assert!(matches!(recheck(&new2, Some(&old2)), Recheck::Ask(_)));
+        // 예전 표시 파일 + 1.x 큐시트가 바뀜: 이 판 설정을 고쳤는지 알 수 없으니 묻는다
+        let (old3, new3) = migrated_pair("om3");
+        old_marker(&old3, &new3);
+        add_cue(&old3, "b", "2026-11-14");
+        assert!(matches!(recheck(&new3, Some(&old3)), Recheck::Ask(_)));
+        cleanup(&[&old, &new, &old2, &new2, &old3, &new3]);
+    }
+    #[test]
+    fn settings_stamp_ignores_rewrite_and_volatile_keys() {
+        let d = tmp("ss");
+        assert_eq!(settings_stamp(&d), "-");
+        // 1.x 가 쓴 모양 (기본값 빠짐, 키 순서 제각각, BOM)
+        std::fs::write(d.join("settings.json"), "\u{feff}{\"templates\":[{\"name\":\"예배당\",\"id\":\"t1\"}],\"overlays\":[{\"id\":\"o1\",\"on\":true}],\"port\":1}").unwrap();
+        let a = settings_stamp(&d);
+        assert_eq!(a.len(), 24);
+        // 이 판이 읽고 저절로 바뀌는 칸만 고쳐 다시 쓴다 → 같은 지문
+        rust_saves(&d, |v| {
+            for k in VOLATILE_SETTINGS {
+                v[k] = json!("바뀜");
+            }
+            v["overlays"][0]["on"] = json!(false);
+        });
+        assert_eq!(settings_stamp(&d), a);
+        rust_saves(&d, |_| {});
+        assert_eq!(settings_stamp(&d), a, "다시 읽고 써도 그대로");
+        // 사용자가 고치는 칸은 지문이 바뀐다
+        rust_saves(&d, |v| v["shortcuts"]["quickText"] = json!("Ctrl+J"));
+        assert_ne!(settings_stamp(&d), a);
+        std::fs::write(d.join("settings.json"), "[1,2").unwrap();
+        assert_eq!(settings_stamp(&d), "?");
+        cleanup(&[&d]);
+    }
+    // ---- 1.x 파일 챙기기: 확인한 뒤 생긴 파일을 덮지 않기 ----
+    #[test]
+    fn copy_missing_does_not_clobber_file_created_during_copy() {
+        let (old, new) = (tmp("rco"), tmp("rcn"));
+        std::fs::create_dir_all(old.join("hymnal")).unwrap();
+        std::fs::write(old.join("hymnal").join("hymn.hdb"), b"old-hdb").unwrap();
+        std::fs::write(old.join("hymnal").join("hymn.cmp"), b"old-cmp").unwrap();
+        // 고치기 전 방식(이름 바꾸기)은 윈도우에서 있던 파일을 말없이 덮는다는 것을 확인
+        #[cfg(windows)]
+        {
+            let (a, b) = (new.join("a.part"), new.join("a"));
+            std::fs::write(&a, b"from-old").unwrap();
+            std::fs::write(&b, b"newer").unwrap();
+            std::fs::rename(&a, &b).unwrap();
+            assert_eq!(std::fs::read(&b).unwrap(), b"from-old", "rename 은 덮어쓴다");
+            std::fs::remove_file(&b).unwrap();
+        }
+        // '없음'을 확인하고 복사하는 사이, 이 판에서 같은 이름의 찬송가를 새로 가져옴
+        let mut done = (0, 0, 0);
+        let mut hook = |to: &Path| {
+            if to.file_name().is_some_and(|n| n == "hymn.hdb") {
+                std::fs::write(to, b"newer-imported").unwrap();
+            }
+        };
+        copy_missing_with(&old.join("hymnal"), &new.join("hymnal"), &mut done, &mut hook);
+        assert_eq!(std::fs::read(new.join("hymnal").join("hymn.hdb")).unwrap(), b"newer-imported", "새로 생긴 파일을 덮지 않는다");
+        assert_eq!(std::fs::read(new.join("hymnal").join("hymn.cmp")).unwrap(), b"old-cmp");
+        assert_eq!(done, (1, 0, 7), "덮지 않고 둔 것은 복사·실패 어느 쪽으로도 세지 않는다");
+        let names: Vec<String> = std::fs::read_dir(new.join("hymnal")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert!(!names.iter().any(|n| n.ends_with(".part")), "임시 파일이 남지 않는다: {names:?}");
+        assert_eq!(std::fs::read(old.join("hymnal").join("hymn.hdb")).unwrap(), b"old-hdb", "1.x 폴더는 그대로");
+        // 놓기 함수 자체: 대상이 있으면 false, 없으면 놓고 true, 임시 파일이 없으면 오류(대상은 안 생김)
+        let (p, t) = (new.join("x.part"), new.join("x"));
+        std::fs::write(&p, b"1").unwrap();
+        assert!(place_no_clobber(&p, &t).unwrap());
+        assert!(!p.exists() && std::fs::read(&t).unwrap() == b"1");
+        std::fs::write(&p, b"2").unwrap();
+        assert!(!place_no_clobber(&p, &t).unwrap());
+        assert!(!p.exists() && std::fs::read(&t).unwrap() == b"1");
+        assert!(place_no_clobber(&new.join("없음.part"), &new.join("y")).is_err());
+        assert!(!new.join("y").exists(), "실패하면 반쪽 파일을 남기지 않는다");
+        cleanup(&[&old, &new]);
+    }
+    // ---- 옛 설치 파일 정리와 업데이트 받기 ----
+    #[test]
+    fn guarded_cleanup_leaves_active_download_and_ready_installer() {
+        let d = tmp("gc");
+        let cache = d.join("update-cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        let (part, ready, note) = (cache.join("123.part"), cache.join("abc-1-WorshipPresenter-2.0.2-Setup.exe"), cache.join("note.txt"));
+        let fill = || {
+            std::fs::write(&part, vec![0u8; 300]).unwrap();
+            std::fs::write(&ready, vec![0u8; 700]).unwrap();
+            std::fs::write(&note, b"keep").unwrap();
+        };
+        fill();
+        let hour = std::time::Duration::from_secs(3600);
+        let now = std::time::SystemTime::now();
+        // 고치기 전 동작(지금의 무조건 정리): 받는 중인 파일·검증이 끝난 설치 파일을 모두 지운다
+        assert_eq!(cleanup_installers(&cache, None), 1000);
+        assert!(!part.exists() && !ready.exists() && note.is_file());
+        // 1) 받는 중·설치 준비됨 → 오래된 파일이라도 손대지 않는다
+        fill();
+        assert_eq!(cleanup_installers_guarded(&cache, None, true, now + hour), 0);
+        assert!(part.is_file() && ready.is_file());
+        // 2) 상태를 본 직후 받기가 시작된 경우: 이번 실행(켜진 시각 뒤)에 생긴 파일은 남긴다
+        assert_eq!(cleanup_installers_guarded(&cache, None, false, now - hour), 0);
+        assert!(part.is_file() && ready.is_file());
+        // 3) 옛 실행이 남긴 파일(켜지기 전에 생김)만 지운다. 다른 파일은 그대로
+        assert_eq!(cleanup_installers_guarded(&cache, None, false, now + hour), 1000);
+        assert!(!part.exists() && !ready.exists() && note.is_file());
+        // 업데이트를 한 번도 안 받은 처음 상태는 '쓰는 중'이 아니다
+        let _ = crate::updates::cache_in_use();
+        cleanup(&[&d]);
+    }
     #[test]
     fn request_file_forces_reimport_and_set_aside_keeps_files() {
         let d = tmp("r");
