@@ -271,7 +271,12 @@ pub fn build_meta(data_dir: &Path, file: &str, render: &str) -> Result<Value, St
         }
     }
     if pp {
-        return export_powerpoint(data_dir, file);
+        return match export_powerpoint(data_dir, file) {
+            Ok(m) => Ok(m),
+            // PowerPoint 가 못 열면(사용 중·보호된 보기·라이선스 창 등) 새 형식은 직접 그려 본다. 그것도 안 되면 PowerPoint 오류를 알린다
+            Err(e) if xml => crate::pptx::build::build_cache(data_dir, file).map_err(|e2| { log::warn!("PowerPoint 실패 뒤 직접 그리기도 실패: {e2}"); e }),
+            Err(e) => Err(e),
+        };
     }
     if xml { crate::pptx::build::build_cache(data_dir, file) } else { crate::pps::build_cache(data_dir, file) }
 }
@@ -655,6 +660,7 @@ pub fn has_powerpoint() -> bool {
 /// Electron pptrender.js 의 PS 와 같은 스크립트: 슬라이드마다 PNG + 글자(texts.json)
 const PS_EXPORT: &str = r#"
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $pp = New-Object -ComObject PowerPoint.Application
 try {
   $p = $pp.Presentations.Open($env:WC_PPT_FILE, -1, 0, 0)
@@ -694,6 +700,7 @@ try {
 /// Electron pptrender.js PS_BG: hide.json 의 도형을 숨기고 슬라이드마다 slide-NNN-bg.png (파일은 저장하지 않음)
 const PS_BG: &str = r#"
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $hide = Get-Content -LiteralPath $env:WC_PPT_HIDE -Raw -Encoding UTF8 | ConvertFrom-Json
 $pp = New-Object -ComObject PowerPoint.Application
 try {

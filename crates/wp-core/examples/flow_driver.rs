@@ -65,6 +65,8 @@ fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
         // 두 번 눌러 송출과 같은 길 (그림을 만드는 중이면 false — 다 만들면 이어서 송출)
         "sendItemReal" => json!(c.send_item(idx())),
         "loadHymn" => wp_core::hymns::load(c, a["file"].as_str().unwrap_or(""))?,
+        // PPT 요소 따로 꺼내기 (처음에는 '만드는 중' 오류 — 다시 부르면 결과)
+        "pptTextLayers" => wp_core::hymns::ppt_text_layers(c, a["file"].as_str().unwrap_or(""), (a["screen"]["w"].as_f64().unwrap_or(1920.0), a["screen"]["h"].as_f64().unwrap_or(1080.0)), a["again"].as_bool().unwrap_or(false))?,
         "isBuilding" => json!(wp_core::hymns::is_building(a["file"].as_str().unwrap_or(""))),
         "toast" => json!(c.toast.as_ref().map(|t| json!({ "text": t.0, "kind": t.1 }))),
         "searchHymns" => json!(wp_core::hymns::search(c, a["query"].as_str().unwrap_or("")).into_iter().map(|h| json!({ "file": h.file.to_string_lossy(), "number": h.number, "title": h.title, "name": h.name, "folder": h.folder })).collect::<Vec<_>>()),

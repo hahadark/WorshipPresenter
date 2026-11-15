@@ -2,7 +2,7 @@
 //
 // 준비는 README.md 와 같다 (자료 두 벌 · Electron 소스 실행 · flow_driver).
 // 실행: node tools\flow-compare\hymnal.js --el <포트> --rs-data tmp\rs-data --el-data tmp\el-data --out tmp\hymnal-out [--outside <등록 폴더 밖 PPT>]
-//   --part search,bethlehem,scores,allow 가운데 고르기 (기본 전부)
+//   --part search,bethlehem,scores,allow,layers 가운데 고르기 (기본 전부). layers = 붙여 넣은 PPT 의 요소 따로 꺼내기 결과
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -16,7 +16,8 @@ const ELD = path.resolve(opt('el-data', 'tmp/el-data'));
 const RS = `http://127.0.0.1:${fs.readFileSync(path.join(RSD, 'flow-port.txt'), 'utf8').trim()}`;
 const RSCTL = fs.readFileSync(path.join(RSD, 'flow-ctl.txt'), 'utf8').trim();
 const OUT = opt('out', 'tmp/hymnal-out');
-const PARTS = opt('part', 'search,bethlehem,scores,allow').split(',');
+const PARTS = opt('part', 'search,bethlehem,scores,allow,layers').split(',');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 fs.mkdirSync(OUT, { recursive: true });
 
 async function rsRaw(cmd, args = {}) {
@@ -156,6 +157,45 @@ async function main() {
         const same = e.slice(0, 2) === r.slice(0, 2);
         al.push({ name, el: e, rs: r, same, elFile: ef, rsFile: rf });
         console.log(`허용 경계 · ${name}: E ${e} / R ${r}${same ? '' : '  ← 다름'}`);
+      }
+    }
+
+    if (PARTS.includes('layers')) {
+      // 요소 따로 꺼내기: 자기 자료의 붙여 넣은 PPT (같은 이름) 마다 슬라이드별 요소(글상자·그림·도형)의 수·자리·글·크기·색을 견준다
+      const names = fs.readdirSync(path.join(ELD, 'pasted')).filter(x => /^clip-\d{8}-\d{6}\.pptx$/i.test(x) && fs.existsSync(path.join(RSD, 'pasted', x)));
+      const lr = (report.layers = []);
+      const screen = { w: 1920, h: 1080 };
+      const strip = it => { const o = { ...it }; delete o.id; if (typeof o.src === 'string') o.src = o.src.replace(/\/hymn\/[0-9a-f]{16}\//, '/hymn/K/').replace(/\?v=.*$/, ''); return o; };
+      for (const name of names) {
+        const rep1 = { name };
+        lr.push(rep1);
+        let e, r;
+        try { e = await el('pptTextLayers', { file: path.join(ELD, 'pasted', name), screen }); } catch (x) { rep1.elError = x.message; }
+        for (let i = 0; i < 240; i++) {
+          const rr = await rsRaw('pptTextLayers', { file: path.join(RSD, 'pasted', name), screen });
+          if (rr.ok) { r = rr.result; break; }
+          if (!/만드는 중|being/i.test(rr.error)) { rep1.rsError = rr.error; break; }
+          await sleep(250);
+        }
+        if (!e || !r) { console.log(`요소 꺼내기 · ${name}: ${rep1.elError ? 'E오류 ' + rep1.elError : ''} ${rep1.rsError ? 'R오류 ' + rep1.rsError : ''}`); continue; }
+        rep1.slides = [e.slides.length, r.slides.length];
+        rep1.bgs = [(e.bgs || []).filter(Boolean).length, (r.bgs || []).filter(Boolean).length];
+        let items = 0, same = 0, near = 0; const diffs = [];
+        for (let k = 0; k < Math.max(e.slides.length, r.slides.length); k++) {
+          const [a, b] = [(e.slides[k] || []).map(strip), (r.slides[k] || []).map(strip)];
+          if (a.length !== b.length) diffs.push({ slide: k + 1, count: [a.length, b.length], types: [a.map(x => x.type[0]).join(''), b.map(x => x.type[0]).join('')] });
+          for (let j = 0; j < Math.min(a.length, b.length); j++) {
+            items++;
+            if (J(a[j]) === J(b[j])) { same++; continue; }
+            const ks = [...new Set([...Object.keys(a[j]), ...Object.keys(b[j])])].filter(x => J(a[j][x]) !== J(b[j][x]));
+            // 자리·크기가 화면의 0.2% 안, 글자 크기가 1 안이면 '거의 같음'
+            const close = ks.every(x => typeof a[j][x] === 'number' && typeof b[j][x] === 'number' && Math.abs(a[j][x] - b[j][x]) <= (x === 'size' ? 1 : 0.2));
+            if (close) near++; else diffs.push({ slide: k + 1, item: j, type: a[j].type, keys: ks, el: Object.fromEntries(ks.map(x => [x, a[j][x]])), rs: Object.fromEntries(ks.map(x => [x, b[j][x]])) });
+          }
+        }
+        Object.assign(rep1, { items, same, near, diffs });
+        console.log(`요소 꺼내기 · ${name}: 슬라이드 E${rep1.slides[0]}/R${rep1.slides[1]} · 배경 그림 E${rep1.bgs[0]}/R${rep1.bgs[1]} · 요소 ${items}개 가운데 같음 ${same} · 거의 같음 ${near} · 다름 ${diffs.length}`);
+        for (const d of diffs.slice(0, 8)) console.log('   ' + JSON.stringify(d).slice(0, 330));
       }
     }
   } finally {
