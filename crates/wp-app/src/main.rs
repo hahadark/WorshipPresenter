@@ -102,11 +102,34 @@ fn main() -> anyhow::Result<()> {
     if let Some(pid) = arg("--wait-pid").and_then(|p| p.parse::<u32>().ok()) {
         wp_core::firstrun::wait_for_pid(pid);
     }
-    let (already, _instance) = wp_core::parity_a::single_instance(&data_dir);
-    if already {
+    let (mut already, mut _instance) = wp_core::parity_a::single_instance(&data_dir);
+    let waiting = std::time::Instant::now();
+    while already {
         // 먼저 켜진 프로세스 번호로 창을 찾는다 (제목만으로 찾으면 같은 제목의 Electron 1.x 창을 올릴 수 있음)
-        wp_core::firstrun::focus_instance(&data_dir);
-        return Ok(());
+        if wp_core::firstrun::focus_instance(&data_dir) {
+            // 그 창이 닫히는 중일 수도 있다(끄자마자 다시 켠 경우): 잠깐 지켜보고 사라지면 아래에서 기다렸다 켠다
+            let mut gone = false;
+            for _ in 0..8 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                if !wp_core::firstrun::instance_has_window(&data_dir) {
+                    gone = true;
+                    break;
+                }
+            }
+            if !gone {
+                return Ok(());
+            }
+        }
+        // 창이 없다 = 먼저 켜진 것이 막 꺼지는 중이거나(창은 닫혔지만 프로세스 정리가 안 끝남 · 강제 종료 직후) 아직 켜지는 중.
+        // 전에는 여기서 조용히 끝나서 '껐다가 바로 다시 켜면 아무 일도 안 일어나는' 일이 있었다 → 풀릴 때까지 기다렸다 켠다
+        if waiting.elapsed() > std::time::Duration::from_secs(15) {
+            log::warn!("두 번 실행: 먼저 켜진 것(instance.pid {:?})이 15초 동안 끝나지도 창을 보이지도 않았습니다", std::fs::read_to_string(data_dir.join("instance.pid")).ok());
+            wp_core::firstrun::error_box("워십프리젠터가 이미 켜져 있는데 창을 찾지 못했습니다.\n\n작업 관리자(Ctrl+Shift+Esc)에서 WorshipPresenter 를 끝낸 뒤 다시 켜 주세요.");
+            return Ok(());
+        }
+        wp_core::firstrun::close_instance_handle(_instance.take());
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        (already, _instance) = wp_core::parity_a::single_instance(&data_dir);
     }
     wp_core::firstrun::mark("로그·단일 실행");
     wp_core::firstrun::write_instance_pid(&data_dir);

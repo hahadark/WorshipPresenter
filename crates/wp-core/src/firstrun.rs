@@ -376,14 +376,27 @@ pub fn wait_for_pid(pid: u32) {
 }
 
 // ---------------- 두 번 실행 ----------------
+/// 두 번 실행 검사에 쓴 핸들(뮤텍스)을 닫는다 — 먼저 켜진 것이 끝나길 기다렸다 다시 검사하려고
+pub fn close_instance_handle(h: Option<isize>) {
+    #[cfg(windows)]
+    if let Some(h) = h.filter(|h| *h != 0) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(h as _);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = h;
+}
 pub fn write_instance_pid(data_dir: &Path) {
     *CUR_DIR.lock() = Some(data_dir.to_path_buf());
     let _ = std::fs::write(data_dir.join("instance.pid"), std::process::id().to_string());
 }
 
-/// 먼저 켜진 워십프리젠터(같은 자료 폴더)의 창을 앞으로. 프로세스 번호로 찾으므로 같은 제목의 다른 프로그램(Electron 1.x 등)은 건드리지 않는다
-pub fn focus_instance(data_dir: &Path) -> bool {
-    let Some(pid) = std::fs::read_to_string(data_dir.join("instance.pid")).ok().and_then(|s| s.trim().parse::<u32>().ok()) else { return false };
+/// 먼저 켜진 워십프리젠터(같은 자료 폴더)의 창. 프로세스 번호로 찾으므로 같은 제목의 다른 프로그램(Electron 1.x 등)은 건드리지 않는다.
+/// 조작 화면(winit 창)이나 시작 창만 센다 — winit 의 보이지 않는 보조 창('Winit Thread Event Target')은 창이 닫힌 뒤에도
+/// 프로세스가 끝날 때까지 남아 있어서, 그것을 세면 '꺼지는 중'인 것을 '켜져 있다'로 잘못 본다
+fn instance_window(data_dir: &Path) -> Option<isize> {
+    let pid = std::fs::read_to_string(data_dir.join("instance.pid")).ok().and_then(|s| s.trim().parse::<u32>().ok())?;
     #[cfg(windows)]
     unsafe {
         use windows_sys::Win32::Foundation::{HWND, LPARAM};
@@ -401,6 +414,11 @@ pub fn focus_instance(data_dir: &Path) -> bool {
                 return 1;
             }
             let mut buf = [0u16; 64];
+            let n = unsafe { GetClassNameW(h, buf.as_mut_ptr(), 64) };
+            let class = String::from_utf16_lossy(&buf[..n.max(0) as usize]);
+            if class != "Window Class" && class != "WorshipPresenterSplash" {
+                return 1;
+            }
             let n = unsafe { GetWindowTextW(h, buf.as_mut_ptr(), 64) };
             if String::from_utf16_lossy(&buf[..n.max(0) as usize]) == "워십프리젠터" {
                 f.main = h;
@@ -414,22 +432,35 @@ pub fn focus_instance(data_dir: &Path) -> bool {
         let mut f = Find { pid, main: std::ptr::null_mut(), any: std::ptr::null_mut() };
         EnumWindows(Some(cb), &mut f as *mut Find as LPARAM);
         let h = if f.main.is_null() { f.any } else { f.main };
-        if h.is_null() {
-            return false;
-        }
-        if IsIconic(h) != 0 {
-            ShowWindow(h, SW_RESTORE);
-        }
-        SetForegroundWindow(h);
-        true
+        if h.is_null() { None } else { Some(h as isize) }
     }
     #[cfg(not(windows))]
     {
         let _ = pid;
-        false
+        None
     }
 }
 
+/// 먼저 켜진 것의 창이 (아직) 있나
+pub fn instance_has_window(data_dir: &Path) -> bool {
+    instance_window(data_dir).is_some()
+}
+
+/// 먼저 켜진 워십프리젠터의 창을 앞으로 (작게 해 둔 창이면 되살린다). 창이 없으면 false
+pub fn focus_instance(data_dir: &Path) -> bool {
+    let Some(h) = instance_window(data_dir) else { return false };
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let h = h as windows_sys::Win32::Foundation::HWND;
+        if IsIconic(h) != 0 {
+            ShowWindow(h, SW_RESTORE);
+        }
+        SetForegroundWindow(h);
+    }
+    let _ = h;
+    true
+}
 // ---------------- 시작 안내 창 ----------------
 /// 더블클릭하자마자(프로세스 시작 뒤 수십 ms) 작은 시작 창을 띄운다. 조작 화면은 그래픽 준비 때문에 0.6~1초 뒤에야 보이므로
 /// 그동안 '켜지고 있다'는 것이 보이게. 자료를 옮길 때는 진행률을 함께 보인다. 조작 화면 첫 프레임이 그려지면 닫힌다(splash_done)
