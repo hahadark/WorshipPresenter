@@ -97,16 +97,20 @@ pub fn import(store: &BibleStore, data: &Value) -> Result<usize> {
     Ok(n)
 }
 
-/// 진행 시계: 시작 시각 "HH:MM" + 순서별 duration(분) → 순서마다 예정 시각
+/// 진행 시계: 시작 시각 "HH:MM" + 순서별 duration(분) → 순서마다 예정 시각.
+/// Electron cue.js planMinutes · hm 과 같은 셈: 분은 소수 그대로 더하고(2.5분 + 2.5분 = 5분) 보일 때만 반올림, 글자로 적힌 숫자("5")도 센다,
+/// 시작 시각은 `시:분` 꼴(시 1~2자리 · 분 2자리)만 받는다.
 pub fn planned_times(start: &str, items: &[Value]) -> Vec<String> {
-    let parsed = start.split_once(':').and_then(|(h, m)| Some((h.trim().parse::<i64>().ok()?, m.trim().parse::<i64>().ok()?)));
+    let parsed = start.split_once(':').filter(|(h, m)| matches!(h.len(), 1 | 2) && m.len() == 2 && h.bytes().chain(m.bytes()).all(|b| b.is_ascii_digit())).and_then(|(h, m)| Some((h.parse::<f64>().ok()?, m.parse::<f64>().ok()?)));
     let Some((h, m)) = parsed else { return vec![String::new(); items.len()] };
-    let mut t = h * 60 + m;
+    let mut t = h * 60.0 + m;
     items
         .iter()
         .map(|it| {
-            let s = format!("{:02}:{:02}", (t / 60) % 24, t % 60);
-            t += it["duration"].as_f64().unwrap_or(0.0).round() as i64;
+            // JS Math.round: 반은 올림
+            let s = format!("{:02}:{:02}", ((t / 60.0).floor() as i64) % 24, ((t + 0.5).floor() as i64) % 60);
+            let d = match &it["duration"] { Value::String(x) => x.trim().parse::<f64>().unwrap_or(0.0), v => v.as_f64().unwrap_or(0.0) };
+            t += if d.is_finite() { d } else { 0.0 };
             s
         })
         .collect()
@@ -256,6 +260,13 @@ mod tests {
         assert_eq!(import(&s, &ex).unwrap(), 1);
         assert_eq!(s.list_cues().len(), 3);
         assert_eq!(planned_times("11:00", &c.items), vec!["11:00", "11:03"]);
+        // [점검 A] Electron 과 같은 셈: 소수 분은 그대로 더함 · 글자 숫자 · 자정 넘김 · 틀린 시작 시각
+        let d = |v: Value| json!({ "type": "title", "duration": v });
+        assert_eq!(planned_times("9:05", &[d(json!(2.5)), d(json!(2.5)), d(json!("5")), d(json!(null)), d(json!(0))]), vec!["09:05", "09:08", "09:10", "09:15", "09:15"]);
+        assert_eq!(planned_times("23:50", &[d(json!(15)), d(json!(600)), d(json!(1))]), vec!["23:50", "00:05", "10:05"]);
+        assert_eq!(planned_times("", &[d(json!(5))]), vec![""]);
+        assert_eq!(planned_times("10:5", &[d(json!(5))]), vec![""]);
+        assert_eq!(planned_times("오전 10:30", &[d(json!(5))]), vec![""]);
         assert!(print_html(&c).contains("11:03"));
         trash(&s, "c1").unwrap();
         assert_eq!(purge(&s, None).unwrap(), 1);
