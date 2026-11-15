@@ -3982,5 +3982,13 @@
  "다시 가져와도 지금 자료는 지우지 않고 {1} 에 보관합니다.": "Your current data is not deleted; it is kept in {1}.",
  "1.x 자료 다시 가져오기 (프로그램이 다시 켜집니다)": "Re-import 1.x data (the app restarts)",
  "지금 자료 그대로 쓰기": "Keep current data",
- "설치 없이 쓰는 판(포터블)은 스스로 바꾸지 않습니다. 릴리스 페이지에서 새 Portable.zip 을 받거나 설치 파일로 설치하세요.": "The portable version does not update itself. Download the new Portable.zip from the releases page, or install with the Setup file."
+ "설치 없이 쓰는 판(포터블)은 스스로 바꾸지 않습니다. 릴리스 페이지에서 새 Portable.zip 을 받거나 설치 파일로 설치하세요.": "The portable version does not update itself. Download the new Portable.zip from the releases page, or install with the Setup file.",
+ "↵ {1} — Enter 로 미리보기": "↵ {1} — press Enter to preview",
+ "누르거나 검색칸에서 Enter: 이 본문을 미리보기로 (바로 송출 모드면 송출)": "Click, or press Enter in the search box: preview this passage (goes live in direct mode)",
+ "두 번 누르거나 Enter: 큐시트에 넣고 미리보기 (이미 있으면 그 순서를 미리보기)": "Double-click or Enter: add to the cue sheet and preview (previews the existing item if already there)",
+ "두 번 누르거나 Enter: 큐시트에 넣고 바로 송출 (이미 있으면 그 순서를 송출)": "Double-click or Enter: add to the cue sheet and go live (sends the existing item if already there)",
+ "두 번 누르면 송출 화면의 배경으로 바로 나갑니다 (다시 두 번 누르면 끄기)": "Double-click to put it on the live background right away (double-click again to turn it off)",
+ "두 번 누르면 음악 순서로 큐시트에 넣습니다 (고른 순서 다음)": "Double-click to add it to the cue sheet as a music item (after the selected item)",
+ "송출 (Enter)": "Send (Enter)",
+ "음악 순서로 큐시트에 넣기 (두 번 눌러도)": "Add to the cue sheet as a music item (or double-click)"
 }

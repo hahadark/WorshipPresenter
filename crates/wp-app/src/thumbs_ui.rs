@@ -123,6 +123,7 @@ impl App {
                             ui.set_width(CELL_W);
                             let (rect, resp) = ui.allocate_exact_size(Vec2::new(CELL_W, IMG_H), Sense::click());
                             let hot = ui.rect_contains_pointer(rect);
+                            crate::widgets::mark(&format!("lib-cell-{}", f["name"].as_str().unwrap_or("")), rect);
                             if resp.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
                             ui.painter().rect_filled(rect, 4.0, Color32::BLACK);
                             match get(&ctx, &self.data_dir, &path) {

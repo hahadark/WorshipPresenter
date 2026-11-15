@@ -10,6 +10,7 @@ const Q: &str = "hymn-q";
 const RES: &str = "hymn-res";
 const OPEN: &str = "hymn-open";
 const SRC: &str = "hymn-src"; // ppt | beth
+const SEL: &str = "hymn-sel"; // 고른 줄 (한 번 클릭·↑↓)
 const ANSWER: &str = "hymn-ai-answer";
 const CONFIRM: &str = "hymn-ppt-confirm"; // 다시 꺼내기·원래대로 확인 ("again:<순서 id>" | "off:<id>")
 
@@ -111,6 +112,8 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     let mut q: String = get(ui, Q);
     let mut res: Vec<Value> = get(ui, RES);
     let mut refresh = false;
+    let mut sel: usize = get(ui, SEL);
+    let (mut key_move, mut key_enter) = (0i32, false);
     ui.horizontal(|ui| {
         for (k, l) in [("ppt", "PPT 폴더"), ("beth", "베들레헴 찬송가")] {
             if ui.selectable_label(src == k, l).clicked() {
@@ -143,7 +146,17 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             }
         }
         let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text(if src == "ppt" { wp_core::i18n::tr_s("번호(10) 또는 제목") } else { wp_core::i18n::tr_s("번호(10장) · 교독문 1 · 제목·가사") }).desired_width(ui.available_width().max(40.0)));
+        crate::widgets::mark("hymn-q", r.rect);
         refresh |= r.changed() || (res.is_empty() && src == "ppt" && !folders.is_empty() && q.is_empty());
+        // cue.js:1574 검색칸에서 ↑↓ = 고른 줄 옮기기 · Enter = 고른 줄 넣기 (넣고도 검색칸에 그대로 — 여러 곡 연달아)
+        if r.has_focus() {
+            if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)) { key_move = 1; }
+            if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)) { key_move = -1; }
+        }
+        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            key_enter = true;
+            r.request_focus();
+        }
     });
     if refresh {
         let c = app.core.lock();
@@ -198,15 +211,32 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             ui.label(RichText::new(t).small().color(Color32::GRAY));
         }
     }
+    if refresh { sel = 0; }
+    if !res.is_empty() {
+        sel = (sel as i64 + key_move as i64).clamp(0, res.len() as i64 - 1) as usize;
+    }
+    // 원본(library.js:84 · cue.js:1579-1580): 한 번 = 고르기, 두 번·Enter = 큐시트에 넣기. 줄 앞 ＋ 단추는 한 번에 넣기
+    let direct = app.core.lock().direct_mode();
+    let tip = if direct { wp_core::i18n::tr("두 번 누르거나 Enter: 큐시트에 넣고 바로 송출 (이미 있으면 그 순서를 송출)") } else { wp_core::i18n::tr("두 번 누르거나 Enter: 큐시트에 넣고 미리보기 (이미 있으면 그 순서를 미리보기)") };
     egui::ScrollArea::vertical().id_salt("hymn-res").max_height(150.0).show(ui, |ui| {
-        for h in &res {
+        for (k, h) in res.iter().enumerate() {
             let t = if src == "ppt" {
                 format!("{}{}  · {}", h["number"].as_i64().map(|n| format!("{n}  ")).unwrap_or_default(), h["title"].as_str().unwrap_or(""), h["folder"].as_str().unwrap_or(""))
             } else {
                 format!("{}  · {}", h["label"].as_str().unwrap_or(""), h["book"].as_str().unwrap_or(""))
             };
-            let tip = if app.core.lock().direct_mode() { wp_core::i18n::tr("눌러서 큐시트에 넣고 바로 송출 (이미 있으면 그 순서를 송출)") } else { wp_core::i18n::tr("눌러서 큐시트에 넣고 미리보기 (이미 있으면 그 순서를 미리보기)") };
-            if ui.selectable_label(false, t).on_hover_text(tip).clicked() {
+            let (plus, row) = ui.horizontal(|ui| {
+                let plus = ui.small_button("＋").on_hover_text(wp_core::i18n::tr("큐시트에 넣기 (고른 순서 다음)"));
+                let row = ui.selectable_label(k == sel, t).on_hover_text(&tip);
+                (plus, row)
+            }).inner;
+            crate::widgets::mark(&format!("hymn-row-{k}"), row.rect);
+            crate::widgets::mark(&format!("hymn-add-{k}"), plus.rect);
+            if k == sel && key_move != 0 { row.scroll_to_me(None); }
+            let click = crate::widgets::click2(ui, ("lib-hymn", src.as_str(), k, h["file"].as_str().unwrap_or(""), h["number"].as_i64()), &row);
+            if click == crate::widgets::Click::Single { sel = k; }
+            if plus.clicked() || click == crate::widgets::Click::Double || (key_enter && k == sel) {
+                sel = k;
                 if src == "ppt" {
                     // 제목은 "10장 전능왕 오셔서" (cue.js 1527) · 번호 없으면 null
                     let num = h["number"].as_i64();
@@ -225,6 +255,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     set(ui, Q, q);
     set(ui, RES, res);
     set(ui, SRC, src);
+    set(ui, SEL, sel);
 }
 
 /// 찬송가 기본 배경 (settings.hymnBackground) — Electron 고르기 창의 '찬송가 폴더 · 기본 배경 설정' (cue.js 1478-1481 · 1556-1558)

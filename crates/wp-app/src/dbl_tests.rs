@@ -390,3 +390,135 @@ fn auto_on_off_setting_is_respected() {
     assert!(live(&h).is_some());
     assert_eq!(asked(&h), 0, "자동 켜기를 끄면 요청하지 않는다 (LIVE 칸 띠 [지금 켜기] 로 안내)");
 }
+
+// ---------------- 10) 라이브러리 탭마다: 한 번 = 고르기, 두 번 = 큐시트에 넣기 (library.js:84) ----------------
+
+fn lib(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, _: &Snap, acts: &mut Vec<Act>) {
+    app.library_tabs_panel(ui, acts);
+}
+fn lib_tab(h: &H, tab: &str) {
+    h.ctx.data_mut(|d| d.insert_temp(egui::Id::new("library-tab"), tab.to_string()));
+}
+fn types(h: &H) -> Vec<String> {
+    items(h).iter().map(|x| x["type"].as_str().unwrap_or("").to_string()).collect()
+}
+fn count(h: &H, ty: &str) -> usize {
+    types(h).iter().filter(|t| *t == ty).count()
+}
+/// 한 번 클릭 (그 뒤 0.5초 넘게 쉼)
+fn single_panel(h: &mut H, name: &str, f: super::auditc_tests::Draw) {
+    h.frame(vec![], f);
+    h.frame(vec![], f);
+    let p = seen(name).unwrap_or_else(|| panic!("그린 자리 없음: {name}")).center();
+    h.click_at(p, f);
+    for _ in 0..12 {
+        h.frame(vec![], f);
+    }
+}
+
+#[test]
+fn dbl_library_song_adds_it_once() {
+    let mut h = H::new(titles());
+    h.app.core.lock().save_song(&json!({ "title": "은혜 아니면", "lyrics": "은혜 아니면 살아갈 수가 없네" })).unwrap();
+    lib_tab(&h, "songs");
+    single_panel(&mut h, "song-row-은혜 아니면", lib);
+    assert_eq!(count(&h, "song"), 0, "한 번 = 고르기만");
+    dbl_panel(&mut h, "song-row-은혜 아니면", lib);
+    assert_eq!(count(&h, "song"), 1, "두 번 = 큐시트에 넣기 (한 번만)");
+}
+
+#[test]
+fn dbl_library_hymn_row_adds_once_and_single_click_only_selects() {
+    let mut h = H::new(titles());
+    let dir = h.app.core.lock().data_dir.join("찬송가");
+    std::fs::create_dir_all(&dir).unwrap();
+    for n in ["003 성부 성자와 성령.pps", "010 전능왕 오셔서.pps"] {
+        std::fs::write(dir.join(n), b"x").unwrap();
+    }
+    wp_core::hymns::add_folder(&mut h.app.core.lock(), &dir, None).unwrap();
+    lib_tab(&h, "hymns");
+    single_panel(&mut h, "hymn-row-1", lib);
+    assert_eq!(count(&h, "hymn"), 0, "한 번 = 고르기만 (원본과 같게 — 한 번에 넣으면 두 번 누르는 습관으로 같은 찬송가가 중복됐다)");
+    dbl_panel(&mut h, "hymn-row-1", lib);
+    assert_eq!(count(&h, "hymn"), 1, "두 번 = 넣기 (한 번만)");
+    let it = items(&h).into_iter().find(|x| x["type"] == "hymn").unwrap();
+    assert!(it["title"].as_str().unwrap().contains("전능왕"), "{it}");
+    // ＋ 단추는 한 번에 넣기
+    h.app.core.lock().pick.forget_last();
+    single_panel(&mut h, "hymn-add-0", lib);
+    assert_eq!(count(&h, "hymn"), 2);
+}
+
+#[test]
+fn hymn_search_arrow_and_enter_add_selected_row() {
+    let mut h = H::new(titles());
+    let dir = h.app.core.lock().data_dir.join("찬송가");
+    std::fs::create_dir_all(&dir).unwrap();
+    for n in ["003 성부 성자와 성령.pps", "010 전능왕 오셔서.pps"] {
+        std::fs::write(dir.join(n), b"x").unwrap();
+    }
+    wp_core::hymns::add_folder(&mut h.app.core.lock(), &dir, None).unwrap();
+    lib_tab(&h, "hymns");
+    h.click("hymn-q", lib);
+    h.key(egui::Key::ArrowDown, egui::Modifiers::NONE, lib);
+    h.key(egui::Key::Enter, egui::Modifiers::NONE, lib);
+    h.frame(vec![], lib);
+    let it = items(&h).into_iter().find(|x| x["type"] == "hymn").expect("Enter = 고른 줄 넣기");
+    assert!(it["title"].as_str().unwrap().contains("전능왕"), "↓ 로 둘째 줄을 골랐다: {it}");
+}
+
+#[test]
+fn dbl_library_music_row_adds_audio_item_once() {
+    let mut h = H::new(titles());
+    let dir = h.app.core.lock().data_dir.join("음악");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("전주.mp3"), b"x").unwrap();
+    h.app.core.lock().add_lib_folder("audio", &dir).unwrap();
+    lib_tab(&h, "audio");
+    single_panel(&mut h, "lib-audio-0", lib);
+    assert_eq!(count(&h, "audio"), 0);
+    dbl_panel(&mut h, "lib-audio-0", lib);
+    assert_eq!(count(&h, "audio"), 1, "두 번 = 음악 순서로 넣기");
+    let it = items(&h).into_iter().find(|x| x["type"] == "audio").unwrap();
+    assert_eq!(it["fadeOnLeave"], json!(true), "library.js:340 과 같은 값: {it}");
+}
+
+#[test]
+fn dbl_library_camera_toggles_live_background() {
+    let mut h = H::new(titles());
+    lib_tab(&h, "cameras");
+    single_panel(&mut h, "cam-default", lib);
+    assert!(h.app.core.lock().layers.media.is_none(), "한 번 = 아무 일 없음");
+    dbl_panel(&mut h, "cam-default", lib);
+    assert_eq!(h.app.core.lock().layers.media.as_ref().map(|m| m["type"].clone()), Some(json!("camera")), "두 번 = 송출 배경으로 (library.js:381 liveMedia)");
+    for _ in 0..12 {
+        h.frame(vec![], lib);
+    }
+    dbl_panel(&mut h, "cam-default", lib);
+    assert!(h.app.core.lock().layers.media.is_none(), "다시 두 번 = 끄기");
+}
+
+#[test]
+fn dbl_library_image_cell_adds_image_item_once() {
+    let mut h = H::new(titles());
+    let dir = h.app.core.lock().data_dir.join("그림");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("배경.png"), b"x").unwrap();
+    h.app.core.lock().add_lib_folder("image", &dir).unwrap();
+    lib_tab(&h, "images");
+    h.frame(vec![], lib);
+    h.frame(vec![], lib);
+    let name = widgets::HOVER_SEEN.with(|m| m.borrow().keys().find(|k| k.starts_with("lib-cell-")).cloned()).expect("그림 칸");
+    // 칸 가운데 아래쪽 (모서리의 마우스 올림 단추를 피해)
+    let p = seen(&name).unwrap().center() + Vec2::new(0.0, 10.0);
+    h.click_at(p, lib);
+    for _ in 0..12 {
+        h.frame(vec![], lib);
+    }
+    assert_eq!(count(&h, "image"), 0, "한 번 = 아무것도 넣지 않음");
+    h.click_at(p, lib);
+    h.frame(vec![], lib);
+    h.click_at(p, lib);
+    h.frame(vec![], lib);
+    assert_eq!(count(&h, "image"), 1, "두 번 = 그림 순서로 넣기 (한 번만)");
+}
