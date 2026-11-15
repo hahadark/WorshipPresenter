@@ -105,8 +105,9 @@ fn decode(path: &Path, max: u32) -> Result<ColorImage, String> {
         return Err("빈 그림".into());
     }
     let img = if ow > max || oh > max {
-        // 작은 것은 빠른 줄이기, 큰 것은 부드럽게
-        if max <= SMALL { img.thumbnail(max, max) } else { img.resize(max, max, image::imageops::FilterType::Triangle) }
+        // 넓이 평균으로 줄인다 (thumbnail). resize(Triangle) 는 줄일 때마다 f32 중간 그림(1920×1080 → 17MB)을 만들어
+        // 일꾼 셋이 한꺼번에 돌면 수십 MB 가 잠깐씩 잡혔다. 줄이기만 하므로 화질 차이는 눈에 띄지 않는다.
+        img.thumbnail(max, max)
     } else {
         img
     };

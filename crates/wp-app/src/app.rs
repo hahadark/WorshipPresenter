@@ -1554,14 +1554,19 @@ impl eframe::App for App {
             let mut l = LAST.lock();
             if l.is_none_or(|t| t.elapsed().as_secs() >= 10) {
                 *l = Some(Instant::now());
-                let loaders = ui.ctx().loaders().bytes.lock().iter().map(|b| b.byte_size()).sum::<usize>() + ui.ctx().loaders().image.lock().iter().map(|b| b.byte_size()).sum::<usize>() + ui.ctx().loaders().texture.lock().iter().map(|b| b.byte_size()).sum::<usize>();
+                let per = |v: Vec<(String, usize)>| v.into_iter().filter(|x| x.1 >= 1 << 20).map(|x| format!("{}={:.0}MB", x.0.rsplit("::").next().unwrap_or(""), x.1 as f64 / 1048576.0)).collect::<Vec<_>>().join(" ");
+                let lb: Vec<(String, usize)> = ui.ctx().loaders().bytes.lock().iter().map(|b| (b.id().to_string(), b.byte_size())).collect();
+                let li: Vec<(String, usize)> = ui.ctx().loaders().image.lock().iter().map(|b| (b.id().to_string(), b.byte_size())).collect();
+                let lt: Vec<(String, usize)> = ui.ctx().loaders().texture.lock().iter().map(|b| (b.id().to_string(), b.byte_size())).collect();
+                let loaders = lb.iter().chain(li.iter()).chain(lt.iter()).map(|x| x.1).sum::<usize>();
+                let loader_detail = format!("파일[{}] 풀어낸 그림[{}] 텍스처[{}]", per(lb), per(li), per(lt));
                 let tm = ui.ctx().tex_manager();
                 let tm = tm.read();
                 let mut all: Vec<(usize, String)> = tm.allocated().map(|(_, m)| (m.bytes_used(), format!("{} {}x{}", m.name.chars().rev().take(28).collect::<String>().chars().rev().collect::<String>(), m.size[0], m.size[1]))).collect();
                 all.sort_by_key(|x| std::cmp::Reverse(x.0));
                 let total: usize = all.iter().map(|x| x.0).sum();
                 let (n, lru_mb) = crate::imgcache::stats();
-                wp_core::util::mem_log(&format!("프레임 {f} (10초마다) 그림 읽기 {:.0}MB · 텍스처 {}개 {:.0}MB · LRU {n}개 {lru_mb:.0}MB · 큰 것 {:?} · {}", loaders as f64 / 1048576.0, all.len(), total as f64 / 1048576.0, all.iter().take(4).map(|x| format!("{}={:.0}MB", x.1, x.0 as f64 / 1048576.0)).collect::<Vec<_>>(), wp_core::util::mem_regions_summary()));
+                wp_core::util::mem_log(&format!("프레임 {f} (10초마다) {loader_detail} · 그림 읽기 {:.0}MB · 텍스처 {}개 {:.0}MB · LRU {n}개 {lru_mb:.0}MB · 큰 것 {:?} · {}", loaders as f64 / 1048576.0, all.len(), total as f64 / 1048576.0, all.iter().take(4).map(|x| format!("{}={:.0}MB", x.1, x.0 as f64 / 1048576.0)).collect::<Vec<_>>(), wp_core::util::mem_regions_summary()));
             }
         }
         if r.is_err() {
