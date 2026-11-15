@@ -1757,7 +1757,7 @@ impl App {
         if !(esc || del || all || edit) {
             return;
         }
-        if self.tc.slideedit.open {
+        if self.tc.slideedit.keys_active() {
             self.tc.slideedit.list_keys(ctx);
             return;
         }
