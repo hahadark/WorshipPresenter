@@ -102,7 +102,23 @@ pub fn remove_folder(core: &mut Core, dir: &str) {
 
 /// 번호(10, 010) 또는 제목 일부로 찾기. 번호가 정확히 같은 것이 맨 앞
 pub fn search(core: &Core, query: &str) -> Vec<HymnFile> {
-    let q = query.trim();
+    // '3장' · '찬송 3장' 처럼 치면 번호로 (Electron 은 숫자만 번호로 보고 '3장' 은 제목에서 찾아 하나도 안 나왔다)
+    static JANG: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(?:찬송가?\s*)?(\d{1,4})\s*장$").unwrap());
+    // '교독문 3' · '교독 3' 은 교독문 파일 가운데 번호가 꼭 같은 것만 (제목 '교독문3' 이 30~39·300번대까지 걸리지 않게)
+    static READ_Q: Lazy<Regex> = Lazy::new(|| Regex::new(r"^교독문?\s*(\d{1,4})$").unwrap());
+    let raw = query.trim();
+    if let Some(n) = READ_Q.captures(raw).and_then(|m| m[1].parse::<i64>().ok()) {
+        let mut out = vec![];
+        for f in core.settings.get()["hymnFolders"].as_array().into_iter().flatten() {
+            let name = f["name"].as_str().unwrap_or("");
+            out.extend(list_folder(Path::new(f["path"].as_str().unwrap_or("")), name).into_iter().filter(|h| h.number == Some(n) && h.title.starts_with("교독")));
+        }
+        if !out.is_empty() {
+            return out;
+        }
+    }
+    let jang = JANG.captures(raw).map(|m| m[1].to_string());
+    let q = jang.as_deref().unwrap_or(raw);
     let num: Option<i64> = if !q.is_empty() && q.len() <= 4 && q.chars().all(|c| c.is_ascii_digit()) { q.parse().ok() } else { None };
     let key: String = q.chars().filter(|c| !c.is_whitespace()).collect();
     let mut out = vec![];
@@ -111,7 +127,7 @@ pub fn search(core: &Core, query: &str) -> Vec<HymnFile> {
         for h in list_folder(Path::new(f["path"].as_str().unwrap_or("")), name) {
             let hit = q.is_empty()
                 || match num {
-                    Some(n) => h.number == Some(n) || h.number.is_some_and(|x| x.to_string().starts_with(q.trim_start_matches('0')) && !q.trim_start_matches('0').is_empty()),
+                    Some(n) => h.number == Some(n) || jang.is_none() && h.number.is_some_and(|x| x.to_string().starts_with(q.trim_start_matches('0')) && !q.trim_start_matches('0').is_empty()),
                     None => h.title.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(&key),
                 };
             if hit {
@@ -178,10 +194,26 @@ pub fn install(shared: &crate::core::Shared) {
     crate::pptx::build::warm_fonts();
 }
 
+/// 새 형식(.pptx/.ppsx = zip)인지. 확장자가 아니라 파일 머리로 본다 — 옛 .ppt 를 이름만 .pptx 로 바꾼 파일
+/// (구세군 찬송가 756·764)이 'pptx(zip) 를 열 수 없습니다' 로 안 열리던 것. 읽을 수 없으면 확장자로.
+pub fn is_xml_ppt(file: &str) -> bool {
+    use std::io::Read;
+    let mut head = [0u8; 4];
+    if std::fs::File::open(file).and_then(|mut f| f.read_exact(&mut head)).is_ok() {
+        if head == [0xD0, 0xCF, 0x11, 0xE0] {
+            return false;
+        }
+        if head[..2] == *b"PK" {
+            return true;
+        }
+    }
+    let lower = file.to_lowercase();
+    lower.ends_with(".pptx") || lower.ends_with(".ppsx")
+}
+
 /// 그림 만들기 (PowerPoint 또는 직접 읽기) — 코어 잠금 없이 다른 스레드에서
 pub fn build_meta(data_dir: &Path, file: &str, render: &str) -> Result<Value, String> {
-    let lower = file.to_lowercase();
-    let xml = lower.ends_with(".pptx") || lower.ends_with(".ppsx");
+    let xml = is_xml_ppt(file);
     let pp = has_powerpoint();
     if xml && (!pp || render == "direct") {
         return crate::pptx::build::build_cache(data_dir, file);
@@ -1118,6 +1150,38 @@ mod default_bg_tests {
 }
 
 #[cfg(test)]
+mod search_tests {
+    use super::*;
+    #[test]
+    fn number_jang_and_reading_queries() {
+        let dir = std::env::temp_dir().join(format!("wp-hymnsearch-{}", crate::util::short_id("t")));
+        let (h, r) = (dir.join("h"), dir.join("r"));
+        std::fs::create_dir_all(&h).unwrap();
+        std::fs::create_dir_all(&r).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        for f in ["003 성부 성자와 성령.pps", "030 전능하신 주님.pps", "303 날 위하여 십자가의.pps"] { std::fs::write(h.join(f), b"").unwrap(); }
+        for f in ["교독문 3 (시편 3편).pps", "교독문 30 (시편 40편).pps", "교독문 130 (추수감사주일).pps"] { std::fs::write(r.join(f), b"").unwrap(); }
+        let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
+        add_folder(&mut c, &h, Some("새찬송가")).unwrap();
+        add_folder(&mut c, &r, Some("교독문")).unwrap();
+        let t = |q: &str| search(&c, q).into_iter().map(|x| x.title).collect::<Vec<_>>();
+        // 숫자만: 같은 번호가 먼저, 앞자리가 같은 것도 (Electron 과 같음)
+        assert_eq!(t("3")[0], "성부 성자와 성령");
+        assert!(t("3").len() >= 4);
+        // '3장' · '찬송가 3장': 그 번호만
+        assert_eq!(t("3장"), vec!["성부 성자와 성령".to_string(), "교독문 3 (시편 3편)".to_string()]);
+        assert_eq!(t("찬송가 303장"), vec!["날 위하여 십자가의".to_string()]);
+        // '교독문 3' · '교독 3': 교독문 3 만 (30·130 아님)
+        assert_eq!(t("교독문 3"), vec!["교독문 3 (시편 3편)".to_string()]);
+        assert_eq!(t("교독3"), vec!["교독문 3 (시편 3편)".to_string()]);
+        // 제목 일부는 그대로
+        assert_eq!(t("십자가"), vec!["날 위하여 십자가의".to_string()]);
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
 mod deferred_tests {
     use super::*;
     use crate::db::Cue;
@@ -1223,5 +1287,23 @@ mod ps_bg_tests {
         let raw: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("layers.json")).unwrap()).unwrap();
         assert_eq!(raw["bgFrom"], "powerpoint");
         assert!(dir.join("slide-001-bg.png").is_file());
+    }
+}
+
+#[cfg(test)]
+mod magic_tests {
+    #[test]
+    fn format_by_file_head_not_extension() {
+        let dir = std::env::temp_dir().join(format!("wp-magic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = |n: &str, b: &[u8]| { let f = dir.join(n); std::fs::write(&f, b).unwrap(); f.to_string_lossy().to_string() };
+        // 옛 형식인데 이름만 .pptx
+        assert!(!super::is_xml_ppt(&p("a.pptx", &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1])));
+        // 새 형식인데 이름만 .ppt
+        assert!(super::is_xml_ppt(&p("b.ppt", b"PK\x03\x04....")));
+        // 파일이 없으면 확장자로
+        assert!(super::is_xml_ppt(&dir.join("none.PPTX").to_string_lossy()));
+        assert!(!super::is_xml_ppt(&dir.join("none.pps").to_string_lossy()));
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

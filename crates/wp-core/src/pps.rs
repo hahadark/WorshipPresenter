@@ -215,6 +215,23 @@ mod tests {
 
 #[cfg(test)]
 mod real {
+    /// WP_PPS_LIST(파일 경로 한 줄씩)의 .pps/.ppt 를 읽어 Electron ppt.js extractPps 와 같은 모양의 요약 JSON 을 WP_PPS_OUT 에 쓴다 (나란히 비교용)
+    /// cargo test -p wp-core pps_dump -- --ignored
+    #[test]
+    #[ignore]
+    fn pps_dump() {
+        let fnv = |b: &[u8]| { let mut h: u32 = 0x811c9dc5; for x in b { h ^= *x as u32; h = h.wrapping_mul(0x01000193); } format!("{h:x}") };
+        let list = std::fs::read_to_string(std::env::var("WP_PPS_LIST").unwrap()).unwrap();
+        let mut out = vec![];
+        for f in list.trim_start_matches('\u{feff}').lines().filter(|l| !l.trim().is_empty()) {
+            match super::extract(std::path::Path::new(f)) {
+                Ok((bg, scores, texts)) => out.push(serde_json::json!({ "f": f, "bg": bg.map(|b| format!("{}:{}:{}", b.ext, b.data.len(), fnv(&b.data))), "scores": scores.iter().map(|p| format!("{}:{}:{}", p.ext, p.data.len(), fnv(&p.data))).collect::<Vec<_>>(), "texts": texts })),
+                Err(e) => out.push(serde_json::json!({ "f": f, "err": e })),
+            }
+        }
+        std::fs::write(std::env::var("WP_PPS_OUT").unwrap(), serde_json::to_string(&out).unwrap()).unwrap();
+    }
+
     /// WP_PPS_DIR 의 .pps 들을 읽어 본다: cargo test -p wp-core real_pps -- --ignored --nocapture
     #[test]
     #[ignore]
