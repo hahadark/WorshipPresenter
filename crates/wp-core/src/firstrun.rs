@@ -342,6 +342,18 @@ pub fn ask() -> Option<Value> {
     ASK.lock().clone()
 }
 
+/// 켤 때 생긴 중요한 문제(깨진 설정 파일로 백업·기본 설정을 씀, 1.x 자료를 복사하지 못함): 금방 사라지는 알림 말고
+/// 첫 화면에 [확인] 을 누를 때까지 남는 창으로 보인다 (알림은 다른 알림이 뜨면 바로 덮인다)
+static START_WARN: once_cell::sync::Lazy<parking_lot::Mutex<Vec<String>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(vec![]));
+pub fn add_start_warning(msg: impl Into<String>) {
+    START_WARN.lock().push(msg.into());
+}
+pub fn start_warnings() -> Vec<String> {
+    START_WARN.lock().clone()
+}
+pub fn clear_start_warnings() {
+    START_WARN.lock().clear();
+}
 /// '지금 자료 그대로 쓰기': 지금 상태를 표시해 두어 1.x 자료가 또 바뀌기 전까지는 묻지 않는다
 pub fn keep_current(data_dir: &Path) {
     if let Some(a) = ask().filter(|a| a["reason"] != "menu" && a["reason"] != "none") {

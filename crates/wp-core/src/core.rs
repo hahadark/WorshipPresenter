@@ -214,10 +214,14 @@ impl Core {
         if let Some(n) = note {
             // 복사 실패는 경고로 (기본 성경으로 시작했다는 것을 놓치지 않게)
             let kind = if n.contains("복사하지 못해") { "warn" } else { "ok" };
+            if kind == "warn" {
+                crate::firstrun::add_start_warning(n.clone());
+            }
             c.notify(n, kind);
         }
         // 깨진 설정 파일로 켰으면 조용히 넘어가지 않고 알린다 (자료 이전 알림보다 중요하므로 나중에 덮어쓴다)
         if let Some(n) = c.settings.load_note.clone() {
+            crate::firstrun::add_start_warning(n.clone());
             c.notify(n, "warn");
         }
         Ok(c)

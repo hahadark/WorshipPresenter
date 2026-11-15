@@ -689,7 +689,10 @@ pub(crate) fn update_ui(ui: &mut egui::Ui, core: &Shared) {
 /// [갈래 D] 첫 화면: 1.x(Electron 판) 자료가 이 판 자료보다 최근에 바뀌었으면 다시 가져올지 묻는다.
 /// 다시 가져오면 지금 이 판 자료는 지우지 않고 data\pre-reimport\ 에 보관한 뒤 프로그램이 다시 켜진다.
 pub fn migrate_ask(ctx: &egui::Context, data_dir: &std::path::Path) {
-    let Some(a) = wp_core::firstrun::ask() else { return };
+    let Some(a) = wp_core::firstrun::ask() else {
+        start_warning(ctx, data_dir);
+        return;
+    };
     let tr = wp_core::i18n::tr;
     let when = |ms: &Value| {
         wp_core::firstrun::local_time(ms.as_i64().unwrap_or(0))
@@ -742,6 +745,34 @@ pub fn migrate_ask(ctx: &egui::Context, data_dir: &std::path::Path) {
             }
             if ui.button(tr("지금 자료 그대로 쓰기")).clicked() {
                 wp_core::firstrun::keep_current(data_dir);
+            }
+        });
+    });
+}
+
+/// [갈래 D] 켤 때 생긴 중요한 문제를 [확인] 을 누를 때까지 보인다 (깨진 설정 파일 · 1.x 자료 복사 실패)
+fn start_warning(ctx: &egui::Context, data_dir: &std::path::Path) {
+    let warns = wp_core::firstrun::start_warnings();
+    if warns.is_empty() {
+        return;
+    }
+    let tr = wp_core::i18n::tr;
+    egui::Modal::new(egui::Id::new("wp-start-warning")).show(ctx, |ui| {
+        ui.set_max_width(620.0);
+        ui.heading(tr("켜는 중에 문제가 있었습니다"));
+        ui.add_space(6.0);
+        for w in &warns {
+            ui.label(w);
+            ui.add_space(4.0);
+        }
+        ui.label(RichText::new(wp_core::i18n::tr_args("자료 폴더: {1}", &[&data_dir.display()])).small());
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if ui.button(tr("확인")).clicked() {
+                wp_core::firstrun::clear_start_warnings();
+            }
+            if ui.button(tr("자료 폴더 열기")).clicked() {
+                let _ = std::process::Command::new("explorer").arg(data_dir).spawn();
             }
         });
     });
