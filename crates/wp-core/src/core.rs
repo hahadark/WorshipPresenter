@@ -184,11 +184,13 @@ impl Core {
     pub fn open(data_dir: PathBuf, web_dir: PathBuf, seed_db: Option<&Path>) -> Result<Self> {
         crate::sync::apply_pending_restore(&data_dir); // [트랙 B] 예약된 백업 되돌리기 (DB 열기 전)
         let note = prepare_data_dir(&data_dir, seed_db)?;
+        crate::firstrun::mark("자료 폴더 준비");
         let media_dir = data_dir.join("media");
         std::fs::create_dir_all(&media_dir)?;
         let store = BibleStore::open(&data_dir.join("bible.db"))?;
         let _ = crate::usage::ensure(&store.db); // [트랙 C] 사용 기록 표
         let settings = Settings::load(&data_dir);
+        crate::firstrun::mark("설정 읽기");
         let (tx, _) = broadcast::channel(256);
         let port = settings.get()["port"].as_u64().unwrap_or(37528) as u16;
         let mut c = Self {

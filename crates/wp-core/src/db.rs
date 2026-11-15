@@ -80,6 +80,7 @@ impl BibleStore {
         let db = Connection::open(file)?;
         db.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;")?;
         db.execute_batch(SCHEMA)?;
+        crate::firstrun::mark("DB 열기·표");
         let cols: Vec<String> = {
             let mut st = db.prepare("PRAGMA table_info(Cuesheets)")?;
             st.query_map([], |r| r.get::<_, String>(1))?.filter_map(|x| x.ok()).collect()
@@ -97,13 +98,22 @@ impl BibleStore {
             }
         }
         {
-            let mut ins = db.prepare("INSERT OR REPLACE INTO BibleBooks (id, name, short_name, testament, book_order) VALUES (?, ?, ?, ?, ?)")?;
-            for b in BOOKS.iter() {
-                ins.execute(params![b.id, b.name, b.short, b.testament, b.id])?;
-            }
+            // 한 묶음으로 쓴다: 한 줄씩 쓰면 줄마다 디스크에 밀어 넣어(66번) 켤 때마다 0.15~0.6초가 걸렸다 (느린 디스크면 더)
+            db.execute_batch("BEGIN")?;
+            let r = (|| -> Result<()> {
+                let mut ins = db.prepare("INSERT OR REPLACE INTO BibleBooks (id, name, short_name, testament, book_order) VALUES (?, ?, ?, ?, ?)")?;
+                for b in BOOKS.iter() {
+                    ins.execute(params![b.id, b.name, b.short, b.testament, b.id])?;
+                }
+                Ok(())
+            })();
+            db.execute_batch(if r.is_ok() { "COMMIT" } else { "ROLLBACK" })?;
+            r?;
         }
+        crate::firstrun::mark("책 목록");
         let mut s = Self { db, structure: HashMap::new(), langs: HashMap::new() };
         s.reload_structure()?;
+        crate::firstrun::mark("성경 구조");
         Ok(s)
     }
 
