@@ -599,6 +599,7 @@
  "{1} 가사 파일을 찾지 못했습니다. 베들레헴 폴더를 지정하거나 가져오기를 하세요.": "{1} lyrics file not found. Set the Bethlehem folder or import it.",
  "{1} {2}장이 없습니다.": "{1} has no number {2}.",
  "'{1}' 슬라이드를 만들었습니다.": "Created slides for '{1}'.",
+ "'{1}' 슬라이드를 만들지 못했습니다: {2}": "Could not create slides for '{1}': {2}",
  "PPT 요소를 꺼냈습니다. 다시 누르면 슬라이드 편집기에 들어갑니다.": "Extracted the PPT elements. Press again to open the slide editor.",
  "이 PC 에 PowerPoint 가 없어 PPT 를 그림으로 만들 수 없습니다. (PowerPoint 없이 직접 그리기는 Rust 판 다음 작업)": "PowerPoint isn't installed on this PC, so the PPT can't be rendered to images.",
  "PowerPoint 로 슬라이드를 내보내지 못했습니다: {1}": "Couldn't export slides with PowerPoint: {1}",

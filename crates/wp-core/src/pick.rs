@@ -22,6 +22,8 @@ pub struct PickState {
     pub dup_pending: Option<(Value, Option<usize>)>,
     /// 만드는 중(찬송가 PPT)이라 아직 못 띄운 순서: (큐시트 id, 순서 번호). 다 만들면 미리보기(바로 송출이면 송출)
     pub want: Option<(String, usize)>,
+    /// want 순서를 두 번 눌러 '송출' 하려던 것이면 그때의 송출 version — 다 만들었을 때 그대로면 이어서 송출
+    pub want_send: Option<u64>,
 }
 
 /// 넣은 결과

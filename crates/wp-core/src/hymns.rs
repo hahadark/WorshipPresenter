@@ -207,6 +207,29 @@ pub const BUILDING: &str = "PPT 를 그림으로 만드는 중입니다… 끝�
 
 /// 만드는 중인 파일 (같은 파일을 두 번 만들지 않게)
 static PENDING: Lazy<Mutex<std::collections::HashSet<String>>> = Lazy::new(|| Mutex::new(Default::default()));
+/// 만들기가 끝날 때마다(성공·실패) 올라가는 번호 — 화면이 순서별로 모아 둔 슬라이드(전체 격자)를 다시 읽게 한다.
+/// 없으면 '그림으로 만드는 중' 이던 순서가 다 만든 뒤에도 0장으로 남는다.
+static BUILD_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub fn build_gen() -> u64 {
+    BUILD_GEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+fn bump_gen() {
+    BUILD_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+/// 방금 만들다 실패한 파일(파일·크기·시각 → 오류, 때). 화면이 다시 읽을 때마다 PowerPoint 를 또 띄워 같은 실패를 되풀이하지 않게
+/// 잠깐(FAIL_HOLD) 은 같은 오류를 바로 돌려준다. 그 뒤 다시 고르면 새로 만든다 (Electron 은 누를 때마다 다시 만든다).
+static FAILED: Lazy<Mutex<HashMap<String, (String, std::time::Instant)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+const FAIL_HOLD: std::time::Duration = std::time::Duration::from_secs(8);
+fn recent_failure(stamp: &str) -> Option<String> {
+    let mut g = FAILED.lock();
+    match g.get(stamp) {
+        Some((e, t)) if t.elapsed() < FAIL_HOLD => Some(e.clone()),
+        Some(_) => { g.remove(stamp); None }
+        None => None,
+    }
+}
+/// PowerPoint 로 내보내기는 한 번에 하나씩 — 스크립트 끝의 '열린 문서가 없으면 Quit' 이 옆에서 막 연 PowerPoint 를 꺼 버리지 않게
+static PP_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 /// 코어 (백그라운드 일이 끝나면 다시 잡으려고). main 에서 install 로 넣는다
 static SHARED: once_cell::sync::OnceCell<std::sync::Weak<parking_lot::Mutex<Core>>> = once_cell::sync::OnceCell::new();
 
@@ -322,14 +345,18 @@ fn start_build(core: &Core, file: &str) {
     let tx = core.tx.clone();
     spawn_big(move || {
         let r = build_meta(&data_dir, &file, &render);
+        let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
+        if let Err(e) = &r {
+            FAILED.lock().insert(stamp.clone(), (e.clone(), std::time::Instant::now()));
+        }
         PENDING.lock().remove(&key);
+        bump_gen();
         let Some(shared) = SHARED.get().and_then(|w| w.upgrade()) else { return };
         let mut c = shared.lock();
+        let name = Path::new(&file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         match r {
             Ok(m) => {
-                let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
                 META.lock().insert(stamp, with_captions(&c, m));
-                let name = Path::new(&file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                 if finish_deferred(&mut c, &key) {
                     // 꿝에서 F6/F5 로 기다리던 다음 순서를 이어서 송출했다 (Electron onCueNext 와 같은 결과)
                     c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들어 다음 순서로 넘어갔습니다.", &[&name]), "ok");
@@ -340,15 +367,25 @@ fn start_build(core: &Core, file: &str) {
                     let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
                     // 방금 고르거나 넣었는데 만드는 중이라 못 띄운 순서 (Core::want_when_built): 그 순서를 띄운다 (바로 송출이면 송출)
                     let picked = c.pick.want.clone().filter(|(cid, i)| *cid == cue_id && c.cue.as_ref().and_then(|q| q.items.get(*i)).and_then(|it| it["file"].as_str()).map(norm).as_deref() == Some(key.as_str())).map(|w| w.1);
+                    // 두 번 눌러 송출하려던 순서였으면 (Core::send_item) 그 사이 다른 송출이 없었을 때만 이어서 송출 (cue.js sendItem: previewItem 을 기다린 뒤 sendPreview)
+                    let send = picked.is_some() && c.pick.want_send.take() == Some(c.pres.version);
                     if let Some(i) = picked.or(want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64))) {
-                        c.preview_item(i);
+                        if c.preview_item(i) && send && !c.direct_mode() && c.preview_is_item(i) {
+                            c.send_preview();
+                        }
                     }
                     c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");
                 }
             }
             Err(e) => {
                 clear_deferred(&key);
-                c.notify(e, "error");
+                // 기다리던 순서는 더 기다리지 않는다
+                if c.pick.want.as_ref().is_some_and(|(_, i)| c.cue.as_ref().and_then(|q| q.items.get(*i)).and_then(|it| it["file"].as_str()).map(norm).as_deref() == Some(key.as_str())) {
+                    c.pick.want = None;
+                    c.pick.want_send = None;
+                }
+                // 어느 파일인지 함께 (Electron: "N번 '제목': 오류")
+                c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들지 못했습니다: {2}", &[&name, &e]), "error");
             }
         }
         let _ = tx.send(crate::core::Ev::Ui);
@@ -437,6 +474,7 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
                 }, move |c, r: Result<Value, String>| {
                     PENDING.lock().remove(&lk);
                     META.lock().clear(); // layerBgs 를 다시 읽게
+                    bump_gen();
                     match r {
                         Ok(_) => {
                             // 이 파일의 순서를 미리보기하고 있었으면 새 배경 그림으로 다시 (cue.js previewItem(i, {keepIndex}))
@@ -699,6 +737,7 @@ pub fn powerpoint_bgs(file: &str, dir: &Path) -> Result<usize, String> {
     std::fs::write(&hide, raw["hide"].to_string()).map_err(|e| e.to_string())?;
     let script = dir.join("bg.ps1");
     std::fs::write(&script, format!("\u{feff}{PS_BG}")).map_err(|e| e.to_string())?;
+    let _one = PP_LOCK.lock();
     let mut cmd = std::process::Command::new("powershell");
     cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]).arg(&script).env("WC_PPT_FILE", file).env("WC_PPT_OUT", dir).env("WC_PPT_HIDE", &hide);
     #[cfg(windows)]
@@ -743,6 +782,7 @@ fn export_powerpoint(data_dir: &Path, file: &str) -> Result<Value, String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let script = dir.join("export.ps1");
     std::fs::write(&script, format!("\u{feff}{}", PS_EXPORT)).map_err(|e| e.to_string())?;
+    let _one = PP_LOCK.lock();
     let mut cmd = std::process::Command::new("powershell");
     cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]).arg(&script).env("WC_PPT_FILE", file).env("WC_PPT_OUT", &dir);
     #[cfg(windows)]
@@ -802,6 +842,9 @@ pub fn load(core: &Core, file: &str) -> Result<Value, String> {
     let meta = match find_cached(core, file) {
         Some(m) => m,
         None => {
+            if let Some(e) = recent_failure(&stamp) {
+                return Err(e);
+            }
             // 코어 잠금 밖에서 만든다: 이번에는 '만드는 중' 으로 돌려주고, 끝나면 알림 + 미리보기 다시
             start_build(core, file);
             return Err(BUILDING.into());
@@ -1388,6 +1431,110 @@ mod allow_tests {
         assert!(is_allowed(&c, &dir.join("pasted").join("clip-1.pptx").to_string_lossy()));
         assert!(!is_allowed(&c, &format!(r"{}\pasted\..\x.pptx", dir.to_string_lossy())));
         drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod async_build_tests {
+    use super::*;
+    use crate::db::Cue;
+
+    /// 슬라이드 한 장짜리 아주 작은 pptx
+    fn tiny_pptx() -> Vec<u8> {
+        use std::io::Write;
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut z = zip::ZipWriter::new(&mut buf);
+            let o = zip::write::SimpleFileOptions::default();
+            let ns = r#"xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main""#;
+            let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+            let files = [
+                ("[Content_Types].xml".to_string(), r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/></Types>"#.to_string()),
+                ("_rels/.rels".to_string(), format!(r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#)),
+                ("ppt/presentation.xml".to_string(), format!(r#"<?xml version="1.0"?><p:presentation {ns}><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/></p:presentation>"#)),
+                ("ppt/_rels/presentation.xml.rels".to_string(), format!(r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/slide" Target="slides/slide1.xml"/></Relationships>"#)),
+                ("ppt/slides/slide1.xml".to_string(), format!(r#"<?xml version="1.0"?><p:sld {ns}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:sp><p:nvSpPr><p:cNvPr id="2" name="t"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="6096000" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="ko-KR" sz="2400"/><a:t>시험 슬라이드</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"#)),
+            ];
+            for (n, t) in files {
+                z.start_file(n, o).unwrap();
+                z.write_all(t.as_bytes()).unwrap();
+            }
+            z.finish().unwrap();
+        }
+        buf.into_inner()
+    }
+
+    fn wait(mut done: impl FnMut() -> bool) -> bool {
+        for _ in 0..600 {
+            if done() { return true; }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        false
+    }
+
+    /// 캐시가 없는 PPT: 처음에는 '만드는 중', 다 만들면 ① 두 번 눌러 송출하려던 순서는 이어서 송출 ② 화면이 다시 읽게 번호가 오름
+    /// ③ 실패하면 파일 이름이 든 알림, 바로 다시 읽어도 또 만들지 않음(되풀이 방지) ④ 기다리던 순서 기억은 지움
+    #[test]
+    fn built_in_background_then_shown_and_failure_reported() {
+        let dir = std::env::temp_dir().join(format!("wp-hymnasync-{}", crate::util::short_id("t")));
+        let hs = dir.join("h");
+        std::fs::create_dir_all(&hs).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let good = hs.join("001 가.pptx");
+        let bad = hs.join("002 나.pptx");
+        std::fs::write(&good, tiny_pptx()).unwrap();
+        std::fs::write(&bad, b"PK\x03\x04 not a zip").unwrap();
+        let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
+        // 'direct' = PowerPoint 를 띄우지 않고 직접 그린다 (시험이 PowerPoint 를 건드리지 않게)
+        let hp = hs.to_string_lossy().to_string();
+        c.settings.update(|d| { d["hymnFolders"] = json!([{ "name": "t", "path": hp, "render": "direct" }]); d["previewMode"] = json!(true); });
+        c.cue = Some(Cue { id: "q1".into(), name: "q1".into(), service_date: String::new(), start_time: String::new(), items: vec![
+            json!({ "type": "hymn", "title": "1장 가", "number": 1, "file": good.to_string_lossy() }),
+            json!({ "type": "hymn", "title": "2장 나", "number": 2, "file": bad.to_string_lossy() }),
+        ], memo: String::new(), pinned: false, template: false });
+        let shared: crate::core::Shared = std::sync::Arc::new(parking_lot::Mutex::new(c));
+        install(&shared);
+
+        // ① 두 번 눌러 송출 → 아직 못 나감, 만든 뒤 저절로 나감
+        let g0 = build_gen();
+        {
+            let mut c = shared.lock();
+            assert!(!c.send_item(0));
+            assert!(c.pres.live.is_none());
+            assert!(is_building(&good.to_string_lossy()));
+            assert_eq!(c.item_deck(0).unwrap_err(), crate::i18n::tr(BUILDING));
+        }
+        assert!(wait(|| shared.lock().pres.live.is_some()), "다 만든 뒤 송출되지 않음: {:?}", shared.lock().toast);
+        {
+            let mut c = shared.lock();
+            let live = c.pres.live.clone().unwrap();
+            assert_eq!(live.deck.passage["cueIndex"], json!(0));
+            assert_eq!(live.deck.slides.len(), 1);
+            assert!(c.preview_is_item(0));
+            assert!(build_gen() > g0, "화면이 다시 읽게 번호가 올라야 함");
+            assert_eq!(c.item_deck(0).unwrap().slides.len(), 1);
+            assert!(c.pick.want.is_none() && c.pick.want_send.is_none());
+        }
+
+        // ③ 실패: 알림에 파일 이름, 바로 다시 읽어도 만들기를 또 시작하지 않음
+        let g1 = build_gen();
+        let v = shared.lock().pres.version;
+        assert!(!shared.lock().send_item(1));
+        assert!(wait(|| build_gen() > g1));
+        assert!(wait(|| shared.lock().toast.as_ref().is_some_and(|t| t.0.contains("002 나.pptx") && t.1 == "error")), "{:?}", shared.lock().toast);
+        {
+            let mut c = shared.lock();
+            let g2 = build_gen();
+            let e = c.item_deck(1).unwrap_err();
+            assert_ne!(e, crate::i18n::tr(BUILDING), "방금 실패한 파일을 또 만들기 시작함");
+            assert!(!is_building(&bad.to_string_lossy()));
+            assert_eq!(build_gen(), g2);
+            assert!(c.pick.want.is_none() && c.pick.want_send.is_none());
+            assert_eq!(c.pres.version, v, "실패한 순서 때문에 송출이 바뀌면 안 됨");
+            assert_eq!(c.pres.live.as_ref().unwrap().deck.passage["cueIndex"], json!(0));
+        }
+        drop(shared);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
