@@ -127,7 +127,7 @@ impl App {
                 if menubar::item_row(ui, None, l, "", Some(*k == mode)).clicked() {
                     self.core.lock().settings.update(|d| d["searchMode"] = json!(k));
                     if !self.search.trim().is_empty() {
-                        acts.push(Act::Search(self.search.clone()));
+                        acts.push(Act::SearchList(self.search.clone()));
                     }
                     ui.close();
                 }
@@ -208,7 +208,7 @@ impl App {
                 ui.close();
             }
             if ui.button(tr("송출 (Ctrl+Enter)")).clicked() {
-                acts.push(Act::SendPreview);
+                acts.push(Act::SendNow(self.search.clone()));
                 ui.close();
             }
         });
@@ -219,21 +219,21 @@ impl App {
                 self.focus_search = false;
             }
         }
+        // 입력 중에는 목록만 (control.js #q input → 후보 목록). 미리보기·LIVE 는 Enter 때만 바뀐다 —
+        // 바로 송출 모드에서 '요3:1' 처럼 치는 중인 글이 예배당에 나가면 안 된다
         if r.changed() {
-            acts.push(Act::Search(self.search.clone()));
+            acts.push(Act::SearchList(self.search.clone()));
         }
         // 검색칸에서 ↓: 키보드를 본문 목록으로 (control.js: #results.focus(), 고른 줄이 없으면 첫 줄)
         if r.has_focus() && self.result["ok"] == json!(true) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::ArrowDown)) {
             r.surrender_focus();
             crate::center_ui::focus_results(ui.ctx());
         }
-        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            if ui.input(|i| i.modifiers.ctrl) {
-                acts.push(Act::SendPreview)
-            } else if self.result["mode"] == "reference" && self.result["ok"] == json!(true) && !s.preview_mode {
-                acts.push(Act::SendPreview)
-            }
+        // Enter = 검색 (control.js doSearch: 장절이면 미리보기, 바로 송출 모드면 송출). Ctrl+Enter 는 전역 sendNow 가 먼저 받는다
+        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter) && !i.modifiers.ctrl) && !self.search.trim().is_empty() {
+            acts.push(Act::Search(self.search.clone()));
         }
+        let _ = s;
     }
 
     /// 작업공간 고르기 (.ws-pick.hgroup: 배치 아이콘 + select). 펼치면 작업공간 목록 · 저장·관리·패널 · 배치 잠금
