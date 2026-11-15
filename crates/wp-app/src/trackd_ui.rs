@@ -677,3 +677,53 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
         wp_core::updates::check(core, true);
     }
 }
+
+/// [갈래 D] 첫 화면: 1.x(Electron 판) 자료가 이 판 자료보다 최근에 바뀌었으면 다시 가져올지 묻는다.
+/// 다시 가져오면 지금 이 판 자료는 지우지 않고 data\pre-reimport\ 에 보관한 뒤 프로그램이 다시 켜진다.
+pub fn migrate_ask(ctx: &egui::Context, data_dir: &std::path::Path) {
+    let Some(a) = wp_core::firstrun::ask() else { return };
+    let tr = wp_core::i18n::tr;
+    let when = |ms: &Value| {
+        let ms = ms.as_i64().unwrap_or(0);
+        chrono::DateTime::from_timestamp_millis(ms).map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default()
+    };
+    egui::Modal::new(egui::Id::new("wp-migrate-ask")).show(ctx, |ui| {
+        ui.set_max_width(560.0);
+        ui.heading(tr("예전 워십프리젠터(1.x) 자료가 더 최근에 바뀌었습니다"));
+        ui.add_space(6.0);
+        ui.label(if a["reason"] == "nomarker" {
+            tr("이 PC 에는 예전에 만들어진 2.x 자료가 있어서, 그 뒤 1.x 에서 만든 큐시트·찬양·설정을 가져오지 않았습니다.")
+        } else {
+            tr("자료를 가져온 뒤 1.x 판과 이 판 양쪽에서 자료가 바뀌었습니다.")
+        });
+        ui.add_space(4.0);
+        egui::Grid::new("wp-migrate-grid").num_columns(3).spacing([16.0, 4.0]).show(ui, |ui| {
+            ui.label("");
+            ui.strong(tr("큐시트 · 찬양"));
+            ui.strong(tr("마지막으로 바뀜"));
+            ui.end_row();
+            ui.label(tr("1.x 자료"));
+            ui.label(format!("{} · {}", a["electronCues"], a["electronSongs"]));
+            ui.label(when(&a["electronChanged"]));
+            ui.end_row();
+            ui.label(tr("지금 자료"));
+            ui.label(format!("{} · {}", a["rustCues"], a["rustSongs"]));
+            ui.label(when(&a["rustChanged"]));
+            ui.end_row();
+        });
+        ui.add_space(6.0);
+        ui.label(RichText::new(wp_core::i18n::tr_args("다시 가져와도 지금 자료는 지우지 않고 {1} 에 보관합니다.", &[&data_dir.join(wp_core::firstrun::ASIDE_DIR).display()])).small());
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if ui.button(tr("1.x 자료 다시 가져오기 (프로그램이 다시 켜집니다)")).clicked() {
+                match wp_core::firstrun::request_reimport_and_restart(data_dir) {
+                    Ok(()) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
+                    Err(e) => log::warn!("다시 가져오기 요청 실패: {e}"),
+                }
+            }
+            if ui.button(tr("지금 자료 그대로 쓰기")).clicked() {
+                wp_core::firstrun::keep_current(data_dir);
+            }
+        });
+    });
+}

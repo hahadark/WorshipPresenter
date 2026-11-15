@@ -72,36 +72,105 @@ pub struct Core {
 
 pub type Shared = Arc<Mutex<Core>>;
 
+/// Electron 판(1.x) 자료 폴더 (읽기만). Electron 과 같은 규칙: BIBLECAST_DATA → %APPDATA%\WorshipCue\data.
+/// 점검용 WP_LEGACY_DATA 가 있으면 그것을 먼저 쓴다 (실제 자료 대신 사본으로 이전을 시험할 때).
+pub fn legacy_data_dir() -> Option<PathBuf> {
+    for k in ["WP_LEGACY_DATA", "BIBLECAST_DATA"] {
+        if let Some(v) = std::env::var_os(k).filter(|v| !v.is_empty()) {
+            return Some(PathBuf::from(v));
+        }
+    }
+    dirs::data_dir().map(|d| d.join("WorshipCue").join("data"))
+}
+
+/// 폴더 통째 복사 (하위 폴더 포함). 이미 같은 크기로 있는 파일은 건너뛴다. 실패한 파일 수를 돌려준다
+fn copy_tree(src: &Path, dst: &Path) -> usize {
+    let mut failed = 0;
+    if std::fs::create_dir_all(dst).is_err() {
+        return 1;
+    }
+    let Ok(rd) = std::fs::read_dir(src) else { return 1 };
+    for e in rd.flatten() {
+        let (from, to) = (e.path(), dst.join(e.file_name()));
+        match e.file_type() {
+            Ok(t) if t.is_dir() => failed += copy_tree(&from, &to),
+            Ok(t) if t.is_file() => {
+                let same = matches!((std::fs::metadata(&from), std::fs::metadata(&to)), (Ok(a), Ok(b)) if a.len() == b.len());
+                if !same && std::fs::copy(&from, &to).is_err() {
+                    failed += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    failed
+}
+
 /// 처음 실행: Electron 판 자료(%APPDATA%\WorshipCue\data)가 있으면 복사해 온다 (원본은 건드리지 않음)
 pub fn prepare_data_dir(data_dir: &Path, seed_db: Option<&Path>) -> Result<Option<String>> {
+    prepare_data_dir_from(data_dir, legacy_data_dir().as_deref(), seed_db)
+}
+
+/// 이전 순서: 설정·그림 파일을 먼저, 성경·큐시트·찬양 DB 는 임시 이름(bible.db.migrating)으로 만든 뒤 맨 끝에 bible.db 로 바꾼다.
+/// bible.db 가 '다 옮겼음' 표시라서, 옮기는 도중 강제로 꺼져도(첫 실행은 창이 뜨기 전 몇 초 걸림) 다음에 켤 때 처음부터 다시 옮긴다.
+/// DB 를 못 읽으면(손상·잠김) 프로그램이 아예 안 켜지지 않게 기본 성경으로 시작하고 경고로 알린다 (원본은 그대로 남는다).
+pub fn prepare_data_dir_from(data_dir: &Path, old: Option<&Path>, seed_db: Option<&Path>) -> Result<Option<String>> {
     std::fs::create_dir_all(data_dir)?;
     let db = data_dir.join("bible.db");
+    let mut kept = None;
     if db.exists() {
-        return Ok(None);
-    }
-    let old = dirs::data_dir().map(|d| d.join("WorshipCue").join("data"));
-    if let Some(old) = old.filter(|o| o.join("bible.db").exists()) {
-        // 열려 있어도 안전하게: SQLite VACUUM INTO 로 한 시점의 사본
-        let src = rusqlite::Connection::open_with_flags(old.join("bible.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        src.execute("VACUUM INTO ?", [db.to_string_lossy().to_string()]).context("기존 자료 복사")?;
-        for f in ["settings.json"] {
-            let _ = std::fs::copy(old.join(f), data_dir.join(f));
-        }
-        let om = old.join("media");
-        if om.is_dir() {
-            let nm = data_dir.join("media");
-            std::fs::create_dir_all(&nm)?;
-            for e in std::fs::read_dir(om)?.flatten() {
-                let _ = std::fs::copy(e.path(), nm.join(e.file_name()));
+        // 이미 이 판 자료가 있음: 가져온 뒤 1.x 자료가 또 바뀌었나 (예전에 2.x 를 시험으로 켜 본 PC 등)
+        match crate::firstrun::recheck(data_dir, old) {
+            crate::firstrun::Recheck::Nothing => return Ok(None),
+            crate::firstrun::Recheck::Ask(v) => {
+                crate::firstrun::set_ask(Some(v));
+                return Ok(None);
+            }
+            crate::firstrun::Recheck::Reimport(why) => {
+                let dir = crate::firstrun::set_aside(data_dir).context("지금 자료 보관")?;
+                log::info!("1.x 자료 다시 가져오기: {why} (지금 자료 보관: {})", dir.display());
+                kept = Some(dir);
             }
         }
-        return Ok(Some(format!("기존 워십프리젠터 자료를 복사해 왔습니다 ({})", old.display())));
+    }
+    let same = |a: &Path, b: &Path| a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(b.to_string_lossy().trim_end_matches(['\\', '/']));
+    let kept_note = kept.map(|d| format!(" · 전에 쓰던 이 판 자료는 {} 에 보관했습니다", d.display())).unwrap_or_default();
+    let mut warn = None;
+    if let Some(old) = old.filter(|o| o.join("bible.db").is_file() && !same(o, data_dir)) {
+        for f in ["settings.json", "settings.backup.json"] {
+            if old.join(f).is_file() {
+                let _ = std::fs::copy(old.join(f), data_dir.join(f));
+            }
+        }
+        let om = old.join("media");
+        let failed = if om.is_dir() { copy_tree(&om, &data_dir.join("media")) } else { 0 };
+        let tmp = data_dir.join("bible.db.migrating");
+        let _ = std::fs::remove_file(&tmp);
+        // 열려 있어도 안전하게: SQLite 온라인 백업으로 한 시점의 사본 (WAL 에만 있는 최근 변경도 들어감).
+        // VACUUM INTO 는 실제 자료(163MB)에서 11초 걸려 첫 실행 창이 한참 안 떴다 → 쪽 단위 복사 + 진행률
+        let r = crate::firstrun::copy_db(&old.join("bible.db"), &tmp)
+            .context("기존 자료 복사")
+            .and_then(|_| std::fs::rename(&tmp, &db).context("기존 자료 이름 바꾸기"));
+        match r {
+            Ok(()) => {
+                crate::firstrun::write_marker(data_dir, old, "migrated");
+                let more = if failed > 0 { format!(" · 그림 파일 {failed}개는 복사하지 못했습니다") } else { String::new() };
+                return Ok(Some(format!("기존 워십프리젠터 자료를 복사해 왔습니다 ({}){more}{kept_note}", old.display())));
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                log::warn!("기존 자료 복사 실패: {e:#}");
+                warn = Some(format!("기존 자료({})를 복사하지 못해 기본 성경으로 시작합니다: {e:#}", old.display()));
+            }
+        }
     }
     if let Some(seed) = seed_db.filter(|s| s.exists()) {
-        std::fs::copy(seed, &db)?;
-        return Ok(Some("기본 성경 자료로 시작합니다.".into()));
+        let tmp = data_dir.join("bible.db.migrating");
+        std::fs::copy(seed, &tmp)?;
+        std::fs::rename(&tmp, &db)?;
+        return Ok(Some(warn.unwrap_or_else(|| "기본 성경 자료로 시작합니다.".into())));
     }
-    Ok(None)
+    Ok(warn)
 }
 
 fn is_lyrics(passage: &Value, slide: Option<&Value>) -> bool {
@@ -143,7 +212,9 @@ impl Core {
             }
         }
         if let Some(n) = note {
-            c.notify(n, "ok");
+            // 복사 실패는 경고로 (기본 성경으로 시작했다는 것을 놓치지 않게)
+            let kind = if n.contains("복사하지 못해") { "warn" } else { "ok" };
+            c.notify(n, kind);
         }
         Ok(c)
     }
@@ -1063,5 +1134,89 @@ mod template_deck_tests {
         assert_eq!(c.output_payload("overlay")["template"]["id"], "B");
         assert_eq!(c.output_payload("main")["template"]["id"], "B");
         std::fs::remove_dir_all(&c.data_dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod migrate_tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("wp-migrate-{tag}-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Electron 판처럼 WAL 로 열려 있는 DB (마지막 변경이 아직 WAL 에만 있음)
+    fn fake_electron(dir: &Path) -> rusqlite::Connection {
+        let c = rusqlite::Connection::open(dir.join("bible.db")).unwrap();
+        c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE Cuesheets(id TEXT, items TEXT); INSERT INTO Cuesheets VALUES('c1','[]');").unwrap();
+        c.execute("INSERT INTO Cuesheets VALUES('c2', ?)", [r#"[{"file":"C:\\x\\WorshipCue\\data\\pasted\\a.png"}]"#]).unwrap();
+        std::fs::write(dir.join("settings.json"), r#"{"activeCueId":"c2","remote":{"port":37540}}"#).unwrap();
+        std::fs::write(dir.join("settings.backup.json"), "{}").unwrap();
+        std::fs::create_dir_all(dir.join("media").join("sub")).unwrap();
+        std::fs::write(dir.join("media").join("a.png"), b"a").unwrap();
+        std::fs::write(dir.join("media").join("sub").join("b.png"), b"bb").unwrap();
+        c
+    }
+
+    #[test]
+    fn copies_db_settings_and_media_tree_while_old_is_open() {
+        let (old, new) = (tmp("old"), tmp("new"));
+        let open = fake_electron(&old); // 켜져 있는 Electron 판 흉내
+        let note = prepare_data_dir_from(&new, Some(&old), None).unwrap().unwrap();
+        assert!(note.contains("복사해 왔습니다"), "{note}");
+        let c = rusqlite::Connection::open(new.join("bible.db")).unwrap();
+        let n: i64 = c.query_row("SELECT count(*) FROM Cuesheets", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2, "WAL 에만 있던 큐시트도 옮겨야 함");
+        assert!(std::fs::read_to_string(new.join("settings.json")).unwrap().contains("37540"));
+        assert!(new.join("settings.backup.json").is_file());
+        assert_eq!(std::fs::read(new.join("media").join("sub").join("b.png")).unwrap(), b"bb", "하위 폴더도 복사");
+        assert!(!new.join("bible.db.migrating").exists());
+        // 두 번째 실행은 아무것도 하지 않음 · 원본은 그대로
+        assert!(prepare_data_dir_from(&new, Some(&old), None).unwrap().is_none());
+        assert!(old.join("settings.json").is_file());
+        drop(c);
+        drop(open);
+        let _ = std::fs::remove_dir_all(old);
+        let _ = std::fs::remove_dir_all(new);
+    }
+
+    #[test]
+    fn interrupted_migration_is_redone() {
+        let (old, new) = (tmp("old2"), tmp("new2"));
+        let open = fake_electron(&old);
+        // 지난번에 옮기다 꺼진 흔적: 반쯤 쓴 임시 DB, 설정 없음
+        std::fs::write(new.join("bible.db.migrating"), b"half").unwrap();
+        prepare_data_dir_from(&new, Some(&old), None).unwrap();
+        let c = rusqlite::Connection::open(new.join("bible.db")).unwrap();
+        let n: i64 = c.query_row("SELECT count(*) FROM Cuesheets", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
+        assert!(new.join("settings.json").is_file());
+        drop(c);
+        drop(open);
+        let _ = std::fs::remove_dir_all(old);
+        let _ = std::fs::remove_dir_all(new);
+    }
+
+    #[test]
+    fn broken_old_db_falls_back_to_seed_with_warning() {
+        let (old, new, seed_dir) = (tmp("old3"), tmp("new3"), tmp("seed3"));
+        std::fs::write(old.join("bible.db"), b"this is not sqlite").unwrap();
+        let seed = seed_dir.join("bible.db");
+        rusqlite::Connection::open(&seed).unwrap().execute_batch("CREATE TABLE t(x)").unwrap();
+        let note = prepare_data_dir_from(&new, Some(&old), Some(&seed)).unwrap().unwrap();
+        assert!(note.contains("복사하지 못해"), "{note}");
+        assert!(new.join("bible.db").is_file(), "그래도 켜져야 함");
+        let _ = std::fs::remove_dir_all(old);
+        let _ = std::fs::remove_dir_all(new);
+        let _ = std::fs::remove_dir_all(seed_dir);
+    }
+
+    #[test]
+    fn same_folder_is_not_migrated_onto_itself() {
+        let d = tmp("same");
+        assert!(prepare_data_dir_from(&d, Some(&d), None).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(d);
     }
 }
