@@ -762,15 +762,29 @@ fn export_powerpoint(data_dir: &Path, file: &str) -> Result<Value, String> {
         return Err(crate::i18n::tr("슬라이드가 없는 파일입니다.").into());
     }
     let texts: Value = std::fs::read_to_string(dir.join("texts.json")).ok().and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok()).unwrap_or(json!([]));
+    // 슬라이드가 한 장이면 글자 하나로 온다 · PowerPoint 줄바꿈(\r · 세로탭)을 \n 으로 (pptrender.js 와 같게 — 안 하면 OBS 자막에서 줄이 붙는다)
+    let texts = match texts {
+        Value::Array(a) => a,
+        Value::Null => vec![],
+        one => vec![one],
+    };
+    let texts: Vec<String> = texts.iter().map(|t| clean_ppt_text(t.as_str().unwrap_or(""))).collect();
     let (number, title, name) = parse_name(Path::new(file));
     let meta = json!({
         "key": key, "number": number, "title": title, "name": name, "file": file, "mode": "slides", "background": null, "scores": [], "texts": [],
         "slides": (1..=n).map(|i| format!("/hymn/{key}/slide-{i:03}.png")).collect::<Vec<_>>(),
         "slideTexts": texts, "aspect": nums.get(1).copied().unwrap_or(16.0) / nums.get(2).copied().unwrap_or(9.0),
-        "layers": file.to_lowercase().ends_with("x"),
+        "layers": is_xml_ppt(file),
     });
     std::fs::write(dir.join("meta.json"), meta.to_string()).map_err(|e| e.to_string())?;
     Ok(meta)
+}
+
+/// PowerPoint 가 준 슬라이드 글: \r\n · \r · 세로탭 → \n, 빈 줄은 하나까지, 앞뒤 공백 없이 (pptrender.js)
+pub fn clean_ppt_text(t: &str) -> String {
+    let t = t.replace("\r\n", "\n").replace(['\r', '\u{b}'], "\n");
+    static MANY: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n{3,}").unwrap());
+    MANY.replace_all(&t, "\n\n").trim().to_string()
 }
 
 /// 파일 → meta (캐시에 있으면 바로, 없으면 PowerPoint 로 만든다) + captions
@@ -804,7 +818,7 @@ pub fn load(core: &Core, file: &str) -> Result<Value, String> {
 /// 슬라이드마다 OBS 자막(가사만)용 글자: PPT 안의 글자 (새찬송가 가사 DB 는 트랙 A 다음 작업)
 pub fn with_captions(core: &Core, mut meta: Value) -> Value {
     let own: Vec<String> = if meta["slides"].is_array() {
-        meta["slideTexts"].as_array().into_iter().flatten().map(|t| t.as_str().unwrap_or("").to_string()).collect()
+        meta["slideTexts"].as_array().into_iter().flatten().map(|t| clean_ppt_text(t.as_str().unwrap_or(""))).collect() // 예전 캐시의 \r 도 정리
     } else {
         let n = meta["scores"].as_array().map(|a| a.len()).unwrap_or(0);
         let t = meta["texts"].as_array().cloned().unwrap_or_default();
@@ -822,7 +836,9 @@ pub fn with_captions(core: &Core, mut meta: Value) -> Value {
     let file = meta["file"].as_str().unwrap_or("").to_string();
     let folder_name = core.settings.get()["hymnFolders"].as_array().into_iter().flatten()
         .find(|x| { let d = norm(x["path"].as_str().unwrap_or("")); !d.is_empty() && norm(&file).starts_with(&(d.trim_end_matches('\\').to_string() + "\\")) })
-        .map(|x| format!("{} {}", x["name"].as_str().unwrap_or(""), x["path"].as_str().unwrap_or(""))).unwrap_or_default();
+        // 폴더 이름 + 경로의 마지막 폴더 이름만 본다 (Electron `path.basename(folder.path)`). 경로 전체를 보면
+        // '…\새찬송가및 구세군찬송가\구세군 찬송가' 도 새찬송가로 보아 구세군 찬송가 646장에 새찬송가 DB 의 글이 OBS 자막으로 나갔다
+        .map(|x| format!("{} {}", x["name"].as_str().unwrap_or(""), folder_base(x["path"].as_str().unwrap_or("")))).unwrap_or_default();
     let n = meta["slides"].as_array().or(meta["scores"].as_array()).map(|a| a.len()).unwrap_or(0);
     let num = meta["number"].as_i64().unwrap_or(0);
     if folder_name.contains("새찬송가") && num > 0 && n > 0 {
@@ -832,6 +848,11 @@ pub fn with_captions(core: &Core, mut meta: Value) -> Value {
         }
     }
     meta
+}
+
+/// 경로의 마지막 폴더 이름
+fn folder_base(p: &str) -> &str {
+    p.trim_end_matches(['\\', '/']).rsplit(['\\', '/']).next().unwrap_or("")
 }
 
 fn range_of(r: &str) -> Option<(usize, usize)> {
@@ -1332,6 +1353,18 @@ mod magic_tests {
 #[cfg(test)]
 mod allow_tests {
     use super::*;
+    #[test]
+    fn powerpoint_text_line_breaks() {
+        assert_eq!(clean_ppt_text("10일(화)\r안동 KSI\u{b}연수원\r\n\r\n\r\n끝 \r"), "10일(화)\n안동 KSI\n연수원\n\n끝");
+    }
+
+    #[test]
+    fn lyrics_db_only_for_new_hymnal_folder() {
+        assert_eq!(folder_base(r"D:\자료실\새찬송가및 구세군찬송가\구세군 찬송가"), "구세군 찬송가");
+        assert_eq!(folder_base("D:/a/새찬송가/"), "새찬송가");
+        assert!(!format!("{} {}", "구세군 찬송가", folder_base(r"D:\새찬송가및 구세군찬송가\구세군 찬송가")).contains("새찬송가"));
+    }
+
     #[test]
     fn dotdot_does_not_escape_registered_folder() {
         assert_eq!(resolve(r"C:\A\b\..\c\.\d.PPTX"), r"c:\a\c\d.pptx");
