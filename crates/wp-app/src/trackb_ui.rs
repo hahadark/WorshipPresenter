@@ -214,11 +214,16 @@ impl App {
                 if let Some(it) = it { self.add_to_cue(it); }
             } else if edit.clicked() {
                 self.tb.song_edit = self.core.lock().get_song(&id);
-            } else if row.double_clicked() {
-                let it = self.core.lock().song_item(&id);
-                if let Some(it) = it { self.add_to_cue(it); }
-            } else if row.clicked() {
-                sel = Some(id.clone());
+            } else {
+                // library.js:84 한 번 = 고르기, 두 번 = 큐시트에 넣기 (넣기는 한 번만)
+                match crate::widgets::click2(ui, ("lib-song", &id), &row) {
+                    crate::widgets::Click::Double => {
+                        let it = self.core.lock().song_item(&id);
+                        if let Some(it) = it { self.add_to_cue(it); }
+                    }
+                    crate::widgets::Click::Single => sel = Some(id.clone()),
+                    crate::widgets::Click::None => {}
+                }
             }
             row.on_hover_text(tr("두 번 누르면 큐시트에 넣습니다"));
         }

@@ -977,11 +977,10 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             if resp.drag_started_by(egui::PointerButton::Primary) {
                 out = Some(Hit::Drag(k));
             }
-            if resp.clicked() {
-                out = Some(Hit::Pick(k, false));
-            }
-            if resp.double_clicked() {
-                out = Some(Hit::Pick(k, true));
+            match widgets::click2(ui, (id, "cell", k), &resp) {
+                widgets::Click::Single => out = Some(Hit::Pick(k, false)),
+                widgets::Click::Double => out = Some(Hit::Pick(k, true)),
+                widgets::Click::None => {}
             }
             // 단추 위에 있어도 칸은 마우스 올림 상태로 (테두리·바탕 강조가 깜빡이지 않게)
             let hot = resp.contains_pointer();
@@ -1399,9 +1398,16 @@ impl App {
                         st.scroll_sel = false;
                     }
                     crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", p["book"]["name"].as_str().unwrap_or(""), c, n), v["text"].as_str().unwrap_or(""));
-                    if resp.clicked() {
+                    let click = widgets::click2(ui, ("res-verse", c, n), &resp);
+                    let shift = ui.input(|x| x.modifiers.shift);
+                    if click == widgets::Click::Double && !shift {
+                        // control.js:917 두 번 = 그 절이 든 슬라이드를 미리보기하고 송출
                         st.kbd = true;
-                        if ui.input(|x| x.modifiers.shift) {
+                        activate(i, self, &mut st, acts);
+                        acts.push(Act::SendPreview)
+                    } else if click != widgets::Click::None {
+                        st.kbd = true;
+                        if shift {
                             select_range(i, self, &mut st, acts);
                         } else {
                             st.anchor = Some(i);
@@ -1418,10 +1424,6 @@ impl App {
                                 activate(i, self, &mut st, acts);
                             }
                         }
-                    }
-                    if resp.double_clicked() {
-                        activate(i, self, &mut st, acts);
-                        acts.push(Act::SendPreview)
                     }
                 }
             } else {
@@ -1457,13 +1459,18 @@ impl App {
                         st.scroll_sel = false;
                     }
                     crate::parity_ui::verse_menu(&resp, v["ref"].as_str().unwrap_or(""), v["text"].as_str().unwrap_or(""));
-                    if resp.clicked() {
-                        st.kbd = true;
-                        st.sel = Some(i);
-                        acts.push(Act::PreviewRef(q.clone(), None))
-                    }
-                    if resp.double_clicked() {
-                        acts.push(Act::SendRef(q, None))
+                    match widgets::click2(ui, ("res-text", &q), &resp) {
+                        widgets::Click::Single => {
+                            st.kbd = true;
+                            st.sel = Some(i);
+                            acts.push(Act::PreviewRef(q.clone(), None))
+                        }
+                        widgets::Click::Double => {
+                            st.kbd = true;
+                            st.sel = Some(i);
+                            acts.push(Act::SendRef(q, None))
+                        }
+                        widgets::Click::None => {}
                     }
                 }
                 if r["truncated"] == json!(true) {
@@ -1552,9 +1559,17 @@ impl App {
                     }
                     crate::parity_ui::verse_menu(&resp, &format!("{} {}:{}", d.passage["book"]["name"].as_str().unwrap_or(""), ch, vn), text);
                     let idx = wp_core::slides::index_of_verse(&d.slides, ch, vn);
-                    if resp.clicked() {
+                    let click = widgets::click2(ui, ("cue-verse", ch, vn), &resp);
+                    let shift = ui.input(|x| x.modifiers.shift);
+                    if click == widgets::Click::Double && !shift {
                         st.kbd = true;
-                        if ui.input(|x| x.modifiers.shift) {
+                        st.anchor = Some(i);
+                        st.sel = Some(i);
+                        acts.push(Act::PreviewIndex(idx));
+                        acts.push(Act::SendPreview);
+                    } else if click != widgets::Click::None {
+                        st.kbd = true;
+                        if shift {
                             // Shift+클릭: 처음 누른 절부터 여기까지를 범위로 미리보기 (control.js selectRange)
                             range_req = Some(i);
                         } else {
@@ -1562,10 +1577,6 @@ impl App {
                             st.sel = Some(i);
                             acts.push(Act::PreviewIndex(idx));
                         }
-                    }
-                    if resp.double_clicked() {
-                        acts.push(Act::PreviewIndex(idx));
-                        acts.push(Act::SendPreview);
                     }
                 }
             } else {
@@ -1600,16 +1611,19 @@ impl App {
                         resp.scroll_to_me(None);
                         st.scroll_key = scroll_key.clone();
                     }
-                    if resp.clicked() {
+                    let click = widgets::click2(ui, ("srow", slide_key(sl), k), &resp);
+                    let mods = ui.input(|i| i.modifiers);
+                    if click == widgets::Click::Double && !(mods.shift || mods.command) {
+                        // cue.js:945 두 번 = 그 장 송출
                         st.kbd = true;
-                        // Shift·Ctrl+클릭 = 여러 장 고르기, 그냥 클릭 = 그 슬라이드 미리보기
-                        if !ms_click(st, s, k, ui.input(|i| i.modifiers)) {
-                            acts.push(Act::PreviewIndex(k));
-                        }
-                    }
-                    if resp.double_clicked() && !ui.input(|i| i.modifiers.shift || i.modifiers.command) {
                         acts.push(Act::PreviewIndex(k));
                         acts.push(Act::SendPreview);
+                    } else if click != widgets::Click::None {
+                        st.kbd = true;
+                        // Shift·Ctrl+클릭 = 여러 장 고르기, 그냥 클릭 = 그 슬라이드 미리보기
+                        if !ms_click(st, s, k, mods) {
+                            acts.push(Act::PreviewIndex(k));
+                        }
                     }
                 }
                 if let Some((i, _)) = item {
@@ -1896,11 +1910,10 @@ impl App {
                                         if r.drag_started_by(egui::PointerButton::Primary) {
                                             hit = Some(Hit::Drag(k));
                                         }
-                                        if r.clicked() {
-                                            hit = Some(Hit::Pick(k, false));
-                                        }
-                                        if r.double_clicked() {
-                                            hit = Some(Hit::Pick(k, true));
+                                        match widgets::click2(ui, ("cgl", i, k), &r) {
+                                            widgets::Click::Single => hit = Some(Hit::Pick(k, false)),
+                                            widgets::Click::Double => hit = Some(Hit::Pick(k, true)),
+                                            widgets::Click::None => {}
                                         }
                                         if let Some(op) = widgets::hover_ops(ui, egui::Id::new(("cgl", i, k)), r.rect, &slide_hover_ops(Some(it), sl, true)) {
                                             hit = Some(Hit::Op(k, op));
@@ -1924,6 +1937,9 @@ impl App {
                                 match hit {
                                     Some(Hit::Pick(k, dbl)) => {
                                         st.kbd = true;
+                                        // 이 화면 안에서 누른 것은 이미 보고 있는 자리다 — 그 순서를 맨 위로 끌어올리지 않는다
+                                        // (끌어올리면 칸이 수백 px 밀려 두 번째 클릭이 다른 칸에 떨어졌다)
+                                        st.scroll_key = format!("all:{:?}", Some(i));
                                         let m = ui.input(|x| x.modifiers);
                                         // Shift·Ctrl+클릭 = 여러 장 고르기 (미리보기 중인 순서에서만, selClickAll)
                                         if dbl && !(m.shift || m.command) {
@@ -1941,6 +1957,7 @@ impl App {
                                     }
                                     Some(Hit::Drag(k)) => drag_begin(ui, st, s, i, k),
                                     Some(Hit::Op(k, op)) => {
+                                        st.scroll_key = format!("all:{:?}", Some(i));
                                         // grid.js: 그 슬라이드를 먼저 미리보기한 뒤 동작
                                         self.sel = Some(i);
                                         if pvk.is_none() {

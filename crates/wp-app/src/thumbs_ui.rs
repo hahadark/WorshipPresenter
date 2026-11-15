@@ -155,7 +155,7 @@ impl App {
                                 act = Some((op, (*f).clone()));
                             }
                             let name = f["name"].as_str().unwrap_or("").to_string();
-                            if resp.double_clicked() {
+                            if crate::widgets::click2(ui, ("lib-thumb", url.as_str()), &resp) == crate::widgets::Click::Double {
                                 act = Some(("cue", (*f).clone()));
                             }
                             ui.add(egui::Label::new(RichText::new(if on { format!("● {name}") } else { name.clone() }).small().color(if on { p.danger_text } else { p.text2 })).truncate()).on_hover_text(f["path"].as_str().unwrap_or(""));

@@ -628,13 +628,21 @@ impl App {
                     } else if out.edit {
                         self.show_item_editor(i);
                         acts.push(Act::PreviewItem(i));
-                    } else if r.clicked() {
-                        self.sel = Some(i);
-                        self.edit = None;
-                        acts.push(Act::PreviewItem(i));
-                    }
-                    if r.double_clicked() && !out.edit && !out.send {
-                        acts.push(Act::SendItem(i));
+                    } else {
+                        // 두 번 = 송출 (원본 cue.js:1266 은 미리보기만 — 사용자 지시로 의도적 차이, docs/behavior-parity.md).
+                        // 첫 클릭으로 편집칸·미리보기가 바뀌어 줄이 밀려도 같은 순서면 두 번 클릭으로 친다 (widgets::click2)
+                        match crate::widgets::click2(ui, ("cue-row", it["id"].as_str().unwrap_or(""), i), &r) {
+                            crate::widgets::Click::Single => {
+                                self.sel = Some(i);
+                                self.edit = None;
+                                acts.push(Act::PreviewItem(i));
+                            }
+                            crate::widgets::Click::Double => {
+                                self.sel = Some(i);
+                                acts.push(Act::SendItem(i));
+                            }
+                            crate::widgets::Click::None => {}
+                        }
                     }
                 }
                 if s.items.is_empty() {
@@ -1136,8 +1144,13 @@ impl App {
                             if let Some(op) = widgets::hover_ops_float(ui, egui::Id::new((if is_live { "lv-chip" } else { "pv-chip" }, k)), r.rect, &ops) {
                                 if let Some((i, _)) = item { acts.push(Act::SlideOp(i, crate::center_ui::slide_key(sl), op)); }
                             }
-                            if r.clicked() { acts.push(if is_live { Act::LiveGoto(k) } else { Act::PreviewIndex(k) }) }
-                            if r.double_clicked() && !is_live { acts.push(Act::SendPreview) }
+                            // control.js:611 번호를 두 번 누르면 그 장으로 옮기고 송출 (LIVE 쪽은 한 번에 그 장으로)
+                            match widgets::click2(ui, (fold_key, "chip", k), &r) {
+                                widgets::Click::Single => acts.push(if is_live { Act::LiveGoto(k) } else { Act::PreviewIndex(k) }),
+                                widgets::Click::Double if is_live => acts.push(Act::LiveGoto(k)),
+                                widgets::Click::Double => { acts.push(Act::PreviewIndex(k)); acts.push(Act::SendPreview) }
+                                widgets::Click::None => {}
+                            }
                             crate::parity2_ui::slide_menu(&self.core, &r, d, k, is_live, acts); // [트랙 A] 썸네일 오른쪽 클릭
                         }
                     });
@@ -1550,7 +1563,8 @@ impl App {
 
         crate::track_c::menu_bar(self, ui, &mut acts); // [트랙 C] 메뉴 줄 (트랙 B·D 항목도 여기서 연다)
         crate::track_c::windows(self, &ctx, &mut acts); // [트랙 C] 설정·템플릿·기록 창
-        crate::trackd_ui::migrate_ask(&ctx, &self.data_dir); // [갈래 D] 1.x 자료가 더 최근이면 다시 가져올지 묻기
+        // 시험에서는 띄우지 않는다: 이 PC 의 실제 1.x 자료를 보고 뜨는 전역 상태(firstrun::ASK)라 화면 전체 합성 시험을 가린다
+        if !cfg!(test) { crate::trackd_ui::migrate_ask(&ctx, &self.data_dir); } // [갈래 D] 1.x 자료가 더 최근이면 다시 가져올지 묻기
         let s = self.snap(); // [트랙 C] 창에서 바뀐 것 반영
         // 머리 줄 (header.top: panel 바탕 · 아래 line) — topbar_ui.rs
         let pf = crate::theme::pal().panel;
@@ -1665,6 +1679,9 @@ mod fix3_tests;
 #[cfg(test)]
 #[path = "auditc_tests.rs"]
 mod auditc_tests;
+#[cfg(test)]
+#[path = "dbl_tests.rs"]
+mod dbl_tests;
 #[cfg(test)]
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)

@@ -9,7 +9,7 @@ pub(super) struct H {
     pub ctx: egui::Context,
     pub app: App,
     dir: std::path::PathBuf,
-    time: f64,
+    pub(super) time: f64,
 }
 
 pub(super) type Draw = fn(&mut App, &egui::Context, &mut egui::Ui, &Snap, &mut Vec<Act>);
