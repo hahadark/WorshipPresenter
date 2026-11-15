@@ -48,6 +48,17 @@ fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
             c.show_message(a["text"].as_str().unwrap_or(""), &outs, a["seconds"].as_i64().unwrap_or(0)).map_err(|e| e.to_string())?;
             json!(true)
         }
+        "setTemplate" => { c.set_template(a["output"].as_str().unwrap_or("main"), a["id"].as_str().unwrap_or("")); json!(true) }
+        "clearMessage" => { c.clear_message(); json!(true) }
+        "toggleOverlaysOff" => { c.toggle_overlays_off(); json!(true) }
+        // 큐시트 끝에 순서 넣기 (비교용 성경·공지 순서)
+        "addItem" => { let n = c.cue.as_ref().map(|q| q.items.len()).unwrap_or(0); c.add_item(a["item"].clone(), Some(n)); json!(n) }
+        // 설정 맨 위 키를 그대로 바꾼다 (split · parallelVersionId 등)
+        "updateSettings" => {
+            let patch = a["patch"].clone();
+            c.settings.update(|d| { if let (Some(d), Some(p)) = (d.as_object_mut(), patch.as_object()) { for (k, v) in p { d.insert(k.clone(), v.clone()); } } });
+            json!(true)
+        }
         "stageMessage" => { c.stage_message(a["text"].as_str().unwrap_or("")); json!(true) }
         "stageTimer" => { c.stage_timer(a["op"].as_str().unwrap_or(""), a["minutes"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?; json!(true) }
         "state" => json!({

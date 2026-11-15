@@ -57,7 +57,9 @@ async function launch(profileDir, port = 9400 + Math.floor(Math.random() * 400))
           return false;
         },
         async shot(file) {
-          const r = await send('Page.captureScreenshot', { format: 'png' });
+          // 뒤에 있는 탭은 그리지 않아 캡처가 끝나지 않는다 → 앞으로 가져온 뒤 찍고, 그래도 안 끝나면 오류
+          await send('Page.bringToFront');
+          const r = await Promise.race([send('Page.captureScreenshot', { format: 'png' }), sleep(15000).then(() => { throw new Error('스크린샷 시간 초과'); })]);
           const buf = Buffer.from(r.data, 'base64');
           if (file) fs.writeFileSync(file, buf);
           return buf;
