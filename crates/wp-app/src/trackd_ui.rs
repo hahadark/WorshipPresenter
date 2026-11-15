@@ -72,7 +72,8 @@ pub fn obs_status_line(settings: &Value) -> Option<(String, bool)> {
     let mut parts = vec![wp_core::i18n::tr("OBS 연결됨")];
     if k["streaming"] == true {
         let t = k["streamTime"].as_str().unwrap_or("");
-        parts.push(if t.len() >= 8 { wp_core::i18n::tr_args("방송 중 {1}", &[&&t[..8]]) } else { wp_core::i18n::tr("방송 중") });
+        // OBS 가 보낸 글이라 글자 경계가 아닐 수 있다 → get 으로 (바이트 자르기 panic 막기)
+        parts.push(match t.get(..8) { Some(t8) => wp_core::i18n::tr_args("방송 중 {1}", &[&t8]), None => wp_core::i18n::tr("방송 중") });
     }
     if k["recording"] == true {
         parts.push(wp_core::i18n::tr("녹화 중"));
