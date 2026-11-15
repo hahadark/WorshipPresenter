@@ -198,9 +198,11 @@ pub fn detail(it: &Value) -> String {
     let s = |k: &str| it[k].as_str().unwrap_or("").to_string();
     let file_name = |f: &str| f.rsplit(['\\', '/']).next().unwrap_or("").split('?').next().unwrap_or("").to_string();
     match it["type"].as_str().unwrap_or("") {
-        "hymn" => match &it["number"] {
-            Value::Null => tr("찬송가"),
-            n => format!("{}{}", n.as_i64().map(|x| x.to_string()).unwrap_or_else(|| n.as_str().unwrap_or("").to_string()), tr("장")),
+        // Electron cues.js 정규화가 null 을 +null = 0 으로 저장해 붙여 넣은 PPT 가 '0장' 으로 보이던 것을 고침: 번호는 1 이상일 때만
+        "hymn" => match it["number"].as_i64().or_else(|| it["number"].as_str().and_then(|x| x.trim().parse().ok())).filter(|n| *n > 0) {
+            Some(n) => wp_core::i18n::tr_args("{1}장", &[&n]),
+            None if s("file").replace('/', "\\").to_lowercase().contains("\\pasted\\") => tr("붙여 넣은 슬라이드"),
+            None => tr("찬송가"),
         },
         "bible" => {
             let r = s("ref");
@@ -762,7 +764,9 @@ mod tests {
     fn detail_follows_electron_rules() {
         assert_eq!(detail(&json!({"type": "song", "lyrics": "[1절]\n\n"})), "(가사 없음)");
         assert_eq!(detail(&json!({"type": "song", "lyrics": "[1절]\n[C]주 [G7]사랑\n"})), "주 사랑");
-        assert_eq!(detail(&json!({"type": "hymn", "number": 0})), "0장");
+        assert_eq!(detail(&json!({"type": "hymn", "number": 0})), "찬송가");
+        assert_eq!(detail(&json!({"type": "hymn", "number": 3})), "3장");
+        assert_eq!(detail(&json!({"type": "hymn", "number": 0, "file": "C:\\Users\\a\\AppData\\Roaming\\WorshipCue\\data\\pasted\\clip-1.pptx"})), "붙여 넣은 슬라이드");
         assert_eq!(detail(&json!({"type": "hymn"})), "찬송가");
         assert_eq!(detail(&json!({"type": "text", "body": ""})), "(내용 없음)");
         assert_eq!(detail(&json!({"type": "text", "body": "\n**광고** 안내"})), "광고 안내");
