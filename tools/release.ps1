@@ -57,7 +57,7 @@ if (-not $makensis) { $makensis = (Get-Command makensis -ErrorAction SilentlyCon
 if (-not $makensis) { throw 'makensis 를 찾지 못했습니다 (NSIS 3).' }
 $setupName = "WorshipPresenter-$Version-Setup.exe"
 $setup = Join-Path $dist $setupName
-& $makensis /V2 "/DVERSION=$Version" "/DSRC=$stage" "/DOUT=$setup" installer\WorshipPresenter.nsi
+& $makensis /V2 /INPUTCHARSET UTF8 "/DVERSION=$Version" "/DSRC=$stage" "/DOUT=$setup" installer\WorshipPresenter.nsi
 if ($LASTEXITCODE -ne 0) { throw 'makensis 실패' }
 
 # 포터블 묶음
