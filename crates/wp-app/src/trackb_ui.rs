@@ -92,7 +92,7 @@ impl App {
             let a: Vec<String> = std::env::args().collect();
             if let Some(v) = a.iter().position(|x| x == "--open").and_then(|i| a.get(i + 1)) {
                 for w in v.split(',') {
-                    match w { "songs" => self.tb.songs = true, "lib" => self.tb.lib = true, "overlays" => self.tb.overlays = true, "message" => self.tb.message = true, "quick" => self.tb.quick = true, "stage" => self.tb.stage = true, "macros" => self.tb.macros = true, "cues" => self.tb.cues = true, "lyrics" => crate::lyrics_ui::open(), _ => {} }
+                    match w { "songs" => self.tb.songs = true, "lib" => self.tb.lib = true, "overlays" => self.tb.overlays = true, "message" => self.tb.message = true, "quick" => self.tb.quick = true, "stage" => self.tb.stage = true, "macros" => self.tb.macros = true, "cues" => self.tb.cues = true, "lyrics" => crate::lyrics_ui::open(), "pptsplit" => crate::pptsplit_ui::want_open(), _ => {} }
                 }
             }
         });

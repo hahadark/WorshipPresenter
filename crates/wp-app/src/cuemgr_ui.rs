@@ -531,7 +531,7 @@ impl App {
                     Err(e) => self.core.lock().notify(e.to_string(), "error"),
                 }
             }
-            let b = ui.add(Btn::new(tr("순서지 복사")).icon("clipboard").tooltip(tr("순서지를 글로 복사 (단톡방·문서에 붙이기)")));
+            let b = ui.add(Btn::new(tr("순서지 복사")).icon("clipboard-copy").tooltip(tr("순서지를 글로 복사 (단톡방·문서에 붙이기)")));
             widgets::mark("cm-text", b.rect);
             if b.clicked() {
                 let r = self.core.lock().cue_text_of(&id);
@@ -539,7 +539,7 @@ impl App {
                     widgets::copy_notice(ui.ctx(), t, tr("순서지를 글로 복사했습니다 — 단톡방·문서에 붙여 넣으세요."));
                 }
             }
-            if ui.add(Btn::new(tr("내보내기")).icon("save")).clicked() {
+            if ui.add(Btn::new(tr("내보내기")).icon("download")).clicked() {
                 if let Some(f) = rfd::FileDialog::new().set_file_name(format!("{}.json", file_name(&s("name")))).save_file() {
                     let r = self.core.lock().export_cues_to(&[id.clone()], &f); // 잠금을 먼저 푼다 (가지 안에서 다시 잠그므로)
                     match r {

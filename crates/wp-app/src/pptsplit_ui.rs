@@ -95,6 +95,12 @@ pub(crate) fn open(app: &App, ctx: &egui::Context, it: &Value) {
     open_with(ctx, it, all, texts);
 }
 
+/// 점검용 (--open pptsplit): 큐시트의 첫 PPT 순서로 나누기 창을 연다 (그림이 만들어질 때까지 몇 번 다시 해 본다)
+static WANT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+pub(crate) fn want_open() {
+    WANT.store(600, std::sync::atomic::Ordering::Relaxed);
+}
+
 #[cfg(test)]
 pub(crate) fn parts_now(ctx: &egui::Context) -> Vec<(usize, usize, String)> {
     ctx.data(|d| d.get_temp::<St>(sid())).map(|s| s.parts.iter().map(|p| (p.a, p.b, p.name.clone())).collect()).unwrap_or_default()
@@ -133,6 +139,28 @@ impl St {
 
 impl App {
     pub(crate) fn pptsplit_window(&mut self, ctx: &egui::Context) {
+        let left = WANT.load(std::sync::atomic::Ordering::Relaxed);
+        if left > 0 && left % 30 == 0 {
+            // 점검용: 첫 PPT 순서 (슬라이드 2장 이상) 를 연다. 열면서 보기 좋게 한 곳을 나눠 둔다
+            let items = self.core.lock().cue.as_ref().map(|q| q.items.clone()).unwrap_or_default();
+            for it in items.iter().filter(|it| crate::hymns_ui::can_open_ppt_tools(it)) {
+                let meta = hymns::load(&self.core.lock(), it["file"].as_str().unwrap_or(""));
+                if meta.is_ok_and(|m| m["slides"].as_array().or(m["scores"].as_array()).is_some_and(|a| a.len() >= 2)) {
+                    open(self, ctx, it);
+                    if let Some(mut s) = ctx.data(|d| d.get_temp::<St>(sid())).filter(|s| s.open) {
+                        let mid = s.all.len() / 2 + 1;
+                        splitedit::toggle_at(&mut s.parts, mid, s.all.len(), &s.texts, &s.title);
+                        ctx.data_mut(|d| d.insert_temp(sid(), s));
+                        WANT.store(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    break;
+                }
+            }
+        }
+        if left > 0 {
+            WANT.store(left - 1, std::sync::atomic::Ordering::Relaxed);
+            ctx.request_repaint();
+        }
         let Some(mut st) = ctx.data(|d| d.get_temp::<St>(sid())).filter(|s| s.open) else { return };
         // 끝난 AI 답 받기
         if let Some((id, r)) = AI_DONE.lock().take_if(|x| x.0 == st.item_id) {
@@ -149,6 +177,7 @@ impl App {
         let mut keep = true;
         let mut go = false;
         widgets::float_window(ctx, "pptsplit", tr_args("'{1}' 여러 순서로 나누기", &[&st.title]), [880.0, 660.0]).open(&mut keep).show(ctx, |ui| {
+            ui.set_max_width(ui.available_width().min(900.0)); // 긴 안내 글이 창을 화면 끝까지 넓히지 않게
             // ---------------- 자동으로 나누기 ----------------
             ui.horizontal_wrapped(|ui| {
                 ui.label(rich(tr("자동으로 나누기"), 13.0, Weight::SemiBold, p.text));
@@ -164,7 +193,7 @@ impl App {
                         Err(e) => st.fail(e),
                     }
                 }
-                let b = ui.add(Btn::new(tr("채팅 AI 프롬프트 복사")).icon("clipboard").enabled(!st.busy).tooltip(tr("API 키 없이 ChatGPT · Claude · Gemini 에서")));
+                let b = ui.add(Btn::new(tr("채팅 AI 프롬프트 복사")).icon("clipboard-copy").enabled(!st.busy).tooltip(tr("API 키 없이 ChatGPT · Claude · Gemini 에서")));
                 if b.clicked() {
                     let blank = st.texts.iter().all(|t| t.trim().is_empty());
                     let sheets = if blank { total.div_ceil(if total > 160 { 25 } else { 16 }) } else { 0 };

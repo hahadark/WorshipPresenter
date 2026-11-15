@@ -131,7 +131,7 @@ pub(crate) const TYPES: [(&str, &str, &str); 11] = [
 
 /// '순서 넣기' 줄들: 클립보드에서 붙여 넣기 + 종류마다 (고른 순서 다음에 들어간다)
 pub(crate) fn add_items(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
-    if item(ui, "paste", Some("clipboard"), &tr("클립보드에서 붙여 넣기"), "Ctrl+V", true, false) {
+    if item(ui, "paste", Some("clipboard-paste"), &tr("클립보드에서 붙여 넣기"), "Ctrl+V", true, false) {
         crate::parity2_ui::open_paste();
     }
     for (ty, label, ic) in TYPES {
