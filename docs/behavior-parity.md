@@ -61,7 +61,7 @@ Rust 판: 바로 송출 모드에서 순서 줄 클릭 = 송출, 두 번 클릭 
 | control.js:324·325·326·338 | 4 | 처음 실행 안내 (베들레헴 가져오기 · 나중에) | 같음 (소스 근거만) | firstrun · import_ui |
 | control.js:365·369·370 | 3 | 성경 책 창: 책 누름 · 거르기 · Enter = 첫 책 | 같음 (소스 근거만) | cue_ui.rs 성경 책 탭 |
 | control.js:377 | 1 | 장 단추 = 절 목록만 띄움 (미리보기는 절을 누를 때) | 같음 (소스 근거만) | cue_ui.rs get_chapter |
-| control.js:390 | 1 | 장 격자에서 방향키로 옮기기 | 남음·확인 못 함 | 확인 못 함 (방향키 처리 근거 없음) |
+| control.js:390 | 1 | 장 격자에서 방향키로 옮기기 | 고침·새로 만듦 (합성 시험) | nav_tests: 성경 장 격자 방향키 |
 | control.js:488 | 1 | 클릭하면 [미리보기][바로 송출] 모드 단추 | 같음 (소스 근거만) | Act::TogglePreviewMode |
 | control.js:569 | 1 | 미리보기 화면의 글상자 누름 → 다시 그림 | 해당 없음 | egui 는 매 프레임 그림 |
 | control.js:606 | 1 | 미리보기 아래 번호 칩 누름 = 그 장 미리보기 | 같음 (합성 시험) | dbl_preview_chip_moves_and_sends |
@@ -75,7 +75,7 @@ Rust 판: 바로 송출 모드에서 순서 줄 클릭 = 송출, 두 번 클릭 
 | control.js:924 | 1 | 본문 목록 ↑↓ · Shift+↑↓ 범위 · Enter · 맨 위에서 ↑ = 검색칸 | 같음 (소스 근거만) | center_ui.rs |
 | control.js:979 | 1 | 검색칸: 치는 중에는 후보만 (미리보기·송출 안 바뀜) | 고침·새로 만듦 (합성 시험) | typing_reference_in_direct_mode_does_not_go_live_until_enter |
 | control.js:1059·1066 | 2 | 후보 드롭다운 누름 · 칸을 떠나면 닫힘 | 다름 (화면 설계) | 후보를 드롭다운이 아니라 본문 목록에 보임 |
-| control.js:1068 | 1 | 검색칸 Enter = 검색 · ↓ = 목록으로 · Esc = 모두 고르기 | 남음·확인 못 함 | Enter·↓ 는 있음 (typing_keeps_current_cue_preview_and_enter_replaces_it). Esc = 모두 고르기 없음 |
+| control.js:1068 | 1 | 검색칸 Enter = 검색 · ↓ = 목록으로 · Esc = 모두 고르기 | 고침·새로 만듦 (합성 시험) | nav_tests: 검색칸 Esc 전체 선택·전역 Esc 충돌 방지 (입력 우선 의도차이) |
 | control.js:1169·1170·1171·1172 | 4 | 아래 줄: 이전 · 다음 · 송출 · 글자 숨김 | 같음 (소스 근거만) | topbar_ui.rs bottom_bar |
 | control.js:1174·1175·1176·1177·1178·1180 | 6 | 배경 · 오버레이 · 로고 · 음악 멈춤 · 모두 지우기 · 더보기 | 같음 (소스 근거만) | 지우기 ▾ 메뉴 + (새) 아래 줄·LIVE 오른쪽 메뉴 |
 | control.js:1228 | 1 | 지금 화면 칩 (층마다 끄기) | 같음 (소스 근거만) | app.rs layer_action |
@@ -83,12 +83,12 @@ Rust 판: 바로 송출 모드에서 순서 줄 클릭 = 송출, 두 번 클릭 
 | control.js:1291·1298·1308·1313·1314 | 5 | 빠른 설정: 대상 · 템플릿 · 접기 · 자세히 · 테마 | 같음 (소스 근거만) | quick_ui.rs · panel_ui.rs |
 | control.js:1316·1320·1330 | 3 | 분할 방식 · 병행 번역 · 번역본 고르기 | 같음 (소스 근거만) | topbar_ui.rs · panel_ui.rs |
 | control.js:1363·1370 | 2 | 송출 기록: 줄 누름 = 다시 띄움 · 모두 지우기 | 같음 (소스 근거만) | history_ui.rs |
-| control.js:1364 | 1 | 송출 기록 목록 키 (↑↓ Enter) | 남음·확인 못 함 | 확인 못 함 |
+| control.js:1364 | 1 | 송출 기록 목록 키 (↑↓ Enter) | 고침·새로 만듦 (합성 시험) | nav_tests: 기록 ↑↓·Enter 및 올바른 대상 재생 |
 | control.js:1388·1389 | 2 | 창 닫기 단추 · 창 바깥 누르면 닫힘 | 다름 (화면 설계) | 떠 있는 창(여러 개) 방식 — 바깥 눌러 닫기 없음 |
 | control.js:1399 | 1 | 예배당 화면 켜기·끄기 단추 | 같음 (소스 근거만) | Act::OutputToggle |
 | control.js:1404 | 1 | 글꼴 다 읽으면 다시 그림 | 해당 없음 |  |
 | control.js:1422 | 1 | 번호 칩 줄 접기 | 같음 (소스 근거만) | settings thumbsFold |
-| control.js:1472 | 1 | 글칸에 들어가면 한글 입력으로 (focusin) | 남음·확인 못 함 | 확인 못 함 |
+| control.js:1472 | 1 | 글칸에 들어가면 한글 입력으로 (focusin) | 같음 (소스 근거만) | trackd_ui::ime_on_focus · winkeys::ime_korean (실제 IME 전환은 미시험, 검색칸 제외 글칸) |
 | control.js:1516 | 1 | 상태 줄 누름 = 출력 설정 | 같음 (소스 근거만) | widgets::status_btn |
 | control.js:1619 | 1 | 전역 키: 단축키 · Esc 차례 · Alt+1~9 · 1~9/C/B/E/P 건너뛰기 · ←→ · Enter | 고침·새로 만듦 (합성 시험) | live_song_number_and_c_keys_jump_to_that_verse_and_chorus (새로) · ctrl_enter_* · custom_shortcuts_* |
 | cue.js:109 | 1 | Ctrl+Z · Ctrl+Y (글칸·창 밖에서) | 같음 (소스 근거만) | Act::Undo |
@@ -109,11 +109,11 @@ Rust 판: 바로 송출 모드에서 순서 줄 클릭 = 송출, 두 번 클릭 
 | cue.js:1106 | 1 | 슬라이드쇼 그림 지우기 · 왼쪽으로 | 남음·확인 못 함 | 확인 못 함 |
 | cue.js:1117·1127·1134 | 3 | 장비 줄 · 보내 보기 · 송출할 때 자동으로 | 같음 (소스 근거만) | actions_ui.rs |
 | cue.js:1146·1153 | 2 | 부를 순서 저장·쓰기·지우기 · 이름표 칩 | 같음 (소스 근거만) | app.rs 편집칸 |
-| cue.js:1161 | 1 | 편집칸 단추 20종 (닫기·위·아래·복제·지우기·PPT 나누기·요소 꺼내기·음악·OBS·장비·매크로·Companion 눌러 보기 …) | 남음·확인 못 함 | 대부분 있음. Companion 눌러 보기 · 카메라 고르기 · 슬라이드쇼 그림 더하기는 확인 못 함 |
+| cue.js:1161 | 1 | 편집칸 단추 20종 (닫기·위·아래·복제·지우기·PPT 나누기·요소 꺼내기·음악·OBS·장비·매크로·Companion 눌러 보기 …) | 남음·확인 못 함 | Companion 눌러 보기(actions_ui.rs)·그림 더하기(parity_ui.rs)는 소스로 확인. 나머지 단추 개별 UI 시험 미완료 |
 | cue.js:1237·1246 | 2 | 편집칸 보이기 단추 · 그림 파일 고르기 | 같음 (소스 근거만) | toggleEditor · rfd |
 | cue.js:1258 | 1 | 순서 줄 누름 = 미리보기 (바로 송출 모드여도 송출 안 함) | 다름 (의도) | 바로 송출 모드에서는 누르면 송출 — dbl_cue_row_in_direct_mode_sends_once_and_stays_on_that_item |
 | cue.js:1266 | 1 | 순서 줄 두 번 = 미리보기만 | 다름 (의도) | 두 번 = 송출 (사용자 결정) — dbl_cue_row_sends_in_preview_mode |
-| cue.js:1271 | 1 | 순서 목록 키: ↑↓ · Alt+↑↓ 옮기기 · Enter · Delete | 남음·확인 못 함 | Ctrl+↑↓ · F2 는 있음. 목록에 초점을 둔 ↑↓·Alt+↑↓·Delete 는 확인 못 함 |
+| cue.js:1271 | 1 | 순서 목록 키: ↑↓ · Alt+↑↓ 옮기기 · Enter · Delete | 고침·새로 만듦 (합성 시험) | nav_tests: 순서 목록 ↑↓·Alt+↑↓·Delete·Enter, Undo |
 | cue.js:1289·1290·1295·1310 | 4 | 순서 끌어 옮기기 · 라이브러리에서 끌어 놓기 | 같음 (소스 근거만) | cue_row_dnd · dnd payload |
 | cue.js:1417·1418·1441 | 3 | 큐시트 고르기 · ＋ 넣기 · 왼쪽 탭 | 같음 (소스 근거만) | cue_ui.rs |
 | cue.js:1498·1499·1559·1564 | 4 | 찬송가 폴더 빼기 · 읽는 방식 · 폴더 고르기 · 등록 | 같음 (소스 근거만) | hymns_ui.rs |
@@ -154,14 +154,14 @@ Rust 판: 바로 송출 모드에서 순서 줄 클릭 = 송출, 두 번 클릭 
 | slideedit.js:490·491 | 2 | 글 바로 고치기: 다른 곳 누름 = 저장 · Esc · Ctrl+Enter | 고침·새로 만듦 (합성 시험) | dbl_editor_main_text_edits_in_place_and_ctrl_enter_saves_without_sending · dbl_editor_text_box_edits_in_place_escape_cancels_click_away_saves |
 | slideedit.js:1012 | 1 | 상자 두 번 = 글 바로 고치기 (잠긴 상자 제외) | 고침·새로 만듦 (합성 시험) | dbl_editor_* 3개 |
 | slideedit.js:1011 | 1 | 요소 누름·끌기 (옮기기) | 같음 (소스 근거만) | translate_item |
-| slideedit.js:549·550 | 2 | 요소 끌어 옮기기·크기 조절 손잡이 | 남음·확인 못 함 | 옮기기만 있음. 크기 조절 손잡이 없음 (숫자 칸으로) |
+| slideedit.js:549·550 | 2 | 요소 끌어 옮기기·크기 조절 손잡이 | 고침·새로 만듦 (합성 시험) | slideedit_canvas_tests: 손잡이 크기 조절·비율 유지·끌기 붙기 |
 | slideedit.js:656·984·1152 | 3 | 여러 장 고르기 줄 · 목록 누름 (Shift·Ctrl) · 본문 목록 고르기 키 | 같음 (소스 근거만) | slideedit_ui.rs · msel_keys |
-| slideedit.js:694·699·721·993·999·1010 | 6 | 끌어서 여러 장 고르기 (올가미) | 남음·확인 못 함 | 없음 (Shift·Ctrl 클릭 · Ctrl+A 로는 됨) |
+| slideedit.js:694·699·721·993·999·1010 | 6 | 끌어서 여러 장 고르기 (올가미) | 다름 (의도) | slideedit_canvas_tests: 원본은 목록 그냥 끌기, Rust는 Shift+끌기 (기존 차례 옮기기와 구분) |
 | slideedit.js:692·1061 | 2 | 썸네일 끌림 막기 · 창 크기 바뀜 | 해당 없음 |  |
-| slideedit.js:912 | 1 | 속성 칸 단추들 (정렬·굵게·겹침 차례·잠금·복제 …) | 남음·확인 못 함 | 단순한 속성 칸만 있음 (잠금·겹침 차례·맞춤 단추 없음) |
+| slideedit.js:912 | 1 | 속성 칸 단추들 (정렬·굵게·겹침 차례·잠금·복제 …) | 같음 (소스 근거만) | 원본 잠금은 공통 요소 제한. 본문 글 앞/뒤는 기존 글 뒤 체크와 같음. slideedit_canvas 공통 요소 제한 시험 |
 | slideedit.js:955·965 | 2 | 속성 칸 입력 | 같음 (소스 근거만) | slideedit_ui.rs |
-| slideedit.js:1013 | 1 | 편집기 키: Enter·F2 = 글 고치기 · Delete · 방향키 이동 · Ctrl+C/V/D | 남음·확인 못 함 | 없음 (Rust 편집기에 고른 요소 개념이 없음) |
-| slideedit.js:1052 | 1 | 편집기 창 키: Esc 닫기 · Ctrl+Z | 남음·확인 못 함 | 확인 못 함 |
+| slideedit.js:1013 | 1 | 편집기 키: Enter·F2 = 글 고치기 · Delete · 방향키 이동 · Ctrl+C/V/D | 고침·새로 만듦 (합성 시험) | slideedit_canvas_tests: Enter·F2·Delete·방향키·Ctrl+D 및 텍스트 붙여넣기 |
+| slideedit.js:1052 | 1 | 편집기 창 키: Esc 닫기 · Ctrl+Z | 고침·새로 만듦 (합성 시험) | slideedit_canvas_tests: Esc 단계별 처리·Undo |
 | ctxmenu.js:245 | 1 | 오른쪽 클릭 메뉴 9곳 (순서 · 빈 자리 · 슬라이드 · 전체 격자 · 본문 줄 · 미리보기 · LIVE · 라이브러리 · 아래 줄) | 고침·새로 만듦 (합성 시험) | verse_menu_* · slide_row_and_grid_cell_menu_send_now · library_menu_add_to_cue_for_song_hymn_music_image · preview_pane_menu_sends_and_live_pane_menu_hides_text · cue_list_empty_area_menu_adds_item_and_opens_cue_manager · cue_row_menu_note_is_saved_on_the_item |
 | ctxmenu.js:31 | 1 | 메뉴 항목 누름 = 실행하고 닫힘 | 같음 (합성 시험) | 위 메뉴 시험들 |
 | ctxmenu.js:254 | 1 | 메뉴 바깥 누르면 닫힘 | 같음 (소스 근거만) | egui 기본 |
@@ -182,18 +182,21 @@ Rust 판: 바로 송출 모드에서 순서 줄 클릭 = 송출, 두 번 클릭 
 | 상태 | 처리기 수 |
 |---|---|
 | 같음 (합성 시험) | 9 |
-| 같음 (소스 근거만) | 156 |
-| 고침·새로 만듦 (합성 시험) | 37 |
+| 같음 (소스 근거만) | 158 |
+| 고침·새로 만듦 (합성 시험) | 45 |
 | 고침 (코어 시험·소스) | 5 |
-| 다름 (의도) | 2 |
+| 다름 (의도) | 8 |
 | 다름 (화면 설계) | 8 |
-| 남음·확인 못 함 | 38 |
+| 남음·확인 못 함 | 22 |
 | 해당 없음 | 27 |
 | **합계** | **282** |
 
 읽는 법:
-- **같음 (소스 근거만) 156개**가 가장 많다. 이것은 "Rust 코드에 그 기능이 있다" 까지만 확인한 것이라 실제 동작이 원본과 같다고 보장하지 않는다. 다음 점검에서 합성 시험으로 옮겨야 한다.
-- **남음·확인 못 함 38개**는 없는 것과 근거를 못 찾은 것이 섞여 있다. 확실히 없는 것: 검색칸 Esc = 모두 고르기, 큰 PPT 를 넣은 뒤 나눌지 묻기, 편집기 요소 크기 조절 손잡이·올가미 고르기·요소 글쇠(Enter·F2·Delete·방향키·Ctrl+C/V/D)·속성 단추(잠금·겹침 차례), Companion 눌러 보기.
+- 표는 2026-11-16 통합 점검 결과로 갱신했다. '소스 근거만'은 실제 조작이 같은지 보장하지 않는다.
+- 미확인 항목은 남겨 두었다. 큰 PPT를 넣은 직후 나눌지 묻기, 인쇄 옵션, 일부 가져오기·메뉴 키·끌기 안내 등은 별도 확인이 필요하다.
+- 편집기 공통 요소의 수정 제한은 원본의 '잠금' 동작이다. 원본에 없는 잠금 단추를 미구현이라고 세었던 앞 보고를 정정한다.
+- 슬라이드 목록 올가미는 기존 차례 옮기기와 구분해 Shift+끌기다. Ctrl+C/X 요소 복사는 원본 대비 추가 기능이고, 그림 붙여넣기 등은 아직 미구현이다.
+- 참고 문서: navigation-parity.md. 편집기 글쇠가 다른 창의 입력을 가로채지 않는지 추가 통합 시험 중이다.
 
 ## 4. 원본 e2e 시험(tests/e2e/smoke.js 62개 확인) 가운데 이 갈래 범위
 
@@ -227,7 +230,7 @@ Rust 판: 바로 송출 모드에서 순서 줄 클릭 = 송출, 두 번 클릭 
 
 ## 6. 남은 일
 
-1. 3절 표의 '남음·확인 못 함' 38개를 하나씩 확인하고 없는 것은 구현.
+1. 3절 표의 미확인 22개를 확인하고 없는 것은 구현.
 2. '같음 (소스 근거만)' 156개를 영역별로 합성 시험으로 옮기기 (큐시트 → 검색 → 라이브러리 → 미디어 → 무대 → 설정 → 끌어 놓기).
-3. 슬라이드 편집기는 원본(1162줄)보다 많이 단순하다: 요소 고르기·크기 조절 손잡이·겹침 차례·잠금·맞춤·복사 붙여 넣기·올가미가 없다.
+3. 편집기 기본 요소 선택·손잡이·이동·복제·텍스트 붙여넣기는 보완했다. 그림/파일 붙여넣기, 일부 이동 글쇠·오른쪽 메뉴, 목록 올가미 자동 스크롤은 남아 있다.
 4. 실제 창에서 사람이 눌러 보는 확인은 하지 않았다 (합성 시험과 `--shot` 그림만).
