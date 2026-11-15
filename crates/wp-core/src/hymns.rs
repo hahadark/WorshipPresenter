@@ -127,9 +127,12 @@ pub fn search(core: &Core, query: &str) -> Vec<HymnFile> {
         for h in list_folder(Path::new(f["path"].as_str().unwrap_or("")), name) {
             let hit = q.is_empty()
                 || match num {
-                    Some(n) => h.number == Some(n) || jang.is_none() && h.number.is_some_and(|x| x.to_string().starts_with(q.trim_start_matches('0')) && !q.trim_start_matches('0').is_empty()),
+                    // 번호가 친 글로 시작하는 것도 (Electron `String(h.number).startsWith(q)`): '45' → 45·450~459. '010' 처럼 0 을 붙여 치면 그 번호만
+                    Some(n) => h.number == Some(n) || jang.is_none() && h.number.is_some_and(|x| x.to_string().starts_with(q)),
                     None => h.title.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(&key),
-                };
+                }
+                // '3장' 은 번호 3 뒤에 제목에 '3장' 이 든 것(교독문 '잠언 3장' — Electron 은 이것만 나왔다)도
+                || jang.is_some() && h.title.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(&raw.chars().filter(|c| !c.is_whitespace()).collect::<String>());
             if hit {
                 out.push(h);
             }
@@ -1245,7 +1248,7 @@ mod search_tests {
         std::fs::create_dir_all(&r).unwrap();
         std::fs::write(dir.join("bible.db"), b"").unwrap();
         for f in ["003 성부 성자와 성령.pps", "030 전능하신 주님.pps", "303 날 위하여 십자가의.pps"] { std::fs::write(h.join(f), b"").unwrap(); }
-        for f in ["교독문 3 (시편 3편).pps", "교독문 30 (시편 40편).pps", "교독문 130 (추수감사주일).pps"] { std::fs::write(r.join(f), b"").unwrap(); }
+        for f in ["교독문 3 (시편 3편).pps", "교독문 30 (시편 40편).pps", "교독문 130 (추수감사주일).pps", "교독문 67 (잠언 3장).pps"] { std::fs::write(r.join(f), b"").unwrap(); }
         let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
         add_folder(&mut c, &h, Some("새찬송가")).unwrap();
         add_folder(&mut c, &r, Some("교독문")).unwrap();
@@ -1253,8 +1256,12 @@ mod search_tests {
         // 숫자만: 같은 번호가 먼저, 앞자리가 같은 것도 (Electron 과 같음)
         assert_eq!(t("3")[0], "성부 성자와 성령");
         assert!(t("3").len() >= 4);
-        // '3장' · '찬송가 3장': 그 번호만
-        assert_eq!(t("3장"), vec!["성부 성자와 성령".to_string(), "교독문 3 (시편 3편)".to_string()]);
+        // 0 을 붙여 치면 그 번호만 (Electron 과 같음 — 전에는 '03' 이 30·303 까지 나왔다)
+        assert_eq!(t("03"), vec!["성부 성자와 성령".to_string(), "교독문 3 (시편 3편)".to_string()]);
+        assert_eq!(t("003"), t("03"));
+        assert_eq!(t("30"), vec!["전능하신 주님".to_string(), "교독문 30 (시편 40편)".to_string(), "날 위하여 십자가의".to_string()]);
+        // '3장' · '찬송가 3장': 그 번호 먼저, 그 뒤에 제목에 '3장' 이 든 것 (Electron 은 제목만 찾아 '잠언 3장' 만 나왔다)
+        assert_eq!(t("3장"), vec!["성부 성자와 성령".to_string(), "교독문 3 (시편 3편)".to_string(), "교독문 67 (잠언 3장)".to_string()]);
         assert_eq!(t("찬송가 303장"), vec!["날 위하여 십자가의".to_string()]);
         // '교독문 3' · '교독 3': 교독문 3 만 (30·130 아님)
         assert_eq!(t("교독문 3"), vec!["교독문 3 (시편 3편)".to_string()]);
@@ -1333,6 +1340,35 @@ mod timing_tests {
             println!("{tag}: {:.2}s ok={} slides={}", t0.elapsed().as_secs_f32(), r.is_ok(), r.as_ref().ok().and_then(|m| m["slides"].as_array().map(|a| a.len())).unwrap_or(0));
             if let Err(e) = r { println!("  오류: {e}"); }
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod timing_list_tests {
+    /// 출시 빌드로 여러 파일의 처음 만드는 시간 재기 (곡당): WP_TIMING_LIST=<한 줄에 파일 하나인 글 파일> [WP_TIMING_MODE=auto|direct|slides]
+    /// cargo test --release -p wp-core --lib first_build_list -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn first_build_list() {
+        let list = std::fs::read_to_string(std::env::var("WP_TIMING_LIST").expect("WP_TIMING_LIST")).unwrap();
+        let mode = std::env::var("WP_TIMING_MODE").unwrap_or_else(|_| "auto".into());
+        let dir = std::env::temp_dir().join(format!("wp-timing-list-{}", std::process::id()));
+        crate::pptx::build::warm_fonts();
+        let (mut total, mut n) = (0.0f32, 0);
+        for file in list.lines().map(|l| l.trim().trim_start_matches('\u{feff}')).filter(|l| !l.is_empty()) {
+            let t0 = std::time::Instant::now();
+            let r = super::build_meta(&dir, file, &mode);
+            let t = t0.elapsed().as_secs_f32();
+            total += t;
+            n += 1;
+            let name = std::path::Path::new(file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            match r {
+                Ok(m) => println!("{t:6.3}s  {}장  {}  {name}", m["slides"].as_array().or(m["scores"].as_array()).map(|a| a.len()).unwrap_or(0), m["mode"].as_str().unwrap_or("")),
+                Err(e) => println!("{t:6.3}s  오류 {e}  {name}"),
+            }
+        }
+        println!("합계 {total:.2}s · {n}개 · 평균 {:.3}s ({mode})", total / n.max(1) as f32);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

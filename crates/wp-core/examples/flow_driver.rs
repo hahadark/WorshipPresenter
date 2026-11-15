@@ -61,6 +61,16 @@ fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
         }
         "stageMessage" => { c.stage_message(a["text"].as_str().unwrap_or("")); json!(true) }
         "stageTimer" => { c.stage_timer(a["op"].as_str().unwrap_or(""), a["minutes"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?; json!(true) }
+        // ---- 찬송가·PPT 대조 (tools/flow-compare/hymnal.js) ----
+        // 두 번 눌러 송출과 같은 길 (그림을 만드는 중이면 false — 다 만들면 이어서 송출)
+        "sendItemReal" => json!(c.send_item(idx())),
+        "loadHymn" => wp_core::hymns::load(c, a["file"].as_str().unwrap_or(""))?,
+        "isBuilding" => json!(wp_core::hymns::is_building(a["file"].as_str().unwrap_or(""))),
+        "toast" => json!(c.toast.as_ref().map(|t| json!({ "text": t.0, "kind": t.1 }))),
+        "searchHymns" => json!(wp_core::hymns::search(c, a["query"].as_str().unwrap_or("")).into_iter().map(|h| json!({ "file": h.file.to_string_lossy(), "number": h.number, "title": h.title, "name": h.name, "folder": h.folder })).collect::<Vec<_>>()),
+        "hymnalBooks" => json!(wp_core::hymnal::books(c)),
+        "hymnalSearch" => json!(wp_core::hymnal::search(c, a["query"].as_str().unwrap_or(""), a["limit"].as_u64().unwrap_or(60) as usize)),
+        "hymnalGet" => wp_core::hymnal::get(c, a["book"].as_str().unwrap_or("새찬송가"), a["number"].as_i64().unwrap_or(0))?,
         "state" => json!({
             "live": c.pres.live.as_ref().map(|l| json!({ "visible": l.visible, "deck": deck_json(&l.deck) })),
             "preview": c.pres.preview.as_ref().map(deck_json),
@@ -78,6 +88,7 @@ fn main() -> anyhow::Result<()> {
     let core = Core::open(data.clone(), web, None)?;
     let shared: Shared = Arc::new(Mutex::new(core));
     wp_core::flow::install(&shared);
+    wp_core::hymns::install(&shared); // 찬송가 그림을 다 만들면 미리보기·송출을 잇는다 (앱 main 과 같게)
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
     let port = rt.block_on(wp_core::server::serve(shared.clone()))?;
     std::fs::write(data.join("flow-port.txt"), port.to_string())?;

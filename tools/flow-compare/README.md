@@ -18,6 +18,8 @@
 | `node tools\flow-compare\compare.js --el <포트> --rs-data tmp\rs-data --out tmp\flow-out [--cue id] [--items 0,1] [--max-slides 8]` | 모든 큐시트의 모든 순서: 슬라이드 장 수·내용, 장마다 출력 3종 비교. 다르면 나란히 붙인 그림을 남긴다 (`report.json`) |
 | `node tools\flow-compare\scenarios.js --el <포트> --rs-data tmp\rs-data --out tmp\flow-sc --cue <id> [--part ops,edge,split] [--bible-item 6] [--edge-item 13] [--parallel niv2011] [--refs "에 8:9\|롬 8:28-39"]` | `ops` 글자 숨김·F10·배경·로고·회중 메시지·무대 메시지/타이머·모두 지우기, `edge` 순서 처음·끝에서 넘기기, `split` 성경 나눔(한 절씩·두 절씩·자동, 병행 번역) |
 
+| `node tools\flow-compare\hymns.js --el <포트> --rs-data tmp\rs-data --el-data tmp\el-data --out tmp\hymn-out --files files.json [--max-slides 6]` | 찬송가·교독문·붙여 넣은 PPT 순서를 두 판 큐시트 끝에 넣고 장 수·내용·웹 출력(main·overlay) 그림을 비교. 배경·OBS 가사·범위·건너뛰기는 `extra` 로 |
+| `node tools\flow-compare\hymnal.js --el <포트> --rs-data tmp\rs-data --el-data tmp\el-data --out tmp\hymnal-out [--outside <등록 폴더 밖 PPT>] [--part search,bethlehem,scores,allow]` | 찬송가 폴더 찾기 40가지 · 베들레헴 찬송가(책 목록·찾기·1,685장 꺼내기·악보 그림) · 열 수 있는 파일 경계(등록 폴더·붙여 넣은 폴더·끌어다 놓은 파일)를 값으로 비교. 베들레헴은 두 판이 같은 `.hdb` 를 읽게 맞춘 뒤(자료 폴더 `hymnal\`) 볼 것 |
 - 무대 화면의 시계·타이머 숫자는 글 비교에서 뺀다 (`scenarios.js`). `compare.js` 의 무대 '글 다름' 은 대개 시계 초 차이다.
 - 찬송가·PPT 순서는 `compare.js` 에서 장 수만 본다 (다른 점검 갈래).
 - 끝나면 자기가 띄운 Electron·flow_driver 만 끈다.
