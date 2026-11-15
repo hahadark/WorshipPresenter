@@ -47,7 +47,8 @@ async function main() {
     const bi = Number(opt('bible-item', '6'));
 
     async function check(name) {
-      await sleep(1100);
+      await sleep(200);
+      for (const o of OUTPUTS) { await pages['el-' + o].settle(); await pages['rs-' + o].settle(); }
       const row = { step: name };
       const [le, lr] = [await live(EL), await live(RS)];
       row.live = JSON.stringify(le) === JSON.stringify(lr) ? 'same' : { el: le, rs: lr };

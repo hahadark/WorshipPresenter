@@ -87,7 +87,7 @@ async function main() {
         const n = Math.min(es.length, rsl.length, MAXS);
         for (let k = 0; k < n; k++) {
           if (k > 0) { await ecmd('nextSlide'); await rs('nextSlide'); }
-          await sleep(900);
+          for (const o of OUTPUTS) { await pages['el-' + o].settle(); await pages['rs-' + o].settle(); }
           const srep = { slide: k };
           for (const o of OUTPUTS) {
             const [ea, ra] = [await pages['el-' + o].shot(), await pages['rs-' + o].shot()];
@@ -112,6 +112,7 @@ async function main() {
   } finally {
     fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
     br.close();
+    setTimeout(() => process.exit(process.exitCode || 0), 500);
   }
 }
 

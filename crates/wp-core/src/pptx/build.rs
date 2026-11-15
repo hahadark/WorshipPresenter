@@ -115,6 +115,89 @@ pub fn warm_fonts() {
     }).ok();
 }
 
+/// CSS `local("이름")` 이 가리키는 글꼴 파일: '전체 이름'(name 표 4번)이나 PostScript 이름(6번)이 같은 것 (빈칸·대소문자 무시).
+/// 보통 그 글꼴의 보통 굵기 파일이다 ('Malgun Gothic' → malgun.ttf, 굵은 것은 'Malgun Gothic Bold'). 없으면 None
+pub fn font_local(name: &str) -> Option<(Vec<u8>, u32)> {
+    let db = &*FONTDB;
+    let squash = |s: &str| s.to_lowercase().replace(' ', "");
+    let want = squash(name);
+    let mut out = None;
+    // 그 이름의 글꼴 가족에 든 파일만 본다 (전체 이름은 가족 이름으로 시작한다)
+    for f in db.faces() {
+        if out.is_some() {
+            break;
+        }
+        let related = squash(&f.post_script_name) == want || f.families.iter().any(|(n, _)| want.starts_with(&squash(n)));
+        if !related {
+            continue;
+        }
+        db.with_face_data(f.id, |data, index| {
+            if squash(&f.post_script_name) == want || full_names(data, index).iter().any(|n| squash(n) == want) {
+                out = Some((data.to_vec(), index));
+            }
+        });
+    }
+    out
+}
+
+/// 글꼴 파일의 '전체 이름'들 (name 표 nameID 4 — 언어별로 여럿)
+fn full_names(data: &[u8], index: u32) -> Vec<String> {
+    let u16at = |o: usize| data.get(o..o + 2).map(|b| u16::from_be_bytes([b[0], b[1]]) as usize);
+    let u32at = |o: usize| data.get(o..o + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize);
+    let mut out = vec![];
+    let run = || -> Option<()> {
+        let base = if data.get(0..4)? == b"ttcf" { u32at(12 + 4 * index as usize)? } else { 0 };
+        let n = u16at(base + 4)?;
+        let mut name = None;
+        for i in 0..n {
+            let rec = base + 12 + 16 * i;
+            if data.get(rec..rec + 4)? == b"name" {
+                name = Some(u32at(rec + 8)?);
+            }
+        }
+        let name = name?;
+        let count = u16at(name + 2)?;
+        let strings = name + u16at(name + 4)?;
+        for i in 0..count {
+            let r = name + 6 + 12 * i;
+            let (platform, name_id, len, off) = (u16at(r)?, u16at(r + 6)?, u16at(r + 8)?, u16at(r + 10)?);
+            if name_id != 4 {
+                continue;
+            }
+            let raw = data.get(strings + off..strings + off + len)?;
+            let s = if platform == 3 || platform == 0 {
+                String::from_utf16_lossy(&raw.chunks_exact(2).map(|b| u16::from_be_bytes([b[0], b[1]])).collect::<Vec<u16>>())
+            } else {
+                raw.iter().map(|b| *b as char).collect()
+            };
+            if !s.is_empty() {
+                out.push(s);
+            }
+        }
+        Some(())
+    };
+    let mut run = run;
+    let _ = run();
+    out
+}
+
+/// 글꼴 이름·굵기에 가장 가까운 시스템 글꼴 파일 (CSS 글꼴 고르기처럼 굵기는 가까운 것으로). 없는 글꼴이면 None — measure.rs 가 템플릿 글꼴 폭을 잴 때
+pub fn font_face(family: &str, weight: u16) -> Option<(Vec<u8>, u32)> {
+    use resvg::usvg::fontdb::{Family, Query, Weight};
+    let db = &*FONTDB;
+    let q = |name: &str| db.query(&Query { families: &[Family::Name(name)], weight: Weight(weight), ..Default::default() });
+    let squash = |s: &str| s.to_lowercase().replace(' ', "");
+    let id = q(family).or_else(|| {
+        // 글꼴 이름은 대소문자·빈칸을 가리지 않는다 (render.js localFontAlias 도 빈칸 없는 이름을 같이 찾는다)
+        let want = squash(family);
+        let real = db.faces().find_map(|f| f.families.iter().find(|(n, _)| squash(n) == want).map(|(n, _)| n.clone()))?;
+        q(&real)
+    })?;
+    let mut out = None;
+    db.with_face_data(id, |data, index| out = Some((data.to_vec(), index)));
+    out
+}
+
 /// 시스템 글꼴 하나의 파일 내용 (조작 화면 egui 가 PPT 글꼴로 그릴 때). 이름은 '구세군체 Bold' 처럼 전체 이름도 받는다
 pub fn font_bytes(name: &str) -> Option<(Vec<u8>, u32)> {
     use resvg::usvg::fontdb::{Family, Query, Weight};

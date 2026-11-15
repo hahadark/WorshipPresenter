@@ -56,6 +56,26 @@ async function launch(profileDir, port = 9400 + Math.floor(Math.random() * 400))
           while (Date.now() - t0 < timeout) { try { if (await page.eval(expr)) return true; } catch {} await sleep(200); }
           return false;
         },
+        // 화면이 다 그려질 때까지: 진행 중인 전환(페이드)이 없고, 그림이 다 읽혔고, 겹쳐 있던 옛 슬라이드가 치워지고,
+        // 화면 내용이 연달아 세 번 같을 때. (글이 뜨기 전에 찍어 '둘 다 검은 화면 = 같음' 으로 잘못 판정하던 것 막기)
+        async settle(maxMs = 6000) {
+          const probe = `(() => { const run = document.getAnimations().filter(a => a.playState === 'running' && !(a.effect && a.effect.getComputedTiming && a.effect.getComputedTiming().iterations === Infinity)).length;
+            const imgs = [...document.images].filter(i => !i.complete).length;
+            const areas = document.querySelectorAll('.bc-stage:not(.bc-measure .bc-stage) > .bc-area').length;
+            const fading = [...document.querySelectorAll('.bc-area,.bc-bg,.bc-vlayer,.bc-logoscreen,.bc-medialayer')].filter(e => { const o = parseFloat(getComputedStyle(e).opacity); return o > 0.001 && o < 0.999; }).length;
+            return JSON.stringify([run, imgs, areas > 1 ? areas : 0, fading, document.body.innerHTML.length, (document.body.innerText || '').replace(/\\d/g, '#').length]); })()`;
+          const t0 = Date.now(); let last = '', same = 0;
+          await sleep(250);
+          while (Date.now() - t0 < maxMs) {
+            let cur = '';
+            try { cur = await page.eval(probe, 5000); } catch { cur = ''; }
+            const [run, imgs, areas, fading] = cur ? JSON.parse(cur) : [1, 1, 1, 1];
+            if (cur && cur === last && !run && !imgs && !areas && !fading) { if (++same >= 2) return true; } else same = 0;
+            last = cur;
+            await sleep(120);
+          }
+          return false;
+        },
         async shot(file) {
           // 뒤에 있는 탭은 그리지 않아 캡처가 끝나지 않는다 → 앞으로 가져온 뒤 찍고, 그래도 안 끝나면 오류
           await send('Page.bringToFront');

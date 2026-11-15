@@ -23,6 +23,13 @@ fn deck_json(d: &wp_core::presentation::Deck) -> Value {
     json!({ "passage": d.passage, "slides": d.slides, "index": d.index })
 }
 
+fn pick_templates(c: &Core, a: &Value) -> Vec<Value> {
+    match a["templates"].as_array() {
+        Some(ids) => ids.iter().filter_map(|x| if x.is_object() { Some(x.clone()) } else { x.as_str().and_then(|id| c.settings.template(id)) }).collect(),
+        None => vec![c.template_for("main"), c.template_for("overlay")],
+    }
+}
+
 fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
     let idx = || a["index"].as_u64().unwrap_or(0) as usize;
     Ok(match cmd {
@@ -49,6 +56,32 @@ fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
             json!(true)
         }
         "setTemplate" => { c.set_template(a["output"].as_str().unwrap_or("main"), a["id"].as_str().unwrap_or("")); json!(true) }
+        // ---- 일괄 나눔 대조 (tools/flow-compare/split-batch.js): 송출 없이 슬라이드만 만든다 ----
+        // 장절 → 본문(병행 번역 포함) + 슬라이드. templates: 템플릿 id 목록 (없으면 지금 쓰는 것)
+        "bibleBuild" => {
+            let v = a["versionId"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| c.version_id());
+            let res = c.store.resolve_reference(&v, a["query"].as_str().unwrap_or(""));
+            if res["ok"] != json!(true) { return Err(res["error"].as_str().unwrap_or("본문을 찾지 못했습니다.").to_string()); }
+            let pass = wp_core::flow::with_parallel(c, res["passage"].clone());
+            let tpls = pick_templates(c, a);
+            let opts = wp_core::slides::SplitOpts { mode: a["mode"].as_str().unwrap_or("auto").into(), count: a["count"].as_u64().unwrap_or(1) as usize, templates: tpls.clone() };
+            let slides = wp_core::slides::build_bible(&pass, &opts);
+            json!({ "passage": pass, "slides": slides, "templates": tpls })
+        }
+        // 순서(찬양·공지·교독문 등) → 슬라이드
+        "itemBuild" => {
+            let tpls = pick_templates(c, a);
+            let opts = wp_core::slides::SplitOpts { mode: a["mode"].as_str().unwrap_or("auto").into(), count: a["count"].as_u64().unwrap_or(1) as usize, templates: tpls.clone() };
+            json!({ "slides": wp_core::slides::build_item(&a["item"], None, &opts), "templates": tpls })
+        }
+        // 슬라이드 하나의 높이: (글 덩어리 높이, 본문 영역 높이)
+        "measure" => {
+            let (h, area) = wp_core::measure::content_height(&a["slide"], &a["tpl"], a["size"].as_f64().unwrap_or(0.0) as f32, a["ver"].as_str().unwrap_or(""));
+            json!({ "h": h, "area": area })
+        }
+        "textWidth" => json!(a["texts"].as_array().into_iter().flatten().map(|x| wp_core::measure::text_width(x.as_str().unwrap_or(""), a["size"].as_f64().unwrap_or(0.0) as f32, a["bold"].as_bool().unwrap_or(false), 0.0)).collect::<Vec<f32>>()),
+        "cueItems" => json!(c.cue.as_ref().map(|q| q.items.clone()).unwrap_or_default()),
+        "templates" => json!(c.settings.templates()),
         "clearMessage" => { c.clear_message(); json!(true) }
         "toggleOverlaysOff" => { c.toggle_overlays_off(); json!(true) }
         // 큐시트 끝에 순서 넣기 (비교용 성경·공지 순서)
