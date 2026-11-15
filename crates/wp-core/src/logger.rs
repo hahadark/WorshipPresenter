@@ -55,7 +55,8 @@ impl log::Log for FileLog {
         };
         let (day, time) = local_stamp();
         let line = format!("{day} {time} [{level}] {}\n", r.args());
-        let _g = self.lock.lock();
+        // panic hook 이 로그를 쓰는 도중의 panic 에서도 멈추지 않게 (기다림 제한)
+        let _g = self.lock.try_lock_for(std::time::Duration::from_millis(300));
         if self.echo {
             eprint!("{line}");
         }
@@ -81,6 +82,26 @@ pub fn init(data_dir: &Path) {
     if log::set_boxed_logger(Box::new(FileLog { dir, lock: Mutex::new(()), echo })).is_ok() {
         log::set_max_level(log::LevelFilter::Info);
     }
+}
+
+/// 프로그램 오류(panic)를 logs\ 에 남긴다 (어느 스레드든). 원래 hook(표준 오류 출력)도 그대로 부른다.
+/// 조작 화면 프레임의 panic 은 app.rs 가 catch_unwind 로 받아 계속 돌아가므로, 기록이 유일한 흔적이다.
+pub fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let th = std::thread::current();
+        let name = th.name().unwrap_or("-").to_string();
+        let bt = std::backtrace::Backtrace::force_capture().to_string();
+        // 같은 자리가 매 프레임 되풀이되면 로그가 커지므로 처음 몇 번만 백트레이스까지
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n < 5 {
+            log::error!("프로그램 오류(panic) [스레드 {name}] {info}\n{}", bt.lines().take(40).collect::<Vec<_>>().join("\n"));
+        } else if n < 200 {
+            log::error!("프로그램 오류(panic) [스레드 {name}] {info}");
+        }
+        prev(info);
+    }));
 }
 
 /// 로그 폴더

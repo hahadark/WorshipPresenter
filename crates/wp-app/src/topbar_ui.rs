@@ -430,7 +430,7 @@ impl App {
                         ui.set_max_width(440.0);
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 12.0;
-                            let lr = ui.add(egui::Label::new(theme::rich(msg.clone(), 14.0, Weight::SemiBold, p.text)).wrap().selectable(false).sense(Sense::click())).on_hover_text(tr("눌러서 닫기"));
+                            let lr = ui.add(egui::Label::new(theme::rich(wp_core::i18n::tr_dyn(msg), 14.0, Weight::SemiBold, p.text)).wrap().selectable(false).sense(Sense::click())).on_hover_text(tr("눌러서 닫기"));
                             if lr.clicked() {
                                 out = Some(Act::ToastDismiss);
                             }

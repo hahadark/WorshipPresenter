@@ -54,6 +54,9 @@ pub fn menus() -> Vec<Menu> {
             it("c:commentary", "주석 보기 · 가져오기", ""),
             it("c:templates", "출력 템플릿 편집", ""),
             it("c:themes", "테마 고르기 (구세군 · 방송 스타일)", ""),
+            // Electron menubar.js 보기 > Language · 언어 (화면 언어 바꾸기)
+            it("c:lang-ko", "Language · 언어: 한국어", ""),
+            it("c:lang-en", "Language · 언어: English", ""),
             it("-", "-", ""),
             it("c:obsfull", "OBS 자막: 슬라이드 그대로 켜기·끄기", ""),
             it("c:obspip", "OBS 자막: 그림 슬라이드 작게 켜기·끄기", ""),
@@ -115,6 +118,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "c:commentary" => "book-open",
         "c:templates" => "palette",
         "c:themes" => "palette",
+        "c:lang-ko" | "c:lang-en" => "languages",
         "c:obsfull" | "c:obspip" => "picture-in-picture-2",
         "d:output" => "monitor",
         "b:songs" => "music",
@@ -274,7 +278,10 @@ pub fn show_with(ui: &mut Ui, menus: &[Menu], mut extra: impl FnMut(&str, &mut U
                         sep(ui);
                         continue;
                     }
-                    let row = item_row(ui, icon_of(i.id), &wp_core::i18n::tr(i.label), i.key, None);
+                    // 화면 언어 항목은 지금 고른 것에 체크
+                    let check = match i.id { "c:lang-ko" => Some(!wp_core::i18n::is_en()), "c:lang-en" => Some(wp_core::i18n::is_en()), _ => None };
+                    let label = if i.id.starts_with("c:lang-") { i.label.to_string() } else { wp_core::i18n::tr(i.label) };
+                    let row = item_row(ui, icon_of(i.id), &label, i.key, check);
                     // 이름은 원본 menubar.js 그대로('실행 취소'), 무엇을 되돌리는지는 툴팁으로 (글 입력 되돌리기와 구분)
                     let row = match i.id {
                         "b:undo" => row.on_hover_text(wp_core::i18n::tr("큐시트 순서 변경 되돌리기 (Ctrl+Z)")),
