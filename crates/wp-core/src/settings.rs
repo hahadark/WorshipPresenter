@@ -64,6 +64,8 @@ pub struct Settings {
     pub backup: PathBuf,
     pub data: Value,
     dirty: bool,
+    /// 읽을 때 생긴 일 (설정 파일이 깨져 백업본·기본값으로 시작함). 켠 뒤 화면에 알린다
+    pub load_note: Option<String>,
 }
 
 impl Settings {
@@ -71,10 +73,31 @@ impl Settings {
         let file = dir.join("settings.json");
         let backup = dir.join("settings.backup.json");
         let mut data = None;
+        let mut broken: Option<PathBuf> = None; // 깨진 settings.json 을 보존해 둔 곳
+        let mut main_bad = false;
         for f in [&file, &backup] {
-            let Ok(txt) = fs::read_to_string(f) else { continue };
+            let Ok(txt) = fs::read_to_string(f) else {
+                if f == &file && f.exists() {
+                    main_bad = true;
+                    log::error!("설정 파일을 읽지 못했습니다: {}", f.display());
+                }
+                continue;
+            };
             let Ok(raw) = serde_json::from_str::<Value>(txt.trim_start_matches('\u{feff}')) else {
-                log::error!("설정 읽기 실패: {}", f.display());
+                log::error!("설정 읽기 실패(내용이 깨짐): {}", f.display());
+                if f == &file {
+                    // 깨진 파일은 지우거나 덮어쓰지 않고 따로 둔다 (손으로 되살릴 수 있게)
+                    main_bad = true;
+                    let ts: String = crate::util::iso_now().chars().take(19).map(|c| if c == ':' || c == 'T' { '-' } else { c }).collect();
+                    let keep = dir.join(format!("settings.broken-{ts}.json"));
+                    match fs::copy(f, &keep) {
+                        Ok(_) => {
+                            log::error!("깨진 설정 파일을 보존했습니다: {}", keep.display());
+                            broken = Some(keep);
+                        }
+                        Err(e) => log::error!("깨진 설정 파일 보존 실패: {e}"),
+                    }
+                }
                 continue;
             };
             let mut d = deep_merge_defaults(&DEFAULTS, &raw);
@@ -97,7 +120,19 @@ impl Settings {
             data = Some(d);
             break;
         }
-        Self { file, backup, data: data.unwrap_or_else(|| DEFAULTS.clone()), dirty: false }
+        let load_note = if main_bad {
+            let kept = broken.map(|p| crate::i18n::tr_args(" 깨진 파일은 {1} 로 남겨 두었습니다.", &[&p.display()])).unwrap_or_default();
+            let msg = if data.is_some() {
+                crate::i18n::tr("설정 파일(settings.json)이 깨져 있어 바로 앞에 저장된 백업 설정으로 켰습니다. 가장 최근에 바꾼 설정 일부가 빠졌을 수 있습니다.")
+            } else {
+                crate::i18n::tr("설정 파일(settings.json)이 깨져 있고 백업 설정도 없어 기본 설정으로 켰습니다.")
+            };
+            log::error!("{msg}{kept}");
+            Some(format!("{msg}{kept}"))
+        } else {
+            None
+        };
+        Self { file, backup, data: data.unwrap_or_else(|| DEFAULTS.clone()), dirty: false, load_note }
     }
 
     pub fn get(&self) -> &Value {
@@ -142,5 +177,40 @@ impl Settings {
             v = &v[*p];
         }
         v.as_str().unwrap_or("").to_string()
+    }
+}
+
+#[cfg(test)]
+mod broken_tests {
+    use super::*;
+
+    #[test]
+    fn broken_settings_is_kept_and_reported() {
+        let d = std::env::temp_dir().join(format!("wp-broken-{}", rand::random::<u64>()));
+        fs::create_dir_all(&d).unwrap();
+        fs::write(d.join("settings.backup.json"), r#"{"port":40001}"#).unwrap();
+        fs::write(d.join("settings.json"), r#"{"port":40002,"#).unwrap(); // 쓰다 끊긴 파일
+        let s = Settings::load(&d);
+        assert_eq!(s.get()["port"], 40001, "백업본으로 켠다");
+        let note = s.load_note.clone().expect("알림이 있어야 함");
+        assert!(note.contains("settings.broken-"), "{note}");
+        let kept: Vec<_> = fs::read_dir(&d).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with("settings.broken-")).collect();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(fs::read_to_string(kept[0].path()).unwrap(), r#"{"port":40002,"#, "깨진 내용 그대로 보존");
+        // 백업도 없으면 기본 설정 + 알림
+        let d2 = std::env::temp_dir().join(format!("wp-broken2-{}", rand::random::<u64>()));
+        fs::create_dir_all(&d2).unwrap();
+        fs::write(d2.join("settings.json"), "not json").unwrap();
+        let s2 = Settings::load(&d2);
+        assert!(s2.load_note.is_some());
+        assert_eq!(s2.get()["port"], DEFAULTS["port"]);
+        // 멀쩡하면 알림 없음
+        let d3 = std::env::temp_dir().join(format!("wp-broken3-{}", rand::random::<u64>()));
+        fs::create_dir_all(&d3).unwrap();
+        fs::write(d3.join("settings.json"), "{}").unwrap();
+        assert!(Settings::load(&d3).load_note.is_none());
+        for x in [d, d2, d3] {
+            let _ = fs::remove_dir_all(x);
+        }
     }
 }

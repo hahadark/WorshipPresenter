@@ -86,6 +86,11 @@ fn seed_db() -> Option<PathBuf> {
 }
 
 fn main() -> anyhow::Result<()> {
+    // 설치 파일이 설치 직후 부른다: 아무것도 하지 않고 끝난다. 새 실행 파일을 처음 읽을 때 걸리는 백신 검사(이 파일 크기로 2초쯤)를
+    // 사용자가 아이콘을 누르기 전에 미리 치러 두려는 것
+    if std::env::args().any(|a| a == "--warmup") {
+        return Ok(());
+    }
     wp_core::firstrun::mark("main");
     let data_dir = arg("--data").map(PathBuf::from).unwrap_or_else(|| dirs_data().join("WorshipPresenter-rs").join("data"));
     let _ = std::fs::create_dir_all(&data_dir);
@@ -191,6 +196,10 @@ fn prepare(data_dir: PathBuf, web: PathBuf) -> anyhow::Result<(wp_core::core::Sh
     }
     wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
     wp_core::sync::install(&shared); // [트랙 B] 여러 PC 동기화 · 하루 1회 백업
+    // 받아 둔 옛 설치 파일 지우기 (설치판만). 점검 실행(--data)은 사용자 폴더를 건드리지 않는다
+    if arg("--data").is_none() {
+        wp_core::firstrun::start_installer_cleanup(&shared.lock().data_dir);
+    }
 
     // 웹 서버 (출력 화면) — 따로 tokio 실행기
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;

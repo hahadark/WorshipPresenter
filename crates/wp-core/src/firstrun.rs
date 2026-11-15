@@ -213,6 +213,62 @@ pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
     Ok(())
 }
 
+// ---------------- 옛 설치 파일 정리 ----------------
+/// 받아 둔 설치 파일을 지운다 (설치판에서만 부른다).
+/// - update_cache: 이 판이 받아 둔 설치 파일(자료 폴더\update-cache). 켤 때는 받는 중인 것이 없으므로 모두 지운다
+/// - electron_cache: Electron 판 자동 업데이트가 남긴 폴더(%LOCALAPPDATA%\worshipcue-updater, 옛 설치 파일 100MB 이상).
+///   그 안에 설치 파일·블록맵·pending 말고 다른 것이 있으면 손대지 않는다
+pub fn cleanup_installers(update_cache: &Path, electron_cache: Option<&Path>) -> u64 {
+    let mut freed = 0u64;
+    if let Ok(rd) = std::fs::read_dir(update_cache) {
+        for e in rd.flatten() {
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            if p.is_file() && (name.ends_with("-Setup.exe") || name.ends_with(".part")) {
+                let len = e.metadata().map(|m| m.len()).unwrap_or(0);
+                if std::fs::remove_file(&p).is_ok() {
+                    freed += len;
+                }
+            }
+        }
+    }
+    if let Some(dir) = electron_cache.filter(|d| d.file_name().is_some_and(|n| n == "worshipcue-updater") && d.is_dir()) {
+        let known = |n: &str| n == "pending" || n.ends_with(".exe") || n.ends_with(".blockmap") || n.ends_with(".json") || n.starts_with("temp-");
+        let entries: Vec<_> = std::fs::read_dir(dir).into_iter().flatten().flatten().collect();
+        if entries.iter().all(|e| known(&e.file_name().to_string_lossy())) {
+            fn size(p: &Path) -> u64 {
+                if p.is_dir() {
+                    std::fs::read_dir(p).into_iter().flatten().flatten().map(|e| size(&e.path())).sum()
+                } else {
+                    std::fs::metadata(p).map(|m| m.len()).unwrap_or(0)
+                }
+            }
+            let before = size(dir);
+            let _ = std::fs::remove_dir_all(dir); // 지금 실행 중인 설치 파일은 잠겨 있어 남는다 → 다음에 켤 때 다시
+            freed += before.saturating_sub(if dir.exists() { size(dir) } else { 0 });
+        }
+    }
+    if freed > 0 {
+        log::info!("받아 둔 옛 설치 파일을 지웠습니다 ({:.0}MB)", freed as f64 / 1_048_576.0);
+    }
+    freed
+}
+
+/// 설치판이면 켠 뒤 잠시 있다가(설치 파일이 아직 끝나는 중일 수 있다) 옛 설치 파일을 지운다
+pub fn start_installer_cleanup(data_dir: &Path) {
+    if !crate::updates::installed_copy() {
+        return;
+    }
+    let cache = data_dir.join("update-cache");
+    std::thread::Builder::new()
+        .name("cleanup".into())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            cleanup_installers(&cache, dirs::data_local_dir().map(|d| d.join("worshipcue-updater")).as_deref());
+        })
+        .ok();
+}
+
 // ---------------- 켜는 시간 재기 ----------------
 static MARKS: once_cell::sync::Lazy<parking_lot::Mutex<Vec<(&'static str, u64)>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(vec![]));
 static FRAMES: AtomicU32 = AtomicU32::new(0);
@@ -599,6 +655,35 @@ mod tests {
         for d in [old, new] {
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    #[test]
+    fn cleanup_removes_only_installers() {
+        let d = tmp("cl");
+        let cache = d.join("update-cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("abc-1-WorshipPresenter-2.0.1-Setup.exe"), vec![0u8; 1000]).unwrap();
+        std::fs::write(cache.join("123.part"), b"x").unwrap();
+        std::fs::write(cache.join("note.txt"), b"keep").unwrap();
+        let el = d.join("worshipcue-updater");
+        std::fs::create_dir_all(el.join("pending")).unwrap();
+        std::fs::write(el.join("installer.exe"), vec![0u8; 5000]).unwrap();
+        std::fs::write(el.join("current.blockmap"), b"b").unwrap();
+        std::fs::write(el.join("pending").join("WorshipPresenter-2.0.1-Setup.exe"), b"s").unwrap();
+        assert!(cleanup_installers(&cache, Some(&el)) >= 6000);
+        assert!(cache.join("note.txt").is_file() && !cache.join("123.part").exists());
+        assert!(!el.exists());
+        // 이름이 다른 폴더·모르는 파일이 든 폴더는 손대지 않는다
+        let other = d.join("something-else");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("installer.exe"), b"x").unwrap();
+        let el2 = d.join("x").join("worshipcue-updater");
+        std::fs::create_dir_all(&el2).unwrap();
+        std::fs::write(el2.join("내 문서.hwp"), b"x").unwrap();
+        cleanup_installers(&cache, Some(&other));
+        cleanup_installers(&cache, Some(&el2));
+        assert!(other.join("installer.exe").is_file() && el2.join("내 문서.hwp").is_file());
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]

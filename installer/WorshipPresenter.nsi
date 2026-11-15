@@ -2,8 +2,10 @@
 ; - Electron 판(1.x)과 같은 자리·같은 실행 파일 이름·같은 제거 항목을 써서 그대로 바꿔 끼운다.
 ;   (바탕화면·시작 메뉴 '워십프리젠터' 바로가기와 Electron 판 자동 업데이트(latest.yml)가 그대로 이어진다)
 ; - Electron 판 자동 업데이트는 이 파일을 "--updated /S" 로 조용히 실행한다. "--force-run" 이면 설치 뒤 다시 켠다.
+; - Electron 판을 '모든 사용자'용(Program Files, HKLM)으로 설치한 PC: 그 자리를 이어받으려면 관리자 권한이 필요하므로
+;   자신을 관리자 권한으로 다시 실행한다(UAC). 안 그러면 옛 판이 그대로 남고 새 판이 따로 설치되어 아이콘이 둘이 된다.
 ; - 사용자 자료(%APPDATA%\WorshipCue, %APPDATA%\WorshipPresenter-rs)는 건드리지 않는다.
-; - /TEST : 점검용. 레지스트리·바로가기를 쓰지 않는다 (/D=<임시 폴더> 와 함께).
+; - /TEST : 점검용. 레지스트리·바로가기·업데이트 캐시를 건드리지 않는다 (/D=<임시 폴더> 와 함께).
 ; 빌드: tools\release.ps1 이 makensis /DVERSION=… /DSRC=… /DOUT=… 로 부른다.
 
 Unicode true
@@ -36,12 +38,17 @@ VIAddVersionKey "LegalCopyright" "GPL-3.0-or-later"
 Var Updated
 Var ForceRun
 Var TestMode
+Var PerMachine    ; 1 = '모든 사용자'용으로 설치돼 있던 자리(HKLM)를 이어받는다
+Var ElevatedChild ; 1 = 관리자 권한으로 다시 실행된 쪽
+Var RegView64     ; 1 = HKLM 항목이 64비트 보기에 있다
 
 !define MUI_ICON "${SRC}\WorshipPresenter.ico"
 !define MUI_UNICON "${SRC}\WorshipPresenter.ico"
 !define MUI_ABORTWARNING
-!define MUI_FINISHPAGE_RUN "$INSTDIR\${EXE}"
+!define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "워십프리젠터 실행"
+!define MUI_FINISHPAGE_RUN_FUNCTION RunApp
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -49,10 +56,26 @@ Var TestMode
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "Korean"
 
+; HKLM 의 설치 자리 찾기 → $0 (없으면 ""), $RegView64
+!macro FindMachineInstall
+  SetRegView 64
+  StrCpy $RegView64 1
+  ReadRegStr $0 HKLM "${APPKEY}" "InstallLocation"
+  ${If} $0 == ""
+    SetRegView 32
+    StrCpy $RegView64 0
+    ReadRegStr $0 HKLM "${APPKEY}" "InstallLocation"
+  ${EndIf}
+  SetRegView 32
+!macroend
+
 Function .onInit
   StrCpy $Updated 0
   StrCpy $ForceRun 0
   StrCpy $TestMode 0
+  StrCpy $PerMachine 0
+  StrCpy $ElevatedChild 0
+  StrCpy $RegView64 0
   ${GetParameters} $R0
   ClearErrors
   ${GetOptions} $R0 "--updated" $R1
@@ -65,6 +88,11 @@ Function .onInit
     StrCpy $ForceRun 1
   ${EndIf}
   ClearErrors
+  ${GetOptions} $R0 "--elevated" $R1
+  ${IfNot} ${Errors}
+    StrCpy $ElevatedChild 1
+  ${EndIf}
+  ClearErrors
   ${GetOptions} $R0 "/TEST" $R1
   ${IfNot} ${Errors}
     StrCpy $TestMode 1
@@ -75,30 +103,115 @@ Function .onInit
     ${If} $0 != ""
     ${AndIf} ${FileExists} "$0\*.*"
       StrCpy $INSTDIR $0
+    ${Else}
+      !insertmacro FindMachineInstall
+      ${If} $0 != ""
+      ${AndIf} ${FileExists} "$0\${EXE}"
+        StrCpy $PerMachine 1
+        StrCpy $INSTDIR $0
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ${If} $PerMachine == 1
+    UserInfo::GetAccountType
+    Pop $1
+    ${If} $1 != "Admin"
+      ${If} $ElevatedChild == 1
+        ; 권한을 얻지 못했다
+        SetErrorLevel 5
+        Quit
+      ${EndIf}
+      StrCpy $2 "--elevated"
+      ${If} $Updated == 1
+        StrCpy $2 "$2 --updated"
+      ${EndIf}
+      ${If} ${Silent}
+        StrCpy $2 "$2 /S"
+      ${EndIf}
+      ClearErrors
+      ExecShellWait "runas" "$EXEPATH" "$2"
+      ${If} ${Errors}
+        ${IfNot} ${Silent}
+          MessageBox MB_OK|MB_ICONEXCLAMATION "워십프리젠터가 이 PC 의 모든 사용자용으로 설치되어 있어($INSTDIR) 새 판으로 바꾸려면 관리자 권한이 필요합니다.$\r$\n설치 파일을 다시 실행해 권한 요청에서 [예] 를 눌러 주세요."
+        ${EndIf}
+        SetErrorLevel 5
+        Quit
+      ${EndIf}
+      ; 다시 켜기는 권한이 없는 이쪽에서 (관리자 권한으로 프로그램이 켜지지 않게)
+      ${If} $ForceRun == 1
+      ${AndIf} ${FileExists} "$INSTDIR\${EXE}"
+        Exec '"$INSTDIR\${EXE}"'
+      ${EndIf}
+      Quit
     ${EndIf}
   ${EndIf}
 FunctionEnd
 
+; 설치 폴더 고르기: 다른 파일이 들어 있는 폴더를 고르면 그 안에 WorshipPresenter 폴더를 만들어 설치한다
+; (고른 폴더에 그대로 풀면 그 폴더의 web\ 등과 섞이고, 제거할 때 남의 파일을 건드릴 수 있다)
+Function DirLeave
+  StrCpy $1 $INSTDIR "" -1
+  ${If} $1 == "\"
+    StrCpy $INSTDIR $INSTDIR -1
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\${EXE}"
+    Return
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\*.*"
+    FindFirst $0 $1 "$INSTDIR\*.*"
+    dl_loop:
+      StrCmp $1 "" dl_done
+      StrCmp $1 "." dl_next
+      StrCmp $1 ".." dl_next
+      FindClose $0
+      StrCpy $INSTDIR "$INSTDIR\WorshipPresenter"
+      Return
+    dl_next:
+      ClearErrors
+      FindNext $0 $1
+      IfErrors dl_done
+      Goto dl_loop
+    dl_done:
+    FindClose $0
+  ${EndIf}
+FunctionEnd
+
+; 마침 화면의 [실행]: 탐색기를 거쳐 켠다 (관리자 권한으로 설치했어도 프로그램은 보통 권한으로 켜지게)
+Function RunApp
+  Exec '"$WINDIR\explorer.exe" "$INSTDIR\${EXE}"'
+FunctionEnd
+
+; $3 ← 0/1 : 그 파일이 실행 중이라 잠겨 있나 (지우지 않고 쓰기 열기로 확인)
+!macro CheckLocked FILE
+  ${If} ${FileExists} "${FILE}"
+    ClearErrors
+    FileOpen $0 "${FILE}" a
+    ${If} ${Errors}
+      StrCpy $3 1
+    ${Else}
+      FileClose $0
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 ; 켜져 있는 워십프리젠터(이전 판 포함)가 꺼질 때까지 기다린다. 강제로 끄지 않는다.
+; 파일을 지워 보는 대신 열어 본다: 하나만 지워진 채 그만두면 설치가 망가진다.
 Function WaitForExit
   StrCpy $1 0
   retry:
-    ClearErrors
-    ${If} ${FileExists} "$INSTDIR\${EXE}"
-      Delete "$INSTDIR\${EXE}"
-    ${EndIf}
-    ${If} ${FileExists} "$INSTDIR\wp-output.exe"
-      Delete "$INSTDIR\wp-output.exe"
-    ${EndIf}
-    ${If} ${FileExists} "$INSTDIR\${EXE}"
-    ${OrIf} ${FileExists} "$INSTDIR\wp-output.exe"
+    StrCpy $3 0
+    !insertmacro CheckLocked "$INSTDIR\${EXE}"
+    !insertmacro CheckLocked "$INSTDIR\wp-output.exe"
+    ${If} $3 == 1
       IntOp $1 $1 + 1
       ${If} $1 < 60
         Sleep 500
         Goto retry
       ${EndIf}
-      IfSilent 0 +2
+      ${If} ${Silent}
+        SetErrorLevel 2
         Abort "워십프리젠터가 아직 켜져 있어 설치하지 못했습니다."
+      ${EndIf}
       MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "워십프리젠터가 켜져 있습니다.$\r$\n프로그램을 끈 뒤 [다시 시도] 를 누르세요." IDRETRY again
       Abort "워십프리젠터가 켜져 있어 설치를 그만두었습니다."
       again:
@@ -107,22 +220,49 @@ Function WaitForExit
     ${EndIf}
 FunctionEnd
 
+!macro WriteInstallReg ROOT UNARG
+  WriteRegStr ${ROOT} "${APPKEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr ${ROOT} "${APPKEY}" "ShortcutName" "${SHORTCUT}"
+  WriteRegStr ${ROOT} "${UNKEY}" "DisplayName" "WorshipPresenter ${VERSION}"
+  WriteRegStr ${ROOT} "${UNKEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr ${ROOT} "${UNKEY}" "Publisher" "WorshipPresenter"
+  WriteRegStr ${ROOT} "${UNKEY}" "DisplayIcon" "$INSTDIR\WorshipPresenter.ico"
+  WriteRegStr ${ROOT} "${UNKEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr ${ROOT} "${UNKEY}" "UninstallString" '"$INSTDIR\${UNEXE}" ${UNARG}'
+  WriteRegStr ${ROOT} "${UNKEY}" "QuietUninstallString" '"$INSTDIR\${UNEXE}" ${UNARG} /S'
+  WriteRegDWORD ${ROOT} "${UNKEY}" "NoModify" 1
+  WriteRegDWORD ${ROOT} "${UNKEY}" "NoRepair" 1
+  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+  WriteRegDWORD ${ROOT} "${UNKEY}" "EstimatedSize" $0
+!macroend
+
 Section "워십프리젠터"
-  SetShellVarContext current
+  ${If} $PerMachine == 1
+    SetShellVarContext all
+  ${Else}
+    SetShellVarContext current
+  ${EndIf}
   CreateDirectory "$INSTDIR"
   Call WaitForExit
 
-  ; Electron 판 파일 정리 (Rust 판은 쓰지 않음)
-  RMDir /r "$INSTDIR\locales"
-  RMDir /r "$INSTDIR\resources"
-  RMDir /r "$INSTDIR\web"
-  Delete "$INSTDIR\*.pak"
-  Delete "$INSTDIR\*.dll"
-  Delete "$INSTDIR\*.bin"
-  Delete "$INSTDIR\icudtl.dat"
-  Delete "$INSTDIR\LICENSE.electron.txt"
-  Delete "$INSTDIR\LICENSES.chromium.html"
-  Delete "$INSTDIR\vk_swiftshader_icd.json"
+  ; Electron 판 파일 정리 (Rust 판은 쓰지 않음). Electron 판이 있던 폴더일 때만 — 아무 폴더에서나 *.dll 을 지우지 않는다
+  ${If} ${FileExists} "$INSTDIR\resources\app.asar"
+  ${OrIf} ${FileExists} "$INSTDIR\icudtl.dat"
+  ${OrIf} ${FileExists} "$INSTDIR\LICENSES.chromium.html"
+    RMDir /r "$INSTDIR\locales"
+    RMDir /r "$INSTDIR\resources"
+    Delete "$INSTDIR\*.pak"
+    Delete "$INSTDIR\*.dll"
+    Delete "$INSTDIR\*.bin"
+    Delete "$INSTDIR\icudtl.dat"
+    Delete "$INSTDIR\LICENSE.electron.txt"
+    Delete "$INSTDIR\LICENSES.chromium.html"
+    Delete "$INSTDIR\vk_swiftshader_icd.json"
+  ${EndIf}
+  ; 앞 판의 출력 웹 파일 (없어진 파일이 남지 않게 통째로 바꾼다)
+  ${If} ${FileExists} "$INSTDIR\web\output\index.html"
+    RMDir /r "$INSTDIR\web"
+  ${EndIf}
 
   SetOutPath "$INSTDIR"
   File "${SRC}\${EXE}"
@@ -138,32 +278,64 @@ Section "워십프리젠터"
   WriteUninstaller "$INSTDIR\${UNEXE}"
 
   ${If} $TestMode == 0
-    WriteRegStr HKCU "${APPKEY}" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKCU "${APPKEY}" "ShortcutName" "${SHORTCUT}"
-    WriteRegStr HKCU "${UNKEY}" "DisplayName" "WorshipPresenter ${VERSION}"
-    WriteRegStr HKCU "${UNKEY}" "DisplayVersion" "${VERSION}"
-    WriteRegStr HKCU "${UNKEY}" "Publisher" "WorshipPresenter"
-    WriteRegStr HKCU "${UNKEY}" "DisplayIcon" "$INSTDIR\WorshipPresenter.ico"
-    WriteRegStr HKCU "${UNKEY}" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKCU "${UNKEY}" "UninstallString" '"$INSTDIR\${UNEXE}" /currentuser'
-    WriteRegStr HKCU "${UNKEY}" "QuietUninstallString" '"$INSTDIR\${UNEXE}" /currentuser /S'
-    WriteRegDWORD HKCU "${UNKEY}" "NoModify" 1
-    WriteRegDWORD HKCU "${UNKEY}" "NoRepair" 1
-    ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
-    WriteRegDWORD HKCU "${UNKEY}" "EstimatedSize" $0
+    ${If} $PerMachine == 1
+      ${If} $RegView64 == 1
+        SetRegView 64
+      ${EndIf}
+      !insertmacro WriteInstallReg HKLM "/allusers"
+      SetRegView 32
+    ${Else}
+      !insertmacro WriteInstallReg HKCU "/currentuser"
+    ${EndIf}
 
     ; 바로가기: 같은 이름으로 덮어써 아이콘까지 새로 (위치·이름은 Electron 판과 같음)
     CreateShortcut "$DESKTOP\${SHORTCUT}.lnk" "$INSTDIR\${EXE}" "" "$INSTDIR\WorshipPresenter.ico" 0
     CreateShortcut "$SMPROGRAMS\${SHORTCUT}.lnk" "$INSTDIR\${EXE}" "" "$INSTDIR\WorshipPresenter.ico" 0
+
+    ; Electron 판 자동 업데이트가 남긴 옛 설치 파일(100MB 넘음). 지금 실행 중인 설치 파일(pending\)은 못 지우므로
+    ; 프로그램이 다음에 켜질 때 마저 지운다. 관리자 권한으로 다시 실행된 쪽은 다른 계정의 폴더일 수 있어 건드리지 않는다
+    ${If} $ElevatedChild == 0
+      Delete "$LOCALAPPDATA\worshipcue-updater\installer.exe"
+      Delete "$LOCALAPPDATA\worshipcue-updater\current.blockmap"
+    ${EndIf}
   ${EndIf}
 
   ${If} $ForceRun == 1
+  ${AndIf} $ElevatedChild == 0
     Exec '"$INSTDIR\${EXE}"'
+  ${Else}
+    ; 새 실행 파일을 처음 켤 때는 백신 검사로 2초쯤 아무것도 안 보인다. 설치하는 김에 미리 한 번 켰다 끄게 해(창 없음, 바로 끝남)
+    ; 사용자가 아이콘을 처음 누를 때는 바로 뜨게 한다
+    Exec '"$INSTDIR\${EXE}" --warmup'
+    Exec '"$INSTDIR\wp-output.exe" --list'
   ${EndIf}
 SectionEnd
 
+Function un.onInit
+  StrCpy $PerMachine 0
+  !insertmacro FindMachineInstall
+  ${If} $0 == $INSTDIR
+    StrCpy $PerMachine 1
+    UserInfo::GetAccountType
+    Pop $1
+    ${If} $1 != "Admin"
+      ; 모든 사용자용 설치를 지우려면 관리자 권한이 필요하다
+      StrCpy $2 "/allusers"
+      ${If} ${Silent}
+        StrCpy $2 "$2 /S"
+      ${EndIf}
+      ExecShell "runas" "$INSTDIR\${UNEXE}" "$2"
+      Quit
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+
 Section "Uninstall"
-  SetShellVarContext current
+  ${If} $PerMachine == 1
+    SetShellVarContext all
+  ${Else}
+    SetShellVarContext current
+  ${EndIf}
   Delete "$INSTDIR\${EXE}"
   Delete "$INSTDIR\wp-output.exe"
   Delete "$INSTDIR\WorshipPresenter.ico"
@@ -175,9 +347,25 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\web"
   Delete "$INSTDIR\${UNEXE}"
   RMDir "$INSTDIR"
-  Delete "$DESKTOP\${SHORTCUT}.lnk"
-  Delete "$SMPROGRAMS\${SHORTCUT}.lnk"
-  DeleteRegKey HKCU "${UNKEY}"
-  DeleteRegKey HKCU "${APPKEY}"
+  ; 바로가기·제거 항목은 '등록된 설치'를 지울 때만 지운다.
+  ; (/TEST /D= 로 따로 풀어 본 것이나 다른 폴더의 사본을 지울 때 실제 설치의 바로가기까지 지우지 않게)
+  ${If} $PerMachine == 1
+    Delete "$DESKTOP\${SHORTCUT}.lnk"
+    Delete "$SMPROGRAMS\${SHORTCUT}.lnk"
+    ${If} $RegView64 == 1
+      SetRegView 64
+    ${EndIf}
+    DeleteRegKey HKLM "${UNKEY}"
+    DeleteRegKey HKLM "${APPKEY}"
+    SetRegView 32
+  ${Else}
+    ReadRegStr $0 HKCU "${APPKEY}" "InstallLocation"
+    ${If} $0 == $INSTDIR
+      Delete "$DESKTOP\${SHORTCUT}.lnk"
+      Delete "$SMPROGRAMS\${SHORTCUT}.lnk"
+      DeleteRegKey HKCU "${UNKEY}"
+      DeleteRegKey HKCU "${APPKEY}"
+    ${EndIf}
+  ${EndIf}
   ; 예배 자료(%APPDATA%\WorshipPresenter-rs, %APPDATA%\WorshipCue)는 지우지 않는다
 SectionEnd

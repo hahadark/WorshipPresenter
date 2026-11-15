@@ -216,6 +216,10 @@ impl Core {
             let kind = if n.contains("복사하지 못해") { "warn" } else { "ok" };
             c.notify(n, kind);
         }
+        // 깨진 설정 파일로 켰으면 조용히 넘어가지 않고 알린다 (자료 이전 알림보다 중요하므로 나중에 덮어쓴다)
+        if let Some(n) = c.settings.load_note.clone() {
+            c.notify(n, "warn");
+        }
         Ok(c)
     }
 
