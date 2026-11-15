@@ -11,7 +11,12 @@ use wp_core::db::{CueSummary, Version};
 use wp_core::presentation::{Deck, Live};
 
 pub(crate) enum Act {
+    /// 검색 실행 (Electron doSearch: Enter·후보 고르기). 장절이면 미리보기로 (바로 송출이면 송출)
     Search(String),
+    /// 입력 중 목록만 (Electron #q input → 후보 목록). 미리보기·송출은 바꾸지 않는다
+    SearchList(String),
+    /// Ctrl+Enter (Electron sendNow): 검색칸 글이 지금 미리보기가 아니면 검색해 미리보기로 만든 뒤 송출
+    SendNow(String),
     PreviewPassage(Value, String, Option<(i64, i64)>),
     PreviewRef(String, Option<(i64, i64)>),
     SendRef(String, Option<(i64, i64)>),
@@ -252,6 +257,21 @@ impl App {
                         let p = self.result["passage"].clone();
                         c.preview_passage(&p, &q, None);
                     }
+                }
+                Act::SearchList(q) => {
+                    self.result = if q.trim().is_empty() { Value::Null } else { c.search(&q) };
+                }
+                Act::SendNow(q) => {
+                    let q = q.trim().to_string();
+                    let cur = c.pres.preview.as_ref().map(|p| p.passage["query"].as_str().unwrap_or("").trim().to_string());
+                    if !q.is_empty() && cur.as_deref() != Some(q.as_str()) {
+                        self.result = c.search(&q);
+                        // 검색 실패·본문 검색이면 송출하지 않음
+                        if self.result["ok"] != json!(true) || self.result["mode"] != "reference" { continue; }
+                        let p = self.result["passage"].clone();
+                        c.preview_passage(&p, &q, None);
+                    }
+                    c.send_preview();
                 }
                 Act::PreviewPassage(p, q, st) => c.preview_passage(&p, &q, st),
                 Act::PreviewRef(q, st) => {
@@ -536,9 +556,12 @@ impl App {
         if on("sendPreview", "F9") { acts.push(Act::SendPreview) }
         if on("toggleClear", "F10") { acts.push(Act::ToggleClear) }
         if on("focusSearch", "Ctrl+K") { self.focus_search = true }
+        if on("sendNow", "Ctrl+Enter") { acts.push(Act::SendNow(self.search.clone())) }
         if on("cueNext", "Ctrl+ArrowDown") { acts.push(Act::CuePreviewStep(1)) }
         if on("cuePrev", "Ctrl+ArrowUp") { acts.push(Act::CuePreviewStep(-1)) }
         if on("toggleOutputWindow", "Ctrl+Shift+F") { acts.push(Act::OutputToggle) }
+        // Esc 는 열린 즉석 자막 칸을 먼저 닫고, 닫을 것이 없을 때만 보조 화면 끄기 (control.js BCQuick.close)
+        if !typing && self.tb.quick && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { self.tb.quick = false }
         if on("outputOff", "Escape") && self.out.running() { acts.push(Act::OutputToggle) }
         // [트랙 C] 미리보기 앞뒤 절 · 장 처음
         if on("previewPrevVerse", "Alt+ArrowLeft") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), -1) }
@@ -1639,6 +1662,9 @@ mod ux_a_tests;
 #[cfg(test)]
 #[path = "fix3_tests.rs"]
 mod fix3_tests;
+#[cfg(test)]
+#[path = "auditc_tests.rs"]
+mod auditc_tests;
 #[cfg(test)]
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)

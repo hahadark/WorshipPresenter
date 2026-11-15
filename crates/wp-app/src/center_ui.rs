@@ -1314,6 +1314,18 @@ impl App {
             }
             if r["mode"] == "reference" {
                 let p = &r["passage"];
+                // 치는 중인 장절은 목록만 보이고 미리보기는 Enter 때 (control.js 후보 '↵ 요한복음 3:16')
+                let shown = s.preview.as_ref().is_some_and(|d| d.passage["query"].as_str().map(str::trim) == Some(self.search.trim()) && cue_index(d).is_none());
+                if !shown && !self.search.trim().is_empty() {
+                    let label = wp_core::i18n::tr_args("↵ {1} — Enter 로 미리보기", &[&p["title"].as_str().unwrap_or("")]);
+                    egui::Frame::new().inner_margin(Margin::symmetric(14, 4)).show(ui, |ui| {
+                        let b = ui.add(Btn::new(&label).size(Size::Sm)).on_hover_text(wp_core::i18n::tr("누르거나 검색칸에서 Enter: 이 본문을 미리보기로 (바로 송출 모드면 송출)"));
+                        crate::widgets::mark("search-enter-hint", b.rect);
+                        if b.clicked() {
+                            acts.push(Act::Search(self.search.clone()));
+                        }
+                    });
+                }
                 let verses = p["verses"].as_array().cloned().unwrap_or_default();
                 let book = p["book"]["id"].as_i64().or_else(|| p["book"].as_i64()).unwrap_or(0);
                 let multi = verses.first().map(|v| &v["chapter"]) != verses.last().map(|v| &v["chapter"]);

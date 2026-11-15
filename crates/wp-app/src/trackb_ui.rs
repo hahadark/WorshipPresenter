@@ -28,6 +28,8 @@ pub struct TbState {
     msg_sec: i64,
     msg_obs: bool,
     quick_text: String,
+    quick_was_open: bool,
+    quick_focus: bool,
     timer_min: String,
     stage_msg: String,
     pin_text: String,
@@ -47,10 +49,13 @@ fn err(r: anyhow::Result<impl Sized>) -> String {
 impl App {
     pub(crate) fn trackb_shortcuts(&mut self, ctx: &egui::Context) {
         let sc = |m: Modifiers, k: Key| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(m, k)));
-        if sc(Modifiers::CTRL, Key::M) { self.tb.message = true; }
-        if sc(Modifiers::CTRL, Key::T) { self.tb.quick = true; }
-        if sc(Modifiers::CTRL, Key::L) { crate::lyrics_ui::open(); }
-        if sc(Modifiers::CTRL, Key::P) { self.print_cue(); }
+        // 설정 → 단축키에서 바꾼 키를 따른다 (control.js actions.messages · quickText(열고 닫기) · webLyrics · printCue)
+        let keyset = json!({ "shortcuts": self.core.lock().settings.get()["shortcuts"].clone() });
+        let on = |id: &str, def: &str| crate::keys::pressed(ctx, &keyset, id, def);
+        if on("messages", "Ctrl+M") { self.tb.message = true; }
+        if on("quickText", "Ctrl+T") { self.tb.quick = !self.tb.quick; }
+        if on("webLyrics", "Ctrl+L") { crate::lyrics_ui::open(); }
+        if on("printCue", "Ctrl+P") { self.print_cue(); }
         // 템플릿 편집 창 위에서는 Ctrl+Z 가 그 창의 실행 취소 (큐시트 되돌리기가 아님)
         if !ctx.egui_wants_keyboard_input() && !self.tc.templates.owns_undo(ctx) {
             if sc(Modifiers::CTRL, Key::Z) { self.core.lock().undo_items(false); self.edit = None; }
@@ -484,26 +489,109 @@ impl App {
     }
 
     // ---------------- 즉석 자막 ----------------
-    fn quick_window(&mut self, ctx: &egui::Context) {
+    // quicktext.js: Enter 송출 · Shift+Enter 줄 바꿈 · Esc 닫기 · 보낸 글은 최근 목록(12개)에 남아 다시 누르면 또 나감 ·
+    // 길면 공지처럼 여러 장으로 나눔(F6 으로 넘김) · '큐시트에 넣기' 는 첫 줄(20자)을 이름으로 한 공지 순서
+    pub(crate) fn quick_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.quick;
+        let input_id = egui::Id::new("quick-text-input");
+        if open && !self.tb.quick_was_open {
+            self.tb.quick_focus = true; // 열면 바로 쓸 수 있게 (open → input.focus()) — 창이 처음 그려질 때까지 계속 요청
+        }
+        // Enter(Shift 없이) 는 줄 바꿈 전에 가로채 송출 · Esc 는 닫기 (보조 화면 끄기보다 먼저)
+        let focused = ctx.memory(|m| m.has_focus(input_id));
+        let enter = open && focused && ctx.input_mut(|i| i.modifiers.is_none() && i.consume_key(Modifiers::NONE, Key::Enter)); // consume_key 는 Shift 를 무시하므로 직접 본다
+        if open && focused && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            open = false;
+        }
+        let mut resend: Option<String> = None;
+        let mut forget: Option<String> = None;
+        let mut edit: Option<String> = None;
+        let mut send = enter;
+        let mut add = false;
+        let recent = quick_recent(&self.core.lock().data_dir);
         crate::widgets::float_window(ctx, "quick", wp_core::i18n::tr("즉석 자막"), [420.0, 200.0]).open(&mut open).show(ctx, |ui| {
-            let r = ui.add(egui::TextEdit::multiline(&mut self.tb.quick_text).desired_rows(3).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("쓰고 Ctrl+Enter → 바로 송출")));
-            let send = (r.has_focus() && ui.input(|i| i.modifiers.ctrl && i.key_pressed(Key::Enter))) | ui.button(wp_core::i18n::tr("바로 송출")).clicked();
-            let add = ui.button(wp_core::i18n::tr("큐시트에 공지로 넣기")).clicked();
-            if send && !self.tb.quick_text.trim().is_empty() {
-                let slide = json!({ "kind": "text", "ref": "", "title": "", "label": "즉석", "parts": [{ "book": 0, "chapter": 0, "verse": 0, "text": self.tb.quick_text.trim() }] });
-                let d = Deck { passage: json!({ "title": "즉석 자막", "itemTitle": "즉석 자막", "versionName": "", "cueIndex": -1, "cueId": "", "itemType": "text" }), slides: vec![slide], index: 0 };
-                self.core.lock().send_deck(d);
+            ui.label(RichText::new(wp_core::i18n::tr("Enter 송출 · Shift+Enter 줄 바꿈 · Esc 닫기")).small().weak());
+            let r = ui.add(egui::TextEdit::multiline(&mut self.tb.quick_text).id(input_id).desired_rows(3).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("예: 예배 후 전 교인 식사가 있습니다")));
+            crate::widgets::mark("quick-input", r.rect);
+            if self.tb.quick_focus { if r.has_focus() { self.tb.quick_focus = false } else { r.request_focus() } }
+            ui.horizontal(|ui| {
+                let b = ui.button(wp_core::i18n::tr("송출 (Enter)"));
+                crate::widgets::mark("quick-send", b.rect);
+                send |= b.clicked();
+                let c = ui.button(wp_core::i18n::tr("큐시트에 넣기")).on_hover_text(wp_core::i18n::tr("고른 순서 다음에 '공지' 순서로 넣습니다"));
+                crate::widgets::mark("quick-cue", c.rect);
+                add = c.clicked();
+            });
+            ui.label(RichText::new(wp_core::i18n::tr("최근에 보낸 글")).small().weak());
+            if recent.is_empty() {
+                ui.label(RichText::new(wp_core::i18n::tr("보낸 글이 여기에 남습니다. 누르면 다시 송출합니다.")).weak());
             }
-            if add {
-                let mut it = wp_core::core::new_item("text", "즉석 자막");
-                it["body"] = json!(self.tb.quick_text.trim());
-                self.add_to_cue(it);
+            for (i, q) in recent.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    let b = ui.button(q.replace('\n', " / ")).on_hover_text(wp_core::i18n::tr("누르면 이 글을 다시 송출"));
+                    crate::widgets::mark(&format!("quick-recent-{i}"), b.rect);
+                    if b.clicked() { resend = Some(q.clone()); }
+                    if ui.small_button("✎").on_hover_text(wp_core::i18n::tr("입력칸으로 가져와 고치기")).clicked() { edit = Some(q.clone()); }
+                    let d = ui.small_button("✕").on_hover_text(wp_core::i18n::tr("목록에서 지우기"));
+                    crate::widgets::mark(&format!("quick-forget-{i}"), d.rect);
+                    if d.clicked() { forget = Some(q.clone()); }
+                });
             }
         });
+        if send {
+            let text = self.tb.quick_text.clone();
+            if self.quick_send(&text) {
+                self.tb.quick_text.clear();
+                ctx.memory_mut(|m| m.request_focus(input_id));
+            }
+        }
+        if let Some(q) = resend { self.quick_send(&q); }
+        if let Some(q) = edit { self.tb.quick_text = q; ctx.memory_mut(|m| m.request_focus(input_id)); }
+        if let Some(q) = forget {
+            let dir = self.core.lock().data_dir.clone();
+            let list: Vec<String> = quick_recent(&dir).into_iter().filter(|x| *x != q).collect();
+            quick_save(&dir, &list);
+        }
+        if add {
+            let text = self.tb.quick_text.replace('\r', "").trim().to_string();
+            if text.is_empty() {
+                self.core.lock().notify(wp_core::i18n::tr("큐시트에 넣을 글을 쓰세요."), "warn");
+            } else {
+                let first = text.lines().next().unwrap_or("").trim().to_string();
+                let title = if first.chars().count() > 20 { format!("{}…", first.chars().take(20).collect::<String>()) } else { first };
+                let mut it = wp_core::core::new_item("text", &title);
+                it["body"] = json!(text);
+                let at = self.sel.map(|s| s + 1);
+                let n = { let mut c = self.core.lock(); c.add_item(it, at); c.cue.as_ref().map(|q| q.items.len()).unwrap_or(0) };
+                self.sel = Some(at.unwrap_or(n.saturating_sub(1)).min(n.saturating_sub(1)));
+                self.edit = None;
+                quick_remember(&self.core.lock().data_dir, &text);
+                self.core.lock().notify(wp_core::i18n::tr("고른 순서 다음에 공지 순서로 넣었습니다."), "ok");
+            }
+        }
         self.tb.quick = open;
+        self.tb.quick_was_open = open;
     }
 
+    /// 즉석 자막 송출 (quicktext.js send): 공지와 같은 글자 슬라이드, 길면 여러 장. 보내면 최근 목록 맨 위로
+    pub(crate) fn quick_send(&mut self, text: &str) -> bool {
+        use wp_core::i18n::{tr, tr_args};
+        let text = text.replace('\r', "").trim().to_string();
+        let mut c = self.core.lock();
+        if text.is_empty() {
+            c.notify(tr("송출할 글을 쓰세요."), "warn");
+            return false;
+        }
+        let opts = c.split_opts(None);
+        let slides = wp_core::slides::build_text("", false, &wp_core::slides::text_chunks(&text, 1), &opts);
+        if slides.is_empty() { return false; }
+        let n = slides.len();
+        let d = Deck { passage: json!({ "title": "즉석 자막", "itemTitle": "즉석 자막", "versionName": "", "cueIndex": -1, "cueId": "", "itemType": "text" }), slides, index: 0 };
+        c.send_deck(d);
+        quick_remember(&c.data_dir, &text);
+        if n > 1 { c.notify(tr_args("즉석 자막을 송출했습니다 ({1}장 — F6 으로 넘김)", &[&n]), "ok"); } else { c.notify(tr("즉석 자막을 송출했습니다."), "ok"); }
+        true
+    }
     // ---------------- 무대 화면 ----------------
     fn stage_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.stage;
@@ -1067,4 +1155,27 @@ fn collect_song_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>, 
         let ext = path.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
         if wp_core::songimport::SONG_EXT.contains(&ext.as_str()) { out.push(path); }
     }
+}
+
+/// 즉석 자막 최근 목록 (Electron 은 localStorage 'wc-quick-texts', 이 PC 에만 · 12개)
+const QUICK_MAX: usize = 12;
+fn quick_file(dir: &std::path::Path) -> std::path::PathBuf { dir.join("quick-texts.json") }
+pub(crate) fn quick_recent(dir: &std::path::Path) -> Vec<String> {
+    let v: Value = std::fs::read_to_string(quick_file(dir)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null);
+    v.as_array().into_iter().flatten().filter_map(|x| x.as_str()).filter(|x| !x.trim().is_empty()).take(QUICK_MAX).map(String::from).collect()
+}
+fn quick_save(dir: &std::path::Path, list: &[String]) {
+    let _ = std::fs::write(quick_file(dir), serde_json::to_string(list).unwrap_or_default());
+}
+fn quick_remember(dir: &std::path::Path, text: &str) {
+    let mut list = vec![text.to_string()];
+    list.extend(quick_recent(dir).into_iter().filter(|x| x != text));
+    list.truncate(QUICK_MAX);
+    quick_save(dir, &list);
+}
+
+#[cfg(test)]
+impl TbState {
+    pub(crate) fn quick_text(&self) -> &str { &self.quick_text }
+    pub(crate) fn set_quick_text(&mut self, s: &str) { self.quick_text = s.to_string(); }
 }
