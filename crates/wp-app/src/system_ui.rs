@@ -64,7 +64,7 @@ pub fn handle_menu(app: &mut App, id: &str) -> bool {
 }
 
 fn ago(iso: &str) -> String {
-    if iso.is_empty() { "없음".into() } else { iso.replace('T', " ").chars().take(19).collect::<String>() + " (UTC)" }
+    if iso.is_empty() { wp_core::i18n::tr("없음") } else { iso.replace('T', " ").chars().take(19).collect::<String>() + " (UTC)" }
 }
 
 impl App {
@@ -210,7 +210,7 @@ impl App {
             });
             if !note.is_empty() { ST.lock().note = note; }
             let n = ST.lock().note.clone();
-            if !n.is_empty() { ui.label(RichText::new(n).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
+            if !n.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&n)).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
         });
         ST.lock().sync = open;
     }
@@ -230,7 +230,7 @@ impl App {
             let r = ST.lock().diag_result.clone();
             ui.horizontal(|ui| {
                 let (f, w) = (r["summary"]["fail"].as_u64().unwrap_or(0), r["summary"]["warn"].as_u64().unwrap_or(0));
-                let (t, c) = if f > 0 { (format!("문제 {f}곳 · 확인 {w}곳"), Color32::from_rgb(0xff, 0x6b, 0x6b)) } else if w > 0 { (format!("확인할 곳 {w}곳"), Color32::from_rgb(0xff, 0xb0, 0x4a)) } else { ("모두 괜찮습니다".into(), Color32::from_rgb(0x8a, 0xe0, 0xa8)) };
+                let (t, c) = if f > 0 { (wp_core::i18n::tr_args("문제 {1}곳 · 확인 {2}곳", &[&f, &w]), Color32::from_rgb(0xff, 0x6b, 0x6b)) } else if w > 0 { (wp_core::i18n::tr_args("확인할 곳 {1}곳", &[&w]), Color32::from_rgb(0xff, 0xb0, 0x4a)) } else { (wp_core::i18n::tr("모두 괜찮습니다"), Color32::from_rgb(0x8a, 0xe0, 0xa8)) };
                 ui.label(RichText::new(t).strong().color(c));
                 if ui.button(wp_core::i18n::tr("다시 점검")).clicked() { ST.lock().diag_result = Value::Null; }
                 if ui.button(wp_core::i18n::tr("로그 묶음 저장…")).on_hover_text(wp_core::i18n::tr("문제를 알릴 때 보낼 글 파일 (열쇠·PIN·AI 키는 가림)")).clicked() { self.save_log_bundle(); }
@@ -247,11 +247,11 @@ impl App {
                     };
                     ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new(mark).strong().color(col));
-                        ui.label(RichText::new(x["title"].as_str().unwrap_or("")).strong());
-                        ui.label(x["detail"].as_str().unwrap_or(""));
+                        ui.label(RichText::new(wp_core::i18n::tr_dyn_deep(x["title"].as_str().unwrap_or(""))).strong());
+                        ui.label(wp_core::i18n::tr_dyn_deep(x["detail"].as_str().unwrap_or("")));
                     });
                     for f in x["fix"].as_array().into_iter().flatten().filter_map(|f| f.as_str()) {
-                        ui.label(RichText::new(format!("    · {f}")).small().color(Color32::LIGHT_GRAY));
+                        ui.label(RichText::new(format!("    · {}", wp_core::i18n::tr_dyn_deep(f))).small().color(Color32::LIGHT_GRAY));
                     }
                     ui.add_space(4.0);
                 }

@@ -95,7 +95,7 @@ impl App {
                 run_search(ctx.clone(), q);
                 st = ST.lock();
             }
-            if !st.busy.is_empty() { ui.label(RichText::new(&st.busy).color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
+            if !st.busy.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&st.busy)).color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
             for e in &st.errors { ui.label(RichText::new(wp_core::i18n::tr_args("못 읽음 · {1}", &[&e])).small().color(Color32::GRAY)); }
             let mut pick: Option<Value> = None;
             egui::ScrollArea::vertical().id_salt("lyr-res").max_height(180.0).show(ui, |ui| {
@@ -164,7 +164,7 @@ impl App {
                 }
             });
             let note = ST.lock().note.clone();
-            if !note.is_empty() { ui.label(RichText::new(note).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
+            if !note.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&note)).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
             ui.label(RichText::new(wp_core::i18n::tr("고른 곡 하나씩만 읽습니다. 사이트 구조가 바뀌어 못 읽으면 가사를 복사해 붙여 넣으세요.")).small().color(Color32::GRAY));
         });
         ST.lock().open = open;

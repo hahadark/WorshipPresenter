@@ -32,11 +32,11 @@ pub(crate) fn family_for(ctx: &egui::Context, name: &str, bold: bool) -> FontFam
         }
         Some(None) => fallback,
         None => {
-            let found = wp_core::pptx::build::font_bytes(name);
+            // 글꼴 파일은 복사하지 않고 파일 매핑으로 (글꼴 하나에 10~30MB). 안 되면 예전처럼 읽어서
+            let found = wp_core::pptx::build::font_static(name).map(|(b, i)| (egui::FontData::from_static(b), i)).or_else(|| wp_core::pptx::build::font_bytes(name).map(|(b, i)| (egui::FontData::from_owned(b), i)));
             match found {
-                Some((bytes, index)) => {
+                Some((mut data, index)) => {
                     let fam = FontFamily::Name(format!("ppt:{name}").into());
-                    let mut data = egui::FontData::from_owned(bytes);
                     data.index = index;
                     ctx.add_font(egui::epaint::text::FontInsert::new(
                         &format!("ppt:{name}"),

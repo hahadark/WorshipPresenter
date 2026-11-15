@@ -31,7 +31,10 @@ pub fn save_template(st: &mut Settings, tpl: &Value) -> Result<Value, String> {
     let id = t["id"].as_str().unwrap_or("").to_string();
     let mut out = t.clone();
     st.update(|d| {
-        let list = d["templates"].as_array_mut().expect("templates");
+        if !d["templates"].is_array() {
+            d["templates"] = json!([]); // 설정 파일이 손상돼 목록이 없을 때
+        }
+        let Some(list) = d["templates"].as_array_mut() else { return };
         match list.iter().position(|x| x["id"] == id.as_str()).filter(|_| !id.is_empty()) {
             Some(i) => {
                 out["preset"] = list[i]["preset"].clone();

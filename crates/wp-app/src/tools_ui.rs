@@ -149,7 +149,7 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
         ui.separator();
         ui.label(wp_core::i18n::tr("포트"));
         let mut p = st["port"].as_u64().unwrap_or(37540).to_string();
-        if ui.add(egui::TextEdit::singleline(&mut p).desired_width(60.0)).lost_focus() {
+        if ui.add(egui::TextEdit::singleline(&mut p).desired_width(78.0)).lost_focus() {
             if let Ok(n) = p.trim().parse::<u16>() {
                 changed(core, |d| d["remote"]["port"] = json!(n));
             }
@@ -316,7 +316,7 @@ fn devices(ui: &mut egui::Ui, core: &Shared) {
         }
     });
     if !s.msg.is_empty() {
-        ui.label(RichText::new(&s.msg).small().color(crate::theme::pal().warn));
+        ui.label(RichText::new(wp_core::i18n::tr_dyn(&s.msg)).small().color(crate::theme::pal().warn));
     }
     ui.label(RichText::new(wp_core::i18n::tr("보낼 동작 예 — X32 음향: ch1 on(1번 채널 켜기) · ch5 fader 0.75(5번 볼륨 75%) · main off · scene 3(장면 3) · dca1 off  /  PTZ 카메라: 프리셋 번호 0~254 · home(처음 자리)")).small().color(crate::theme::pal().muted));
 }

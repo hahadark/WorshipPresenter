@@ -21,7 +21,7 @@ static LOC: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\d{1,3})/(\d{1,2})/(\d{1,2
 /// "1/0/2, 2/1/0" → 위치들 (잘못된 것은 뺀다, 최대 10개)
 pub fn parse_locations(s: &str) -> Vec<Loc> {
     s.split(|c: char| c == ',' || c.is_whitespace())
-        .filter_map(|x| LOC.captures(x.trim()).map(|m| Loc { page: m[1].parse().unwrap(), row: m[2].parse().unwrap(), col: m[3].parse().unwrap() }))
+        .filter_map(|x| LOC.captures(x.trim()).and_then(|m| Some(Loc { page: m[1].parse().ok()?, row: m[2].parse().ok()?, col: m[3].parse().ok()? }))) // 너무 큰 숫자는 뺀다 (panic 아님)
         .take(10)
         .collect()
 }

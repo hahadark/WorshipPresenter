@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod imgcache; // 그림 메모리: 줄여 읽기 · 상한(LRU)
 mod panel_ui;
 mod quick_ui; // 디자인 2단계: 빠른 설정 안쪽 (tplcontrols basic)
 mod center_ui; // 디자인 2단계: 가운데 본문 패널 (머리·목록·격자·주석)
@@ -49,7 +50,7 @@ mod pptsplit_ui; // [갈래 C] 한 PPT 를 여러 순서로 나누기 창 (cue.j
 mod ctx_ui; // [갈래 C] 오른쪽 클릭 메뉴: 본문 줄 · 라이브러리 · 패널 (ctxmenu.js)
 
 use eframe::egui;
-use parking_lot::Mutex;
+use wp_core::lockcheck::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
 use wp_core::core::{Core, Ev};
@@ -88,6 +89,83 @@ fn seed_db() -> Option<PathBuf> {
     [exe_dir.join("bible.db"), PathBuf::from(r"F:\aside\WorshipCue\data\bible.db")].into_iter().find(|p| p.exists())
 }
 
+/// 점검용(디버그 빌드만): WP_DEBUG_ALLOC=1 이면 8MB 넘는 할당이 어디서 나왔는지 로그에 남긴다.
+/// 출시 빌드는 기호가 없어 쓸모가 없으므로 넣지 않는다.
+#[cfg(debug_assertions)]
+mod bigalloc {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    pub static ON: AtomicBool = AtomicBool::new(false);
+    thread_local! { static BUSY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+    pub struct Tracker;
+    fn note(size: usize, what: &str) {
+        if size < 8 << 20 || !ON.load(Ordering::Relaxed) {
+            return;
+        }
+        let _ = BUSY.try_with(|b| {
+            if b.replace(true) {
+                return;
+            }
+            let bt = std::backtrace::Backtrace::force_capture().to_string();
+            let ours: Vec<&str> = bt.lines().map(|l| l.trim()).filter(|l| !l.starts_with("at ") && !l.contains("bigalloc") && !l.contains("backtrace")).take(22).collect();
+            log::info!("큰 할당 {what} {:.0}MB: {}", size as f64 / 1048576.0, ours.join(" < "));
+            b.set(false);
+        });
+    }
+    unsafe impl GlobalAlloc for Tracker {
+        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+            note(l.size(), "alloc");
+            unsafe { System.alloc(l) }
+        }
+        unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
+            note(l.size(), "zeroed");
+            unsafe { System.alloc_zeroed(l) }
+        }
+        unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+            unsafe { System.dealloc(p, l) }
+        }
+        unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
+            note(n, "realloc");
+            unsafe { System.realloc(p, l, n) }
+        }
+    }
+}
+#[cfg(debug_assertions)]
+#[global_allocator]
+static ALLOC: bigalloc::Tracker = bigalloc::Tracker;
+
+/// 그래픽 백엔드 고르기: 환경 변수 → DX12 그래픽 카드(소프트웨어 그리기 아님)가 있으면 DX12 만 → 아니면 전부
+#[cfg(windows)]
+fn pick_backends() -> eframe::wgpu::Backends {
+    use eframe::wgpu;
+    let all = wgpu::Backends::PRIMARY | wgpu::Backends::GL;
+    if let Some(b) = wgpu::Backends::from_env() {
+        return b;
+    }
+    let t0 = std::time::Instant::now();
+    let ok = std::panic::catch_unwind(|| {
+        let inst = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::DX12,
+            flags: wgpu::InstanceFlags::from_build_config().with_env(),
+            backend_options: wgpu::BackendOptions::from_env_or_default(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            display: None,
+        });
+        let rt = tokio::runtime::Builder::new_current_thread().build().ok()?;
+        let list = rt.block_on(inst.enumerate_adapters(wgpu::Backends::DX12));
+        Some(list.iter().any(|a| a.get_info().device_type != wgpu::DeviceType::Cpu))
+    })
+    .ok()
+    .flatten()
+    .unwrap_or(false);
+    log::info!("그래픽: {} ({:.0}ms)", if ok { "DX12" } else { "DX12 그래픽 카드 없음 → 자동 고르기" }, t0.elapsed().as_secs_f64() * 1000.0);
+    if ok { wgpu::Backends::DX12 } else { all }
+}
+#[cfg(not(windows))]
+fn pick_backends() -> eframe::wgpu::Backends {
+    eframe::wgpu::Backends::from_env().unwrap_or(eframe::wgpu::Backends::PRIMARY | eframe::wgpu::Backends::GL)
+}
+
 fn main() -> anyhow::Result<()> {
     // 설치 파일이 설치 직후 부른다: 아무것도 하지 않고 끝난다. 새 실행 파일을 처음 읽을 때 걸리는 백신 검사(이 파일 크기로 2초쯤)를
     // 사용자가 아이콘을 누르기 전에 미리 치러 두려는 것
@@ -99,6 +177,9 @@ fn main() -> anyhow::Result<()> {
     let _ = std::fs::create_dir_all(&data_dir);
     wp_core::logger::init(&data_dir); // [트랙 B] 파일 로그 (logs\날짜.log)
     wp_core::logger::install_panic_hook(); // 오류(panic)도 로그에
+    wp_core::util::mem_log("시작");
+    #[cfg(debug_assertions)]
+    bigalloc::ON.store(std::env::var_os("WP_DEBUG_ALLOC").is_some(), std::sync::atomic::Ordering::Relaxed);
     let web = web_dir();
     // [트랙 A] 두 번 실행 막기 (같은 데이터 폴더) · 송출 중 화면 꺼짐 막기
     // '1.x 자료 다시 가져오기' 로 다시 켜질 때: 앞 프로세스가 끝나길 기다린다 (두 번 실행 막기에 걸리지 않게)
@@ -187,6 +268,20 @@ fn main() -> anyhow::Result<()> {
         opts.wgpu_options.wgpu_setup = eframe::egui_wgpu::WgpuSetup::Existing(g);
     }
     wp_core::firstrun::mark("그래픽 장치");
+    // 미리 준비가 불가능한 환경에서도 같은 메모리 정책을 유지한다.
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(n) = &mut opts.wgpu_options.wgpu_setup {
+        use eframe::wgpu;
+        n.instance_descriptor.backends = pick_backends();
+        n.device_descriptor = Arc::new(|adapter| {
+            let base = if adapter.get_info().backend == wgpu::Backend::Gl { wgpu::Limits::downlevel_webgl2_defaults() } else { wgpu::Limits::default() };
+            wgpu::DeviceDescriptor {
+                label: Some("wp-app"),
+                required_limits: wgpu::Limits { max_texture_dimension_2d: 8192, ..base },
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
+                ..Default::default()
+            }
+        });
+    }
     let web2 = web.clone();
     eframe::run_native(
         "worship-presenter-rs",
@@ -197,6 +292,8 @@ fn main() -> anyhow::Result<()> {
             theme::install_fonts(&cc.egui_ctx); // Pretendard + 맑은 고딕(대체·슬라이드)
             wp_core::firstrun::mark("글꼴");
             egui_extras::install_image_loaders(&cc.egui_ctx);
+            imgcache::install(&cc.egui_ctx);
+            wp_core::util::mem_log("글꼴 등록");
             theme::apply(&cc.egui_ctx, theme::ThemeId::Dark); // 설정 테마는 첫 프레임에 apply_ui_prefs 가 다시 적용
             // 자료 준비가 끝나길 기다린다 (보통 이미 끝나 있다. 첫 실행 자료 옮기기는 시작 창이 진행률을 보인다)
             let (shared, rx) = match prx.recv() {
@@ -220,6 +317,7 @@ fn main() -> anyhow::Result<()> {
             });
             let app = app::App::new(shared, web2, data_dir);
             wp_core::firstrun::mark("화면 준비");
+            wp_core::util::mem_log("창·그래픽 장치 생김");
             Ok(Box::new(app))
         }),
     )
@@ -289,6 +387,7 @@ fn prepare_gfx() -> Option<eframe::egui_wgpu::WgpuSetupExisting> {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("egui wgpu device"),
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
                 required_limits: wgpu::Limits { max_texture_dimension_2d: 8192, ..wgpu::Limits::default() },
                 ..Default::default()
             })

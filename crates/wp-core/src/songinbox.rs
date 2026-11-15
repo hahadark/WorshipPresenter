@@ -206,7 +206,7 @@ mod real_watch_tests {
         for d in [&data, &dl] { std::fs::create_dir_all(d).unwrap(); }
         std::fs::write(data.join("bible.db"), b"").unwrap(); // 빈 DB: 기존 자료를 복사해 오지 않게
         let core = Core::open(data.clone(), root.join("web"), None).unwrap();
-        let shared: Shared = Arc::new(parking_lot::Mutex::new(core));
+        let shared: Shared = Arc::new(crate::lockcheck::Mutex::new(core));
         {
             let mut c = shared.lock();
             let (a, b) = (dl.to_string_lossy().to_string(), inbox.to_string_lossy().to_string());

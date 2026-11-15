@@ -304,7 +304,9 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
                 }
             }
             if ui.button(wp_core::i18n::tr("불러오기")).clicked() {
-                match preservice::cards(&mut app.core.lock(), &p.card_folder) {
+                // 잠금을 먼저 풀고 match (match 대상의 잠금은 match 끝까지 살아 있어, 안에서 다시 잠그면 영원히 멈춘다)
+                let r = preservice::cards(&mut app.core.lock(), &p.card_folder);
+                match r {
                     Ok(v) => {
                         p.groups = v["groups"].as_array().cloned().unwrap_or_default();
                         p.use_group = (0..p.groups.len()).map(|i| i == 0).collect();
@@ -341,7 +343,8 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::multiline(&mut p.qt_text).desired_rows(2).hint_text(wp_core::i18n::tr("마 6:9-13, 또는 QT 자료(JSON · '1일째 · 제목 (장절)')")).desired_width(420.0));
             if ui.button(wp_core::i18n::tr("본문 찾기")).clicked() {
-                match preservice::qt(&mut app.core.lock(), &p.qt_text) {
+                let r = preservice::qt(&mut app.core.lock(), &p.qt_text); // 잠금을 먼저 푼다
+                match r {
                     Ok(q) => p.qt = Some(q),
                     Err(e) => app.core.lock().notify(e, "warn"),
                 }

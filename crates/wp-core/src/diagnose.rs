@@ -122,7 +122,8 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(x) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+            // 글자 경계가 아닐 수 있다 ("50%할인.png") — 글이 아니라 바이트로 본다
+            if let Some(x) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
                 out.push(x);
                 i += 3;
                 continue;
@@ -494,5 +495,14 @@ mod tests {
         let (name, text) = log_bundle(&mut c, &Desktop::default(), 7);
         assert!(name.starts_with("워십프리젠터-로그-") && name.ends_with(".txt"));
         assert!(text.contains("## 연결 점검") && text.contains("## 최근 7일 로그"));
+    }
+}
+
+#[cfg(test)]
+mod audit_e_boundary_tests {
+    #[test]
+    fn percent_decode_survives_hangul_after_percent() {
+        assert_eq!(super::percent_decode("50%할인.png"), "50%할인.png");
+        assert_eq!(super::percent_decode("a%20b+c"), "a b c");
     }
 }

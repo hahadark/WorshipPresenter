@@ -2,6 +2,7 @@
 pub mod books;
 pub mod groups; // 슬라이드 이름표 색·글 정리 (Electron shared/groups.js)
 pub mod core;
+pub mod lockcheck; // 코어 잠금 재진입(멈춤) 감지
 pub mod firstrun; // [갈래 D] 첫 실행 자료 이전 · 시작 안내 창 · 두 번 실행
 pub mod db;
 pub mod hymnal; // [트랙 A]

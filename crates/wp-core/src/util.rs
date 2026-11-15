@@ -48,3 +48,58 @@ pub fn to36(mut n: u64) -> String {
     v.reverse();
     String::from_utf8(v).unwrap()
 }
+
+/// 이 프로세스의 메모리 (작업 집합 MB, 전용 MB). 윈도우가 아니면 (0, 0)
+pub fn mem_mb() -> (f64, f64) {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX};
+        let mut c: PROCESS_MEMORY_COUNTERS_EX = std::mem::zeroed();
+        c.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+        if K32GetProcessMemoryInfo(windows_sys::Win32::System::Threading::GetCurrentProcess(), &mut c as *mut _ as *mut PROCESS_MEMORY_COUNTERS, c.cb) != 0 {
+            return (c.WorkingSetSize as f64 / 1048576.0, c.PrivateUsage as f64 / 1048576.0);
+        }
+    }
+    (0.0, 0.0)
+}
+
+/// 점검용: WP_DEBUG_MEM=1 이면 단계 이름과 메모리를 로그에 (무엇이 메모리를 차지하는지 찾기)
+pub fn mem_log(stage: &str) {
+    static ON: once_cell::sync::Lazy<bool> = once_cell::sync::Lazy::new(|| std::env::var_os("WP_DEBUG_MEM").is_some());
+    if *ON {
+        let (ws, pv) = mem_mb();
+        log::info!("메모리 [{stage}] 작업 집합 {ws:.0}MB · 전용 {pv:.0}MB");
+    }
+}
+
+/// 점검용: 전용(private)으로 잡힌 메모리를 덩어리(할당 단위)별로 모아 큰 것부터 요약한다.
+/// "64MB×3 · 32MB×1 … / 16MB 이상 합 224MB / 1MB 미만 합 80MB" 처럼. 무엇이 큰 덩어리를 잡는지 찾을 때 쓴다.
+pub fn mem_regions_summary() -> String {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Memory::{VirtualQuery, MEMORY_BASIC_INFORMATION, MEM_COMMIT, MEM_PRIVATE};
+        let mut by_alloc: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        let mut addr: usize = 0x10000;
+        let mut info: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
+        while VirtualQuery(addr as *const _, &mut info, std::mem::size_of::<MEMORY_BASIC_INFORMATION>()) != 0 {
+            if info.State == MEM_COMMIT && info.Type == MEM_PRIVATE {
+                *by_alloc.entry(info.AllocationBase as usize).or_default() += info.RegionSize;
+            }
+            let next = (info.BaseAddress as usize).saturating_add(info.RegionSize.max(0x1000));
+            if next <= addr {
+                break;
+            }
+            addr = next;
+        }
+        let mb = |b: usize| b as f64 / 1048576.0;
+        let mut sizes: Vec<usize> = by_alloc.values().copied().collect();
+        sizes.sort_by_key(|s| std::cmp::Reverse(*s));
+        let big: usize = sizes.iter().filter(|s| **s >= 16 << 20).sum();
+        let mid: usize = sizes.iter().filter(|s| **s >= 1 << 20 && **s < 16 << 20).sum();
+        let small: usize = sizes.iter().filter(|s| **s < 1 << 20).sum();
+        let top: Vec<String> = sizes.iter().take(12).map(|s| format!("{:.0}", mb(*s))).collect();
+        return format!("큰 덩어리(MB) [{}] · 16MB 이상 합 {:.0}MB · 1~16MB 합 {:.0}MB({}개) · 1MB 미만 합 {:.0}MB", top.join(" "), mb(big), mb(mid), sizes.iter().filter(|s| **s >= 1 << 20 && **s < 16 << 20).count(), mb(small));
+    }
+    #[allow(unreachable_code)]
+    String::new()
+}

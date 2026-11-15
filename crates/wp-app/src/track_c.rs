@@ -77,7 +77,7 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     let (preview_off, templates, active_main, active_overlay, port) = {
         let c = app.core.lock();
         let s = c.settings.get();
-        let tpls: Vec<(String, String)> = c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
+        let tpls: Vec<(String, String)> = c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect();
         (s["previewMode"].as_bool() == Some(false), tpls, s["activeTemplates"]["main"].as_str().unwrap_or("").to_string(), s["activeTemplates"]["overlay"].as_str().unwrap_or("").to_string(), c.port)
     };
     let frame = egui::Frame::new().fill(p.menubar).inner_margin(egui::Margin::symmetric(6, 3));

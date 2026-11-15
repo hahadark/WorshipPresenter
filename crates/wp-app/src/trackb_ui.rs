@@ -234,7 +234,7 @@ impl App {
         ui.data_mut(|d| d.insert_temp(sel_id, sel));
         if !self.tb.note.is_empty() {
             ui.add_space(4.0);
-            ui.label(rich(self.tb.note.clone(), 12.0, Weight::Regular, p.muted));
+            ui.label(rich(wp_core::i18n::tr_dyn(&self.tb.note), 12.0, Weight::Regular, p.muted));
         }
         if let Some(mut e) = self.tb.song_edit.take() {
             let mut close = false;
@@ -535,7 +535,7 @@ impl App {
                     self.tb.note = err(self.core.lock().save_message_template(&t));
                 }
             });
-            if !self.tb.note.is_empty() { ui.label(egui::RichText::new(&self.tb.note).small().color(p.warn)); }
+            if !self.tb.note.is_empty() { ui.label(egui::RichText::new(wp_core::i18n::tr_dyn(&self.tb.note)).small().color(p.warn)); }
         });
         self.tb.message = open;
     }
@@ -560,7 +560,9 @@ impl App {
         let mut edit: Option<String> = None;
         let mut send = enter;
         let mut add = false;
-        let recent = quick_recent(&self.core.lock().data_dir);
+        // 창이 닫혀 있으면 읽지 않는다. 폴더 경로만 잠금 안에서 꺼내고 파일은 잠금 밖에서 (전에는 매 프레임 잠금을 쥔 채 읽었다)
+        let quick_dir = self.core.lock().data_dir.clone();
+        let recent = if open { quick_recent(&quick_dir) } else { vec![] };
         crate::widgets::float_window(ctx, "quick", wp_core::i18n::tr("즉석 자막"), [420.0, 200.0]).open(&mut open).show(ctx, |ui| {
             ui.label(RichText::new(wp_core::i18n::tr("Enter 송출 · Shift+Enter 줄 바꿈 · Esc 닫기")).small().weak());
             let r = ui.add(egui::TextEdit::multiline(&mut self.tb.quick_text).id(input_id).desired_rows(3).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("예: 예배 후 전 교인 식사가 있습니다")));
@@ -617,7 +619,7 @@ impl App {
                 let n = { let mut c = self.core.lock(); c.add_item(it, at); c.cue.as_ref().map(|q| q.items.len()).unwrap_or(0) };
                 self.sel = Some(at.unwrap_or(n.saturating_sub(1)).min(n.saturating_sub(1)));
                 self.edit = None;
-                quick_remember(&self.core.lock().data_dir, &text);
+                quick_remember(&quick_dir, &text);
                 self.core.lock().notify(wp_core::i18n::tr("고른 순서 다음에 공지 순서로 넣었습니다."), "ok");
             }
         }
@@ -661,6 +663,7 @@ impl App {
             let p = pal();
             let rem = timer["remaining"].as_i64().unwrap_or(0);
             let running = timer["running"] == true;
+            if running { ui.ctx().request_repaint_after(std::time::Duration::from_millis(500)); } // 남은 시간이 보이는 동안만
             let set = timer["duration"].as_i64().unwrap_or(0) > 0;
             // 남은 시간을 크게 (휴리스틱 평가 16번): 넘기면 빨강, 1분 안쪽이면 주황
             ui.horizontal(|ui| {
@@ -869,7 +872,7 @@ impl App {
         self.music_bar(ui);
         if !self.tb.note.is_empty() {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(&self.tb.note).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                ui.label(RichText::new(wp_core::i18n::tr_dyn(&self.tb.note)).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
                 if ui.small_button(wp_core::i18n::tr("닫기")).clicked() { self.tb.note.clear(); }
             });
         }
@@ -1148,11 +1151,21 @@ fn collect_song_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>, 
 /// 즉석 자막 최근 목록 (Electron 은 localStorage 'wc-quick-texts', 이 PC 에만 · 12개)
 const QUICK_MAX: usize = 12;
 fn quick_file(dir: &std::path::Path) -> std::path::PathBuf { dir.join("quick-texts.json") }
+/// 최근 목록을 한 번 읽어 기억해 둔다 (이 파일은 이 프로그램만 쓴다 — 쓸 때 함께 고친다)
+static QUICK_CACHE: once_cell::sync::Lazy<parking_lot::Mutex<Option<(std::path::PathBuf, Vec<String>)>>> = once_cell::sync::Lazy::new(Default::default);
 pub(crate) fn quick_recent(dir: &std::path::Path) -> Vec<String> {
+    if let Some((d, list)) = QUICK_CACHE.lock().as_ref() {
+        if d == dir {
+            return list.clone();
+        }
+    }
     let v: Value = std::fs::read_to_string(quick_file(dir)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null);
-    v.as_array().into_iter().flatten().filter_map(|x| x.as_str()).filter(|x| !x.trim().is_empty()).take(QUICK_MAX).map(String::from).collect()
+    let list: Vec<String> = v.as_array().into_iter().flatten().filter_map(|x| x.as_str()).filter(|x| !x.trim().is_empty()).take(QUICK_MAX).map(String::from).collect();
+    *QUICK_CACHE.lock() = Some((dir.to_path_buf(), list.clone()));
+    list
 }
 fn quick_save(dir: &std::path::Path, list: &[String]) {
+    *QUICK_CACHE.lock() = Some((dir.to_path_buf(), list.to_vec()));
     let _ = std::fs::write(quick_file(dir), serde_json::to_string(list).unwrap_or_default());
 }
 fn quick_remember(dir: &std::path::Path, text: &str) {

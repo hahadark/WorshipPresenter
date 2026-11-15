@@ -93,7 +93,9 @@ pub fn single_instance(data_dir: &std::path::Path) -> (bool, Option<isize>) {
         use windows_sys::Win32::System::Threading::CreateMutexW;
         // 데이터 폴더마다 하나 (점검용 --data 실행은 따로)
         let key: String = data_dir.to_string_lossy().to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
-        let name: Vec<u16> = format!("Local\\WorshipPresenterRs_{}", &key[key.len().saturating_sub(120)..]).encode_utf16().chain(std::iter::once(0)).collect();
+        // 끝 120글자만 (바이트로 자르면 한글 폴더 이름 한가운데가 잘려 켜자마자 꺼진다)
+        let tail: String = { let n = key.chars().count(); key.chars().skip(n.saturating_sub(120)).collect() };
+        let name: Vec<u16> = format!("Local\\WorshipPresenterRs_{tail}").encode_utf16().chain(std::iter::once(0)).collect();
         let h = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
         let exists = GetLastError() == ERROR_ALREADY_EXISTS;
         (exists, Some(h as isize))
@@ -103,6 +105,18 @@ pub fn single_instance(data_dir: &std::path::Path) -> (bool, Option<isize>) {
         let _ = data_dir;
         (false, None)
     }
+}
+
+/// `single_instance` 가 돌려준 핸들을 놓는다 (다시 확인하기 전에 — 쥐고 있으면 앞 프로그램이 꺼져도 이름이 남는다)
+pub fn release_instance(h: Option<isize>) {
+    #[cfg(windows)]
+    if let Some(h) = h.filter(|h| *h != 0) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(h as _);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = h;
 }
 
 /// 이미 떠 있는 창을 앞으로 (창 제목으로 찾기)
@@ -141,5 +155,16 @@ mod tests {
         let (a, _h) = single_instance(&dir);
         let (b, _h2) = single_instance(&dir);
         assert!(!a && b);
+    }
+}
+
+#[cfg(test)]
+mod audit_e_boundary_tests {
+    /// 긴 한글 폴더 이름: 두 번 실행 막기 이름을 만들다 꺼지지 않는다 (전에는 바이트로 잘라 panic)
+    #[test]
+    fn single_instance_with_long_hangul_path() {
+        let dir = std::path::PathBuf::from(format!("C:\\사용자\\{}\\자료-{}", "가나다라마바사아자차카타파하".repeat(6), std::process::id()));
+        let (already, _h) = super::single_instance(&dir);
+        assert!(!already);
     }
 }

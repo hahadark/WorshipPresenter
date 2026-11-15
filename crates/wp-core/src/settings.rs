@@ -28,8 +28,9 @@ pub fn deep_merge_defaults(def: &Value, val: &Value) -> Value {
             }
             Value::Object(out)
         }
-        // 기본값은 묶음(객체)인데 저장된 값이 다른 종류면(손으로 고치다 틀림 등) 기본값을 쓴다 — 그대로 두면 그 설정을 바꿀 때 죽는다
-        (Value::Object(_), _) => def.clone(),
+        // 기본값이 묶음·목록인데 파일에는 다른 모양(글·숫자 등)이 들어 있으면 기본값으로 — 손으로 고치다 망가진 설정에서
+        // d["a"]["b"] = … 같은 자리가 panic 하지 않게 (serde_json 은 목록·글에 열쇠로 쓰면 panic 한다)
+        (Value::Object(_), _) | (Value::Array(_), _) if std::mem::discriminant(def) != std::mem::discriminant(val) => def.clone(),
         _ => val.clone(),
     }
 }
@@ -64,6 +65,72 @@ pub fn normalize_template(t: &Value) -> Value {
     out
 }
 
+enum BgJob {
+    Write(PathBuf, String, std::sync::Arc<BgState>),
+    Sync(std::sync::mpsc::Sender<()>),
+}
+static BG_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// 실패한 뒤 다시 해 보기까지 (ms). 디스크가 찼거나 폴더를 못 쓸 때 1초마다 다시 쓰며 로그를 채우지 않게
+const BG_RETRY_MS: i64 = 10_000;
+/// 백그라운드 저장 상태 (설정 하나마다)
+#[derive(Default)]
+struct BgState {
+    failed: std::sync::atomic::AtomicBool,
+    /// 실패한 뒤 다시 해 볼 시각 (ms)
+    retry_at: std::sync::atomic::AtomicI64,
+    /// (로그에 남긴 마지막 오류, 아직 사용자에게 알리지 않은 오류)
+    err: parking_lot::Mutex<(Option<String>, Option<String>)>,
+}
+/// 설정 파일 쓰기 일꾼 (차례대로 하나씩)
+static BG: Lazy<parking_lot::Mutex<std::sync::mpsc::Sender<BgJob>>> = Lazy::new(|| {
+    let (tx, rx) = std::sync::mpsc::channel::<BgJob>();
+    BG_STARTED.store(true, std::sync::atomic::Ordering::Relaxed);
+    let _ = std::thread::Builder::new().name("settings-save".into()).spawn(move || {
+        for job in rx {
+            match job {
+                BgJob::Write(file, txt, st) => {
+                    let tmp = file.with_extension("json.tmp");
+                    let r = (|| -> std::io::Result<()> {
+                        if let Some(d) = file.parent() {
+                            fs::create_dir_all(d)?;
+                        }
+                        fs::write(&tmp, txt)?;
+                        fs::rename(&tmp, &file)
+                    })();
+                    let mut last = st.err.lock();
+                    if let Err(e) = r {
+                        let msg = e.to_string();
+                        if last.0.as_deref() != Some(msg.as_str()) {
+                            log::error!("설정 저장 실패: {msg} ({})", file.display());
+                            last.0 = Some(msg.clone());
+                            last.1 = Some(msg);
+                        }
+                        st.retry_at.store(crate::util::now_ms() + BG_RETRY_MS, std::sync::atomic::Ordering::Relaxed);
+                        st.failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                    } else if last.0.take().is_some() {
+                        last.1 = None;
+                        log::info!("설정 저장이 다시 됩니다 ({})", file.display());
+                    }
+                }
+                BgJob::Sync(done) => {
+                    let _ = done.send(());
+                }
+            }
+        }
+    });
+    parking_lot::Mutex::new(tx)
+});
+/// 맡겨 둔 저장이 모두 끝날 때까지 (최대 5초)
+fn bg_wait() {
+    if !BG_STARTED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    if BG.lock().send(BgJob::Sync(tx)).is_ok() {
+        let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
+    }
+}
+
 pub struct Settings {
     pub file: PathBuf,
     pub backup: PathBuf,
@@ -71,6 +138,7 @@ pub struct Settings {
     dirty: bool,
     /// 읽을 때 생긴 일 (설정 파일이 깨져 백업본·기본값으로 시작함). 켠 뒤 화면에 알린다
     pub load_note: Option<String>,
+    bg: std::sync::Arc<BgState>,
 }
 
 impl Settings {
@@ -106,6 +174,11 @@ impl Settings {
                 }
                 continue;
             };
+            if !raw.is_object() {
+                // JSON 이기는 하지만 설정 묶음이 아니다 ([1,2,3] · "글") — 읽지 못한 것으로 보고 백업 파일을 본다
+                log::error!("설정 읽기 실패 (모양이 설정이 아님): {}", f.display());
+                continue;
+            }
             let mut d = deep_merge_defaults(&DEFAULTS, &raw);
             let mut sc = DEFAULTS["shortcuts"].clone();
             merge_into(&mut sc, &raw["shortcuts"]);
@@ -138,7 +211,7 @@ impl Settings {
         } else {
             None
         };
-        Self { file, backup, data: data.unwrap_or_else(|| DEFAULTS.clone()), dirty: false, load_note }
+        Self { file, backup, data: data.unwrap_or_else(|| DEFAULTS.clone()), dirty: false, load_note, bg: Default::default() }
     }
 
     pub fn get(&self) -> &Value {
@@ -150,15 +223,45 @@ impl Settings {
         self.dirty = true;
     }
 
-    /// 바뀐 것이 있으면 원자적으로 저장 (임시 파일 → 이름 바꾸기)
+    /// 바뀐 것이 있으면 원자적으로 저장 (임시 파일 → 이름 바꾸기). 백그라운드에 맡긴 저장이 있으면 그것이 끝난 뒤에 돌아온다
     pub fn save_if_dirty(&mut self) -> Result<()> {
-        if !self.dirty {
+        if !self.dirty && !self.bg.failed.load(std::sync::atomic::Ordering::Relaxed) {
+            bg_wait();
             return Ok(());
         }
         self.save_now()
     }
 
+    /// 바뀐 것이 있으면 글로만 바꿔(빠름) 파일 쓰기는 백그라운드 스레드에 맡긴다.
+    /// 조작 화면이 1초마다 부른다 — 파일 쓰기(백신 검사·느린 디스크·원드라이브)가 0.4~0.9초 걸리는 동안
+    /// 코어 잠금을 쥐고 있어 화면과 출력 요청이 멈칫하던 것을 없앤다. 끌 때는 save_if_dirty 가 끝까지 기다린다.
+    pub fn save_bg(&mut self) {
+        if self.bg.failed.load(std::sync::atomic::Ordering::Relaxed) {
+            self.dirty = true; // 지난 백그라운드 저장이 실패했으면 다시 — 다만 10초에 한 번만
+            if crate::util::now_ms() < self.bg.retry_at.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+            self.bg.failed.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+        if !self.dirty {
+            return;
+        }
+        let Ok(txt) = serde_json::to_string_pretty(&self.data) else { return };
+        if BG.lock().send(BgJob::Write(self.file.clone(), txt, self.bg.clone())).is_ok() {
+            self.dirty = false;
+        } else if let Err(e) = self.save_now() {
+            log::error!("설정 저장 실패: {e}");
+        }
+    }
+
+    /// 백그라운드 저장이 실패했으면 그 오류 글 (같은 오류가 이어지는 동안 한 번만) — 조작 화면 알림용
+    pub fn take_save_error(&self) -> Option<String> {
+        self.bg.err.lock().1.take()
+    }
+
     pub fn save_now(&mut self) -> Result<()> {
+        bg_wait(); // 같은 임시 파일을 쓰므로 맡겨 둔 저장이 끝난 뒤에
+        self.bg.failed.store(false, std::sync::atomic::Ordering::Relaxed);
         if let Some(d) = self.file.parent() {
             fs::create_dir_all(d)?;
         }
@@ -247,5 +350,62 @@ mod broken_tests {
         });
         assert!(s.get()["templates"][0]["animation"].is_object());
         let _ = fs::remove_dir_all(d);
+    }
+}
+
+#[cfg(test)]
+mod bg_save_tests {
+    use super::*;
+
+    /// 백그라운드 저장: 맡긴 뒤 save_if_dirty 가 끝까지 기다리고, 파일에 바뀐 값이 들어 있다
+    #[test]
+    fn save_bg_writes_file_and_flush_waits() {
+        let dir = std::env::temp_dir().join(format!("wp-settings-bg-{}", crate::util::short_id("t")));
+        fs::create_dir_all(&dir).unwrap();
+        let mut st = Settings::load(&dir);
+        for i in 0..20 {
+            st.update(|d| d["auditE"] = json!(i));
+            st.save_bg();
+        }
+        st.save_if_dirty().unwrap(); // 바뀐 것은 없지만 맡긴 저장이 끝날 때까지 기다린다
+        let v: Value = serde_json::from_str(&fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(v["auditE"], json!(19));
+        assert!(!dir.join("settings.json.tmp").exists());
+        // 바로 저장(save_now)과 섞여도 마지막 값이 남는다
+        st.update(|d| d["auditE"] = json!(100));
+        st.save_bg();
+        st.update(|d| d["auditE"] = json!(101));
+        st.save_now().unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(v["auditE"], json!(101));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 쓸 수 없는 자리(폴더 자리에 파일이 있음): 오류는 한 번만 알리고, 바로 되풀이하지 않으며, 끌 때 저장은 오류를 돌려준다
+    #[test]
+    fn save_bg_failure_is_reported_once_and_backs_off() {
+        let dir = std::env::temp_dir().join(format!("wp-settings-bgfail-{}", crate::util::short_id("t")));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("막힘"), b"x").unwrap();
+        let mut st = Settings::load(&dir);
+        st.file = dir.join("막힘").join("settings.json");
+        st.update(|d| d["auditE"] = json!(1));
+        st.save_bg();
+        bg_wait();
+        let e = st.take_save_error();
+        assert!(e.is_some(), "실패하면 알릴 오류 글이 있어야 함");
+        assert!(st.take_save_error().is_none(), "같은 오류는 한 번만");
+        // 바로 다시 부르면 쓰지 않고(10초 뒤에 다시) 바뀐 것은 그대로 남아 있다
+        st.save_bg();
+        bg_wait();
+        assert!(st.take_save_error().is_none());
+        assert!(st.dirty);
+        assert!(st.save_if_dirty().is_err(), "끌 때 저장은 실패를 돌려준다");
+        // 자리가 풀리면 다시 저장된다
+        st.file = dir.join("settings.json");
+        st.save_now().unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(v["auditE"], json!(1));
+        fs::remove_dir_all(&dir).ok();
     }
 }

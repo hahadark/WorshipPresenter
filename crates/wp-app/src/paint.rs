@@ -87,6 +87,36 @@ fn color(v: &Value, d: Color32) -> Color32 {
 
 /// 출력 화면 주소(/lib/file?p=… · /media/… · /shared/…) → egui 가 읽을 file:// 주소
 pub fn image_uri(c: &Ctx, url: &str) -> Option<String> {
+    image_uri_px(c, url, crate::imgcache::LARGE as f32)
+}
+
+/// 그릴 크기(물리 픽셀의 긴 변)를 알 때: 작은 그림(썸네일)은 줄여서 읽는다 (imgcache)
+pub fn image_uri_px(c: &Ctx, url: &str, need_px: f32) -> Option<String> {
+    let path = image_path(c, url)?;
+    Some(crate::imgcache::uri_for(&path, need_px))
+}
+
+/// 주소 → 파일 경로. 파일이 있는지 확인은 2초 동안 기억한다 (슬라이드 수백 장 격자에서 프레임마다 디스크를 묻지 않게)
+fn image_path(c: &Ctx, url: &str) -> Option<String> {
+    type Memo = std::collections::HashMap<String, (Option<String>, std::time::Instant)>;
+    static MEMO: once_cell::sync::Lazy<parking_lot::Mutex<Memo>> = once_cell::sync::Lazy::new(Default::default);
+    let key = format!("{}|{url}", c.data_dir.display());
+    if let Some((v, at)) = MEMO.lock().get(&key) {
+        // 없던 파일은 더 자주 다시 본다 (찬송가 그림이 만들어지는 중일 수 있다)
+        if at.elapsed().as_millis() < if v.is_some() { 2000 } else { 400 } {
+            return v.clone();
+        }
+    }
+    let v = image_path_now(c, url).map(|p| p.to_string_lossy().to_string());
+    let mut m = MEMO.lock();
+    if m.len() > 4000 {
+        m.clear();
+    }
+    m.insert(key, (v.clone(), std::time::Instant::now()));
+    v
+}
+
+fn image_path_now(c: &Ctx, url: &str) -> Option<PathBuf> {
     let path: PathBuf = if let Some(q) = url.strip_prefix("/lib/file?p=") {
         PathBuf::from(percent_encoding::percent_decode_str(q).decode_utf8().ok()?.to_string())
     } else if let Some(f) = url.strip_prefix("/media/") {
@@ -107,7 +137,7 @@ pub fn image_uri(c: &Ctx, url: &str) -> Option<String> {
     if !path.is_file() {
         return None;
     }
-    Some(format!("file:///{}", path.to_string_lossy().replace('\\', "/").trim_start_matches('/')))
+    Some(path)
 }
 
 const IMG_OPTS: egui::TextureOptions = egui::TextureOptions { magnification: egui::TextureFilter::Linear, minification: egui::TextureFilter::Linear, wrap_mode: egui::TextureWrapMode::ClampToEdge, mipmap_mode: Some(egui::TextureFilter::Linear) };
@@ -118,9 +148,11 @@ pub fn draw_image_pub(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool
 }
 
 fn draw_image(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool) -> bool {
-    let Some(uri) = image_uri(c, url) else { return false };
+    // 그릴 크기에 맞는 그림(썸네일은 512, 미리보기는 1920 까지)을 읽는다 — 메모리
+    let need_px = rect.width().max(rect.height()) * ui.ctx().pixels_per_point();
+    let Some(uri) = image_uri_px(c, url, need_px) else { return false };
     // 작게 줄인 그림도 거칠지 않게 (밉맵) — 브라우저 축소와 비슷하게
-    let img = egui::Image::new(uri).texture_options(IMG_OPTS);
+    let img = egui::Image::new(uri.clone()).texture_options(IMG_OPTS);
     let img = if cover { img.fit_to_exact_size(rect.size()) } else { img.fit_to_exact_size(rect.size()).maintain_aspect_ratio(true) };
     // 그림 비율 맞추기: 모양을 알면 가운데에 맞춰 넣는다
     match img.load_for_size(ui.ctx(), rect.size()) {
@@ -137,16 +169,19 @@ fn draw_image(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool) -> boo
                 } else {
                     Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))
                 };
-                egui::Image::new(image_uri(c, url).unwrap()).texture_options(IMG_OPTS).uv(uv).paint_at(ui, r);
+                egui::Image::new(uri).texture_options(IMG_OPTS).uv(uv).paint_at(ui, r);
             } else {
                 img.paint_at(ui, rect);
             }
             true
         }
         Err(e) => {
-            log::warn!("그림을 못 읽음 {url}: {e}");
-            #[cfg(debug_assertions)]
-            eprintln!("그림을 못 읽음 {url}: {e}");
+            // 같은 그림은 한 번만 로그에 (보이는 동안 프레임마다 쓰면 로그 파일이 금세 커진다)
+            static SEEN: once_cell::sync::Lazy<parking_lot::Mutex<std::collections::HashSet<String>>> = once_cell::sync::Lazy::new(Default::default);
+            let mut seen = SEEN.lock();
+            if seen.len() < 500 && seen.insert(url.to_string()) {
+                log::warn!("그림을 못 읽음 {url}: {e}");
+            }
             false
         }
     }
@@ -219,7 +254,7 @@ fn gradient_texture(ctx: &egui::Context, css: &str, size_t: Vec2, px: Vec2) -> O
     if let Some(t) = cache.get(&key) {
         return Some(t.clone());
     }
-    if cache.len() > 48 {
+    if cache.len() > 24 {
         cache.clear();
     }
     let px = crate::css_bg::rasterize(&layers, size_t.x, size_t.y, pw as usize, ph as usize);
@@ -439,6 +474,7 @@ fn is_video(u: &str) -> bool {
 /// 슬라이드쇼 카운트다운 (countdownHtml): 오른쪽 아래 둥근 검은 상자
 fn paint_countdown(p: &egui::Painter, rect: Rect, t: &Value, sc: f32, cd: &serde_json::Map<String, Value>) {
     let k = crate::slide_layout::countdown_scale(t) * sc;
+    p.ctx().request_repaint_after(std::time::Duration::from_millis(500)); // 카운트다운이 보이는 동안만 초마다
     let target = cd.get("target").and_then(|x| x.as_str()).unwrap_or("");
     let now = wp_core::util::now_ms() + wp_core::localtime::local_offset_ms();
     let day_ms = now.rem_euclid(86_400_000);

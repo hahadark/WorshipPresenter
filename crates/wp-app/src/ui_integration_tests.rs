@@ -30,7 +30,7 @@ impl Harness {
         let mut h = Self {
             ctx: egui::Context::default(),
             ui,
-            core: std::sync::Arc::new(parking_lot::Mutex::new(core)),
+            core: std::sync::Arc::new(wp_core::lockcheck::Mutex::new(core)),
             dir,
             time: 0.0,
         };

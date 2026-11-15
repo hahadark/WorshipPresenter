@@ -107,7 +107,7 @@ mod sse_tests {
         std::fs::write(dir.join("bible.db"), b"").unwrap();
         let mut c = Core::open(dir.clone(), dir, None).unwrap();
         c.port = 47610 + (rand::random::<u16>() % 300);
-        let core = Arc::new(parking_lot::Mutex::new(c));
+        let core = Arc::new(crate::lockcheck::Mutex::new(c));
         let port = crate::server::serve(core.clone()).await.unwrap();
         let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         s.write_all(format!("GET /events?client=main HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: text/event-stream\r\n\r\n").as_bytes()).await.unwrap();

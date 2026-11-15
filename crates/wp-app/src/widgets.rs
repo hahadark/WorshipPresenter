@@ -424,7 +424,14 @@ pub fn segmented_with<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items:
         if on {
             sel_rect = Some((r, corner));
         }
-        let g = if on { g_bold } else { g_reg };
+        let mut g = if on { g_bold } else { g_reg };
+        // 칸보다 글이 넓으면(영어 화면의 긴 이름) 잘리지 않게 글자를 줄인다
+        let room = (w - 8.0).max(8.0);
+        if g.size().x > room {
+            let size = (st.font * room / g.size().x).max(8.0);
+            g = layout(ui, items[i].1, theme::font(size, if on { Weight::SemiBold } else { Weight::Regular }));
+        }
+        let pt = ui.painter();
         pt.galley(r.center() - g.size() / 2.0, g, p.text);
     }
     // 고른 칸 테두리가 옆 칸 위로 오게 (z-index: 1)

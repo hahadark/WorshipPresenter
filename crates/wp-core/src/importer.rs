@@ -130,7 +130,7 @@ fn parse_json(text: &str, report: &mut Value) -> Result<Parsed, String> {
                                 out.verses.push(raw(bv.clone(), Some(bi), c.clone(), v, &tx));
                             }
                         } else {
-                            for (vk, t) in chap.as_object().unwrap() {
+                            for (vk, t) in chap.as_object().into_iter().flatten() { // 장이 글·숫자인 깨진 파일도 꺼지지 않게
                                 out.verses.push(raw(bv.clone(), Some(bi), json!(ci + 1), json!(vk.parse::<i64>().unwrap_or(-1)), t));
                             }
                         }
@@ -359,11 +359,12 @@ fn validate(p: &Parsed, report: &mut Value) -> Data {
     for v in &verses { st.entry(v.book).or_default().entry(v.chapter).or_default().insert(v.verse); }
     for b in BOOKS.iter() {
         let Some(m) = st.get(&b.id) else { add_issue(&mut report["warnings"], format!("책 없음: {}", b.name)); continue };
-        let max_ch = *m.keys().max().unwrap();
+        // 파일에 터무니없이 큰 장·절 번호가 있어도 점검이 끝없이 돌지 않게 상한
+        let max_ch = m.keys().max().copied().unwrap_or(0).min(b.chapters.max(1) + 50);
         if max_ch != b.chapters { add_issue(&mut report["warnings"], format!("{}: {}장 (표준 {}장)", b.name, max_ch, b.chapters)); }
         for c in 1..=max_ch {
             let Some(set) = m.get(&c) else { add_issue(&mut report["errors"], format!("장 누락: {} {}장", b.name, c)); continue };
-            let max_v = *set.iter().max().unwrap();
+            let max_v = set.iter().max().copied().unwrap_or(0).min(400);
             let missing: Vec<i64> = (1..=max_v).filter(|v| !set.contains(v)).collect();
             if !missing.is_empty() {
                 let list = missing.iter().take(5).map(|x| x.to_string()).collect::<Vec<_>>().join(",");
@@ -546,5 +547,40 @@ mod db_tests {
         assert_eq!(st.search_text("tst", "사랑하사", 10)["results"].as_array().unwrap().len(), 1);
         replace_version(&st.db, &json!({ "id": "tst", "name": "시험2", "source": "s", "license": "l" }), &d).unwrap();
         assert_eq!(st.list_versions().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod audit_e_broken_input_tests {
+    use super::*;
+
+    /// 깨진·이상한 번역본 파일을 넣어도 꺼지지 않고 오류 보고만 한다
+    #[test]
+    fn broken_files_never_panic() {
+        let dir = std::env::temp_dir().join(format!("wp-imp-broken-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cases: Vec<(&str, Vec<u8>)> = vec![
+            ("empty.json", vec![]),
+            ("null.json", b"null".to_vec()),
+            ("chap-string.json", r#"[{"book":"창","chapters":["글자", 3, null, {"1":"태초에"}, [["x"]]]}]"#.as_bytes().to_vec()),
+            ("verses-odd.json", r#"{"verses":[1,"a",null,{"book":999,"chapter":"가","verse":-5,"text":123},{"book":"창","chapter":99999999999999999999,"verse":1,"text":"x"}]}"#.as_bytes().to_vec()),
+            ("big-numbers.json", r#"{"verses":[{"book":"창","chapter":900000000,"verse":900000000,"text":"큰 번호"}]}"#.as_bytes().to_vec()),
+            ("one-col.csv", "책\n창\n\n,,,\n".as_bytes().to_vec()),
+            ("quotes.csv", "책,장,절,본문\n\"창,1,1,\"끝나지 않는 따옴표\n".as_bytes().to_vec()),
+            ("broken.xml", "<XMLBIBLE><BIBLEBOOK bnumber=\"가\"><CHAPTER cnumber=\"\"><VERS vnumber=\"x\">글</VERS>".as_bytes().to_vec()),
+            ("bom-only.txt", vec![0xEF, 0xBB, 0xBF]),
+            ("utf16-odd.txt", vec![0xFF, 0xFE, 0x00]),
+            ("binary.txt", (0u8..=255).cycle().take(5000).collect()),
+            ("emoji.txt", "창 1:1 🙂🙏 태초에\n[제 가 권]\n<표제>\n요 3:16 하나님이 세상을\n".as_bytes().to_vec()),
+        ];
+        for (name, body) in cases {
+            let p = dir.join(name);
+            std::fs::write(&p, &body).unwrap();
+            let a = analyze_file(&p);
+            assert!(a.report.is_object(), "{name}");
+        }
+        let none = analyze_file(&dir.join("없는 파일.json"));
+        assert!(none.data.is_none());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

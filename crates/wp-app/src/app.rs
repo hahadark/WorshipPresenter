@@ -197,7 +197,7 @@ impl App {
             cue_id: c.cue.as_ref().map(|x| x.id.clone()).unwrap_or_default(),
             items: c.cue.as_ref().map(|x| x.items.clone()).unwrap_or_default(),
             cues: c.cues.clone(),
-            templates: c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect(),
+            templates: c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect(),
             preview_main: c.template_for_deck("main", c.pres.preview.as_ref()),
             // 'OBS 전체'(obsFull) 면 OBS 화면도 예배당 템플릿으로 (core.output_payload 와 같게)
             preview_overlay: c.template_for_deck(if c.obs_full { "main" } else { "overlay" }, c.pres.preview.as_ref()),
@@ -764,7 +764,7 @@ impl App {
         // 고를 거리: 번역본 · 템플릿
         let mut versions = vec![(String::new(), tr("현재 번역본"))];
         versions.extend(self.versions.iter().map(|v| (v.id.clone(), v.name.clone())));
-        let tpls: Vec<(String, String)> = self.core.lock().settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect();
+        let tpls: Vec<(String, String)> = self.core.lock().settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect();
         // 장절 확인 글 ('✓ 시편 23:1-6 (6절)') — 장절·번역본이 바뀔 때만 다시 찾는다
         let ref_msg = if ty == "bible" {
             let (r, v) = self.edit.as_ref().map(|(_, e)| (e["ref"].as_str().unwrap_or("").to_string(), e["versionId"].as_str().unwrap_or("").to_string())).unwrap_or_default();
@@ -1082,7 +1082,11 @@ impl App {
             crate::ctx_ui::pane_menu(self, &mresp, is_live, acts);
             if deck.is_none() {
                 let ph = if is_live { tr("송출 중인 본문 없음") } else { tr("검색한 본문이 여기에 표시됩니다") };
-                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, ph, theme::font(14.0, Weight::Regular), p.muted2);
+                // 화면 상자가 작으면(창이 작거나 미리보기·LIVE 를 위아래로 둘 때) 글이 상자 밖으로 넘쳤다 — 폭에 맞춰 줄인다
+                let g = ui.painter().layout_no_wrap(ph.clone(), theme::font(14.0, Weight::Regular), p.muted2);
+                let room = (rect.width() - 12.0).max(10.0);
+                let g = if g.size().x > room { ui.painter().layout_no_wrap(ph, theme::font((14.0 * room / g.size().x).max(7.0), Weight::Regular), p.muted2) } else { g };
+                ui.painter().galley(rect.center() - g.size() / 2.0, g, p.muted2);
             }
             let border = if is_live { p.live } else { p.pv };
             if hidden {
@@ -1534,6 +1538,11 @@ impl App {
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         wp_core::firstrun::frame_tick(); // 켜는 시간 로그 (처음 두 프레임만)
+        // 글꼴 아틀라스(글자 그림 모음)는 폭이 '가장 큰 텍스처 변'이고 높이가 두 배씩 자란다.
+        // 그래픽 카드 한계(8192)를 그대로 쓰면 슬라이드의 큰 한글 글자가 쌓일 때마다 수십 MB 씩 늘어
+        // 8192×8192(256MB, 화면 쪽 사본까지 두 배)까지 간다. 4096 으로 묶으면 가득 찼을 때 egui 가 비우고 다시 채운다.
+        static SIDE: once_cell::sync::Lazy<usize> = once_cell::sync::Lazy::new(|| std::env::var("WP_MAX_TEX").ok().and_then(|v| v.parse().ok()).unwrap_or(4096usize).clamp(1024, 16384));
+        raw.max_texture_side = Some(raw.max_texture_side.unwrap_or(*SIDE).min(*SIDE));
         crate::system_ui::inject(ctx, raw); // [트랙 B] 점검용 --draw-test (켜지 않으면 아무것도 안 함)
         // 점검용 --hover X,Y : 그 자리에 마우스가 있는 것처럼 (마우스 올림 단추 스크린샷용, 매 프레임)
         static HOVER: once_cell::sync::Lazy<Option<egui::Pos2>> = once_cell::sync::Lazy::new(|| {
@@ -1559,10 +1568,49 @@ impl eframe::App for App {
             if l.is_none_or(|t| t.elapsed().as_secs_f32() > 2.0) {
                 *l = Some(Instant::now());
                 let n = FRAMES.swap(0, std::sync::atomic::Ordering::Relaxed);
-                log::info!("다시 그리기 2초 {n}번, 부른 자리: {:?}", ui.ctx().repaint_causes());
+                let (sum, max) = (FRAME_US_SUM.swap(0, std::sync::atomic::Ordering::Relaxed), FRAME_US_MAX.swap(0, std::sync::atomic::Ordering::Relaxed));
+                let causes: Vec<String> = ui.ctx().repaint_causes().iter().take(6).map(|c| c.to_string()).collect();
+                log::info!("다시 그리기 2초 {n}번, 프레임 평균 {:.1}ms · 최대 {:.1}ms, 부른 자리: {causes:?}", sum as f64 / 1000.0 / n.max(1) as f64, max as f64 / 1000.0);
             }
         }
+        static FRAME_US_SUM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        static FRAME_US_MAX: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let frame_t0 = Instant::now();
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.ui_body(ui)));
+        let us = frame_t0.elapsed().as_micros() as u64;
+        FRAME_US_SUM.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
+        FRAME_US_MAX.fetch_max(us, std::sync::atomic::Ordering::Relaxed);
+        // 한 프레임이 0.25초를 넘으면(조작 화면이 끊김) 로그에 남긴다 — 예배 중 '멈칫' 원인 찾기
+        if us > 250_000 {
+            log::warn!("조작 화면 한 프레임이 {:.0}ms 걸림", us as f64 / 1000.0);
+        }
+        crate::imgcache::end_frame(ui.ctx()); // 그림 텍스처 상한 (오래 안 쓴 것 버리기)
+        {
+            // 점검용 WP_DEBUG_MEM: 처음 몇 프레임과 그 뒤 10초마다 메모리
+            static F: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            static LAST: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
+            let f = F.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if matches!(f, 0 | 1 | 5 | 30) {
+                wp_core::util::mem_log(&format!("프레임 {f}"));
+            }
+            let mut l = LAST.lock();
+            if l.is_none_or(|t| t.elapsed().as_secs() >= 10) {
+                *l = Some(Instant::now());
+                let per = |v: Vec<(String, usize)>| v.into_iter().filter(|x| x.1 >= 1 << 20).map(|x| format!("{}={:.0}MB", x.0.rsplit("::").next().unwrap_or(""), x.1 as f64 / 1048576.0)).collect::<Vec<_>>().join(" ");
+                let lb: Vec<(String, usize)> = ui.ctx().loaders().bytes.lock().iter().map(|b| (b.id().to_string(), b.byte_size())).collect();
+                let li: Vec<(String, usize)> = ui.ctx().loaders().image.lock().iter().map(|b| (b.id().to_string(), b.byte_size())).collect();
+                let lt: Vec<(String, usize)> = ui.ctx().loaders().texture.lock().iter().map(|b| (b.id().to_string(), b.byte_size())).collect();
+                let loaders = lb.iter().chain(li.iter()).chain(lt.iter()).map(|x| x.1).sum::<usize>();
+                let loader_detail = format!("파일[{}] 풀어낸 그림[{}] 텍스처[{}]", per(lb), per(li), per(lt));
+                let tm = ui.ctx().tex_manager();
+                let tm = tm.read();
+                let mut all: Vec<(usize, String)> = tm.allocated().map(|(_, m)| (m.bytes_used(), format!("{} {}x{}", m.name.chars().rev().take(28).collect::<String>().chars().rev().collect::<String>(), m.size[0], m.size[1]))).collect();
+                all.sort_by_key(|x| std::cmp::Reverse(x.0));
+                let total: usize = all.iter().map(|x| x.0).sum();
+                let (n, lru_mb) = crate::imgcache::stats();
+                wp_core::util::mem_log(&format!("프레임 {f} (10초마다) {loader_detail} · 그림 읽기 {:.0}MB · 텍스처 {}개 {:.0}MB · LRU {n}개 {lru_mb:.0}MB · 큰 것 {:?} · {}", loaders as f64 / 1048576.0, all.len(), total as f64 / 1048576.0, all.iter().take(4).map(|x| format!("{}={:.0}MB", x.1, x.0 as f64 / 1048576.0)).collect::<Vec<_>>(), wp_core::util::mem_regions_summary()));
+            }
+        }
         if r.is_err() {
             static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1577,6 +1625,24 @@ impl eframe::App for App {
 impl App {
     fn ui_body(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        // 점검용 --panic-test ui|relock : 60번째 프레임 뒤에 한 번, 일부러 오류를 낸다.
+        // (logs\ 에 남는지 · 조작 화면이 계속 도는지 · 예배당 출력이 유지되는지 확인)
+        {
+            static KIND: once_cell::sync::Lazy<Option<String>> = once_cell::sync::Lazy::new(|| {
+                let a: Vec<String> = std::env::args().collect();
+                a.iter().position(|x| x == "--panic-test").and_then(|i| a.get(i + 1).cloned())
+            });
+            static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if let Some(k) = KIND.as_deref() {
+                if ctx.cumulative_pass_nr() > 60 && !DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    if k == "relock" {
+                        let _a = self.core.lock();
+                        let _b = self.core.lock(); // 재진입: 멈추지 않고 panic 이어야 한다
+                    }
+                    panic!("점검용: 일부러 낸 오류 (--panic-test {k})");
+                }
+            }
+        }
         let mut acts = vec![];
         let typing = ctx.egui_wants_keyboard_input();
         self.shortcuts(&ctx, &mut acts, typing);
@@ -1633,11 +1699,14 @@ impl App {
             ctx.request_repaint();
         }
         if self.last_flush.elapsed().as_secs_f32() > 1.0 {
-            self.core.lock().flush();
+            self.core.lock().flush_bg(); // 파일 쓰기는 백그라운드 (잠금을 쥔 채 쓰면 화면이 멈칫한다)
             self.last_flush = Instant::now();
         }
-        // 알림이 사라질 때·출력 창 상태를 위해 가끔 다시 그림
-        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        // 아무 일도 없으면 2초에 한 번만 다시 그린다 (출력 창 상태 확인 · 설정 저장 같은 느린 점검용).
+        // 알림이 떠 있으면 사라질 때에 맞춰 0.5초마다. 시계·타이머·카운트다운은 그것을 그리는 자리에서 따로 1초마다 부른다.
+        // 코어가 바뀌면(Ev) main.rs 의 스레드가 바로 다시 그리게 하므로 반응은 느려지지 않는다.
+        let toast_alive = s.toast.as_ref().is_some_and(|t| wp_core::util::now_ms() - t.2 < 12_500);
+        ctx.request_repaint_after(std::time::Duration::from_millis(if toast_alive { 500 } else { 2000 }));
     }
 
 }
@@ -1710,6 +1779,9 @@ mod dbl_tests;
 #[cfg(test)]
 #[path = "auditd_tests.rs"]
 mod auditd_tests;
+#[cfg(test)]
+#[path = "audite_tests.rs"]
+mod audite_tests;
 #[cfg(test)]
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)

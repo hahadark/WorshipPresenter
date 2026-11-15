@@ -67,7 +67,8 @@ fn pct_decode(s: &str) -> String {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) { out.push(v); i += 3; continue; }
+            // 글자 경계가 아닐 수 있다 ("100%가이드.xhtml") — 글이 아니라 바이트로 본다
+            if let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) { out.push(v); i += 3; continue; }
         }
         out.push(b[i]);
         i += 1;
@@ -188,7 +189,7 @@ fn find_marks(t: &Text) -> Vec<Mark> {
         if REF_BEFORE.is_match(before) { continue; }
         if AFTER_REF.is_match(t.slice(end, end + 4)) { continue; }
         let n = |i: usize| m.get(i).and_then(|x| x.as_str().parse::<i64>().ok());
-        let (sc, sv) = (n(2).unwrap(), n(3).unwrap());
+        let (Some(sc), Some(sv)) = (n(2), n(3)) else { continue }; // 숫자가 너무 길면(넘침) 장절이 아니다
         let (mut ec, mut ev) = (sc, sv);
         match (n(4), n(5)) { (Some(a), Some(b)) => { ec = a; ev = b; } (Some(a), None) => ev = a, _ => {} }
         if sv < 1 || (ev < sv && ec == sc) || ec < sc { continue; }
@@ -524,5 +525,16 @@ mod cmp {
         assert_eq!(serde_json::json!(books), v["books"]);
         assert_eq!(a.entries[0].title, v["titles"][0][0].as_str().unwrap());
         assert_eq!(a.entries[0].text, v["titles"][0][1].as_str().unwrap());
+    }
+}
+
+#[cfg(test)]
+mod audit_e_boundary_tests {
+    /// % 뒤에 한글이 와도 꺼지지 않는다 (전에는 글 한가운데를 잘라 panic)
+    #[test]
+    fn pct_decode_survives_hangul_after_percent() {
+        assert_eq!(super::pct_decode("100%가이드.xhtml"), "100%가이드.xhtml");
+        assert_eq!(super::pct_decode("a%20b%ED%95%9C"), "a b한");
+        assert_eq!(super::pct_decode("끝%"), "끝%");
     }
 }

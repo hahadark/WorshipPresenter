@@ -234,7 +234,7 @@ fn recent_failure(stamp: &str) -> Option<String> {
 /// PowerPoint 로 내보내기는 한 번에 하나씩 — 스크립트 끝의 '열린 문서가 없으면 Quit' 이 옆에서 막 연 PowerPoint 를 꺼 버리지 않게
 static PP_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 /// 코어 (백그라운드 일이 끝나면 다시 잡으려고). main 에서 install 로 넣는다
-static SHARED: once_cell::sync::OnceCell<std::sync::Weak<parking_lot::Mutex<Core>>> = once_cell::sync::OnceCell::new();
+static SHARED: once_cell::sync::OnceCell<std::sync::Weak<crate::lockcheck::Mutex<Core>>> = once_cell::sync::OnceCell::new();
 
 pub fn install(shared: &crate::core::Shared) {
     let _ = SHARED.set(std::sync::Arc::downgrade(shared));
@@ -1536,7 +1536,7 @@ mod async_build_tests {
             json!({ "type": "hymn", "title": "1장 가", "number": 1, "file": good.to_string_lossy() }),
             json!({ "type": "hymn", "title": "2장 나", "number": 2, "file": bad.to_string_lossy() }),
         ], memo: String::new(), pinned: false, template: false });
-        let shared: crate::core::Shared = std::sync::Arc::new(parking_lot::Mutex::new(c));
+        let shared: crate::core::Shared = std::sync::Arc::new(crate::lockcheck::Mutex::new(c));
         install(&shared);
 
         // ① 두 번 눌러 송출 → 아직 못 나감, 만든 뒤 저절로 나감
