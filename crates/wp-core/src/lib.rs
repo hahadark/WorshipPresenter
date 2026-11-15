@@ -9,6 +9,7 @@ pub mod hymns; // [트랙 A]
 pub mod pps; // [트랙 A]
 pub mod pptx; // [트랙 A]
 pub mod pptsplit; // [트랙 A]
+pub mod splitedit; // [갈래 C] PPT 나누기 창: 손으로 고치기 (cue.js openSplit)
 pub mod pptsheets; // [트랙 A] 모아보기 그림
 pub mod sermonpoints; // [트랙 A] 설교 포인트
 pub mod preservice; // [트랙 A] 예배 전 화면
@@ -25,6 +26,7 @@ pub mod slides;
 pub mod textnorm;
 pub mod util;
 pub mod cues; // [트랙 B]
+pub mod cuemgr; // [갈래 C] 큐시트 관리 창 (목록·찾기·정렬·새로·복제·휴지통·내보내기)
 pub mod library; // [트랙 B]
 pub mod localtime; // [트랙 B]
 pub mod schedule; // [트랙 B]

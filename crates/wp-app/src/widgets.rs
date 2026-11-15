@@ -681,6 +681,91 @@ pub fn take_copied(ctx: &egui::Context) -> Option<String> {
     ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new("wp-copied")))
 }
 
+/// 한 번·두 번 클릭 판정 결과 (`click2`)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Click {
+    None,
+    /// 첫 클릭 (또는 두 번 클릭 간격을 넘긴 클릭)
+    Single,
+    /// 같은 항목을 0.5초 안에 다시 누름 — 한 번 클릭 동작은 다시 하지 않는다
+    Double,
+}
+
+/// 두 번 클릭으로 치는 간격 (윈도우 기본값 500ms. egui 기본 0.3초는 천천히 누르는 사람에게 짧다)
+pub const DBL_SECS: f64 = 0.5;
+/// 두 번째 클릭이 첫 클릭 자리에서 벗어나도 되는 거리
+const DBL_DIST: f32 = 10.0;
+
+#[derive(Clone, Copy)]
+struct LastClick {
+    key: egui::Id,
+    t: f64,
+    pos: Pos2,
+    /// 두 번 클릭으로 쓴 프레임 (0 = 아직 안 씀)
+    used: u64,
+}
+
+/// 항목 키로 하는 한 번·두 번 클릭 판정. egui 의 `double_clicked()` 대신 쓴다.
+///
+/// egui 는 두 번째 클릭이 같은 위젯에 떨어져야 두 번 클릭으로 친다. 첫 클릭으로 화면이 바뀌면
+/// (편집칸이 열려 목록이 밀림 · 바로 송출로 다시 배치 · 스크롤 따라가기) 두 번째 클릭이 다른 줄에 떨어져
+/// "두 번 눌러도 안 켜진다". 여기서는 '첫 클릭 때 누른 항목(key)' 을 기억해 두고, 0.5초 안에 거의 같은 자리를
+/// 다시 누르면 그 항목이 어디로 밀렸든 그 항목의 두 번 클릭으로 친다. 그때 그 자리에 온 다른 줄은 클릭을 받지 않는다.
+///
+/// - `Single`: 한 번 클릭 동작을 한다 (고르기·미리보기)
+/// - `Double`: 두 번 클릭 동작만 한다 (송출·넣기). 한 번 클릭 동작이 또 실행되지 않으므로 넣기가 두 번 되지 않는다
+///
+/// key 는 화면 전체에서 겹치지 않게 (`("cue-row", id)` 처럼 자리 이름과 항목 키).
+pub fn click2(ui: &Ui, key: impl std::hash::Hash + std::fmt::Debug, resp: &Response) -> Click {
+    let ctx = ui.ctx();
+    let key = egui::Id::new(key);
+    let sid = egui::Id::new("wp-click2");
+    let (now, any, pos) = ctx.input(|i| (i.time, i.pointer.primary_clicked(), i.pointer.interact_pos()));
+    if !any {
+        return Click::None;
+    }
+    let frame = ctx.cumulative_pass_nr() + 1;
+    let last: Option<LastClick> = ctx.data(|d| d.get_temp(sid));
+    if let (Some(l), Some(p)) = (last, pos) {
+        if l.used == frame {
+            return Click::None; // 이번 클릭은 이미 다른 줄의 두 번 클릭으로 썼다
+        }
+        if l.used == 0 && now - l.t <= DBL_SECS && p.distance(l.pos) <= DBL_DIST {
+            if l.key != key {
+                return Click::None; // 첫 클릭 항목의 두 번 클릭이다 (밀려서 이 자리에 온 줄은 받지 않음)
+            }
+            // 제자리면 실제로 클릭을 받았어야 하고(위에 뜬 단추·창이 받았으면 아님), 밀려났으면 그대로 인정
+            if resp.clicked() || !resp.rect.contains(p) {
+                ctx.data_mut(|d| d.insert_temp(sid, LastClick { used: frame, ..l }));
+                return Click::Double;
+            }
+            return Click::None;
+        }
+    }
+    if resp.clicked() {
+        if let Some(p) = pos {
+            ctx.data_mut(|d| d.insert_temp(sid, LastClick { key, t: now, pos: p, used: 0 }));
+        }
+        return Click::Single;
+    }
+    Click::None
+}
+
+/// 합성 입력 시험용: 방금 그린 확인 단추(confirm-first·confirm-yes) 자리를 다른 이름으로도 남긴다.
+/// 한 화면에 확인 단추가 둘 이상일 때 어느 것인지 가려 누르기 위해서다 (시험 빌드가 아니면 아무것도 안 함)
+#[allow(unused_variables)]
+pub fn mark_confirm(name: &str) {
+    #[cfg(test)]
+    HOVER_SEEN.with(|m| {
+        let mut m = m.borrow_mut();
+        for k in ["first", "yes"] {
+            if let Some(r) = m.remove(&format!("confirm-{k}")) {
+                m.insert(format!("{name}-{k}"), r);
+            }
+        }
+    });
+}
+
 /// 합성 입력 시험용: 이름 붙은 위젯 자리를 남긴다 (시험 빌드가 아니면 아무것도 안 함)
 #[allow(unused_variables)]
 pub fn mark(name: &str, rect: Rect) {

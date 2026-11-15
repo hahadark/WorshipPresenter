@@ -194,17 +194,17 @@ pub fn slide_menu(core: &Shared, r: &egui::Response, d: &Deck, k: usize, is_live
     r.context_menu(|ui| {
         ui.set_min_width(200.0);
         if is_live {
-            if ui.button("여기로 (이 슬라이드 송출)").clicked() {
+            if ui.button(wp_core::i18n::tr("여기로 (이 슬라이드 송출)")).clicked() {
                 acts.push(Act::LiveGoto(k));
                 ui.close();
             }
-            if ui.button("글자 숨김·복원").clicked() {
+            if ui.button(wp_core::i18n::tr("글자 숨김·복원")).clicked() {
                 acts.push(Act::ToggleClear);
                 ui.close();
             }
             return;
         }
-        if ui.button("▶ 바로 송출").clicked() {
+        if ui.button(wp_core::i18n::tr("▶ 바로 송출")).clicked() {
             acts.push(Act::PreviewIndex(k));
             acts.push(Act::SendPreview);
             ui.close();
@@ -229,16 +229,16 @@ pub fn slide_menu(core: &Shared, r: &egui::Response, d: &Deck, k: usize, is_live
         let chunk = ty == "song" || ty == "text";
         ui.separator();
         let mut op = None;
-        if chunk && ui.button("＋ 이 다음에 새 슬라이드").clicked() {
+        if chunk && ui.button(wp_core::i18n::tr("＋ 이 다음에 새 슬라이드")).clicked() {
             op = Some("add");
         }
-        if chunk && ui.button("⧉ 이 슬라이드 복제").clicked() {
+        if chunk && ui.button(wp_core::i18n::tr("⧉ 이 슬라이드 복제")).clicked() {
             op = Some("dup");
         }
-        if chunk && key > 0 && ui.button("여기서 새 순서로 나누기 (구역)").clicked() {
+        if chunk && key > 0 && ui.button(wp_core::i18n::tr("여기서 새 순서로 나누기 (구역)")).clicked() {
             op = Some("split");
         }
-        if !chunk && ty != "bible" && ui.button("이 슬라이드 건너뛰기").clicked() {
+        if !chunk && ty != "bible" && ui.button(wp_core::i18n::tr("이 슬라이드 건너뛰기")).clicked() {
             op = Some("skip");
         }
         if let Some(op) = op {

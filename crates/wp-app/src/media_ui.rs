@@ -14,7 +14,7 @@ fn matches_tab(f: &Value, audio: bool) -> bool {
     if audio { wp_core::library::is_audio(path) } else { f["video"] == true }
 }
 
-fn media_item(f: &Value, audio: bool) -> Value {
+pub(crate) fn media_item(f: &Value, audio: bool) -> Value {
     let mut it = wp_core::core::new_item(if audio { "audio" } else { "video" }, f["name"].as_str().unwrap_or(""));
     let options = if audio {
         json!({"file":f["url"],"volume":1,"loop":false,"fadeOnLeave":true})
@@ -73,7 +73,8 @@ impl App {
                 ui.horizontal(|ui| {
                     let play = ui.button(if audio { tr("▶ 재생") } else { tr("▶ 송출") }).clicked();
                     let row = ui.selectable_label(false, f["name"].as_str().unwrap_or(""));
-                    if play || row.clicked() {
+                    // 줄을 두 번 눌러도 재생·송출은 한 번만 (두 번째 클릭이 다시 처음부터 틀지 않게)
+                    if play || crate::widgets::click2(ui, ("media-row", audio, f["url"].as_str().unwrap_or("")), &row) == crate::widgets::Click::Single {
                         if audio {
                             crate::music_ui::play_now(f["url"].as_str().unwrap_or(""), f["name"].as_str().unwrap_or(""));
                         } else { self.core.lock().send_deck(video_deck(f)); }

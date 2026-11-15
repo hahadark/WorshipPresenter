@@ -92,7 +92,7 @@ impl App {
             let a: Vec<String> = std::env::args().collect();
             if let Some(v) = a.iter().position(|x| x == "--open").and_then(|i| a.get(i + 1)) {
                 for w in v.split(',') {
-                    match w { "songs" => self.tb.songs = true, "lib" => self.tb.lib = true, "overlays" => self.tb.overlays = true, "message" => self.tb.message = true, "quick" => self.tb.quick = true, "stage" => self.tb.stage = true, "macros" => self.tb.macros = true, "cues" => self.tb.cues = true, "lyrics" => crate::lyrics_ui::open(), _ => {} }
+                    match w { "songs" => self.tb.songs = true, "lib" => self.tb.lib = true, "overlays" => self.tb.overlays = true, "message" => self.tb.message = true, "quick" => self.tb.quick = true, "stage" => self.tb.stage = true, "macros" => self.tb.macros = true, "cues" => self.tb.cues = true, "lyrics" => crate::lyrics_ui::open(), "pptsplit" => crate::pptsplit_ui::want_open(), _ => {} }
                 }
             }
         });
@@ -104,6 +104,7 @@ impl App {
         self.stage_window(ctx);
         self.macros_window(ctx);
         self.cues_window(ctx);
+        self.pptsplit_window(ctx); // [갈래 C] PPT 나누기 창
         self.lyrics_window(ctx);
         self.music_tick(ctx);
         self.system_windows(ctx);
@@ -209,16 +210,24 @@ impl App {
         for s in &list {
             let id = s["id"].as_str().unwrap_or("").to_string();
             let (row, edit, add) = song_row(ui, s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or(""), sel.as_deref() == Some(id.as_str()));
-            if add {
+            crate::widgets::mark(&format!("song-row-{}", s["title"].as_str().unwrap_or("")), row.rect);
+            // ctxmenu.js libraryMenu: 큐시트에 넣기 (더블클릭) · 그 줄의 단추(고치기)
+            let menu = crate::ctx_ui::lib_menu(&row, s["title"].as_str().unwrap_or(""), true, &[crate::ctx_ui::LibOp::new("edit", Some("pencil"), tr("고치기"))]);
+            if add || menu == Some("cue") {
                 let it = self.core.lock().song_item(&id);
                 if let Some(it) = it { self.add_to_cue(it); }
-            } else if edit.clicked() {
+            } else if edit.clicked() || menu == Some("edit") {
                 self.tb.song_edit = self.core.lock().get_song(&id);
-            } else if row.double_clicked() {
-                let it = self.core.lock().song_item(&id);
-                if let Some(it) = it { self.add_to_cue(it); }
-            } else if row.clicked() {
-                sel = Some(id.clone());
+            } else {
+                // library.js:84 한 번 = 고르기, 두 번 = 큐시트에 넣기 (넣기는 한 번만)
+                match crate::widgets::click2(ui, ("lib-song", &id), &row) {
+                    crate::widgets::Click::Double => {
+                        let it = self.core.lock().song_item(&id);
+                        if let Some(it) = it { self.add_to_cue(it); }
+                    }
+                    crate::widgets::Click::Single => sel = Some(id.clone()),
+                    crate::widgets::Click::None => {}
+                }
             }
             row.on_hover_text(tr("두 번 누르면 큐시트에 넣습니다"));
         }
@@ -307,7 +316,50 @@ impl App {
         if kind == "image" {
             self.lib_grid(ui, &files); // 썸네일 격자
         } else {
-            egui::ScrollArea::vertical().id_salt("libfiles").show(ui, |ui| {                 for f in files.iter().take(300) {                     ui.horizontal(|ui| {                         ui.label(format!("{}{}", if f["video"] == true { "🎞 " } else { "" }, f["name"].as_str().unwrap_or("")));                         let url = f["url"].as_str().unwrap_or("").to_string();                         let name = f["name"].as_str().unwrap_or("").to_string();                         if kind == "image" {                             if ui.small_button(wp_core::i18n::tr("순서로")).clicked() {                                 let it = if f["video"] == true { json!({ "type": "video", "title": name, "file": url, "sound": true, "volume": 1.0, "loop": false, "endAction": "hold" }) } else { json!({ "type": "image", "title": name, "image": url }) };                                 let mut x = wp_core::core::new_item(it["type"].as_str().unwrap(), &name); wp_core::settings::merge_into(&mut x, &it);                                 self.add_to_cue(x);                             }                             if ui.small_button(wp_core::i18n::tr("배경으로")).clicked() {                                 let ty = if f["video"] == true { "video" } else { "image" };                                 self.core.lock().set_background_media(Some(json!({ "type": ty, "url": url, "label": name, "fit": "cover" })));                             }                         } else if ui.small_button("▶").on_hover_text(wp_core::i18n::tr("바로 재생 (조작 PC)")).clicked() {                             crate::music_ui::play_now(&url, &name);                         } else if ui.small_button(wp_core::i18n::tr("고른 순서 배경 음악")).clicked() {                             if let Some(i) = self.sel {                                 let mut c = self.core.lock();                                 c.remember_items();                                 if let Some(cue) = &mut c.cue { if let Some(it) = cue.items.get_mut(i) { it["music"] = json!(url); } }                                 c.save_cue();                                 self.edit = None;                             }                         }                     });                 }             });
+            // library.js:339-342 음악 줄: ▶ 바로 재생 · 한 번 = 고르기 · 두 번 = 음악 순서로 큐시트에 넣기 (끌어 놓기 대신 '순서로' 단추도)
+            let sel_id = egui::Id::new("lib-audio-sel");
+            let mut sel: String = ui.data(|d| d.get_temp(sel_id)).unwrap_or_default();
+            let mut add: Option<Value> = None;
+            egui::ScrollArea::vertical().id_salt("libfiles").show(ui, |ui| {
+                for (k, f) in files.iter().take(300).enumerate() {
+                    let url = f["url"].as_str().unwrap_or("").to_string();
+                    let name = f["name"].as_str().unwrap_or("").to_string();
+                    ui.horizontal(|ui| {
+                        if ui.small_button("▶").on_hover_text(wp_core::i18n::tr("바로 재생 (조작 PC)")).clicked() {
+                            crate::music_ui::play_now(&url, &name);
+                        }
+                        let row = ui.selectable_label(sel == url, &name).on_hover_text(wp_core::i18n::tr("두 번 누르면 음악 순서로 큐시트에 넣습니다 (고른 순서 다음)"));
+                        crate::widgets::mark(&format!("lib-audio-{k}"), row.rect);
+                        match crate::widgets::click2(ui, ("lib-audio", url.as_str()), &row) {
+                            crate::widgets::Click::Single => sel = url.clone(),
+                            crate::widgets::Click::Double => { sel = url.clone(); add = Some(f.clone()); }
+                            crate::widgets::Click::None => {}
+                        }
+                        match crate::ctx_ui::lib_menu(&row, &name, true, &[crate::ctx_ui::LibOp::new("play", Some("play"), wp_core::i18n::tr("바로 재생 (조작 PC)"))]) {
+                            Some("cue") => add = Some(f.clone()),
+                            Some("play") => crate::music_ui::play_now(&url, &name),
+                            _ => {}
+                        }
+                        ui.weak(f["folder"].as_str().unwrap_or(""));
+                        if ui.small_button(wp_core::i18n::tr("순서로")).on_hover_text(wp_core::i18n::tr("음악 순서로 큐시트에 넣기 (두 번 눌러도)")).clicked() { add = Some(f.clone()); }
+                        if ui.small_button(wp_core::i18n::tr("고른 순서 배경 음악")).clicked() {
+                            if let Some(i) = self.sel {
+                                let mut c = self.core.lock();
+                                c.remember_items();
+                                if let Some(cue) = &mut c.cue { if let Some(it) = cue.items.get_mut(i) { it["music"] = json!(url); } }
+                                c.save_cue();
+                                self.edit = None;
+                            }
+                        }
+                    });
+                }
+            });
+            ui.data_mut(|d| d.insert_temp(sel_id, sel));
+            if let Some(f) = add {
+                let name = f["name"].as_str().unwrap_or("").to_string();
+                self.add_lib_item(crate::media_ui::media_item(&f, true));
+                self.core.lock().notify(wp_core::i18n::tr_args("'{1}' 을(를) 큐시트에 넣었습니다.", &[&name]), "ok");
+            }
         }
         if ui.button(wp_core::i18n::tr("배경 미디어 끄기")).clicked() { self.core.lock().set_background_media(None); }
     }
@@ -789,73 +841,9 @@ impl App {
 
     // ---------------- 큐시트 관리 ----------------
     fn cues_window(&mut self, ctx: &egui::Context) {
+        // 큐시트 관리 창 (cuemgr_ui.rs — Electron cuemanager.js)
         let mut open = self.tb.cues;
-        crate::widgets::float_window(ctx, "cues", wp_core::i18n::tr("큐시트 관리"), [460.0, 460.0]).open(&mut open).show(ctx, |ui| {
-            let (cue, trash, times) = { let c = self.core.lock(); (c.cue.clone(), c.trash_list(), c.planned_times()) };
-            // 큐시트 없는 새 데이터 폴더에서도 가져오기를 시작할 수 있다.
-                    if ui.button(wp_core::i18n::tr("가져오기…")).clicked() {
-                        if let Some(p) = rfd::FileDialog::new().add_filter("큐시트", &["json"]).pick_file() {
-                            let r = self.core.lock().import_cue_file(&p);
-                            self.tb.note = match r { Ok(n) => format!("큐시트 {n}개를 가져왔습니다."), Err(e) => e.to_string() };
-                        }
-                    }
-
-            if let Some(cue) = &cue {
-                let mut meta = json!({});
-                let mut ch = false;
-                egui::Grid::new("cuemeta").num_columns(2).show(ui, |ui| {
-                    for (k, label, v) in [("name", "이름", cue.name.clone()), ("serviceDate", "예배 날짜", cue.service_date.clone()), ("startTime", "시작 시각", cue.start_time.clone()), ("memo", "메모", cue.memo.clone())] {
-                        ui.label(wp_core::i18n::tr(label));
-                        let mut s = v;
-                        if ui.text_edit_singleline(&mut s).changed() { meta[k] = json!(s); ch = true; }
-                        ui.end_row();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    // 낯선 항목에 설명 툴팁 (휴리스틱 평가 19번). Electron cues.js: pinned = 맨 위에 고정, template = 새 큐시트의 바탕
-                    let mut p = cue.pinned; if ui.checkbox(&mut p, wp_core::i18n::tr("목록 맨 위에 고정")).on_hover_text(wp_core::i18n::tr("큐시트 고르기 목록에서 날짜와 상관없이 맨 위에 둡니다")).changed() { meta["pinned"] = json!(p); ch = true; }
-                    let mut t = cue.template; if ui.checkbox(&mut t, wp_core::i18n::tr("서식 (새 큐시트 바탕)")).on_hover_text(wp_core::i18n::tr("켜 두면 새 큐시트를 만들 때 이 큐시트의 순서를 그대로 바탕으로 씁니다 (주일 예배처럼 매번 같은 순서일 때)")).changed() { meta["template"] = json!(t); ch = true; }
-                });
-                if ch { self.tb.note = err(self.core.lock().update_cue_meta(&meta)); }
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button(wp_core::i18n::tr("복제")).clicked() { self.tb.note = err(self.core.lock().duplicate_cue(&cue.id)); }
-                    if ui.button(wp_core::i18n::tr("내보내기…")).clicked() {
-                        if let Some(p) = rfd::FileDialog::new().set_file_name(format!("{}.wpcue.json", cue.name)).save_file() { self.tb.note = err(self.core.lock().export_cue_file(&p)); }
-                    }
-                    if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("휴지통으로")).icon("trash-2").kind(crate::widgets::Kind::Danger).tooltip(wp_core::i18n::tr("아래 휴지통에서 되살릴 수 있습니다"))).clicked() { self.tb.note = err(self.core.lock().trash_cue(&cue.id)); self.sel = None; self.edit = None; }
-                });
-                ui.separator();
-                ui.label(wp_core::i18n::tr("진행 시계 (순서별 예정 시간, 분)")).on_hover_text(wp_core::i18n::tr("순서마다 몇 분 걸릴지 적으면 시작 시각부터 각 순서의 예정 시각을 계산합니다"));
-                egui::ScrollArea::vertical().id_salt("durs").max_height(160.0).show(ui, |ui| {
-                    for (i, it) in cue.items.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(times.get(i).cloned().unwrap_or_default()).monospace());
-                            duration_editor(self, ui, i, it);
-                            ui.label(it["title"].as_str().unwrap_or(""));
-                            if i > 0 && ui.small_button(wp_core::i18n::tr("첫 순서로")).on_hover_text(wp_core::i18n::tr("이 순서를 큐시트 맨 앞(1번)으로 옮깁니다")).clicked() { self.core.lock().move_item_to(i, 0); }
-                        });
-                    }
-                });
-            }
-            ui.separator();
-            ui.label(wp_core::i18n::tr_args("휴지통 ({1}개)", &[&(trash.len())]));
-            for t in &trash {
-                let id = t["id"].as_str().unwrap_or("");
-                let name = t["name"].as_str().unwrap_or("");
-                let cid = egui::Id::unique(("cue-purge", id));
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(format!("{} · {}", name, t["serviceDate"].as_str().unwrap_or("")));
-                    if ui.small_button(wp_core::i18n::tr("되살리기")).clicked() { self.tb.note = err(self.core.lock().restore_cue(id)); }
-                    // 영구 삭제는 되살릴 수 없으므로 줄 안 확인
-                    if crate::widgets::confirm_delete(ui, cid, &wp_core::i18n::tr("영구 삭제"), &wp_core::i18n::tr_args("'{1}' 큐시트가 아주 지워지고 되살릴 수 없습니다.", &[&name])) {
-                        self.tb.note = err(self.core.lock().purge_cues(Some(id)));
-                    }
-                });
-            }
-            if !trash.is_empty() && crate::widgets::confirm_delete(ui, egui::Id::unique("cue-purge-all"), &wp_core::i18n::tr("휴지통 비우기"), &wp_core::i18n::tr_args("휴지통의 큐시트 {1}개가 아주 지워지고 되살릴 수 없습니다.", &[&(trash.len())])) {
-                self.tb.note = err(self.core.lock().purge_cues(None));
-            }
-        });
+        self.cuemgr_window(ctx, &mut open);
         self.tb.cues = open;
     }
 }

@@ -295,6 +295,9 @@ impl App {
     /// 아래 송출 줄 (footer.bottom) — 창 맨 아래 전체 폭 고정
     pub(super) fn bottom_bar(&mut self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) {
         self.video_bar(ui); // [트랙 B] 영상·음악 조작 줄 (재생 중일 때만 내용이 생김)
+        // [갈래 C] 아래 줄 빈 자리 오른쪽 클릭 = 화면 지우기 메뉴 (ctxmenu.js footer.bottom) — 단추보다 먼저 놓는다
+        let bar = ui.interact(ui.available_rect_before_wrap(), ui.id().with("footer-menu"), egui::Sense::click());
+        crate::ctx_ui::footer_menu(self, &bar, acts);
         ui.spacing_mut().interact_size.y = 48.0; // 가로 줄 처음 높이 → 단추들이 묶음 높이 가운데에 놓인다
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0; // .bottom { gap: 10px }

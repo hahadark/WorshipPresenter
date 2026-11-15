@@ -61,10 +61,10 @@ impl HistoryUi {
                         let t = format!("{}   {}  ·  {}", local_time(h["at"].as_i64().unwrap_or(0)), h["title"].as_str().unwrap_or(""), h["versionName"].as_str().unwrap_or(""));
                         let r = ui.add(egui::Label::new(t).sense(egui::Sense::click()));
                         if !q.is_empty() {
-                            if r.double_clicked() {
-                                acts.push(Act::SendRef(q, None));
-                            } else if r.clicked() {
-                                acts.push(Act::PreviewRef(q, None));
+                            match widgets::click2(ui, ("hist", h["at"].as_i64().unwrap_or(0), &q), &r) {
+                                widgets::Click::Double => acts.push(Act::SendRef(q, None)),
+                                widgets::Click::Single => acts.push(Act::PreviewRef(q, None)),
+                                widgets::Click::None => {}
                             }
                         }
                     }

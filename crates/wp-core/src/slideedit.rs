@@ -285,6 +285,68 @@ fn join_parts(song: bool, parts: &[String]) -> String {
     parts.iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect::<Vec<_>>().join(if song { "\n\n" } else { "\n---\n" })
 }
 
+/// k 번째 글 덩어리의 글을 바꾼다 (slides.js setLyricsChunk · setTextChunk). 찬양은 [1절] 같은 이름표 줄을 그대로 둔다
+pub fn set_chunk_text(song: bool, text: &str, k: usize, new_text: &str) -> String {
+    let new_text = new_text.replace('\r', "");
+    let mut n = 0usize;
+    let parts: Vec<String> = split_parts(song, text)
+        .into_iter()
+        .map(|b| {
+            let counts = if song { has_content(true, &b) } else { !b.trim().is_empty() };
+            if !counts {
+                return b;
+            }
+            n += 1;
+            if n - 1 != k {
+                return b;
+            }
+            if song {
+                let mut lines: Vec<String> = b.split('\n').filter(|l| is_label(true, l)).map(String::from).collect();
+                lines.extend(new_text.split('\n').map(String::from));
+                lines.join("\n")
+            } else {
+                new_text.clone()
+            }
+        })
+        .collect();
+    parts.join(if song { "\n\n" } else { "\n---\n" })
+}
+
+/// 편집기 캔버스에서 고칠 본문 글 (slideedit.js inlineEdit 의 text): 덧붙인 카드 · 제목 장 · 찬양/공지 글 덩어리.
+/// 성경·찬송가처럼 여기서 고치지 않는 본문은 None
+pub fn main_text(it: &Value, slide: &Value) -> Option<String> {
+    if let Some(id) = slide["xid"].as_str() {
+        return Some(it["extra"].as_array().into_iter().flatten().find(|e| e["id"].as_str() == Some(id)).and_then(|e| e["text"].as_str()).unwrap_or("").to_string());
+    }
+    let src = slide["src"].as_u64().unwrap_or(0) as usize;
+    match it["type"].as_str().unwrap_or("") {
+        "title" => Some(slides::title_pages(it).get(src).cloned().unwrap_or_default()),
+        "song" | "text" => Some(slide["parts"][0]["text"].as_str().unwrap_or("").to_string()),
+        _ => None,
+    }
+}
+
+/// 본문 글을 바꾼다 (slideedit.js setText). 빈 글·고칠 수 없는 본문이면 Err(알림 글)
+pub fn set_main_text(it: &mut Value, slide: &Value, text: &str) -> Result<(), &'static str> {
+    if text.trim().is_empty() {
+        return Err("빈 슬라이드는 만들 수 없습니다. 슬라이드를 없애려면 가사·내용에서 지우세요.");
+    }
+    if main_text(it, slide).is_none() {
+        return Err("성경·찬송가 본문은 여기서 고치지 않습니다. 위치·꾸미기만 바꿀 수 있습니다.");
+    }
+    let src = slide["src"].as_u64().unwrap_or(0) as usize;
+    if let Some(id) = slide["xid"].as_str() {
+        set_card_text(it, &format!("x{id}"), text);
+    } else {
+        match it["type"].as_str().unwrap_or("") {
+            "song" => it["lyrics"] = json!(set_chunk_text(true, it["lyrics"].as_str().unwrap_or(""), src, text)),
+            "text" => it["body"] = json!(set_chunk_text(false, it["body"].as_str().unwrap_or(""), src, text)),
+            _ => set_card_text(it, slide["ekey"].as_str().unwrap_or(&src.to_string()), text),
+        }
+    }
+    Ok(())
+}
+
 /// 넣기('add') · 복제('dup') · 지우기('del') · 위('up') · 아래('down'). k = 슬라이드(덩어리) 번호
 pub fn slide_op(song: bool, text: &str, op: &str, k: usize, new_text: &str) -> String {
     let mut parts = split_parts(song, text);
@@ -987,5 +1049,42 @@ mod tests {
         assert!(e["style"]["color"].is_null());
         assert_eq!(e["items"].as_array().unwrap().len(), 1);
         assert!(normalize_edit(&json!({})).is_none());
+    }
+}
+
+#[cfg(test)]
+mod inline_tests {
+    use super::*;
+
+    #[test]
+    fn set_chunk_text_keeps_song_labels_and_other_chunks() {
+        let l = "[1절]\n은혜 아니면\n살 수 없네\n\n[후렴]\n\n오직 은혜\n\n끝";
+        // 덩어리: 0 = 1절, 1 = '오직 은혜'(이름표만 있는 덩어리는 세지 않음), 2 = 끝
+        assert_eq!(set_chunk_text(true, l, 0, "주의 은혜"), "[1절]\n주의 은혜\n\n[후렴]\n\n오직 은혜\n\n끝");
+        assert_eq!(set_chunk_text(true, l, 1, "한 줄\n두 줄"), "[1절]\n은혜 아니면\n살 수 없네\n\n[후렴]\n\n한 줄\n두 줄\n\n끝");
+        assert_eq!(set_chunk_text(true, l, 9, "x"), l, "없는 번호는 그대로");
+        assert_eq!(set_chunk_text(false, "하나\n---\n둘\n---\n셋", 1, "둘째\r\n장"), "하나\n---\n둘째\n장\n---\n셋");
+    }
+
+    #[test]
+    fn main_text_and_set_main_text_by_item_type() {
+        let mut song = json!({ "type": "song", "lyrics": "가\n\n나" });
+        let s1 = json!({ "src": 1, "parts": [{ "text": "나" }] });
+        assert_eq!(main_text(&song, &s1).as_deref(), Some("나"));
+        set_main_text(&mut song, &s1, "다").unwrap();
+        assert_eq!(song["lyrics"], "가\n\n다");
+        let mut text = json!({ "type": "text", "body": "하나\n---\n둘" });
+        set_main_text(&mut text, &json!({ "src": 0, "parts": [{ "text": "하나" }] }), "첫째").unwrap();
+        assert_eq!(text["body"], "첫째\n---\n둘");
+        let mut card = json!({ "type": "bible", "extra": [{ "id": "a1", "at": 0, "text": "덧붙임" }] });
+        let xs = json!({ "xid": "a1", "ekey": "xa1" });
+        assert_eq!(main_text(&card, &xs).as_deref(), Some("덧붙임"));
+        set_main_text(&mut card, &xs, "고침").unwrap();
+        assert_eq!(card["extra"][0]["text"], "고침");
+        // 성경 본문은 고치지 않는다 · 빈 글은 안 된다
+        assert!(main_text(&card, &json!({ "src": 0 })).is_none());
+        assert!(set_main_text(&mut card, &json!({ "src": 0 }), "x").is_err());
+        assert!(set_main_text(&mut song, &s1, "  ").is_err());
+        assert_eq!(song["lyrics"], "가\n\n다");
     }
 }

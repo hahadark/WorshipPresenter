@@ -123,6 +123,7 @@ impl App {
                             ui.set_width(CELL_W);
                             let (rect, resp) = ui.allocate_exact_size(Vec2::new(CELL_W, IMG_H), Sense::click());
                             let hot = ui.rect_contains_pointer(rect);
+                            crate::widgets::mark(&format!("lib-cell-{}", f["name"].as_str().unwrap_or("")), rect);
                             if resp.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
                             ui.painter().rect_filled(rect, 4.0, Color32::BLACK);
                             match get(&ctx, &self.data_dir, &path) {
@@ -155,8 +156,16 @@ impl App {
                                 act = Some((op, (*f).clone()));
                             }
                             let name = f["name"].as_str().unwrap_or("").to_string();
-                            if resp.double_clicked() {
+                            if crate::widgets::click2(ui, ("lib-thumb", url.as_str()), &resp) == crate::widgets::Click::Double {
                                 act = Some(("cue", (*f).clone()));
+                            }
+                            // ctxmenu.js libraryMenu: 큐시트에 넣기 (더블클릭) · 그 칸의 단추들
+                            let mops = [
+                                if on { crate::ctx_ui::LibOp::new("bgoff", Some("monitor-off"), tr("송출 배경 끄기")).danger() } else { crate::ctx_ui::LibOp::new("bg", Some("layers"), tr("지금 송출 화면의 배경으로 바로 (슬라이드와 따로)")) },
+                                crate::ctx_ui::LibOp::new("send", Some("play"), tr(if video { "이 영상 바로 송출 (큐시트에 넣지 않고)" } else { "이 그림 바로 송출 (큐시트에 넣지 않고)" })),
+                            ];
+                            if let Some(op) = crate::ctx_ui::lib_menu(&resp, &name, true, &mops) {
+                                act = Some((op, (*f).clone()));
                             }
                             ui.add(egui::Label::new(RichText::new(if on { format!("● {name}") } else { name.clone() }).small().color(if on { p.danger_text } else { p.text2 })).truncate()).on_hover_text(f["path"].as_str().unwrap_or(""));
                             ui.horizontal(|ui| {

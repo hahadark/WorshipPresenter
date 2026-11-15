@@ -13,6 +13,10 @@ const REPO: &str = "https://github.com/hahadark/WorshipPresenter";
 
 static KEYS_OPEN: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static RENAME: Lazy<Mutex<(Option<usize>, String)>> = Lazy::new(|| Mutex::new((None, String::new())));
+/// 메뉴 안 메모 칸 (순서 번호, 글)
+static NOTE: Lazy<Mutex<(Option<usize>, String)>> = Lazy::new(|| Mutex::new((None, String::new())));
+/// 슬라이드 편집기를 열 수 있는 순서 종류 (ctxmenu.js EDITABLE)
+const EDITABLE: [&str; 10] = ["song", "text", "title", "bible", "hymn", "image", "video", "slideshow", "camera", "blank"];
 
 fn open_link(url: &str) {
     let _ = wp_core::trackd::open_link(url);
@@ -20,7 +24,8 @@ fn open_link(url: &str) {
 
 /// 큐시트 순서 한 줄의 오른쪽 클릭 메뉴
 pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: usize, acts: &mut Vec<Act>) {
-    r.context_menu(|ui| {
+    // 메뉴 안에 제목·메모 글칸이 있어 "안을 눌러도 닫히는" 기본 동작이면 글칸을 누르는 순간 메뉴가 닫힌다 → 바깥을 누를 때만 닫는다
+    egui::Popup::context_menu(r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         ui.set_min_width(220.0);
         if ui.button(wp_core::i18n::tr("미리보기")).clicked() {
             app.sel = Some(i);
@@ -34,6 +39,14 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
         }
         if ui.button(wp_core::i18n::tr("편집칸에서 고치기")).clicked() {
             app.show_item_editor(i);
+            ui.close();
+        }
+        // [갈래 C] 슬라이드 편집 Ctrl+E (ctxmenu.js cueItemMenu)
+        if ui.add_enabled(EDITABLE.contains(&it["type"].as_str().unwrap_or("")), egui::Button::new(wp_core::i18n::tr("슬라이드 편집")).shortcut_text("Ctrl+E")).clicked() {
+            app.sel = Some(i);
+            app.edit = None;
+            acts.push(Act::PreviewItem(i));
+            app.tc.slideedit.open_at("0");
             ui.close();
         }
         // 제목 바꾸기 (메뉴 안에서 바로)
@@ -53,6 +66,27 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
                 }
             });
         }
+        // [갈래 C] 조작자 메모 달기·고치기 (itemAction 'note': 순서 줄과 무대 화면에 보인다)
+        {
+            let mut nt = NOTE.lock();
+            if nt.0 != Some(i) {
+                *nt = (Some(i), it["note"].as_str().unwrap_or("").to_string());
+            }
+            ui.horizontal(|ui| {
+                ui.label(wp_core::i18n::tr("메모")).on_hover_text(wp_core::i18n::tr("조작자 메모 (무대 화면에도 보임)"));
+                let resp = ui.add(egui::TextEdit::singleline(&mut nt.1).desired_width(140.0).hint_text(wp_core::i18n::tr("예: 일어서서")));
+                crate::widgets::mark("menu-note", resp.rect);
+                let ok = ui.small_button(wp_core::i18n::tr("달기"));
+                crate::widgets::mark("menu-note-ok", ok.rect);
+                if (resp.lost_focus() && ui.input(|x| x.key_pressed(egui::Key::Enter))) || ok.clicked() {
+                    let mut x = it.clone();
+                    x["note"] = json!(nt.1.trim());
+                    acts.push(Act::UpdateItem(i, x));
+                    nt.0 = None;
+                    ui.close();
+                }
+            });
+        }
         // Electron처럼 진행 시계가 켜진 경우에만 예정 시간을 편집한다.
         let times_on = app.core.lock().settings.get()["cueTimes"] == true;
         if times_on {
@@ -63,8 +97,43 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
         if ui.add_enabled(crate::hymns_ui::can_open_ppt_tools(it), egui::Button::new(wp_core::i18n::tr("여러 순서로 나누기…"))).clicked() {
             app.sel = Some(i);
             app.edit = None;
-            crate::hymns_ui::open_ppt_tools(ui.ctx(), it);
+            // 슬라이드를 보며 나누는 창 (cue.js openSplit). 예전에는 편집칸의 PPT 도구만 펼쳤다
+            crate::pptsplit_ui::open(app, ui.ctx(), it);
             ui.close();
+        }
+        // [갈래 C] 테마 (이 순서만): 기본 · 테마들 (cue.js setItemTheme)
+        if it["type"] != "audio" {
+            let themes = wp_core::themes::list_themes();
+            if !themes.is_empty() {
+                ui.menu_button(wp_core::i18n::tr("테마 (이 순서만)"), |ui| {
+                    let main = it["tplMain"].as_str().unwrap_or("");
+                    let cur = main.strip_prefix("theme-").and_then(|x| x.strip_suffix("-main")).unwrap_or("");
+                    let none = main.is_empty() && it["tplOverlay"].as_str().unwrap_or("").is_empty();
+                    if ui.button(format!("{}{}", if none { "✓ " } else { "" }, wp_core::i18n::tr("기본 (전체 설정 따름)"))).clicked() {
+                        let mut x = it.clone();
+                        x["tplMain"] = json!("");
+                        x["tplOverlay"] = json!("");
+                        acts.push(Act::UpdateItem(i, x));
+                        ui.close();
+                    }
+                    for t in themes.iter() {
+                        let (id, name) = (t["id"].as_str().unwrap_or(""), t["name"].as_str().unwrap_or(""));
+                        if ui.button(format!("{}{name}", if cur == id { "✓ " } else { "" })).clicked() {
+                            let r = wp_core::themes::ensure_theme(&mut app.core.lock(), id);
+                            match r {
+                                Ok(ids) => {
+                                    let mut x = it.clone();
+                                    x["tplMain"] = ids["main"].clone();
+                                    x["tplOverlay"] = ids["overlay"].clone();
+                                    acts.push(Act::UpdateItem(i, x));
+                                }
+                                Err(e) => app.core.lock().notify(e.to_string(), "error"),
+                            }
+                            ui.close();
+                        }
+                    }
+                });
+            }
         }
         ui.separator();
         if it["type"] == "song" && ui.button(wp_core::i18n::tr("찬양 라이브러리에 저장")).clicked() {
@@ -116,6 +185,15 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
             acts.push(Act::RemoveItem(i));
             ui.close();
         }
+        // [갈래 C] 이 다음에 넣기: 붙여 넣기 · 종류마다 (itemAction 'addAfter')
+        ui.menu_button(wp_core::i18n::tr("이 다음에 넣기"), |ui| {
+            let before = acts.len();
+            app.sel = Some(i);
+            crate::ctx_ui::add_items(app, ui, acts);
+            if acts.len() != before {
+                app.edit = None;
+            }
+        });
         ui.separator();
         if ui.button(wp_core::i18n::tr("큐시트를 글로 복사 (순서표)")).clicked() {
             if let Some(t) = app.core.lock().active_cue_text() {
@@ -319,16 +397,3 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     *KEYS_OPEN.lock() = open;
 }
 
-/// 성경 결과 한 절: 오른쪽 클릭 → 장절·본문 복사
-pub fn verse_menu(resp: &egui::Response, reference: &str, text: &str) {
-    resp.context_menu(|ui| {
-        if ui.button(wp_core::i18n::tr("장절·본문 복사")).clicked() {
-            crate::widgets::copy_notice(ui.ctx(), format!("{reference} {text}"), wp_core::i18n::tr("복사했습니다."));
-            ui.close();
-        }
-        if ui.button(wp_core::i18n::tr("장절만 복사")).clicked() {
-            crate::widgets::copy_notice(ui.ctx(), reference, wp_core::i18n::tr("복사했습니다."));
-            ui.close();
-        }
-    });
-}

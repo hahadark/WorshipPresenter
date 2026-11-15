@@ -68,6 +68,8 @@ pub struct Core {
     pub flow: crate::flow::Flow, // [트랙 C] 자동 넘김·글자 자동 숨김
     /// 라이브러리에서 고른 것 넣기 (중복·연타 막기, 만드는 중인 찬송가 기다렸다 띄우기)
     pub pick: crate::pick::PickState,
+    /// 송출하면서 '예배당 화면을 켜 달라' 고 요청한 횟수 (output.autoOnSend). 조작 화면은 trackd::take_output_on_request 로 받는다 — 이 값은 시험·점검용
+    pub output_on_requests: u32,
 }
 
 pub type Shared = Arc<Mutex<Core>>;
@@ -194,9 +196,10 @@ impl Core {
         let mut c = Self {
             data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), pending_audio: None, obs_hold: false, obs_full: false, // [트랙 C] obs_full
            
-            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, toast_act: None, port, b: Default::default(), flow: Default::default(), pick: Default::default(), // [트랙 B] · [트랙 C] flow
+            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, toast_act: None, port, b: Default::default(), flow: Default::default(), pick: Default::default(), output_on_requests: 0, // [트랙 B] · [트랙 C] flow
         };
         c.trackb_init(); // [트랙 B]
+        c.purge_old_trash(30); // 휴지통의 큐시트는 30일 뒤 저절로 비운다 (Electron core.js:123)
         if c.version_id().is_empty() {
             if let Some(v) = c.store.list_versions().first() {
                 let id = v.id.clone();
@@ -630,6 +633,8 @@ impl Core {
         // [트랙 B] '미리보기 거쳐 송출' 을 끈 채 두 번 눌러 송출하면 고르기(=송출)와 송출이 겹친다 → 방금(1.5초 안) 같은 것을 보냈으면 다시 보내지 않음
         if let (Some(p), Some(l)) = (&self.pres.preview, &self.pres.live) {
             if l.visible && l.deck.index == p.index && l.deck.slides.len() == p.slides.len() && l.deck.passage == p.passage && crate::util::now_ms() - l.sent_at < 1500 {
+                // 다시 보내지는 않아도 예배당 화면이 꺼져 있으면 켠다 (방금 Esc 로 끈 뒤 두 번 눌러 송출한 경우)
+                crate::trackd::on_send(self);
                 self.emit(Ev::Ui);
                 return;
             }

@@ -277,8 +277,15 @@ impl App {
         let default = wp_core::cameras::Choice { device_id: String::new(), label: tr("기본 카메라"), connected: false, configured: false };
         for c in std::iter::once(default).chain(cameras) {
             let (id, label) = (c.device_id.clone(), c.label.clone());
+            let on = self.core.lock().layers.media.as_ref().is_some_and(|m| m["type"] == "camera" && m["deviceId"].as_str().unwrap_or("") == id);
             ui.group(|ui| {
-                ui.label(if id.is_empty() { format!("📷 {label}") } else { crate::camscan::display_name(&c) });
+                let name = if id.is_empty() { format!("📷 {label}") } else { crate::camscan::display_name(&c) };
+                // library.js:381 카메라 칸을 두 번 누르면 송출 배경으로 바로 (같은 것을 다시 두 번 누르면 끄기)
+                let head = ui.add(egui::Label::new(if on { format!("{name} · ● {}", tr("LIVE 배경")) } else { name }).sense(egui::Sense::click())).on_hover_text(tr("두 번 누르면 송출 화면의 배경으로 바로 나갑니다 (다시 두 번 누르면 끄기)"));
+                crate::widgets::mark(&format!("cam-{}", if id.is_empty() { "default" } else { id.as_str() }), head.rect);
+                if crate::widgets::click2(ui, ("lib-cam", id.as_str()), &head) == crate::widgets::Click::Double {
+                    self.core.lock().set_background_media(if on { None } else { Some(json!({"type":"camera", "deviceId":id,"label":label})) });
+                }
                 ui.horizontal_wrapped(|ui| {
                     if ui.button(tr("미리보기")).on_hover_text(tr("작은 창에 카메라를 엽니다 (출력과 같은 카메라 설정 적용)")).clicked() { crate::camscan::preview(&self.core, &id, &label); }
                     if ui.button(tr("순서로")).clicked() { acts.push(Act::AddItem("camera", Some(json!({"title": label, "deviceId": id, "label": label, "fit": "cover"})))); }
