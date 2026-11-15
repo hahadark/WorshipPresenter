@@ -250,6 +250,7 @@ pub fn show_with(ui: &mut Ui, menus: &[Menu], mut extra: impl FnMut(&str, &mut U
             let pid = id.with("popup");
             let open = egui::Popup::is_id_open(&ctx, pid);
             let resp = top_button(ui, id, &label, open);
+            crate::widgets::mark(&format!("menu-{}", m.label), resp.rect); // 합성 입력 시험용 자리
             // 다른 메뉴가 열려 있으면 올리기만 해도 옮겨 연다 (원본 메뉴 줄 동작)
             if any_open && !open && resp.hovered() {
                 egui::Popup::open_id(&ctx, pid);
@@ -284,6 +285,7 @@ pub fn show_with(ui: &mut Ui, menus: &[Menu], mut extra: impl FnMut(&str, &mut U
                     let check = match i.id { "c:lang-ko" => Some(!wp_core::i18n::is_en()), "c:lang-en" => Some(wp_core::i18n::is_en()), _ => None };
                     let label = if i.id.starts_with("c:lang-") { i.label.to_string() } else { wp_core::i18n::tr(i.label) };
                     let row = item_row(ui, icon_of(i.id), &label, i.key, check);
+                    crate::widgets::mark(&format!("menuitem-{}", i.id), row.rect);
                     // 이름은 원본 menubar.js 그대로('실행 취소'), 무엇을 되돌리는지는 툴팁으로 (글 입력 되돌리기와 구분)
                     let row = match i.id {
                         "b:undo" => row.on_hover_text(wp_core::i18n::tr("큐시트 순서 변경 되돌리기 (Ctrl+Z)")),
