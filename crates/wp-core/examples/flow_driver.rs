@@ -82,6 +82,31 @@ fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
         "textWidth" => json!(a["texts"].as_array().into_iter().flatten().map(|x| wp_core::measure::text_width(x.as_str().unwrap_or(""), a["size"].as_f64().unwrap_or(0.0) as f32, a["bold"].as_bool().unwrap_or(false), 0.0)).collect::<Vec<f32>>()),
         "cueItems" => json!(c.cue.as_ref().map(|q| q.items.clone()).unwrap_or_default()),
         "templates" => json!(c.settings.templates()),
+        // ---- 조작 흐름 대조 (tools/flow-compare/features.js) ----
+        // 순서 송출 (조작 화면의 두 번 누르기와 같은 길: 미리보기 → 송출 → 순서의 '송출할 때 자동으로')
+        "sendCueItem" => json!(c.send_item(idx())),
+        "saveOverlay" => c.save_overlay(&a["overlay"]).map_err(|e| e.to_string())?,
+        "toggleOverlay" => c.toggle_overlay(a["id"].as_str().unwrap_or(""), a["on"].as_bool()).map_err(|e| e.to_string())?,
+        "overlays" => json!(c.overlays()),
+        "setObsView" => wp_core::themes::set_obs_view(c, a["full"].as_bool(), a["pip"].as_bool()),
+        "videoControl" => { c.video_control(a["action"].as_str().unwrap_or(""), a["value"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?; json!(true) }
+        "stagePinSet" => { c.stage_pin_set(if a.is_null() || a.as_object().is_some_and(|o| o.is_empty()) { None } else { Some(a) }).map_err(|e| e.to_string())?; json!(true) }
+        "saveMacro" => json!(c.save_macro(&a["macro"]).map_err(|e| e.to_string())?),
+        "runMacro" => { c.run_macro(a["id"].as_str().or(a["name"].as_str()).unwrap_or("")).map_err(|e| e.to_string())?; json!(true) }
+        // 즉석 자막 (조작 화면 trackb_ui.rs quick_send 와 같은 만들기)
+        "quickText" => {
+            let text = a["text"].as_str().unwrap_or("").replace('\r', "").trim().to_string();
+            let opts = c.split_opts(None);
+            let slides = wp_core::slides::build_text("", false, &wp_core::slides::text_chunks(&text, 1), &opts);
+            let n = slides.len();
+            if n == 0 { return Err("송출할 글을 쓰세요.".into()); }
+            c.send_deck(wp_core::presentation::Deck { passage: json!({ "title": "즉석 자막", "itemTitle": "즉석 자막", "versionName": "", "cueIndex": -1, "cueId": "", "itemType": "text" }), slides, index: 0 });
+            json!(n)
+        }
+        "listCues" => json!(c.store.list_cues().iter().map(|q| q.id.clone()).collect::<Vec<_>>()),
+        "cueOf" => json!(c.store.get_cue(a["id"].as_str().unwrap_or("")).map(|q| q.items).unwrap_or_default()),
+        "songs" => json!(c.list_songs("").iter().filter_map(|s| s["id"].as_str().and_then(|id| c.get_song(id))).collect::<Vec<_>>()),
+        "plannedTimes" => json!(c.planned_times()),
         "clearMessage" => { c.clear_message(); json!(true) }
         "toggleOverlaysOff" => { c.toggle_overlays_off(); json!(true) }
         // 큐시트 끝에 순서 넣기 (비교용 성경·공지 순서)

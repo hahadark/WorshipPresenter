@@ -307,12 +307,6 @@ fn can_break(chs: &[Ch], i: usize, keep_all: bool) -> bool {
 
 /// 글자 열을 width 폭에 놓았을 때의 높이. strut: 빈 줄·작은 글자만 있는 줄의 기준 크기
 fn layout(chs: &[Ch], width: f32, strut: f32, lh: f32, keep_all: bool, anywhere: bool) -> f32 {
-    layout_ls(chs, width, strut, lh, keep_all, anywhere, 0.0)
-}
-
-/// letter: 자간(px) — 줄 끝 글자 뒤의 자간은 줄 폭에 들지 않는다
-fn layout_ls(chs: &[Ch], width: f32, strut: f32, lh: f32, keep_all: bool, anywhere: bool, letter: f32) -> f32 {
-    let width = width + letter.max(0.0);
     // 빈칸 정리 (white-space: normal): 이어진 빈칸은 하나, 앞뒤 빈칸은 없앰
     let mut v: Vec<Ch> = Vec::with_capacity(chs.len());
     for ch in chs {
@@ -583,12 +577,12 @@ pub fn content_height(slide: &Value, t: &Value, size: f32, version_name: &str) -
         let s1 = size * 1.3;
         let mut c1 = vec![];
         push_text(&mut c1, &bold, slide["ref"].as_str().unwrap_or(""), s1, letter, s1);
-        blocks.push(Blk { h: layout_ls(&c1, w, s1, 1.3, true, true, letter), mt: 0.0, mb: 0.0 });
+        blocks.push(Blk { h: layout(&c1, w, s1, 1.3, true, true), mt: 0.0, mb: 0.0 });
         if let Some(sub) = slide["subtitle"].as_str().filter(|x| !x.is_empty()) {
             let s2 = size * 0.62;
             let mut c2 = vec![];
             push_text(&mut c2, &base, sub, s2, letter, s2);
-            blocks.push(Blk { h: layout_ls(&c2, w, s2, 1.4, true, true, letter), mt: s2 * 0.5, mb: 0.0 });
+            blocks.push(Blk { h: layout(&c2, w, s2, 1.4, true, true), mt: s2 * 0.5, mb: 0.0 });
         }
         return (stack(&blocks) + pad, area_h);
     }
@@ -604,7 +598,7 @@ pub fn content_height(slide: &Value, t: &Value, size: f32, version_name: &str) -
         let rs = num(&r["size"], 44.0);
         let mut c = vec![];
         push_text(&mut c, &chain_for(family, num(&r["weight"], 700.0) as u16), &rt, rs, letter, rs);
-        let h = layout_ls(&c, w, rs, 1.25, false, false, letter);
+        let h = layout(&c, w, rs, 1.25, false, false);
         Some(if top { Blk { h, mt: 0.0, mb: rs * 0.45 } } else { Blk { h, mt: rs * 0.45, mb: 0.0 } })
     };
     blocks.extend(ref_blk(true));
@@ -621,7 +615,7 @@ pub fn content_height(slide: &Value, t: &Value, size: f32, version_name: &str) -
         let vs = num(&vl["size"], 28.0);
         let mut c = vec![];
         push_text(&mut c, &base, version_name, vs, letter, vs);
-        blocks.push(Blk { h: layout_ls(&c, w, vs, 1.2, false, false, letter), mt: vs * 0.4, mb: 0.0 });
+        blocks.push(Blk { h: layout(&c, w, vs, 1.2, false, false), mt: vs * 0.4, mb: 0.0 });
     }
     // 꼬리말(.bc-footer)은 화면 아래에 따로 놓여(absolute) 글 덩어리 높이에 들지 않는다
     (stack(&blocks) + pad, area_h)
@@ -644,8 +638,10 @@ fn text_blocks(blocks: &mut Vec<Blk>, parts: &[Value], w: f32, size: f32, lh: f3
         if flow.is_empty() {
             return;
         }
-        // white-space: pre-line — 줄바꿈은 지키고, 줄마다 따로 놓는다
-        let h: f32 = flow.split(|c| c.c == '\n').map(|line| layout_ls(line, w, size, lh, true, true, letter)).sum();
+        // white-space: pre-line — 줄바꿈은 지키고, 줄마다 따로 놓는다.
+        // 덩어리 맨 끝의 줄바꿈 하나는 줄을 만들지 않는다 (브라우저: "가\n" 은 한 줄, "가\n\n" 은 두 줄)
+        let end = if flow.last().is_some_and(|c| c.c == '\n') { flow.len() - 1 } else { flow.len() };
+        let h: f32 = flow[..end].split(|c| c.c == '\n').map(|line| layout(line, w, size, lh, true, true)).sum();
         blocks.push(Blk { h, mt: 0.0, mb: 0.0 });
         flow.clear();
     };
@@ -661,9 +657,9 @@ fn text_blocks(blocks: &mut Vec<Blk>, parts: &[Value], w: f32, size: f32, lh: f3
             if TR_HEAD.is_match(l) {
                 let ts = size * TR_SCALE;
                 let chs = runs_to_chs(&TR_HEAD.replace(l, ""), TR_SCALE);
-                blocks.push(Blk { h: layout_ls(&chs, w, ts, lh, true, true, letter), mt: ts * 0.05, mb: ts * 0.25 });
+                blocks.push(Blk { h: layout(&chs, w, ts, lh, true, true), mt: ts * 0.05, mb: ts * 0.25 });
             } else {
-                blocks.push(Blk { h: layout_ls(&runs_to_chs(l, 1.0), w, size, lh, true, true, letter), mt: 0.0, mb: 0.0 });
+                blocks.push(Blk { h: layout(&runs_to_chs(l, 1.0), w, size, lh, true, true), mt: 0.0, mb: 0.0 });
             }
         }
     }
@@ -685,7 +681,7 @@ fn bible_blocks(blocks: &mut Vec<Blk>, parts: &[Value], t: &Value, w: f32, size:
     let mut flow: Vec<Ch> = vec![];
     let flush = |flow: &mut Vec<Ch>, blocks: &mut Vec<Blk>, width: f32| {
         if flow.iter().any(|c| c.c != ' ') {
-            blocks.push(Blk { h: layout_ls(flow, width, size, lh, true, true, letter), mt: 0.0, mb: 0.0 });
+            blocks.push(Blk { h: layout(flow, width, size, lh, true, true), mt: 0.0, mb: 0.0 });
         }
         flow.clear();
     };
@@ -705,7 +701,7 @@ fn bible_blocks(blocks: &mut Vec<Blk>, parts: &[Value], t: &Value, w: f32, size:
             let mut c = vec![];
             push_text(&mut c, base, heading, hs, letter, hs);
             // 내어쓰기에서는 본문 밖(.bc-text 바로 아래 div)이라 전체 폭
-            blocks.push(Blk { h: layout_ls(&c, w, hs, 1.3, true, true, letter), mt: 0.0, mb: hs * 0.3 });
+            blocks.push(Blk { h: layout(&c, w, hs, 1.3, true, true), mt: 0.0, mb: hs * 0.3 });
         }
         if hanging || verse_break {
             flush(&mut flow, blocks, text_w);
@@ -732,7 +728,7 @@ fn bible_blocks(blocks: &mut Vec<Blk>, parts: &[Value], t: &Value, w: f32, size:
             let ps = size * PAR_SCALE;
             let mut c = vec![];
             push_text(&mut c, base, t2, ps, letter, ps);
-            blocks.push(Blk { h: layout_ls(&c, text_w, ps, lh, true, true, letter), mt: ps * 0.12, mb: 0.0 });
+            blocks.push(Blk { h: layout(&c, text_w, ps, lh, true, true), mt: ps * 0.12, mb: 0.0 });
         }
         if hanging || verse_break {
             flush(&mut flow, blocks, text_w);
@@ -837,6 +833,10 @@ mod tests {
         let line = 64.0 * 1.45;
         assert!((h("가나다\n라마바") - 2.0 * line).abs() < 0.01);
         assert!((h("가나다\n\n라마바") - 3.0 * line).abs() < 0.01, "빈 줄도 한 줄");
+        // [점검 A] 맨 끝 줄바꿈 하나는 줄이 아니다 — 줄 단위로 나눌 때 빈 줄이 앞 장 끝에 붙는다 (웹과 같은 나눔 위치)
+        assert!((h("가나다\n") - line).abs() < 0.01);
+        assert!((h("가나다\n\n") - 2.0 * line).abs() < 0.01);
+        assert!((h("\n가나다") - 2.0 * line).abs() < 0.01);
         assert!((h("{크기:150}가나다{/크기}\n라마바") - 2.5 * line).abs() < 0.01);
         let tr = 64.0 * 0.7;
         assert!((h("가나다\n> abc") - (line + tr * 0.05 + tr * 1.45 + tr * 0.25)).abs() < 0.01);

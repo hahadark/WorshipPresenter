@@ -22,12 +22,14 @@ async function main() {
   }
   const rsData = path.resolve(root, opt('rs-data', 'tmp/rs-data'));
   const elData = path.resolve(root, opt('el-data', 'tmp/el-data'));
-  if (!pids.rs || !alive(pids.rs)) {
+  const NAME = opt('name', 'rs'); // 점검 서버를 여러 개 띄울 때 이름 (PID 기록용)
+  if (!pids[NAME] || !alive(pids[NAME])) {
     for (const f of ['flow-port.txt', 'flow-ctl.txt']) try { fs.unlinkSync(path.join(rsData, f)); } catch {}
-    const p = spawn(path.join(root, 'target', 'debug', 'examples', 'flow_driver.exe'), ['--data', rsData], { detached: true, stdio: 'ignore', windowsHide: true });
-    p.unref(); pids.rs = p.pid;
+    // --exe: 다른 자리의 실행 파일로 (오래 도는 일괄 대조 중에도 target 의 것을 다시 빌드할 수 있게 복사본을 쓴다)
+    const p = spawn(path.resolve(root, opt('exe', 'target/debug/examples/flow_driver.exe')), ['--data', rsData, '--web', path.join(root, 'web')], { detached: true, stdio: 'ignore', windowsHide: true });
+    p.unref(); pids[NAME] = p.pid;
   }
-  if (!A.includes('--no-el') && (!pids.el || !alive(pids.el))) {
+  if (NAME === 'rs' && !A.includes('--no-el') && (!pids.el || !alive(pids.el))) {
     const s = JSON.parse(fs.readFileSync(path.join(elData, 'settings.json'), 'utf8'));
     if (s.autoUpdate !== false) throw new Error('el-data settings.json 에 "autoUpdate": false 가 없습니다');
     const p = spawn('F:\\aside\\WorshipCue\\node_modules\\electron\\dist\\electron.exe', ['F:\\aside\\WorshipCue', '--data', elData], { detached: true, stdio: 'ignore' });
@@ -35,9 +37,9 @@ async function main() {
   }
   fs.mkdirSync(path.dirname(PIDS), { recursive: true });
   fs.writeFileSync(PIDS, JSON.stringify(pids));
-  for (let i = 0; i < 60 && !fs.existsSync(path.join(rsData, 'flow-ctl.txt')); i++) await sleep(250);
+  for (let i = 0; i < 240 && !fs.existsSync(path.join(rsData, 'flow-ctl.txt')); i++) await sleep(250);
   const out = { rs: fs.readFileSync(path.join(rsData, 'flow-port.txt'), 'utf8').trim(), pids };
-  if (pids.el && !A.includes('--no-el')) {
+  if (NAME === 'rs' && pids.el && !A.includes('--no-el')) {
     // Electron 포트: /control/ 이 200 이고 자료 폴더가 el-data 인 것
     for (let i = 0; i < 80 && !out.el; i++) {
       for (let p = 37528; p < 37540 && !out.el; p++) {
@@ -46,7 +48,7 @@ async function main() {
       if (!out.el) await sleep(500);
     }
   }
-  fs.writeFileSync(path.join(root, 'tmp', 'flow-ports.json'), JSON.stringify(out));
+  if (NAME === 'rs') fs.writeFileSync(path.join(root, 'tmp', 'flow-ports.json'), JSON.stringify(out));
   console.log(JSON.stringify(out));
 }
 main().catch(e => { console.error(e.message); process.exit(1); });
