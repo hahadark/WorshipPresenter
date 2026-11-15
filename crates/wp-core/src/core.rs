@@ -238,7 +238,14 @@ impl Core {
     }
 
     pub fn notify(&mut self, msg: impl Into<String>, kind: &'static str) {
-        self.toast = Some((msg.into(), kind, now_ms()));
+        let msg: String = msg.into();
+        // 오류·경고 알림은 8초 뒤 사라지고 다음 알림에 덮이므로 logs\ 에도 남긴다 (나중에 원인 찾기)
+        match kind {
+            "error" => log::error!("알림: {msg}"),
+            "warn" => log::warn!("알림: {msg}"),
+            _ => {}
+        }
+        self.toast = Some((msg, kind, now_ms()));
         self.toast_act = None;
         self.emit(Ev::Ui);
     }

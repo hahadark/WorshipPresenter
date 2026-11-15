@@ -18,6 +18,13 @@ thread_local! {
 /// 이보다 오래 쥐면 로그에 남긴다 (ms). 조작 화면 한 프레임(16ms)보다 훨씬 길면 화면이 끊긴다.
 const SLOW_HOLD_MS: u128 = 250;
 
+/// 점검용: WP_DEBUG_LOCK_MS=30 처럼 주면 그 시간부터 남긴다 (짧게 자주 쥐는 자리 찾기)
+fn slow_hold_ms() -> u128 {
+    static V: once_cell::sync::Lazy<u128> =
+        once_cell::sync::Lazy::new(|| std::env::var("WP_DEBUG_LOCK_MS").ok().and_then(|s| s.trim().parse().ok()).filter(|v| *v > 0).unwrap_or(SLOW_HOLD_MS));
+    *V
+}
+
 pub struct Mutex<T> {
     inner: parking_lot::Mutex<T>,
 }
@@ -99,7 +106,7 @@ impl<T> Drop for Guard<'_, T> {
             }
         });
         let ms = self.since.elapsed().as_millis();
-        if ms >= SLOW_HOLD_MS && !std::thread::panicking() {
+        if ms >= slow_hold_ms() && !std::thread::panicking() {
             note_slow(self.at, ms);
         }
     }
@@ -114,7 +121,7 @@ fn note_slow(at: &'static Location<'static>, ms: u128) {
         *n += 1;
         *n
     };
-    if n == 1 || n % 50 == 0 {
+    if n == 1 || n % 50 == 0 || std::env::var_os("WP_DEBUG_LOCK_MS").is_some() {
         log::warn!("코어 잠금을 오래 쥠: {at} {ms}ms ({n}번째) — 그동안 조작 화면·출력 요청이 기다립니다");
     }
 }
