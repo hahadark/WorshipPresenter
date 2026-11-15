@@ -19,7 +19,8 @@ pub fn font_file(path: &str) -> Option<&'static [u8]> {
     if let Some(v) = m.get(path) {
         return *v;
     }
-    let v: Option<&'static [u8]> = std::fs::read(path).ok().map(|b| &*Box::leak(b.into_boxed_slice()));
+    // 파일 매핑으로 (복사하지 않음). 안 되면 읽어서 쥔다
+    let v: Option<&'static [u8]> = crate::pptx::build::map_font_file(std::path::Path::new(path)).or_else(|| std::fs::read(path).ok().map(|b| &*Box::leak(b.into_boxed_slice())));
     m.insert(path.to_string(), v);
     v
 }

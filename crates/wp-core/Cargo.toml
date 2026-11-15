@@ -35,4 +35,4 @@ url = "2.5.8" # [트랙 A] 한글 도메인(홈페이지 주보 주소)
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_SystemInformation", "Win32_Storage_FileSystem", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_Ime", "Win32_System_Power", "Win32_System_Threading", "Win32_Graphics_Gdi", "Win32_System_ProcessStatus"] } # [트랙 B·D] 시간대·디스크·단축키·IME · [트랙 A] 화면 꺼짐·두 번 실행 막기
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_SystemInformation", "Win32_Storage_FileSystem", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_Ime", "Win32_System_Power", "Win32_System_Threading", "Win32_Graphics_Gdi", "Win32_System_ProcessStatus", "Win32_System_Memory"] } # [트랙 B·D] 시간대·디스크·단축키·IME · [트랙 A] 화면 꺼짐·두 번 실행 막기

@@ -86,6 +86,51 @@ fn seed_db() -> Option<PathBuf> {
     [exe_dir.join("bible.db"), PathBuf::from(r"F:\aside\WorshipCue\data\bible.db")].into_iter().find(|p| p.exists())
 }
 
+/// 점검용(디버그 빌드만): WP_DEBUG_ALLOC=1 이면 8MB 넘는 할당이 어디서 나왔는지 로그에 남긴다.
+/// 출시 빌드는 기호가 없어 쓸모가 없으므로 넣지 않는다.
+#[cfg(debug_assertions)]
+mod bigalloc {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    pub static ON: AtomicBool = AtomicBool::new(false);
+    thread_local! { static BUSY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+    pub struct Tracker;
+    fn note(size: usize, what: &str) {
+        if size < 8 << 20 || !ON.load(Ordering::Relaxed) {
+            return;
+        }
+        let _ = BUSY.try_with(|b| {
+            if b.replace(true) {
+                return;
+            }
+            let bt = std::backtrace::Backtrace::force_capture().to_string();
+            let ours: Vec<&str> = bt.lines().map(|l| l.trim()).filter(|l| !l.starts_with("at ") && !l.contains("bigalloc") && !l.contains("backtrace")).take(22).collect();
+            log::info!("큰 할당 {what} {:.0}MB: {}", size as f64 / 1048576.0, ours.join(" < "));
+            b.set(false);
+        });
+    }
+    unsafe impl GlobalAlloc for Tracker {
+        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+            note(l.size(), "alloc");
+            unsafe { System.alloc(l) }
+        }
+        unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
+            note(l.size(), "zeroed");
+            unsafe { System.alloc_zeroed(l) }
+        }
+        unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+            unsafe { System.dealloc(p, l) }
+        }
+        unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
+            note(n, "realloc");
+            unsafe { System.realloc(p, l, n) }
+        }
+    }
+}
+#[cfg(debug_assertions)]
+#[global_allocator]
+static ALLOC: bigalloc::Tracker = bigalloc::Tracker;
+
 /// 그래픽 백엔드 고르기: 환경 변수 → DX12 그래픽 카드(소프트웨어 그리기 아님)가 있으면 DX12 만 → 아니면 전부
 #[cfg(windows)]
 fn pick_backends() -> eframe::wgpu::Backends {
@@ -124,6 +169,8 @@ fn main() -> anyhow::Result<()> {
     wp_core::logger::init(&data_dir); // [트랙 B] 파일 로그 (logs\날짜.log)
     wp_core::logger::install_panic_hook(); // 오류(panic)도 로그에
     wp_core::util::mem_log("시작");
+    #[cfg(debug_assertions)]
+    bigalloc::ON.store(std::env::var_os("WP_DEBUG_ALLOC").is_some(), std::sync::atomic::Ordering::Relaxed);
     let web = web_dir();
     // [트랙 A] 두 번 실행 막기 (같은 데이터 폴더) · 송출 중 화면 꺼짐 막기
     // '1.x 자료 다시 가져오기' 로 다시 켜질 때: 앞 프로세스가 끝나길 기다린다 (두 번 실행 막기에 걸리지 않게)

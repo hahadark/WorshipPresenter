@@ -1496,6 +1496,11 @@ impl App {
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // 글꼴 아틀라스(글자 그림 모음)는 폭이 '가장 큰 텍스처 변'이고 높이가 두 배씩 자란다.
+        // 그래픽 카드 한계(8192)를 그대로 쓰면 슬라이드의 큰 한글 글자가 쌓일 때마다 수십 MB 씩 늘어
+        // 8192×8192(256MB, 화면 쪽 사본까지 두 배)까지 간다. 4096 으로 묶으면 가득 찼을 때 egui 가 비우고 다시 채운다.
+        static SIDE: once_cell::sync::Lazy<usize> = once_cell::sync::Lazy::new(|| std::env::var("WP_MAX_TEX").ok().and_then(|v| v.parse().ok()).unwrap_or(4096usize).clamp(1024, 16384));
+        raw.max_texture_side = Some(raw.max_texture_side.unwrap_or(*SIDE).min(*SIDE));
         crate::system_ui::inject(ctx, raw); // [트랙 B] 점검용 --draw-test (켜지 않으면 아무것도 안 함)
         // 점검용 --hover X,Y : 그 자리에 마우스가 있는 것처럼 (마우스 올림 단추 스크린샷용, 매 프레임)
         static HOVER: once_cell::sync::Lazy<Option<egui::Pos2>> = once_cell::sync::Lazy::new(|| {
@@ -1556,7 +1561,7 @@ impl eframe::App for App {
                 all.sort_by_key(|x| std::cmp::Reverse(x.0));
                 let total: usize = all.iter().map(|x| x.0).sum();
                 let (n, lru_mb) = crate::imgcache::stats();
-                wp_core::util::mem_log(&format!("프레임 {f} (10초마다) 그림 읽기 {:.0}MB · 텍스처 {}개 {:.0}MB · LRU {n}개 {lru_mb:.0}MB · 큰 것 {:?}", loaders as f64 / 1048576.0, all.len(), total as f64 / 1048576.0, all.iter().take(4).map(|x| format!("{}={:.0}MB", x.1, x.0 as f64 / 1048576.0)).collect::<Vec<_>>()));
+                wp_core::util::mem_log(&format!("프레임 {f} (10초마다) 그림 읽기 {:.0}MB · 텍스처 {}개 {:.0}MB · LRU {n}개 {lru_mb:.0}MB · 큰 것 {:?} · {}", loaders as f64 / 1048576.0, all.len(), total as f64 / 1048576.0, all.iter().take(4).map(|x| format!("{}={:.0}MB", x.1, x.0 as f64 / 1048576.0)).collect::<Vec<_>>(), wp_core::util::mem_regions_summary()));
             }
         }
         if r.is_err() {
@@ -1573,6 +1578,24 @@ impl eframe::App for App {
 impl App {
     fn ui_body(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        // 점검용 --panic-test ui|relock : 60번째 프레임 뒤에 한 번, 일부러 오류를 낸다.
+        // (logs\ 에 남는지 · 조작 화면이 계속 도는지 · 예배당 출력이 유지되는지 확인)
+        {
+            static KIND: once_cell::sync::Lazy<Option<String>> = once_cell::sync::Lazy::new(|| {
+                let a: Vec<String> = std::env::args().collect();
+                a.iter().position(|x| x == "--panic-test").and_then(|i| a.get(i + 1).cloned())
+            });
+            static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if let Some(k) = KIND.as_deref() {
+                if ctx.cumulative_pass_nr() > 60 && !DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    if k == "relock" {
+                        let _a = self.core.lock();
+                        let _b = self.core.lock(); // 재진입: 멈추지 않고 panic 이어야 한다
+                    }
+                    panic!("점검용: 일부러 낸 오류 (--panic-test {k})");
+                }
+            }
+        }
         let mut acts = vec![];
         let typing = ctx.egui_wants_keyboard_input();
         self.shortcuts(&ctx, &mut acts, typing);

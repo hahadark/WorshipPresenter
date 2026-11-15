@@ -121,7 +121,7 @@ pub fn font_bytes(name: &str) -> Option<(Vec<u8>, u32)> {
     let db = &*FONTDB;
     let want = name.trim();
     let bold = want.to_lowercase().ends_with(" bold");
-    let base = if bold { want[..want.len() - 5].trim() } else { want };
+    let base = if bold { want.get(..want.len().saturating_sub(5)).unwrap_or(want).trim() } else { want }; // 글자 경계가 아닐 수 있다
     let id = db
         .faces()
         .find(|f| f.families.iter().any(|(n, _)| n.eq_ignore_ascii_case(want)) || f.post_script_name.eq_ignore_ascii_case(&want.replace(' ', "")))
@@ -130,6 +130,50 @@ pub fn font_bytes(name: &str) -> Option<(Vec<u8>, u32)> {
     let mut out = None;
     db.with_face_data(id, |data, index| out = Some((data.to_vec(), index)));
     out
+}
+
+/// 글꼴 파일을 메모리에 복사하지 않고 파일 매핑으로 연다 (프로그램 끝까지 유지, 경로별 한 번).
+/// 한글 글꼴은 파일 하나가 10~30MB 라, 복사하면 PPT 에 쓰인 글꼴 수만큼 전용 메모리가 늘었다.
+pub fn map_font_file(path: &Path) -> Option<&'static [u8]> {
+    type Shared = Arc<dyn AsRef<[u8]> + Send + Sync>;
+    static MAPS: Lazy<parking_lot::Mutex<std::collections::HashMap<std::path::PathBuf, Option<&'static [u8]>>>> = Lazy::new(Default::default);
+    let mut maps = MAPS.lock();
+    if let Some(v) = maps.get(path) {
+        return *v;
+    }
+    let v = (|| {
+        let mut tmp = resvg::usvg::fontdb::Database::new();
+        tmp.load_font_file(path).ok()?;
+        let id = tmp.faces().next()?.id;
+        // 안전: 시스템 글꼴 파일은 프로그램이 도는 동안 바뀌지 않는다고 본다 (fontdb 도 같은 가정으로 매핑한다)
+        let (data, _) = unsafe { tmp.make_shared_face_data(id)? };
+        let keep: &'static Shared = Box::leak(Box::new(data));
+        let bytes: &'static [u8] = (**keep).as_ref();
+        Some(bytes)
+    })();
+    maps.insert(path.to_path_buf(), v);
+    v
+}
+
+/// font_bytes 와 같지만 복사하지 않는다 (파일 매핑). 파일이 아닌 글꼴이면 None
+pub fn font_static(name: &str) -> Option<(&'static [u8], u32)> {
+    use resvg::usvg::fontdb::{Family, Query, Source, Weight};
+    let db = &*FONTDB;
+    let want = name.trim();
+    let bold = want.to_lowercase().ends_with(" bold");
+    let base = if bold { want.get(..want.len().saturating_sub(5)).unwrap_or(want).trim() } else { want };
+    let id = db
+        .faces()
+        .find(|f| f.families.iter().any(|(n, _)| n.eq_ignore_ascii_case(want)) || f.post_script_name.eq_ignore_ascii_case(&want.replace(' ', "")))
+        .map(|f| f.id)
+        .or_else(|| db.query(&Query { families: &[Family::Name(base)], weight: if bold { Weight::BOLD } else { Weight::NORMAL }, ..Default::default() }))?;
+    let (src, index) = db.face_source(id)?;
+    let path = match src {
+        Source::File(p) => p,
+        Source::SharedFile(p, _) => p,
+        Source::Binary(_) => return None,
+    };
+    Some((map_font_file(&path)?, index))
 }
 
 /// SVG 글 → PNG (가로 width px). 그림 href 는 dir 기준으로 읽는다
