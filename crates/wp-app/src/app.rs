@@ -1527,6 +1527,7 @@ impl App {
 
         crate::track_c::menu_bar(self, ui, &mut acts); // [트랙 C] 메뉴 줄 (트랙 B·D 항목도 여기서 연다)
         crate::track_c::windows(self, &ctx, &mut acts); // [트랙 C] 설정·템플릿·기록 창
+        crate::trackd_ui::migrate_ask(&ctx, &self.data_dir); // [갈래 D] 1.x 자료가 더 최근이면 다시 가져올지 묻기
         let s = self.snap(); // [트랙 C] 창에서 바뀐 것 반영
         // 머리 줄 (header.top: panel 바탕 · 아래 line) — topbar_ui.rs
         let pf = crate::theme::pal().panel;

@@ -92,13 +92,27 @@ fn main() -> anyhow::Result<()> {
     wp_core::logger::install_panic_hook(); // 오류(panic)도 로그에
     let web = web_dir();
     // [트랙 A] 두 번 실행 막기 (같은 데이터 폴더) · 송출 중 화면 꺼짐 막기
+    // '1.x 자료 다시 가져오기' 로 다시 켜질 때: 앞 프로세스가 끝나길 기다린다 (두 번 실행 막기에 걸리지 않게)
+    if let Some(pid) = arg("--wait-pid").and_then(|p| p.parse::<u32>().ok()) {
+        wp_core::firstrun::wait_for_pid(pid);
+    }
     let (already, _instance) = wp_core::parity_a::single_instance(&data_dir);
     if already {
-        wp_core::parity_a::focus_existing_window("워십프리젠터");
+        // 먼저 켜진 프로세스 번호로 창을 찾는다 (제목만으로 찾으면 같은 제목의 Electron 1.x 창을 올릴 수 있음)
+        wp_core::firstrun::focus_instance(&data_dir);
         return Ok(());
     }
+    wp_core::firstrun::write_instance_pid(&data_dir);
+    // 창이 늦게 뜨면(첫 실행 자료 옮기기·느린 디스크) 작은 '켜는 중…' 창을 먼저 보인다
+    wp_core::firstrun::start_splash();
     wp_core::parity_a::keep_display_awake();
-    let core = Core::open(data_dir.clone(), web.clone(), seed_db().as_deref())?;
+    let core = match Core::open(data_dir.clone(), web.clone(), seed_db().as_deref()) {
+        Ok(c) => c,
+        Err(e) => {
+            wp_core::firstrun::error_box(&format!("워십프리젠터를 켜지 못했습니다.\n\n{e:#}\n\n자료 폴더: {}", data_dir.display()));
+            return Err(e);
+        }
+    };
     let shared = Arc::new(Mutex::new(core));
     wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
     wp_core::i18n::set_lang(shared.lock().settings.get()["uiLang"].as_str().unwrap_or("ko")); // [트랙 D] 영어 화면 (출력 웹도)
@@ -134,6 +148,7 @@ fn main() -> anyhow::Result<()> {
         "worship-presenter-rs",
         opts,
         Box::new(move |cc| {
+            wp_core::firstrun::splash_done(); // 조작 화면 창이 생겼다 → 안내 창 닫기
             theme::install_fonts(&cc.egui_ctx); // Pretendard + 맑은 고딕(대체·슬라이드)
             egui_extras::install_image_loaders(&cc.egui_ctx);
             theme::apply(&cc.egui_ctx, theme::ThemeId::Dark); // 설정 테마는 첫 프레임에 apply_ui_prefs 가 다시 적용

@@ -162,16 +162,24 @@ fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
     }
     found.ok_or(crate::i18n::tr("이 아키텍처용 Windows 설치 자산이 없습니다.").into())
 }
+/// 설치판인가: 실행 파일 옆에 제거 프로그램(설치 파일이 씀)이 있으면 설치판.
+/// 포터블 zip·개발 실행에서 설치 파일을 돌리면 포터블 폴더는 그대로 두고 %LOCALAPPDATA% 에 따로 설치·바로가기를 만들어 버린다 → 받기·설치를 막는다
+pub fn installed_copy() -> bool {
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("Uninstall WorshipPresenter.exe").is_file())).unwrap_or(false)
+}
+pub const PORTABLE_NOTE: &str = "설치 없이 쓰는 판(포터블)은 스스로 바꾸지 않습니다. 릴리스 페이지에서 새 Portable.zip 을 받거나 설치 파일로 설치하세요.";
 pub fn status(settings: &Value) -> Value {
     let mut u = UPDATE.lock().clone();
     u["current"] = json!(VERSION);
     u["releaseHold"] = json!(RELEASE_HOLD);
     u["holdReason"] = json!(crate::i18n::tr(HOLD_REASON));
+    let installed = installed_copy();
+    u["portable"] = json!(!installed);
     u["canDownload"] = json!(
-        !RELEASE_HOLD && cfg!(windows) && ASSET.lock().is_some() && !BUSY.load(Ordering::SeqCst)
+        !RELEASE_HOLD && cfg!(windows) && installed && ASSET.lock().is_some() && !BUSY.load(Ordering::SeqCst)
     );
     u["canInstall"] = json!(
-        !RELEASE_HOLD && cfg!(windows) && READY.lock().is_some() && !BUSY.load(Ordering::SeqCst)
+        !RELEASE_HOLD && cfg!(windows) && installed && READY.lock().is_some() && !BUSY.load(Ordering::SeqCst)
     );
     u["skipped"] = json!(
         settings["skipVersion"].as_str().filter(|s| !s.is_empty()) == u["version"].as_str()
@@ -386,6 +394,9 @@ pub fn download(core: &Shared) -> Result<(), String> {
     if !cfg!(windows) {
         return Err(crate::i18n::tr("Windows 설치판에서만 지원합니다.").into());
     }
+    if !installed_copy() {
+        return Err(crate::i18n::tr(PORTABLE_NOTE).into());
+    }
     let guard = Busy::acquire()?;
     let a = ASSET
         .lock()
@@ -444,6 +455,9 @@ pub fn cancel() {
 pub fn install_now(core: &Shared) -> Result<(), String> {
     gate()?;
     let _guard = Busy::acquire()?;
+    if !installed_copy() {
+        return Err(crate::i18n::tr(PORTABLE_NOTE).into());
+    }
     if !cfg!(windows) || UPDATE.lock()["state"] != "ready" {
         return Err(crate::i18n::tr("설치 준비 상태가 아닙니다.").into());
     }

@@ -165,7 +165,7 @@ pub fn is_allowed(core: &Core, file: &str) -> bool {
 }
 
 pub fn electron_data() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("WorshipCue").join("data"))
+    crate::core::legacy_data_dir() // 자료 이전과 같은 규칙 (BIBLECAST_DATA · 점검용 WP_LEGACY_DATA)
 }
 
 /// 캐시 폴더들: 우리 것 먼저, 그다음 Electron 판 (읽기만)
