@@ -583,9 +583,11 @@ impl App {
                 if on("previewPrevSlide", "PageUp") { acts.push(Act::PreviewStep(-1)) }
                 // control.js: ← → = 미리보기 앞뒤 슬라이드, Enter = 미리보기 송출 (글 쓰는 칸·창이 열려 있을 때·본문 목록에 키보드가 있을 때 Enter 는 빼고)
                 if !self.tc.slideedit.open {
-                    if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowLeft)) { acts.push(Act::PreviewStep(-1)) }
-                    if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowRight)) { acts.push(Act::PreviewStep(1)) }
-                    if !crate::center_ui::results_focused(ctx) && ctx.input(|i| i.key_pressed(Key::Enter) && i.modifiers.is_none()) {
+                    // 장 격자·송출 기록 창이 키보드를 갖고 있으면 ←→ 는 그쪽 것, 순서 목록까지 포함해 Enter 도 그쪽 것 (control.js:1654·1660 의 #chapterGrid · #cueList · 모달 제외)
+                    let (nav_arrows, nav_enter) = (crate::cue_ui::nav_takes_arrows(ctx), crate::cue_ui::nav_takes_enter(ctx));
+                    if !nav_arrows && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowLeft)) { acts.push(Act::PreviewStep(-1)) }
+                    if !nav_arrows && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowRight)) { acts.push(Act::PreviewStep(1)) }
+                    if !nav_enter && !crate::center_ui::results_focused(ctx) && ctx.input(|i| i.key_pressed(Key::Enter) && i.modifiers.is_none()) {
                         ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
                         acts.push(Act::SendPreview)
                     }
@@ -626,6 +628,9 @@ impl App {
             let bg = ui.interact(ui.clip_rect(), ui.id().with("cue-empty"), Sense::click());
             crate::widgets::mark("cue-empty", ui.clip_rect());
             crate::ctx_ui::cue_empty_menu(self, &bg, acts);
+            // 목록에 키보드가 있을 때의 ↑↓ · Alt+↑↓ · Enter · Delete (cue.js:1271)
+            crate::cue_ui::list_keys(self, ui, ui.clip_rect(), s.items.len(), pv_idx, acts);
+            let key_scroll = crate::cue_ui::take_scroll(ui.ctx());
             egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, it) in s.items.iter().enumerate() {
@@ -640,6 +645,7 @@ impl App {
                     ui.add_space(2.0); // .cue-item { margin-bottom: 2px }
                     let r = out.resp;
                     crate::widgets::mark(&format!("cue-row-{i}"), r.rect);
+                    if key_scroll && self.sel == Some(i) { r.scroll_to_me(None); }
                     self.cue_row_dnd(ui, &r, i); // [트랙 B] 끌어서 옮기기
                     crate::parity_ui::cue_row_menu(self, &r, i, it, s.items.len(), acts); // [트랙 A] 오른쪽 클릭 메뉴
                     if out.send {
@@ -674,6 +680,14 @@ impl App {
         crate::cue_ui::add_grid(self, ui, acts);
         let sel_item = self.sel.filter(|i| *i < s.items.len()).map(|i| (i, &s.items[i]));
         crate::cue_ui::windows(self, ui, sel_item, acts);
+    }
+
+    /// 송출 기록 창이 다시 띄운 본문을 검색칸·절 목록에 반영한다.
+    pub(crate) fn take_history_loaded(&mut self) {
+        if let Some((q, pg)) = self.tc.history.loaded.take() {
+            self.search = q;
+            self.result = json!({ "ok": true, "mode": "reference", "passage": pg });
+        }
     }
 
     /// 우클릭 메뉴 등은 이 API로 선택과 본문 패널 노출을 함께 요청한다.
@@ -1656,6 +1670,8 @@ impl App {
         crate::track_c::windows(self, &ctx, &mut acts); // [트랙 C] 설정·템플릿·기록 창
         // 시험에서는 띄우지 않는다: 이 PC 의 실제 1.x 자료를 보고 뜨는 전역 상태(firstrun::ASK)라 화면 전체 합성 시험을 가린다
         if !cfg!(test) { crate::trackd_ui::migrate_ask(&ctx, &self.data_dir); } // [갈래 D] 1.x 자료가 더 최근이면 다시 가져올지 묻기
+        // 송출 기록에서 다시 띄운 본문: 검색칸 글과 절 목록도 그 본문으로 (control.js:1362 `$('#q').value = …; loadPassage`)
+        self.take_history_loaded();
         let s = self.snap(); // [트랙 C] 창에서 바뀐 것 반영
         // 머리 줄 (header.top: panel 바탕 · 아래 line) — topbar_ui.rs
         let pf = crate::theme::pal().panel;
@@ -1782,6 +1798,9 @@ mod auditd_tests;
 #[cfg(test)]
 #[path = "audite_tests.rs"]
 mod audite_tests;
+#[cfg(test)]
+#[path = "nav_tests.rs"]
+mod nav_tests;
 #[cfg(test)]
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)

@@ -17,6 +17,36 @@ pub struct HistoryUi {
     q: String,
     by_title: bool,
     msg: String,
+    /// 송출 기록 목록에서 키로 고른 줄 (control.js openHistory 의 sel)
+    pub(crate) sel: usize,
+    was_open: bool,
+    scroll_sel: bool,
+    /// 다시 띄운 본문 (검색칸 글, 본문) — app.rs 가 검색칸·절 목록에 반영한다
+    pub(crate) loaded: Option<(String, serde_json::Value)>,
+}
+
+/// 기록 한 줄을 다시 띄운다 (control.js:1357 load): 기록된 제목을 기록된 번역본으로 다시 찾아 미리보기에 올린다.
+/// 큐시트 순서에서 나간 기록이어도 그때의 순서 번호를 쓰지 않고 본문 자체를 띄우므로, 그 뒤 큐시트가 바뀌어도 다른 순서가 나가지 않는다.
+/// 찾지 못하면(찬양·제목 같은 성경이 아닌 기록, 지워진 번역본) 알림만 내고 미리보기·LIVE 는 그대로 둔다.
+fn load(core: &Shared, h: &serde_json::Value, send: bool, acts: &mut Vec<Act>) -> Option<(String, serde_json::Value)> {
+    let s = |k: &str| h[k].as_str().unwrap_or("").trim().to_string();
+    let (title, query, vid) = (s("title"), s("query"), s("versionId"));
+    let mut c = core.lock();
+    let v = if vid.is_empty() { c.version_id() } else { vid };
+    let r = c.store.resolve_reference(&v, &title);
+    if r["ok"] != serde_json::json!(true) {
+        let e = r["error"].as_str().map(str::to_string).unwrap_or_else(|| wp_core::i18n::tr("본문을 찾지 못했습니다."));
+        c.notify(format!("{title}: {e}"), "warn");
+        return None;
+    }
+    drop(c);
+    let q = if query.is_empty() { title } else { query };
+    let pg = r["passage"].clone();
+    acts.push(Act::PreviewPassage(pg.clone(), q.clone(), None));
+    if send {
+        acts.push(Act::SendPreview);
+    }
+    Some((q, pg))
 }
 
 fn local_time(ms: i64) -> String {
@@ -41,10 +71,49 @@ fn local_time(ms: i64) -> String {
 
 impl HistoryUi {
     pub fn show(&mut self, ctx: &egui::Context, core: &Shared, acts: &mut Vec<Act>) {
+        use crate::cue_ui::Nav;
+        if !self.open {
+            if std::mem::take(&mut self.was_open) {
+                crate::cue_ui::nav_release(ctx, Nav::History);
+            }
+        }
         if self.open {
             let hist = core.lock().settings.get()["history"].as_array().cloned().unwrap_or_default();
+            // 열면 목록이 키보드를 갖고 첫 줄을 고른다 (control.js:1356 `let sel = 0; … list.focus()`)
+            if !std::mem::replace(&mut self.was_open, true) {
+                self.sel = 0;
+                self.scroll_sel = true;
+                crate::cue_ui::nav_set(ctx, Nav::History);
+            }
+            self.sel = self.sel.min(hist.len().saturating_sub(1));
+            crate::cue_ui::nav_touch(ctx, Nav::History);
+            // 목록 키 (control.js:1364): ↑↓ 고르기 · Enter = 그 줄을 다시 띄우고 창 닫기. 글 쓰는 칸·메뉴가 열려 있으면 받지 않는다
+            let mut close = false;
+            if crate::cue_ui::nav_owner(ctx) == Nav::History && !egui::Popup::is_any_open(ctx) && !hist.is_empty() {
+                use egui::{Key, Modifiers};
+                let plain = ctx.input(|i| !i.modifiers.alt && !i.modifiers.command && !i.modifiers.ctrl);
+                let (down, up, enter) = if plain {
+                    ctx.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp), i.consume_key(Modifiers::NONE, Key::Enter)))
+                } else {
+                    (false, false, false)
+                };
+                if down {
+                    self.sel = (self.sel + 1).min(hist.len() - 1);
+                    self.scroll_sel = true;
+                } else if up {
+                    self.sel = self.sel.saturating_sub(1);
+                    self.scroll_sel = true;
+                } else if enter {
+                    // 원본 load: 창을 닫고 다시 띄운다 (찾지 못해도 창은 닫히고 알림이 뜨다)
+                    if let Some(l) = load(core, &hist[self.sel], false, acts) {
+                        self.loaded = Some(l);
+                    }
+                    close = true;
+                }
+            }
+            let key_owner = crate::cue_ui::nav_owner(ctx) == Nav::History;
             let mut open = self.open;
-            widgets::float_window(ctx, "history", wp_core::i18n::tr("송출 기록"), [520.0, 520.0]).open(&mut open).show(ctx, |ui| {
+            let win = widgets::float_window(ctx, "history", wp_core::i18n::tr("송출 기록"), [520.0, 520.0]).open(&mut open).show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(wp_core::i18n::tr_args("{1}개 (최근 300개)", &[&(hist.len())]));
                     // 되살릴 수 없으므로 줄 안에서 한 번 더 묻는다 (휴리스틱 평가 3번)
@@ -56,21 +125,47 @@ impl HistoryUi {
                 let direct = core.lock().direct_mode();
                 ui.label(RichText::new(wp_core::i18n::tr(if direct { "누르면 바로 송출" } else { "누르면 미리보기, 두 번 누르면 송출" })).small().color(pal().muted));
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    for h in &hist {
-                        let q = h["query"].as_str().unwrap_or("").to_string();
-                        let t = format!("{}   {}  ·  {}", local_time(h["at"].as_i64().unwrap_or(0)), h["title"].as_str().unwrap_or(""), h["versionName"].as_str().unwrap_or(""));
+                    for (i, h) in hist.iter().enumerate() {
+                        let title = h["title"].as_str().unwrap_or("");
+                        let t = format!("{}   {}  ·  {}", local_time(h["at"].as_i64().unwrap_or(0)), title, h["versionName"].as_str().unwrap_or(""));
                         let r = ui.add(egui::Label::new(t).sense(egui::Sense::click()));
-                        if !q.is_empty() {
-                            match widgets::click2(ui, ("hist", h["at"].as_i64().unwrap_or(0), &q), &r) {
-                                widgets::Click::Double => acts.push(Act::SendRef(q, None)),
-                                widgets::Click::Single => acts.push(Act::PreviewRef(q, None)),
-                                widgets::Click::None => {}
+                        widgets::mark(&format!("hist-row-{i}"), r.rect);
+                        if i == self.sel {
+                            // .row.sel — 키보드가 목록에 있을 때만 진하게
+                            let c = if key_owner { pal().accent } else { pal().line2 };
+                            ui.painter().rect_stroke(r.rect.expand2(egui::vec2(3.0, 1.0)), egui::CornerRadius::same(4), egui::Stroke::new(1.5, c), egui::StrokeKind::Outside);
+                            if std::mem::take(&mut self.scroll_sel) {
+                                r.scroll_to_me(None);
                             }
+                        }
+                        // 한 번 = 다시 띄움(바로 송출 모드면 송출), 두 번 = 송출. 기록된 제목·번역본으로 찾는다 (control.js load)
+                        match widgets::click2(ui, ("hist", h["at"].as_i64().unwrap_or(0), title), &r) {
+                            widgets::Click::Double => {
+                                self.sel = i;
+                                if let Some(l) = load(core, h, true, acts) {
+                                    self.loaded = Some(l);
+                                }
+                            }
+                            widgets::Click::Single => {
+                                self.sel = i;
+                                if let Some(l) = load(core, h, false, acts) {
+                                    self.loaded = Some(l);
+                                }
+                            }
+                            widgets::Click::None => {}
                         }
                     }
                 });
             });
-            self.open = open;
+            // 창을 누르면 키보드를 갖고, 창 밖을 누르면 놓는다 (모달이 아니라 떠 있는 창이라 다른 목록을 누를 수 있다)
+            if ctx.input(|i| i.pointer.any_pressed()) {
+                if win.as_ref().is_some_and(|w| w.response.contains_pointer()) {
+                    crate::cue_ui::nav_set(ctx, Nav::History);
+                } else {
+                    crate::cue_ui::nav_release(ctx, Nav::History);
+                }
+            }
+            self.open = open && !close;
         }
         if self.usage_open {
             let mut open = self.usage_open;
