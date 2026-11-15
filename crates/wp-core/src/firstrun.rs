@@ -187,8 +187,13 @@ pub fn set_aside(data_dir: &Path) -> std::io::Result<PathBuf> {
 
 /// SQLite 온라인 백업으로 DB 를 한 시점 그대로 복사 (다른 프로그램이 열어 써도 안전, WAL 내용 포함). 진행률은 PROGRESS
 pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
+    let t0 = std::time::Instant::now();
     let from = rusqlite::Connection::open_with_flags(src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let mut to = rusqlite::Connection::open(dst)?;
+    // 받는 쪽은 임시 이름(bible.db.migrating)이고 다 된 뒤에야 bible.db 로 바꾸므로 쪽마다 디스크에 밀어 넣을 필요가 없다
+    // (끝에 한 번만 밀어 넣는다). 기본값(FULL)으로는 디스크가 바쁠 때 수십 초가 걸렸다
+    let _ = to.execute_batch("PRAGMA synchronous=OFF;");
+    let mut busy = 0u32;
     {
         let b = rusqlite::backup::Backup::new(&from, &mut to)?;
         loop {
@@ -200,16 +205,32 @@ pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
             match r {
                 rusqlite::backup::StepResult::Done => break,
                 rusqlite::backup::StepResult::More => {}
-                _ => std::thread::sleep(std::time::Duration::from_millis(50)),
+                _ => {
+                    busy += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(50))
+                }
             }
         }
     }
     // 열어 보기 점검 (깨진 파일이면 여기서 실패)
+    let t1 = t0.elapsed();
     let ok: String = to.query_row("PRAGMA quick_check(1)", [], |r| r.get(0))?;
     drop(to);
     if ok != "ok" {
         return Err(rusqlite::Error::InvalidQuery);
     }
+    let t2 = t0.elapsed();
+    // 한 번에 디스크로 (이름을 바꾸기 전에)
+    if let Ok(f) = std::fs::OpenOptions::new().write(true).open(dst) {
+        let _ = f.sync_all();
+    }
+    log::info!(
+        "자료 복사 {:.0}MB: 복사 {}ms · 점검 {}ms · 디스크에 쓰기 {}ms (기다림 {busy}회)",
+        std::fs::metadata(dst).map(|m| m.len()).unwrap_or(0) as f64 / 1_048_576.0,
+        t1.as_millis(),
+        (t2 - t1).as_millis(),
+        (t0.elapsed() - t2).as_millis()
+    );
     Ok(())
 }
 
