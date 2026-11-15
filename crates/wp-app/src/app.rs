@@ -1483,6 +1483,7 @@ impl eframe::App for App {
         crate::parity2_ui::shortcuts(self, &ctx); // [트랙 A] Ctrl+B · Ctrl+Shift+V (위젯보다 먼저)
         self.trackb_shortcuts(&ctx); // [트랙 B]
         self.run_test(&ctx, &mut acts);
+        if crate::parity_shot::run(self, ui) { return; } // 점검용 --parity: 슬라이드 그림만 창 전체에
         let s = self.snap();
 
         crate::track_c::menu_bar(self, ui, &mut acts); // [트랙 C] 메뉴 줄 (트랙 B·D 항목도 여기서 연다)
