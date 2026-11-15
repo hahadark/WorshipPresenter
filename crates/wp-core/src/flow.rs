@@ -79,7 +79,7 @@ pub fn tick(c: &mut Core, now: i64) {
         if !live_visible(c) {
             return;
         }
-        let (idx, n, lp) = c.pres.live.as_ref().map(|l| (l.deck.index, l.deck.slides.len(), l.deck.passage["auto"]["loop"].as_bool().unwrap_or(false))).unwrap();
+        let Some((idx, n, lp)) = c.pres.live.as_ref().map(|l| (l.deck.index, l.deck.slides.len(), l.deck.passage["auto"]["loop"].as_bool().unwrap_or(false))) else { return };
         if idx + 1 < n {
             c.step(1);
         } else if lp {

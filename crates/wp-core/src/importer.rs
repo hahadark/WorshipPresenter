@@ -359,11 +359,12 @@ fn validate(p: &Parsed, report: &mut Value) -> Data {
     for v in &verses { st.entry(v.book).or_default().entry(v.chapter).or_default().insert(v.verse); }
     for b in BOOKS.iter() {
         let Some(m) = st.get(&b.id) else { add_issue(&mut report["warnings"], format!("책 없음: {}", b.name)); continue };
-        let max_ch = *m.keys().max().unwrap();
+        // 파일에 터무니없이 큰 장·절 번호가 있어도 점검이 끝없이 돌지 않게 상한
+        let max_ch = m.keys().max().copied().unwrap_or(0).min(b.chapters.max(1) + 50);
         if max_ch != b.chapters { add_issue(&mut report["warnings"], format!("{}: {}장 (표준 {}장)", b.name, max_ch, b.chapters)); }
         for c in 1..=max_ch {
             let Some(set) = m.get(&c) else { add_issue(&mut report["errors"], format!("장 누락: {} {}장", b.name, c)); continue };
-            let max_v = *set.iter().max().unwrap();
+            let max_v = set.iter().max().copied().unwrap_or(0).min(400);
             let missing: Vec<i64> = (1..=max_v).filter(|v| !set.contains(v)).collect();
             if !missing.is_empty() {
                 let list = missing.iter().take(5).map(|x| x.to_string()).collect::<Vec<_>>().join(",");

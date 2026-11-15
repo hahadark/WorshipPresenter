@@ -51,7 +51,8 @@ pub fn parse_x32(text: &str) -> Result<Vec<OscCmd>, String> {
     for raw in text.split([',', '\n']).map(|s| s.trim()).filter(|s| !s.is_empty()) {
         let s = WS.replace_all(&raw.to_lowercase(), " ").to_string();
         if let Some(m) = SCENE.captures(&s) {
-            out.push(OscCmd { address: "/-action/goscene".into(), args: vec![OscArg::I(m[1].parse().unwrap())], text: raw.into() });
+            let Ok(n) = m[1].parse() else { continue }; // 너무 큰 숫자
+            out.push(OscCmd { address: "/-action/goscene".into(), args: vec![OscArg::I(n)], text: raw.into() });
             continue;
         }
         if let Some(m) = CH.captures(&s) {

@@ -164,7 +164,8 @@ impl BibleStore {
 
     /// 이 번역본에서 보일 책 이름 {id, name, short}
     pub fn book_of(&mut self, version: &str, book_id: i64) -> Value {
-        let b = get_book(book_id).expect("book");
+        // 66권 밖의 책 번호(외경이 든 번역본 · 손상된 순서)가 와도 꺼지지 않게
+        let Some(b) = get_book(book_id) else { return json!({ "id": book_id, "name": format!("{book_id}권"), "short": format!("{book_id}") }) };
         let (name, short) = book_names(b, &self.lang_of(version));
         json!({ "id": b.id, "name": name, "short": short })
     }
@@ -348,8 +349,9 @@ impl BibleStore {
                     let b: i64 = r.get(0)?;
                     let c: i64 = r.get(1)?;
                     let vs: i64 = r.get(2)?;
-                    let bk = get_book(b).unwrap();
-                    Ok(json!({ "book": b, "chapter": c, "verse": vs, "text": r.get::<_, String>(3)?, "bookName": bk.name, "bookShort": bk.short, "ref": format!("{} {}:{}", bk.name, c, vs) }))
+                    // 66권 밖의 책 번호가 든 번역본에서 낱말을 찾아도 꺼지지 않게
+                    let (name, short) = get_book(b).map(|k| (k.name.to_string(), k.short.to_string())).unwrap_or_else(|| (format!("{b}권"), format!("{b}")));
+                    Ok(json!({ "book": b, "chapter": c, "verse": vs, "text": r.get::<_, String>(3)?, "bookName": name, "bookShort": short, "ref": format!("{} {}:{}", name, c, vs) }))
                 })
                 .map(|it| it.filter_map(|x| x.ok()).collect())
                 .unwrap_or_default(),

@@ -155,7 +155,7 @@ static FONT_OK: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[\w가-힣\u{3131}-\u{3
 
 fn item(x: &Value, i: usize) -> Option<Value> {
     let ty = x["type"].as_str().filter(|t| ["text", "image", "shape", "camera"].contains(t))?;
-    let r = rect(x).unwrap();
+    let r = rect(x)?;
     let id = x["id"].as_str().filter(|s| ID_OK.is_match(s)).map(String::from).unwrap_or_else(|| format!("e{}{}", i, crate::util::to36(rand::random::<u32>() as u64)));
     let mut o = r;
     o.insert("id".into(), json!(id));

@@ -119,7 +119,7 @@ pub fn align_lyrics(verses: &[String], chorus: &str, n: usize) -> Vec<String> {
     }
     let mut out = vec![];
     if !plans.is_empty() {
-        plans.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap());
+        plans.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
         let (f, s, c, _) = plans[0];
         for (i, v) in verses.iter().enumerate() {
             out.extend(split_even(v, s).iter().map(|x| two_lines(x)));
@@ -258,7 +258,7 @@ pub fn get(core: &Core, book: &str, number: i64) -> Result<Value, String> {
     let r: Option<(i64, String, String)> = db.query_row("SELECT chapter, title, htext FROM hymnal WHERE chapter = ? ORDER BY id LIMIT 1", [number], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(|e| e.to_string())?;
     let (ch, title, htext) = r.ok_or(crate::i18n::tr_args("{1} {2}장이 없습니다.", &[&book, &number]))?;
     let kind = kind_of(book, ch);
-    let b = BOOKS.iter().find(|x| x.id == book).unwrap();
+    let b = BOOKS.iter().find(|x| x.id == book).ok_or_else(|| crate::i18n::tr_args("{1} {2}장이 없습니다.", &[&book, &number]))?;
     if kind == "reading" {
         let lines: Vec<(String, bool)> = BR.split(&htext).map(|l| (clean(l), l.to_lowercase().contains("<b>"))).filter(|l| !l.0.is_empty()).collect();
         let pages: Vec<String> = lines.chunks(2).map(|c| c.iter().map(|(t, p)| if *p { format!("**{t}**") } else { t.clone() }).collect::<Vec<_>>().join("\n")).collect();

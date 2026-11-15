@@ -188,7 +188,7 @@ fn find_marks(t: &Text) -> Vec<Mark> {
         if REF_BEFORE.is_match(before) { continue; }
         if AFTER_REF.is_match(t.slice(end, end + 4)) { continue; }
         let n = |i: usize| m.get(i).and_then(|x| x.as_str().parse::<i64>().ok());
-        let (sc, sv) = (n(2).unwrap(), n(3).unwrap());
+        let (Some(sc), Some(sv)) = (n(2), n(3)) else { continue }; // 숫자가 너무 길면(넘침) 장절이 아니다
         let (mut ec, mut ev) = (sc, sv);
         match (n(4), n(5)) { (Some(a), Some(b)) => { ec = a; ev = b; } (Some(a), None) => ev = a, _ => {} }
         if sv < 1 || (ev < sv && ec == sc) || ec < sc { continue; }

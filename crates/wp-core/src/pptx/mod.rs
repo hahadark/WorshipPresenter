@@ -340,7 +340,7 @@ pub fn parse_fill(parent: Option<Node>, ctx: &Ctx, pkg: &mut Pkg, ph: Option<Rgb
             "solidFill" => return Some(resolve_color(color_kid(Some(c)), Some(ctx), ph).map(Fill::Solid).unwrap_or(Fill::None)),
             "gradFill" => {
                 let mut stops: Vec<(f64, Rgba)> = kids(kid(Some(c), "gsLst"), "gs").into_iter().filter_map(|g| Some((num(Some(g), "pos", 0.0) / 100000.0, resolve_color(color_kid(Some(g)), Some(ctx), ph)?))).collect();
-                stops.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+                stops.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)); // NaN 이 든 깨진 파일
                 if stops.is_empty() {
                     return Some(Fill::None);
                 }
@@ -1327,7 +1327,7 @@ pub fn slide_text(s: &Slide) -> String {
             boxes.push((sh.y, sh.x, t));
         }
     }
-    boxes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+    boxes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)));
     boxes.into_iter().map(|b| b.2).filter(|t| !t.trim().is_empty()).collect::<Vec<_>>().join("\n")
 }
 
