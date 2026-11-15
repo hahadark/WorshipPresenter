@@ -59,6 +59,52 @@ pub fn normalize_template(t: &Value) -> Value {
     out
 }
 
+enum BgJob {
+    Write(PathBuf, String),
+    Sync(std::sync::mpsc::Sender<()>),
+}
+static BG_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static BG_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// 설정 파일 쓰기 일꾼 (차례대로 하나씩)
+static BG: Lazy<parking_lot::Mutex<std::sync::mpsc::Sender<BgJob>>> = Lazy::new(|| {
+    let (tx, rx) = std::sync::mpsc::channel::<BgJob>();
+    BG_STARTED.store(true, std::sync::atomic::Ordering::Relaxed);
+    let _ = std::thread::Builder::new().name("settings-save".into()).spawn(move || {
+        for job in rx {
+            match job {
+                BgJob::Write(file, txt) => {
+                    let tmp = file.with_extension("json.tmp");
+                    let r = (|| -> std::io::Result<()> {
+                        if let Some(d) = file.parent() {
+                            fs::create_dir_all(d)?;
+                        }
+                        fs::write(&tmp, txt)?;
+                        fs::rename(&tmp, &file)
+                    })();
+                    if let Err(e) = r {
+                        log::error!("설정 저장 실패: {e} ({})", file.display());
+                        BG_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                BgJob::Sync(done) => {
+                    let _ = done.send(());
+                }
+            }
+        }
+    });
+    parking_lot::Mutex::new(tx)
+});
+/// 맡겨 둔 저장이 모두 끝날 때까지 (최대 5초)
+fn bg_wait() {
+    if !BG_STARTED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    if BG.lock().send(BgJob::Sync(tx)).is_ok() {
+        let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
+    }
+}
+
 pub struct Settings {
     pub file: PathBuf,
     pub backup: PathBuf,
@@ -109,15 +155,36 @@ impl Settings {
         self.dirty = true;
     }
 
-    /// 바뀐 것이 있으면 원자적으로 저장 (임시 파일 → 이름 바꾸기)
+    /// 바뀐 것이 있으면 원자적으로 저장 (임시 파일 → 이름 바꾸기). 백그라운드에 맡긴 저장이 있으면 그것이 끝난 뒤에 돌아온다
     pub fn save_if_dirty(&mut self) -> Result<()> {
-        if !self.dirty {
+        if !self.dirty && !BG_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
+            bg_wait();
             return Ok(());
         }
         self.save_now()
     }
 
+    /// 바뀐 것이 있으면 글로만 바꿔(빠름) 파일 쓰기는 백그라운드 스레드에 맡긴다.
+    /// 조작 화면이 1초마다 부른다 — 파일 쓰기(백신 검사·느린 디스크·원드라이브)가 0.4~0.9초 걸리는 동안
+    /// 코어 잠금을 쥐고 있어 화면과 출력 요청이 멈칫하던 것을 없앤다. 끌 때는 save_if_dirty 가 끝까지 기다린다.
+    pub fn save_bg(&mut self) {
+        if BG_FAILED.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            self.dirty = true; // 지난 백그라운드 저장이 실패했으면 다시
+        }
+        if !self.dirty {
+            return;
+        }
+        let Ok(txt) = serde_json::to_string_pretty(&self.data) else { return };
+        if BG.lock().send(BgJob::Write(self.file.clone(), txt)).is_ok() {
+            self.dirty = false;
+        } else if let Err(e) = self.save_now() {
+            log::error!("설정 저장 실패: {e}");
+        }
+    }
+
     pub fn save_now(&mut self) -> Result<()> {
+        bg_wait(); // 같은 임시 파일을 쓰므로 맡겨 둔 저장이 끝난 뒤에
+        BG_FAILED.store(false, std::sync::atomic::Ordering::Relaxed);
         if let Some(d) = self.file.parent() {
             fs::create_dir_all(d)?;
         }
@@ -142,5 +209,34 @@ impl Settings {
             v = &v[*p];
         }
         v.as_str().unwrap_or("").to_string()
+    }
+}
+
+#[cfg(test)]
+mod bg_save_tests {
+    use super::*;
+
+    /// 백그라운드 저장: 맡긴 뒤 save_if_dirty 가 끝까지 기다리고, 파일에 바뀐 값이 들어 있다
+    #[test]
+    fn save_bg_writes_file_and_flush_waits() {
+        let dir = std::env::temp_dir().join(format!("wp-settings-bg-{}", crate::util::short_id("t")));
+        fs::create_dir_all(&dir).unwrap();
+        let mut st = Settings::load(&dir);
+        for i in 0..20 {
+            st.update(|d| d["auditE"] = json!(i));
+            st.save_bg();
+        }
+        st.save_if_dirty().unwrap(); // 바뀐 것은 없지만 맡긴 저장이 끝날 때까지 기다린다
+        let v: Value = serde_json::from_str(&fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(v["auditE"], json!(19));
+        assert!(!dir.join("settings.json.tmp").exists());
+        // 바로 저장(save_now)과 섞여도 마지막 값이 남는다
+        st.update(|d| d["auditE"] = json!(100));
+        st.save_bg();
+        st.update(|d| d["auditE"] = json!(101));
+        st.save_now().unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(v["auditE"], json!(101));
+        fs::remove_dir_all(&dir).ok();
     }
 }

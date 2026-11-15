@@ -838,7 +838,12 @@ impl Core {
         self.save_cue();
     }
 
-    /// 설정을 파일로 (바뀐 것이 있을 때만)
+    /// 설정을 파일로 — 파일 쓰기는 백그라운드에서 (조작 화면이 주기적으로 부르는 것)
+    pub fn flush_bg(&mut self) {
+        self.settings.save_bg();
+    }
+
+    /// 설정을 파일로 (바뀐 것이 있을 때만). 다 쓸 때까지 기다린다 — 끌 때·시험에서
     pub fn flush(&mut self) {
         if let Err(e) = self.settings.save_if_dirty() {
             log::error!("설정 저장 실패: {e}");

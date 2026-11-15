@@ -508,7 +508,9 @@ impl App {
         let mut edit: Option<String> = None;
         let mut send = enter;
         let mut add = false;
-        let recent = quick_recent(&self.core.lock().data_dir);
+        // 창이 닫혀 있으면 읽지 않는다. 폴더 경로만 잠금 안에서 꺼내고 파일은 잠금 밖에서 (전에는 매 프레임 잠금을 쥔 채 읽었다)
+        let quick_dir = self.core.lock().data_dir.clone();
+        let recent = if open { quick_recent(&quick_dir) } else { vec![] };
         crate::widgets::float_window(ctx, "quick", wp_core::i18n::tr("즉석 자막"), [420.0, 200.0]).open(&mut open).show(ctx, |ui| {
             ui.label(RichText::new(wp_core::i18n::tr("Enter 송출 · Shift+Enter 줄 바꿈 · Esc 닫기")).small().weak());
             let r = ui.add(egui::TextEdit::multiline(&mut self.tb.quick_text).id(input_id).desired_rows(3).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("예: 예배 후 전 교인 식사가 있습니다")));
@@ -565,7 +567,7 @@ impl App {
                 let n = { let mut c = self.core.lock(); c.add_item(it, at); c.cue.as_ref().map(|q| q.items.len()).unwrap_or(0) };
                 self.sel = Some(at.unwrap_or(n.saturating_sub(1)).min(n.saturating_sub(1)));
                 self.edit = None;
-                quick_remember(&self.core.lock().data_dir, &text);
+                quick_remember(&quick_dir, &text);
                 self.core.lock().notify(wp_core::i18n::tr("고른 순서 다음에 공지 순서로 넣었습니다."), "ok");
             }
         }
@@ -1161,11 +1163,21 @@ fn collect_song_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>, 
 /// 즉석 자막 최근 목록 (Electron 은 localStorage 'wc-quick-texts', 이 PC 에만 · 12개)
 const QUICK_MAX: usize = 12;
 fn quick_file(dir: &std::path::Path) -> std::path::PathBuf { dir.join("quick-texts.json") }
+/// 최근 목록을 한 번 읽어 기억해 둔다 (이 파일은 이 프로그램만 쓴다 — 쓸 때 함께 고친다)
+static QUICK_CACHE: once_cell::sync::Lazy<parking_lot::Mutex<Option<(std::path::PathBuf, Vec<String>)>>> = once_cell::sync::Lazy::new(Default::default);
 pub(crate) fn quick_recent(dir: &std::path::Path) -> Vec<String> {
+    if let Some((d, list)) = QUICK_CACHE.lock().as_ref() {
+        if d == dir {
+            return list.clone();
+        }
+    }
     let v: Value = std::fs::read_to_string(quick_file(dir)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null);
-    v.as_array().into_iter().flatten().filter_map(|x| x.as_str()).filter(|x| !x.trim().is_empty()).take(QUICK_MAX).map(String::from).collect()
+    let list: Vec<String> = v.as_array().into_iter().flatten().filter_map(|x| x.as_str()).filter(|x| !x.trim().is_empty()).take(QUICK_MAX).map(String::from).collect();
+    *QUICK_CACHE.lock() = Some((dir.to_path_buf(), list.clone()));
+    list
 }
 fn quick_save(dir: &std::path::Path, list: &[String]) {
+    *QUICK_CACHE.lock() = Some((dir.to_path_buf(), list.to_vec()));
     let _ = std::fs::write(quick_file(dir), serde_json::to_string(list).unwrap_or_default());
 }
 fn quick_remember(dir: &std::path::Path, text: &str) {

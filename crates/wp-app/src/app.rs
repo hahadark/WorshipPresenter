@@ -1651,7 +1651,7 @@ impl App {
             ctx.request_repaint();
         }
         if self.last_flush.elapsed().as_secs_f32() > 1.0 {
-            self.core.lock().flush();
+            self.core.lock().flush_bg(); // 파일 쓰기는 백그라운드 (잠금을 쥔 채 쓰면 화면이 멈칫한다)
             self.last_flush = Instant::now();
         }
         // 아무 일도 없으면 2초에 한 번만 다시 그린다 (출력 창 상태 확인 · 설정 저장 같은 느린 점검용).
