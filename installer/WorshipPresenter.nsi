@@ -6,6 +6,11 @@
 ;   자신을 관리자 권한으로 다시 실행한다(UAC). 안 그러면 옛 판이 그대로 남고 새 판이 따로 설치되어 아이콘이 둘이 된다.
 ; - 사용자 자료(%APPDATA%\WorshipCue, %APPDATA%\WorshipPresenter-rs)는 건드리지 않는다.
 ; - /TEST : 점검용. 레지스트리·바로가기·업데이트 캐시를 건드리지 않는다 (/D=<임시 폴더> 와 함께).
+; - 남의 폴더 보호: 설치할 폴더에 다른 파일이 있고 워십프리젠터 설치로 확인되지 않으면 그 안의 WorshipPresenter 폴더에
+;   설치한다. 그 폴더도 남의 것이면 아무것도 하지 않고 끝낸다(종료 코드 3). 화면 설치·/S 조용한 설치 모두 같다.
+; - 지우는 것은 '우리가 넣은 파일'뿐이다: 넣은 파일 목록을 설치 폴더의 wp-files.txt 에 적어 두고, 다시 설치·제거할 때
+;   그 목록의 파일만 지운다. *.dll 이나 web\ 통째 같은 묶음 삭제는 하지 않는다 (사용자가 둔 파일이 남는다).
+; - 시험: tools\install-guard-test.ps1 (임시 폴더에서 /S /TEST 로만 돈다).
 ; 빌드: tools\release.ps1 이 makensis /DVERSION=… /DSRC=… /DOUT=… 로 부른다.
 
 Unicode true
@@ -23,6 +28,15 @@ ManifestDPIAware true
 !define EXE "WorshipPresenter.exe"
 !define UNEXE "Uninstall WorshipPresenter.exe"
 !define SHORTCUT "워십프리젠터"
+!define MANIFEST "wp-files.txt" ; 이 설치 파일이 넣은 파일 목록 (다음 설치가 읽어 옛 파일만 골라 지운다)
+
+; 넣을 파일 목록: 컴파일할 때 스테이징 폴더(${SRC})를 훑어 만든다 → WP_EACH_FILE / WP_EACH_DIR
+; (makensis 는 이 .nsi 가 있는 폴더로 옮겨 와서 컴파일하므로 filelist.ps1 을 이름만으로 부른다. ${__FILEDIR__} 는 NSIS 3.0.4 에서
+;  .nsi 를 상대 경로로 주면 폴더 이름이 겹쳐 나와 쓰지 않는다. makensis /NOCD 로는 컴파일하지 않는다)
+!tempfile WP_FILELIST
+!system 'powershell -NoProfile -ExecutionPolicy Bypass -File "filelist.ps1" -Src "${SRC}" -Out "${WP_FILELIST}"' = 0
+!include "${WP_FILELIST}"
+!delfile "${WP_FILELIST}"
 
 Name "워십프리젠터 ${VERSION}"
 OutFile "${OUT}"
@@ -42,6 +56,7 @@ Var PerMachine    ; 1 = '모든 사용자'용으로 설치돼 있던 자리(HKLM
 Var ElevatedChild ; 1 = 관리자 권한으로 다시 실행된 쪽
 Var RegView64     ; 1 = HKLM 항목이 64비트 보기에 있다
 Var ExplicitDir   ; 1 = /D=<폴더> 로 설치할 자리를 직접 주었다
+Var DirKind       ; 설치할 폴더: 0 = 없거나 빔, 1 = 워십프리젠터 설치로 확인됨, 2 = 다른 파일이 있음, 3 = 안쪽 폴더까지 남의 것(설치 안 함)
 
 !define MUI_ICON "${SRC}\WorshipPresenter.ico"
 !define MUI_UNICON "${SRC}\WorshipPresenter.ico"
@@ -159,33 +174,121 @@ Function .onInit
   ${EndIf}
 FunctionEnd
 
-; 설치 폴더 고르기: 다른 파일이 들어 있는 폴더를 고르면 그 안에 WorshipPresenter 폴더를 만들어 설치한다
-; (고른 폴더에 그대로 풀면 그 폴더의 web\ 등과 섞이고, 제거할 때 남의 파일을 건드릴 수 있다)
-Function DirLeave
+; $DirKind ← $INSTDIR 가 어떤 폴더인가
+; 워십프리젠터 설치로 '확인됨' = 실행 파일이 있고, 거기에 더해 우리 파일 목록(이 설치 파일이 적음)이나 wp-output.exe(Rust 판)나
+; resources\app.asar(Electron 판)가 있다. icudtl.dat 같은 Electron 공통 파일만으로는 우리 것으로 보지 않는다.
+Function ClassifyDir
+  StrCpy $DirKind 0
+  ${If} ${FileExists} "$INSTDIR\${EXE}"
+    ${If} ${FileExists} "$INSTDIR\${MANIFEST}"
+    ${OrIf} ${FileExists} "$INSTDIR\wp-output.exe"
+    ${OrIf} ${FileExists} "$INSTDIR\resources\app.asar"
+      StrCpy $DirKind 1
+      Return
+    ${EndIf}
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\*.*"
+    FindFirst $0 $1 "$INSTDIR\*.*"
+    cd_loop:
+      StrCmp $1 "" cd_done
+      StrCmp $1 "." cd_next
+      StrCmp $1 ".." cd_next
+      StrCpy $DirKind 2
+      Goto cd_done
+    cd_next:
+      ClearErrors
+      FindNext $0 $1
+      IfErrors cd_done
+      Goto cd_loop
+    cd_done:
+    FindClose $0
+  ${EndIf}
+FunctionEnd
+
+; 설치할 폴더 정하기: 다른 파일이 들어 있는 폴더면 그 안에 WorshipPresenter 폴더를 만들어 설치한다
+; (그 폴더에 그대로 풀면 남의 파일과 섞이고, 정리·제거할 때 남의 파일을 건드릴 수 있다).
+; 안쪽 WorshipPresenter 폴더도 남의 것이면 $DirKind = 3 — 부른 쪽이 설치를 그만둔다.
+; 폴더 고르기 화면을 떠날 때와 파일을 풀기 직전(/S 는 화면이 없으므로 여기서만 걸린다) 두 번 부른다. 두 번 불러도 결과가 같다.
+Function GuardInstDir
   StrCpy $1 $INSTDIR "" -1
   ${If} $1 == "\"
     StrCpy $INSTDIR $INSTDIR -1
   ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\${EXE}"
+  Call ClassifyDir
+  ${If} $DirKind == 2
+    StrCpy $INSTDIR "$INSTDIR\WorshipPresenter"
+    Call ClassifyDir
+    ${If} $DirKind == 2
+      StrCpy $DirKind 3
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+
+Function DirLeave
+  StrCpy $R8 $INSTDIR
+  Call GuardInstDir
+  ${If} $DirKind == 3
+    MessageBox MB_OK|MB_ICONEXCLAMATION "이 폴더에는 다른 프로그램의 파일이 들어 있어 설치할 수 없습니다.$\r$\n$INSTDIR$\r$\n비어 있는 폴더를 골라 주세요."
+    StrCpy $INSTDIR $R8
+    Abort
+  ${EndIf}
+FunctionEnd
+
+; 앞 판이 넣은 파일을 그 판의 파일 목록대로 지운다 (없어진 파일이 남지 않게). 목록에 없는 파일은 그대로 둔다.
+; 목록의 길은 설치 폴더 안쪽 상대 경로만 받는다: 드라이브(:)·위로 가기(..)·별표·물음표·앞 역슬래시가 있으면 건너뛴다.
+Function RemoveListedFiles
+  ${IfNot} ${FileExists} "$INSTDIR\${MANIFEST}"
     Return
   ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\*.*"
-    FindFirst $0 $1 "$INSTDIR\*.*"
-    dl_loop:
-      StrCmp $1 "" dl_done
-      StrCmp $1 "." dl_next
-      StrCmp $1 ".." dl_next
-      FindClose $0
-      StrCpy $INSTDIR "$INSTDIR\WorshipPresenter"
-      Return
-    dl_next:
-      ClearErrors
-      FindNext $0 $1
-      IfErrors dl_done
-      Goto dl_loop
-    dl_done:
-    FindClose $0
-  ${EndIf}
+  ClearErrors
+  FileOpen $R0 "$INSTDIR\${MANIFEST}" r
+  IfErrors rl_end
+  rl_line:
+    ClearErrors
+    FileRead $R0 $R1
+    IfErrors rl_close
+  rl_trim:
+    StrCpy $R2 $R1 1 -1
+    StrCmp $R2 "$\r" rl_cut
+    StrCmp $R2 "$\n" rl_cut
+    Goto rl_parse
+  rl_cut:
+    StrCpy $R1 $R1 -1
+    Goto rl_trim
+  rl_parse:
+    StrCpy $R2 $R1 2    ; "F " 파일, "D " 폴더
+    StrCpy $R3 $R1 "" 2 ; 상대 경로
+    StrCmp $R3 "" rl_line
+    StrCpy $R4 $R3 1
+    StrCmp $R4 "\" rl_line
+    StrCmp $R4 " " rl_line
+    StrCpy $R5 0
+  rl_char:
+    StrCpy $R4 $R3 1 $R5
+    StrCmp $R4 "" rl_ok
+    StrCmp $R4 ":" rl_line
+    StrCmp $R4 "/" rl_line
+    StrCmp $R4 "*" rl_line
+    StrCmp $R4 "?" rl_line
+    StrCmp $R4 '"' rl_line
+    StrCmp $R4 "<" rl_line
+    StrCmp $R4 ">" rl_line
+    StrCmp $R4 "|" rl_line
+    StrCpy $R6 $R3 2 $R5
+    StrCmp $R6 ".." rl_line
+    IntOp $R5 $R5 + 1
+    Goto rl_char
+  rl_ok:
+    ${If} $R2 == "F "
+      Delete "$INSTDIR\$R3"
+    ${ElseIf} $R2 == "D "
+      RMDir "$INSTDIR\$R3" ; 비었을 때만 지워진다
+    ${EndIf}
+    Goto rl_line
+  rl_close:
+    FileClose $R0
+  rl_end:
+    ClearErrors
 FunctionEnd
 
 ; 마침 화면의 [실행]: 탐색기를 거쳐 켠다 (관리자 권한으로 설치했어도 프로그램은 보통 권한으로 켜지게)
@@ -248,44 +351,88 @@ FunctionEnd
   WriteRegDWORD ${ROOT} "${UNKEY}" "EstimatedSize" $0
 !macroend
 
+!macro WP_INSTALL_FILE SUBDIR REL
+  SetOutPath "$INSTDIR${SUBDIR}"
+  File "${SRC}\${REL}"
+!macroend
+!macro WP_LIST_FILE SUBDIR REL
+  FileWrite $R0 "F ${REL}$\r$\n"
+!macroend
+!macro WP_LIST_DIR REL
+  FileWrite $R0 "D ${REL}$\r$\n"
+!macroend
+!macro WP_DELETE_FILE SUBDIR REL
+  Delete "$INSTDIR\${REL}"
+!macroend
+!macro WP_REMOVE_DIR REL
+  RMDir "$INSTDIR\${REL}" ; 비었을 때만 지워진다 (사용자가 둔 파일이 있으면 남는다)
+!macroend
+
 Section "워십프리젠터"
   ${If} $PerMachine == 1
     SetShellVarContext all
   ${Else}
     SetShellVarContext current
   ${EndIf}
+  ; 남의 폴더 보호 (/S 는 폴더 고르기 화면이 없어 DirLeave 를 거치지 않는다 → 반드시 여기서 한 번 더 본다)
+  Call GuardInstDir
+  ${If} $DirKind == 3
+    ${IfNot} ${Silent}
+      MessageBox MB_OK|MB_ICONEXCLAMATION "이 폴더에는 다른 프로그램의 파일이 들어 있어 설치할 수 없습니다.$\r$\n$INSTDIR"
+    ${EndIf}
+    SetErrorLevel 3
+    Abort "다른 프로그램의 파일이 들어 있는 폴더라 설치하지 않았습니다: $INSTDIR"
+  ${EndIf}
   CreateDirectory "$INSTDIR"
   Call WaitForExit
 
-  ; Electron 판 파일 정리 (Rust 판은 쓰지 않음). Electron 판이 있던 폴더일 때만 — 아무 폴더에서나 *.dll 을 지우지 않는다
-  ${If} ${FileExists} "$INSTDIR\resources\app.asar"
-  ${OrIf} ${FileExists} "$INSTDIR\icudtl.dat"
-  ${OrIf} ${FileExists} "$INSTDIR\LICENSES.chromium.html"
-    RMDir /r "$INSTDIR\locales"
-    RMDir /r "$INSTDIR\resources"
-    Delete "$INSTDIR\*.pak"
-    Delete "$INSTDIR\*.dll"
-    Delete "$INSTDIR\*.bin"
+  ; 여기부터 $INSTDIR 는 없었거나 비었거나($DirKind 0), 워십프리젠터 설치로 확인된 폴더($DirKind 1)다.
+  ; Electron 판 파일 정리 (Rust 판은 쓰지 않음): 워십프리젠터 Electron 판으로 확인된 폴더에서만, 이름을 아는 파일만 지운다.
+  ; (*.dll·*.pak·*.bin 묶음 삭제를 하지 않는다 — 사용자가 둔 파일이 남는다)
+  ${If} $DirKind == 1
+  ${AndIf} ${FileExists} "$INSTDIR\resources\app.asar"
+    Delete "$INSTDIR\locales\*.pak" ; Electron 언어 파일 (ko.pak, en-US.pak …)
+    RMDir "$INSTDIR\locales"
+    Delete "$INSTDIR\resources\app.asar"
+    Delete "$INSTDIR\resources\app-update.yml"
+    Delete "$INSTDIR\resources\elevate.exe"
+    Delete "$INSTDIR\resources\LICENSE.txt"
+    Delete "$INSTDIR\resources\THIRD_PARTY_NOTICES.md"
+    Delete "$INSTDIR\resources\bible.db"
+    RMDir /r "$INSTDIR\resources\app.asar.unpacked"
+    RMDir "$INSTDIR\resources"
+    Delete "$INSTDIR\chrome_100_percent.pak"
+    Delete "$INSTDIR\chrome_200_percent.pak"
+    Delete "$INSTDIR\resources.pak"
+    Delete "$INSTDIR\snapshot_blob.bin"
+    Delete "$INSTDIR\v8_context_snapshot.bin"
+    Delete "$INSTDIR\d3dcompiler_47.dll"
+    Delete "$INSTDIR\dxcompiler.dll"
+    Delete "$INSTDIR\dxil.dll"
+    Delete "$INSTDIR\ffmpeg.dll"
+    Delete "$INSTDIR\libEGL.dll"
+    Delete "$INSTDIR\libGLESv2.dll"
+    Delete "$INSTDIR\vk_swiftshader.dll"
+    Delete "$INSTDIR\vulkan-1.dll"
     Delete "$INSTDIR\icudtl.dat"
     Delete "$INSTDIR\LICENSE.electron.txt"
     Delete "$INSTDIR\LICENSES.chromium.html"
     Delete "$INSTDIR\vk_swiftshader_icd.json"
   ${EndIf}
-  ; 앞 판의 출력 웹 파일 (없어진 파일이 남지 않게 통째로 바꾼다)
-  ${If} ${FileExists} "$INSTDIR\web\output\index.html"
-    RMDir /r "$INSTDIR\web"
-  ${EndIf}
+  ; 앞 판(Rust)이 넣은 파일: 그 판의 파일 목록에 적힌 것만 지운다 (web\ 을 통째로 지우지 않는다)
+  Call RemoveListedFiles
 
+  !insertmacro WP_EACH_FILE WP_INSTALL_FILE
   SetOutPath "$INSTDIR"
-  File "${SRC}\${EXE}"
-  File "${SRC}\wp-output.exe"
-  File "${SRC}\WorshipPresenter.ico"
-  File "${SRC}\bible.db"
-  File "${SRC}\LICENSE.txt"
-  File "${SRC}\THIRD_PARTY_NOTICES.md"
-  File "${SRC}\OFL-Pretendard.txt"
-  File /r "${SRC}\web"
-  File /nonfatal /r "${SRC}\*.dll"
+
+  ; 이번에 넣은 파일 목록
+  ClearErrors
+  FileOpen $R0 "$INSTDIR\${MANIFEST}" w
+  ${IfNot} ${Errors}
+    !insertmacro WP_EACH_FILE WP_LIST_FILE
+    !insertmacro WP_EACH_DIR WP_LIST_DIR
+    FileClose $R0
+  ${EndIf}
 
   WriteUninstaller "$INSTDIR\${UNEXE}"
 
@@ -359,15 +506,10 @@ Section "Uninstall"
     SetErrorLevel 2
     Abort "워십프리젠터가 켜져 있어 제거하지 못했습니다."
   ${EndIf}
-  Delete "$INSTDIR\${EXE}"
-  Delete "$INSTDIR\wp-output.exe"
-  Delete "$INSTDIR\WorshipPresenter.ico"
-  Delete "$INSTDIR\bible.db"
-  Delete "$INSTDIR\LICENSE.txt"
-  Delete "$INSTDIR\THIRD_PARTY_NOTICES.md"
-  Delete "$INSTDIR\OFL-Pretendard.txt"
-  Delete "$INSTDIR\*.dll"
-  RMDir /r "$INSTDIR\web"
+  ; 이 판이 넣은 파일만 지운다 (*.dll 묶음 삭제나 web\ 통째 삭제를 하지 않는다). 사용자가 둔 파일이 있으면 폴더와 함께 남는다
+  !insertmacro WP_EACH_FILE WP_DELETE_FILE
+  !insertmacro WP_EACH_DIR WP_REMOVE_DIR
+  Delete "$INSTDIR\${MANIFEST}"
   Delete "$INSTDIR\${UNEXE}"
   RMDir "$INSTDIR"
   ; 바로가기·제거 항목은 '등록된 설치'를 지울 때만 지운다.
