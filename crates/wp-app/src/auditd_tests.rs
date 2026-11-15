@@ -109,3 +109,36 @@ fn reimport_menu_and_ask_dialog_by_synthetic_clicks() {
     assert!(fr::ask().is_none());
     fr::set_no_restart_for_test(false);
 }
+
+/// 포터블·개발 실행(실행 파일 옆에 제거 프로그램이 없음)에서는 업데이트 창이 '스스로 바꾸지 않는다'는 안내를 보이고 받기·설치를 막는다
+#[test]
+fn update_window_explains_portable_copy() {
+    let h = H::new(vec![]);
+    let core = h.app.core.clone();
+    assert!(!wp_core::updates::installed_copy(), "시험 실행 파일 옆에는 제거 프로그램이 없다");
+    let st = wp_core::updates::status(core.lock().settings.get());
+    assert_eq!(st["portable"], true);
+    assert_eq!(st["canDownload"], false);
+    assert_eq!(st["canInstall"], false);
+    assert!(wp_core::updates::download(&core).is_err(), "포터블에서는 받기를 거절해야 함");
+    assert!(wp_core::updates::install_now(&core).is_err(), "포터블에서는 설치를 거절해야 함");
+    let mut texts: Vec<String> = vec![];
+    for _ in 0..2 {
+        let mut out = h.ctx.run_pass(RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1600.0, 960.0))), ..Default::default() }, |ctx| {
+            ctx.root_ui(|ui| crate::trackd_ui::update_ui(ui, &core));
+        });
+        out.textures_delta.clear();
+        fn walk(s: &egui::Shape, out: &mut Vec<String>) {
+            match s {
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, out)),
+                egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
+                _ => {}
+            }
+        }
+        texts.clear();
+        for c in &out.shapes {
+            walk(&c.shape, &mut texts);
+        }
+    }
+    assert!(texts.iter().any(|t| t.contains("포터블")), "포터블 안내가 보여야 함: {texts:?}");
+}
