@@ -255,6 +255,21 @@ async function main() {
       const r = await rs('plannedTimes');
       const same = JSON.stringify(e.times || []) === JSON.stringify((r || []).filter(Boolean).length ? r : []);
       console.log(`${same ? '✓' : '✗'} 예정 시간 (시작 ${e.start || '없음'}): E ${JSON.stringify((e.times || []).slice(0, 8))} R ${JSON.stringify((r || []).slice(0, 8))}`); if (!same) fails++;
+      // 시작 시각·예정 시간이 있는 큐시트를 두 판에 똑같이 만들어 대조 (소수 분 · 자정 넘김 · 0분)
+      for (const [start, durs] of [['10:30', [5, 0, 2.5, 2.5, 90, 600, 1]], ['23:50', [15, 3, 0, 45]], ['9:05', [1, 1, 1]], ['', [5, 5]]]) {
+        const cue = { id: 'flowtimes01', name: '예정 시간 시험', serviceDate: '2026-11-22', startTime: start, items: durs.map((d, k) => ({ id: 'ft' + k, type: 'title', title: '순서 ' + (k + 1), duration: d })) };
+        await el('saveCue', { cue });
+        const rr = await (await fetch(RS + '/api/command', { method: 'POST', headers: { 'content-type': 'application/json', 'x-worshipcue': '1' }, body: JSON.stringify({ cmd: 'saveCue', args: { cue } }) })).json();
+        if (!rr.ok) throw new Error('Rust saveCue: ' + rr.error);
+        await ctl.eval(`BCCue.openCue('flowtimes01').then(() => true)`, 60000); await rs('openCue', { id: 'flowtimes01' });
+        const e2 = await ctl.eval(`(() => { const hm = m => String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(Math.round(m) % 60).padStart(2, '0'); const c = BCCue.cueInfo(), meta = BCCue.meta(); const mm = /^(\\d{1,2}):(\\d{2})$/.exec(meta.startTime || ''); const shown = [...document.querySelectorAll('.cue-time')].map(x => x.firstChild.textContent); if (!mm) return { times: [], shown }; let t = +mm[1] * 60 + +mm[2]; return { times: c.items.map(it => { const at = t; t += Number(it.duration) || 0; return hm(at); }), shown }; })()`);
+        const r2 = (await rs('plannedTimes')) || [];
+        // 화면에 실제로 적힌 것(.cue-time)이 있으면 그것과, 없으면(예정 시간 표시 꺼짐) 같은 식으로 셈한 것과 대조
+        const want = e2.shown.length ? e2.shown : e2.times;
+        const ok2 = JSON.stringify(want) === JSON.stringify(r2.filter(Boolean).length ? r2 : []);
+        console.log(`${ok2 ? '✓' : '✗'} 예정 시간 (시작 ${start || '없음'} · ${durs.join('/')}분): E ${JSON.stringify(want)} R ${JSON.stringify(r2)}${e2.shown.length ? ' (조작 화면에 적힌 값)' : ''}`); rows.push({ step: '예정 시간 ' + start, same: ok2 }); if (!ok2) fails++;
+      }
+      await ctl.eval(`BCCue.openCue(${JSON.stringify(cueId)}).then(() => true)`, 60000); await rs('openCue', { id: cueId });
     }
     console.log(`== 다른 단계 ${fails}개 / 확인 ${rows.length}단계`);
   } finally {
