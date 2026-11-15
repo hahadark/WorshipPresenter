@@ -194,10 +194,26 @@ pub fn install(shared: &crate::core::Shared) {
     crate::pptx::build::warm_fonts();
 }
 
+/// 새 형식(.pptx/.ppsx = zip)인지. 확장자가 아니라 파일 머리로 본다 — 옛 .ppt 를 이름만 .pptx 로 바꾼 파일
+/// (구세군 찬송가 756·764)이 'pptx(zip) 를 열 수 없습니다' 로 안 열리던 것. 읽을 수 없으면 확장자로.
+pub fn is_xml_ppt(file: &str) -> bool {
+    use std::io::Read;
+    let mut head = [0u8; 4];
+    if std::fs::File::open(file).and_then(|mut f| f.read_exact(&mut head)).is_ok() {
+        if head == [0xD0, 0xCF, 0x11, 0xE0] {
+            return false;
+        }
+        if head[..2] == *b"PK" {
+            return true;
+        }
+    }
+    let lower = file.to_lowercase();
+    lower.ends_with(".pptx") || lower.ends_with(".ppsx")
+}
+
 /// 그림 만들기 (PowerPoint 또는 직접 읽기) — 코어 잠금 없이 다른 스레드에서
 pub fn build_meta(data_dir: &Path, file: &str, render: &str) -> Result<Value, String> {
-    let lower = file.to_lowercase();
-    let xml = lower.ends_with(".pptx") || lower.ends_with(".ppsx");
+    let xml = is_xml_ppt(file);
     let pp = has_powerpoint();
     if xml && (!pp || render == "direct") {
         return crate::pptx::build::build_cache(data_dir, file);
@@ -1271,5 +1287,23 @@ mod ps_bg_tests {
         let raw: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("layers.json")).unwrap()).unwrap();
         assert_eq!(raw["bgFrom"], "powerpoint");
         assert!(dir.join("slide-001-bg.png").is_file());
+    }
+}
+
+#[cfg(test)]
+mod magic_tests {
+    #[test]
+    fn format_by_file_head_not_extension() {
+        let dir = std::env::temp_dir().join(format!("wp-magic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = |n: &str, b: &[u8]| { let f = dir.join(n); std::fs::write(&f, b).unwrap(); f.to_string_lossy().to_string() };
+        // 옛 형식인데 이름만 .pptx
+        assert!(!super::is_xml_ppt(&p("a.pptx", &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1])));
+        // 새 형식인데 이름만 .ppt
+        assert!(super::is_xml_ppt(&p("b.ppt", b"PK\x03\x04....")));
+        // 파일이 없으면 확장자로
+        assert!(super::is_xml_ppt(&dir.join("none.PPTX").to_string_lossy()));
+        assert!(!super::is_xml_ppt(&dir.join("none.pps").to_string_lossy()));
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
