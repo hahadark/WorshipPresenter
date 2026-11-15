@@ -128,6 +128,9 @@ impl SettingsUi {
                         ui.end_row();
                         ch |= num(ui, &mut data, &["ui", "scale"], "글자 크기(%)", 70.0, 200.0, 5.0);
                         ui.end_row();
+                        // Electron settings.js #bLang 과 같은 자리 (보기 메뉴 'Language · 언어' 도 있음)
+                        ch |= pick(ui, &mut data, &["uiLang"], "Language · 언어", &[("ko", "한국어"), ("en", "English")]);
+                        ui.end_row();
                     }
                 });
                 if self.tab == 2 {

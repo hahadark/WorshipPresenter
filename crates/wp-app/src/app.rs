@@ -1487,6 +1487,34 @@ impl eframe::App for App {
         }
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // 예배 중 한 프레임의 오류(panic)로 프로그램이 꺼지면 예배당 창도 함께 꺼진다(작업 개체).
+        // 그래서 그 프레임만 버리고 계속 돌아간다. 내용은 panic hook(logger) 이 logs\ 에 남긴다.
+        // 점검용: WP_DEBUG_REPAINT=1 이면 다시 그리기를 부른 자리를 2초마다 로그에 (가만히 둘 때 CPU 점검)
+        if std::env::var_os("WP_DEBUG_REPAINT").is_some() {
+            static LAST: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
+            static FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let mut l = LAST.lock();
+            if l.is_none_or(|t| t.elapsed().as_secs_f32() > 2.0) {
+                *l = Some(Instant::now());
+                let n = FRAMES.swap(0, std::sync::atomic::Ordering::Relaxed);
+                log::info!("다시 그리기 2초 {n}번, 부른 자리: {:?}", ui.ctx().repaint_causes());
+            }
+        }
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.ui_body(ui)));
+        if r.is_err() {
+            static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if n == 0 || n % 100 == 99 {
+                self.core.lock().notify(wp_core::i18n::tr_s("조작 화면에 오류가 있었지만 송출은 계속됩니다. 도움말 > 로그 폴더에 기록했습니다."), "error");
+            }
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+        }
+    }
+}
+
+impl App {
+    fn ui_body(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let mut acts = vec![];
         let typing = ctx.egui_wants_keyboard_input();

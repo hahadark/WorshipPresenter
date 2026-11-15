@@ -369,7 +369,7 @@ fn cache_stream(
         drop(f);
         let target = dir.join(format!(
             "{}-{}-{}",
-            &a.hash[..16],
+            a.hash.get(..16).unwrap_or(&a.hash), // latest.yml 의 해시가 짧거나 깨져 있어도 panic 하지 않게
             rand::random::<u64>(),
             a.name
         ));

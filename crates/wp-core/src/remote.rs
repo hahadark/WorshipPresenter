@@ -286,7 +286,15 @@ async fn start(core: Shared, port: u16, host: &str) {
             log::info!("휴대폰 리모컨 서버 시작: {port}");
         }
         Err(e) => {
-            *ERROR.lock() = if e.kind() == std::io::ErrorKind::AddrInUse { format!("포트 {port} 를 다른 프로그램이 쓰고 있습니다.") } else { e.to_string() };
+            let msg = if e.kind() == std::io::ErrorKind::AddrInUse { format!("포트 {port} 를 다른 프로그램이 쓰고 있습니다.") } else { e.to_string() };
+            // 같은 오류면 알리지 않는다: init 이 Ev::Ui 마다 sync → start 를 다시 부르므로,
+            // 포트가 쓰이고 있을 때 여기서 매번 Ev::Ui 를 보내면 끝없이 돈다(초당 수천 번, 가만히 둘 때 CPU 60%)
+            let mut cur = ERROR.lock();
+            if *cur == msg {
+                return;
+            }
+            log::warn!("휴대폰 리모컨 서버를 켜지 못함: {msg}");
+            *cur = msg;
         }
     }
     core.lock().emit(Ev::Ui);

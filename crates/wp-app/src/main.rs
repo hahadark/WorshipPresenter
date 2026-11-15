@@ -89,6 +89,7 @@ fn main() -> anyhow::Result<()> {
     let data_dir = arg("--data").map(PathBuf::from).unwrap_or_else(|| dirs_data().join("WorshipPresenter-rs").join("data"));
     let _ = std::fs::create_dir_all(&data_dir);
     wp_core::logger::init(&data_dir); // [트랙 B] 파일 로그 (logs\날짜.log)
+    wp_core::logger::install_panic_hook(); // 오류(panic)도 로그에
     let web = web_dir();
     // [트랙 A] 두 번 실행 막기 (같은 데이터 폴더) · 송출 중 화면 꺼짐 막기
     let (already, _instance) = wp_core::parity_a::single_instance(&data_dir);

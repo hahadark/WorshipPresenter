@@ -79,6 +79,83 @@ pub fn tr_s(s: &'static str) -> &'static str {
     v
 }
 
+/// 코어가 만든 알림처럼 이미 자리가 채워진 글(예: "3장 없음")을 번역한다 (Electron i18n.js 의 {1} 패턴 맞추기).
+/// 사전에 글 그대로 있으면 그것, 없으면 {N} 자리가 있는 문구를 정규식으로 맞춰 자리를 옮겨 채운다.
+/// 맞는 것이 없으면 그대로. 알림은 자주 같은 글이 다시 그려지므로 마지막 몇 개를 기억해 둔다.
+pub fn tr_dyn(s: &str) -> String {
+    if !is_en() || s.is_empty() {
+        return s.to_string();
+    }
+    static PATS: Lazy<Vec<(regex::Regex, Vec<usize>, String)>> = Lazy::new(|| {
+        let mut out = vec![];
+        for (k, v) in DICT.iter() {
+            if !k.contains('{') {
+                continue;
+            }
+            // "{1}장 · {2}" → ^(.+?)장 · (.+?)$ , 자리 번호 순서도 기억
+            let mut re = String::from("^");
+            let mut order = vec![];
+            let mut rest = k.as_str();
+            while let Some(a) = rest.find('{') {
+                let after = &rest[a + 1..];
+                let num = after.find('}').map(|e| &after[..e]).filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+                match num.and_then(|n| n.parse::<usize>().ok()) {
+                    Some(i) => {
+                        re.push_str(&regex::escape(&rest[..a]));
+                        re.push_str("(.+?)");
+                        order.push(i);
+                        rest = &after[after.find('}').unwrap_or(0) + 1..];
+                    }
+                    None => {
+                        re.push_str(&regex::escape(&rest[..a + 1]));
+                        rest = after;
+                    }
+                }
+            }
+            re.push_str(&regex::escape(rest));
+            re.push('$');
+            // 글자가 거의 없는 문구("{1}" · "{1} {2}")는 아무 글에나 맞으므로 뺀다
+            if order.is_empty() || k.len() < order.len() * 3 + 4 {
+                continue;
+            }
+            if let Ok(r) = regex::Regex::new(&re) {
+                out.push((r, order, v.clone()));
+            }
+        }
+        // 긴 문구(더 구체적인 것)부터
+        out.sort_by_key(|p| std::cmp::Reverse(p.0.as_str().len()));
+        out
+    });
+    static RECENT: Lazy<parking_lot::Mutex<Vec<(String, String)>>> = Lazy::new(|| parking_lot::Mutex::new(vec![]));
+    if let Some(v) = RECENT.lock().iter().find(|x| x.0 == s) {
+        return v.1.clone();
+    }
+    let t = tr(s);
+    let out = if t != s {
+        t
+    } else {
+        PATS.iter()
+            .find_map(|(re, order, en)| {
+                let c = re.captures(s)?;
+                let mut args: Vec<String> = vec![String::new(); order.iter().copied().max().unwrap_or(0)];
+                for (k, &i) in order.iter().enumerate() {
+                    if let (Some(slot), Some(m)) = (i.checked_sub(1).and_then(|i| args.get_mut(i)), c.get(k + 1)) {
+                        *slot = m.as_str().to_string();
+                    }
+                }
+                let refs: Vec<&dyn std::fmt::Display> = args.iter().map(|a| a as &dyn std::fmt::Display).collect();
+                Some(fill_args(en, &refs))
+            })
+            .unwrap_or_else(|| s.to_string())
+    };
+    let mut r = RECENT.lock();
+    if r.len() >= 16 {
+        r.remove(0);
+    }
+    r.push((s.to_string(), out.clone()));
+    out
+}
+
 /// 자리가 있는 문구: tr_args("{1}장 · {2}", &[&a, &b]) — 사전은 Electron 처럼 {1} {2} 자리로 찾고, 자리를 채운다
 pub fn tr_args(template: &str, args: &[&dyn std::fmt::Display]) -> String {
     fill_args(&tr(template), args)
@@ -144,6 +221,10 @@ mod tests {
         assert_eq!(tr("새 버전"), "New version");
         assert_eq!(tr("홍길동"), "홍길동");
         assert_eq!(tr_args("{1}장 없음", &[&3]), "{1}장 없음".replace("{1}", "3"));
+        // 이미 채워진 알림도 사전 패턴으로 번역
+        let (k, v) = DICT.iter().find(|(k, _)| k.starts_with("{1}") && k.matches('{').count() == 1 && k.len() > 6).map(|(k, v)| (k.clone(), v.clone())).unwrap();
+        assert_eq!(tr_dyn(&k.replace("{1}", "가나 7")), v.replace("{1}", "가나 7"));
+        assert_eq!(tr_dyn("홍길동 사관"), "홍길동 사관");
         let h = String::from_utf8(with_lang(b"<html lang=\"ko\"><head></head>".to_vec())).unwrap();
         assert!(h.contains("data-lang=\"en\"") && h.contains("i18n-en.js"));
         set_lang("ko");

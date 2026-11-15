@@ -130,7 +130,14 @@ pub fn seg(ui: &mut egui::Ui, t: &mut Value, path: &str, label: &str, items: &[(
 pub fn seg_widget(ui: &mut egui::Ui, cur: &mut String, items: &[(&str, &str)]) -> bool {
     let tr_items: Vec<(String, String)> = items.iter().map(|(v, l)| (v.to_string(), tr(l))).collect();
     let refs: Vec<(String, &str)> = tr_items.iter().map(|(v, l)| (v.clone(), l.as_str())).collect();
-    widgets::segmented_with(ui, cur, &refs, SegStyle { font: 12.5, pad: Vec2::new(8.0, 4.0), fill: false, radius: 6 }).changed()
+    // 영어 화면처럼 이름이 길어 칸보다 넓어지면 속성 칸·창이 화면 밖으로 밀린다 → 들어갈 때까지 글자·여백을 줄인다
+    let avail = ui.available_width();
+    let need = |font: f32, pad: f32| refs.iter().map(|(_, l)| ui.painter().layout_no_wrap(l.to_string(), theme::font(font, Weight::Regular), pal().text).size().x + pad * 2.0 + 1.0).sum::<f32>() + 4.0;
+    let (mut font, mut pad) = (12.5_f32, 8.0_f32);
+    while need(font, pad) > avail && (font > 9.5 || pad > 3.0) {
+        if pad > 3.0 { pad -= 1.0 } else { font -= 0.5 }
+    }
+    widgets::segmented_with(ui, cur, &refs, SegStyle { font, pad: Vec2::new(pad, 4.0), fill: false, radius: 6 }).changed()
 }
 
 /// 색 견본 동그라미 (24px). transparent 는 체크무늬

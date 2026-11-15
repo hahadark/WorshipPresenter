@@ -148,7 +148,20 @@ impl Core {
         Ok(c)
     }
 
+    #[track_caller]
     pub fn emit(&self, e: Ev) {
+        // 점검용: WP_DEBUG_REPAINT=1 이면 알림을 보낸 자리를 세어 5초마다 로그에 (가만히 둘 때 다시 그리기 원인 찾기)
+        if debug_emit() {
+            static SEEN: once_cell::sync::Lazy<parking_lot::Mutex<(i64, HashMap<String, u32>)>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new((now_ms(), HashMap::new())));
+            let l = std::panic::Location::caller();
+            let mut s = SEEN.lock();
+            *s.1.entry(format!("{:?}@{}:{}", e, l.file(), l.line())).or_default() += 1;
+            if now_ms() - s.0 > 5000 {
+                log::info!("emit 5초: {:?}", s.1);
+                s.1.clear();
+                s.0 = now_ms();
+            }
+        }
         let _ = self.tx.send(e);
     }
 
@@ -1065,4 +1078,10 @@ mod template_deck_tests {
         assert_eq!(c.output_payload("main")["template"]["id"], "B");
         std::fs::remove_dir_all(&c.data_dir).ok();
     }
+}
+
+/// 점검용 환경 변수 WP_DEBUG_REPAINT (한 번만 읽음)
+fn debug_emit() -> bool {
+    static ON: once_cell::sync::Lazy<bool> = once_cell::sync::Lazy::new(|| std::env::var_os("WP_DEBUG_REPAINT").is_some());
+    *ON
 }
