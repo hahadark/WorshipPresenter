@@ -466,6 +466,7 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
         ui.label(RichText::new(format!("✗ {}", s.obs_err)).color(crate::theme::pal().danger_text));
     }
     let at = st["at"].as_i64().unwrap_or(0);
+    ui.ctx().request_repaint_after(std::time::Duration::from_secs(1)); // 'N초 전 확인' 이 보이는 동안
     let ago = if at > 0 { wp_core::i18n::tr_args(" ({1}초 전 확인)", &[&((wp_core::util::now_ms() - at).max(0) / 1000)]) } else { String::new() };
     if let Some(e) = st["error"].as_str() {
         ui.label(RichText::new(format!("✗ {e}{ago}")).color(crate::theme::pal().danger_text));

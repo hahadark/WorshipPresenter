@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod imgcache; // 그림 메모리: 줄여 읽기 · 상한(LRU)
 mod panel_ui;
 mod quick_ui; // 디자인 2단계: 빠른 설정 안쪽 (tplcontrols basic)
 mod center_ui; // 디자인 2단계: 가운데 본문 패널 (머리·목록·격자·주석)
@@ -85,11 +86,44 @@ fn seed_db() -> Option<PathBuf> {
     [exe_dir.join("bible.db"), PathBuf::from(r"F:\aside\WorshipCue\data\bible.db")].into_iter().find(|p| p.exists())
 }
 
+/// 그래픽 백엔드 고르기: 환경 변수 → DX12 그래픽 카드(소프트웨어 그리기 아님)가 있으면 DX12 만 → 아니면 전부
+#[cfg(windows)]
+fn pick_backends() -> eframe::wgpu::Backends {
+    use eframe::wgpu;
+    let all = wgpu::Backends::PRIMARY | wgpu::Backends::GL;
+    if let Some(b) = wgpu::Backends::from_env() {
+        return b;
+    }
+    let t0 = std::time::Instant::now();
+    let ok = std::panic::catch_unwind(|| {
+        let inst = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::DX12,
+            flags: wgpu::InstanceFlags::from_build_config().with_env(),
+            backend_options: wgpu::BackendOptions::from_env_or_default(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            display: None,
+        });
+        let rt = tokio::runtime::Builder::new_current_thread().build().ok()?;
+        let list = rt.block_on(inst.enumerate_adapters(wgpu::Backends::DX12));
+        Some(list.iter().any(|a| a.get_info().device_type != wgpu::DeviceType::Cpu))
+    })
+    .ok()
+    .flatten()
+    .unwrap_or(false);
+    log::info!("그래픽: {} ({:.0}ms)", if ok { "DX12" } else { "DX12 그래픽 카드 없음 → 자동 고르기" }, t0.elapsed().as_secs_f64() * 1000.0);
+    if ok { wgpu::Backends::DX12 } else { all }
+}
+#[cfg(not(windows))]
+fn pick_backends() -> eframe::wgpu::Backends {
+    eframe::wgpu::Backends::from_env().unwrap_or(eframe::wgpu::Backends::PRIMARY | eframe::wgpu::Backends::GL)
+}
+
 fn main() -> anyhow::Result<()> {
     let data_dir = arg("--data").map(PathBuf::from).unwrap_or_else(|| dirs_data().join("WorshipPresenter-rs").join("data"));
     let _ = std::fs::create_dir_all(&data_dir);
     wp_core::logger::init(&data_dir); // [트랙 B] 파일 로그 (logs\날짜.log)
     wp_core::logger::install_panic_hook(); // 오류(panic)도 로그에
+    wp_core::util::mem_log("시작");
     let web = web_dir();
     // [트랙 A] 두 번 실행 막기 (같은 데이터 폴더) · 송출 중 화면 꺼짐 막기
     // '1.x 자료 다시 가져오기' 로 다시 켜질 때: 앞 프로세스가 끝나길 기다린다 (두 번 실행 막기에 걸리지 않게)
@@ -113,6 +147,7 @@ fn main() -> anyhow::Result<()> {
             return Err(e);
         }
     };
+    wp_core::util::mem_log("코어 열림(bible.db·설정)");
     let shared = Arc::new(wp_core::lockcheck::Mutex::new(core));
     wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
     wp_core::i18n::set_lang(shared.lock().settings.get()["uiLang"].as_str().unwrap_or("ko")); // [트랙 D] 영어 화면 (출력 웹도)
@@ -127,6 +162,7 @@ fn main() -> anyhow::Result<()> {
     let port = rt.block_on(wp_core::server::serve(shared.clone()))?;
     log::info!("로컬 서버: http://127.0.0.1:{port}");
     let rx = shared.lock().tx.subscribe();
+    wp_core::util::mem_log("서버·백그라운드 시작");
     std::thread::spawn(move || rt.block_on(std::future::pending::<()>()));
 
     let icon = image::load_from_memory(include_bytes!("../../../assets/icon.png")).ok().map(|i| {
@@ -142,15 +178,35 @@ fn main() -> anyhow::Result<()> {
     if let Some(i) = icon {
         vp = vp.with_icon(Arc::new(i));
     }
-    let opts = eframe::NativeOptions { viewport: vp, ..Default::default() };
+    let mut opts = eframe::NativeOptions { viewport: vp, ..Default::default() };
+    // 그래픽 장치가 전용 메모리의 대부분을 차지한다 (기본 설정으로 창만 띄워도 355MB).
+    // · 쓸 백엔드만 만든다: DX12 그래픽 카드가 있으면 DX12 만 (OpenGL·Vulkan 까지 만들면 드라이버를 모두 올려 50MB 더 든다).
+    //   없으면 원래대로 전부 중에 고른다. WGPU_BACKEND 로 바꿀 수 있다
+    // · 메모리 우선 할당 (기본은 성능 우선으로 큰 덩어리를 미리 잡는다)
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(n) = &mut opts.wgpu_options.wgpu_setup {
+        use eframe::wgpu;
+        n.instance_descriptor.backends = pick_backends();
+        n.device_descriptor = Arc::new(|adapter| {
+            let base = if adapter.get_info().backend == wgpu::Backend::Gl { wgpu::Limits::downlevel_webgl2_defaults() } else { wgpu::Limits::default() };
+            wgpu::DeviceDescriptor {
+                label: Some("wp-app"),
+                required_limits: wgpu::Limits { max_texture_dimension_2d: 8192, ..base },
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
+                ..Default::default()
+            }
+        });
+    }
     let web2 = web.clone();
     eframe::run_native(
         "worship-presenter-rs",
         opts,
         Box::new(move |cc| {
             wp_core::firstrun::splash_done(); // 조작 화면 창이 생겼다 → 안내 창 닫기
+            wp_core::util::mem_log("창·그래픽 장치 생김");
             theme::install_fonts(&cc.egui_ctx); // Pretendard + 맑은 고딕(대체·슬라이드)
             egui_extras::install_image_loaders(&cc.egui_ctx);
+            imgcache::install(&cc.egui_ctx);
+            wp_core::util::mem_log("글꼴 등록");
             theme::apply(&cc.egui_ctx, theme::ThemeId::Dark); // 설정 테마는 첫 프레임에 apply_ui_prefs 가 다시 적용
             // 코어가 바뀌면 화면을 다시 그린다
             let ctx = cc.egui_ctx.clone();
@@ -162,7 +218,9 @@ fn main() -> anyhow::Result<()> {
                     Err(_) => break,
                 }
             });
-            Ok(Box::new(app::App::new(shared, web2, data_dir)))
+            let app = app::App::new(shared, web2, data_dir);
+            wp_core::util::mem_log("App::new");
+            Ok(Box::new(app))
         }),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))

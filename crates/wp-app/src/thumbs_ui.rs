@@ -128,7 +128,7 @@ impl App {
                             match get(&ctx, &self.data_dir, &path) {
                                 Some(t) => {
                                     // paint_at은 지정 사각형에 늘려 그리므로 실제 크기로 비율을 맞춘다.
-                                    let image = egui::Image::new(file_uri(&t));
+                                    let image = egui::Image::new(crate::imgcache::uri_for(&t.to_string_lossy(), crate::imgcache::SMALL as f32));
                                     if let Ok(poll) = image.load_for_size(ui.ctx(), rect.size()) {
                                         if let Some(size) = poll.size().filter(|s| s.x > 0.0 && s.y > 0.0) {
                                             let area = rect.shrink(1.0);

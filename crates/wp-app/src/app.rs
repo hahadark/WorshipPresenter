@@ -1521,10 +1521,44 @@ impl eframe::App for App {
             if l.is_none_or(|t| t.elapsed().as_secs_f32() > 2.0) {
                 *l = Some(Instant::now());
                 let n = FRAMES.swap(0, std::sync::atomic::Ordering::Relaxed);
-                log::info!("다시 그리기 2초 {n}번, 부른 자리: {:?}", ui.ctx().repaint_causes());
+                let (sum, max) = (FRAME_US_SUM.swap(0, std::sync::atomic::Ordering::Relaxed), FRAME_US_MAX.swap(0, std::sync::atomic::Ordering::Relaxed));
+                let causes: Vec<String> = ui.ctx().repaint_causes().iter().take(6).map(|c| c.to_string()).collect();
+                log::info!("다시 그리기 2초 {n}번, 프레임 평균 {:.1}ms · 최대 {:.1}ms, 부른 자리: {causes:?}", sum as f64 / 1000.0 / n.max(1) as f64, max as f64 / 1000.0);
             }
         }
+        static FRAME_US_SUM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        static FRAME_US_MAX: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let frame_t0 = Instant::now();
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.ui_body(ui)));
+        let us = frame_t0.elapsed().as_micros() as u64;
+        FRAME_US_SUM.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
+        FRAME_US_MAX.fetch_max(us, std::sync::atomic::Ordering::Relaxed);
+        // 한 프레임이 0.25초를 넘으면(조작 화면이 끊김) 로그에 남긴다 — 예배 중 '멈칫' 원인 찾기
+        if us > 250_000 {
+            log::warn!("조작 화면 한 프레임이 {:.0}ms 걸림", us as f64 / 1000.0);
+        }
+        crate::imgcache::end_frame(ui.ctx()); // 그림 텍스처 상한 (오래 안 쓴 것 버리기)
+        {
+            // 점검용 WP_DEBUG_MEM: 처음 몇 프레임과 그 뒤 10초마다 메모리
+            static F: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            static LAST: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
+            let f = F.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if matches!(f, 0 | 1 | 5 | 30) {
+                wp_core::util::mem_log(&format!("프레임 {f}"));
+            }
+            let mut l = LAST.lock();
+            if l.is_none_or(|t| t.elapsed().as_secs() >= 10) {
+                *l = Some(Instant::now());
+                let loaders = ui.ctx().loaders().bytes.lock().iter().map(|b| b.byte_size()).sum::<usize>() + ui.ctx().loaders().image.lock().iter().map(|b| b.byte_size()).sum::<usize>() + ui.ctx().loaders().texture.lock().iter().map(|b| b.byte_size()).sum::<usize>();
+                let tm = ui.ctx().tex_manager();
+                let tm = tm.read();
+                let mut all: Vec<(usize, String)> = tm.allocated().map(|(_, m)| (m.bytes_used(), format!("{} {}x{}", m.name.chars().rev().take(28).collect::<String>().chars().rev().collect::<String>(), m.size[0], m.size[1]))).collect();
+                all.sort_by_key(|x| std::cmp::Reverse(x.0));
+                let total: usize = all.iter().map(|x| x.0).sum();
+                let (n, lru_mb) = crate::imgcache::stats();
+                wp_core::util::mem_log(&format!("프레임 {f} (10초마다) 그림 읽기 {:.0}MB · 텍스처 {}개 {:.0}MB · LRU {n}개 {lru_mb:.0}MB · 큰 것 {:?}", loaders as f64 / 1048576.0, all.len(), total as f64 / 1048576.0, all.iter().take(4).map(|x| format!("{}={:.0}MB", x.1, x.0 as f64 / 1048576.0)).collect::<Vec<_>>()));
+            }
+        }
         if r.is_err() {
             static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1597,8 +1631,11 @@ impl App {
             self.core.lock().flush();
             self.last_flush = Instant::now();
         }
-        // 알림이 사라질 때·출력 창 상태를 위해 가끔 다시 그림
-        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        // 아무 일도 없으면 2초에 한 번만 다시 그린다 (출력 창 상태 확인 · 설정 저장 같은 느린 점검용).
+        // 알림이 떠 있으면 사라질 때에 맞춰 0.5초마다. 시계·타이머·카운트다운은 그것을 그리는 자리에서 따로 1초마다 부른다.
+        // 코어가 바뀌면(Ev) main.rs 의 스레드가 바로 다시 그리게 하므로 반응은 느려지지 않는다.
+        let toast_alive = s.toast.as_ref().is_some_and(|t| wp_core::util::now_ms() - t.2 < 12_500);
+        ctx.request_repaint_after(std::time::Duration::from_millis(if toast_alive { 500 } else { 2000 }));
     }
 
 }

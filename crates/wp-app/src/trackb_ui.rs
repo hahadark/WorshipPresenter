@@ -609,6 +609,7 @@ impl App {
             let p = pal();
             let rem = timer["remaining"].as_i64().unwrap_or(0);
             let running = timer["running"] == true;
+            if running { ui.ctx().request_repaint_after(std::time::Duration::from_millis(500)); } // 남은 시간이 보이는 동안만
             let set = timer["duration"].as_i64().unwrap_or(0) > 0;
             // 남은 시간을 크게 (휴리스틱 평가 16번): 넘기면 빨강, 1분 안쪽이면 주황
             ui.horizontal(|ui| {

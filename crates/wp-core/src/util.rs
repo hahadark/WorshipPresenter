@@ -48,3 +48,26 @@ pub fn to36(mut n: u64) -> String {
     v.reverse();
     String::from_utf8(v).unwrap()
 }
+
+/// 이 프로세스의 메모리 (작업 집합 MB, 전용 MB). 윈도우가 아니면 (0, 0)
+pub fn mem_mb() -> (f64, f64) {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX};
+        let mut c: PROCESS_MEMORY_COUNTERS_EX = std::mem::zeroed();
+        c.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+        if K32GetProcessMemoryInfo(windows_sys::Win32::System::Threading::GetCurrentProcess(), &mut c as *mut _ as *mut PROCESS_MEMORY_COUNTERS, c.cb) != 0 {
+            return (c.WorkingSetSize as f64 / 1048576.0, c.PrivateUsage as f64 / 1048576.0);
+        }
+    }
+    (0.0, 0.0)
+}
+
+/// 점검용: WP_DEBUG_MEM=1 이면 단계 이름과 메모리를 로그에 (무엇이 메모리를 차지하는지 찾기)
+pub fn mem_log(stage: &str) {
+    static ON: once_cell::sync::Lazy<bool> = once_cell::sync::Lazy::new(|| std::env::var_os("WP_DEBUG_MEM").is_some());
+    if *ON {
+        let (ws, pv) = mem_mb();
+        log::info!("메모리 [{stage}] 작업 집합 {ws:.0}MB · 전용 {pv:.0}MB");
+    }
+}

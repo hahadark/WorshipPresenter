@@ -11,10 +11,23 @@ pub struct Fonts {
     bold: Option<FontArc>,
 }
 
+/// 글꼴 파일 내용을 한 번만 읽어 프로그램 끝까지 쥔다 (경로별). 재기(ab_glyph)와 조작 화면(egui)이 같은 것을 써서
+/// 맑은 고딕 13MB × 2벌을 두 번씩 읽지 않는다.
+pub fn font_file(path: &str) -> Option<&'static [u8]> {
+    static FILES: Lazy<parking_lot::Mutex<std::collections::HashMap<String, Option<&'static [u8]>>>> = Lazy::new(Default::default);
+    let mut m = FILES.lock();
+    if let Some(v) = m.get(path) {
+        return *v;
+    }
+    let v: Option<&'static [u8]> = std::fs::read(path).ok().map(|b| &*Box::leak(b.into_boxed_slice()));
+    m.insert(path.to_string(), v);
+    v
+}
+
 fn load(paths: &[&str]) -> Option<FontArc> {
     for p in paths {
-        if let Ok(bytes) = std::fs::read(p) {
-            if let Ok(f) = FontArc::try_from_vec(bytes) {
+        if let Some(bytes) = font_file(p) {
+            if let Ok(f) = FontArc::try_from_slice(bytes) {
                 return Some(f);
             }
         }

@@ -703,7 +703,7 @@ fn slide_row(ui: &mut egui::Ui, c: &paint::Ctx, label: &str, gc: Option<Color32>
     }
     let lay = match body {
         SrowBody::Thumb(src, cap) => {
-            let img = paint::image_uri(c, src).map(egui::Image::new);
+            let img = paint::image_uri_px(c, src, crate::imgcache::SMALL as f32).map(egui::Image::new);
             let max = Vec2::new(avail * 0.45, 90.0);
             let nat = img.as_ref().and_then(|i| i.load_for_size(ui.ctx(), max).ok()).and_then(|t| t.size()).unwrap_or(Vec2::new(160.0, 90.0));
             let sc = (max.x / nat.x).min(max.y / nat.y).min(1.0);

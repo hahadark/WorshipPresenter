@@ -360,12 +360,12 @@ pub fn font_definitions() -> egui::FontDefinitions {
     add("pretendard-bold", include_bytes!("../../../assets/fonts/Pretendard-Bold.ttf"));
     let mut malgun = vec![];
     let mut malgun_bold = vec![];
-    if let Ok(r) = std::fs::read(r"C:\Windows\Fonts\malgun.ttf") {
-        defs.font_data.insert("malgun".into(), Arc::new(egui::FontData::from_owned(r)));
+    if let Some(r) = wp_core::measure::font_file(r"C:\Windows\Fonts\malgun.ttf") {
+        defs.font_data.insert("malgun".into(), Arc::new(egui::FontData::from_static(r)));
         malgun.push("malgun".to_string());
     }
-    if let Ok(b) = std::fs::read(r"C:\Windows\Fonts\malgunbd.ttf") {
-        defs.font_data.insert("malgun-bold".into(), Arc::new(egui::FontData::from_owned(b)));
+    if let Some(b) = wp_core::measure::font_file(r"C:\Windows\Fonts\malgunbd.ttf") {
+        defs.font_data.insert("malgun-bold".into(), Arc::new(egui::FontData::from_static(b)));
         malgun_bold.push("malgun-bold".to_string());
     }
     if malgun_bold.is_empty() {
