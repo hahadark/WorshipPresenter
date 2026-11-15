@@ -478,6 +478,24 @@ pub fn focus_instance(data_dir: &Path) -> bool {
             ShowWindow(h, SW_RESTORE);
         }
         SetForegroundWindow(h);
+        // 윈도우는 '방금 사용자가 누른 프로그램'이 아니면 맨 앞으로 오기를 막는다(작업 표시줄만 깜박임).
+        // 막혔으면 지금 맨 앞 창의 입력 흐름에 잠깐 붙어 다시 해 보고, 그래도 안 되면 창을 다른 창들 위로 올려 눈에 띄게 한다
+        if GetForegroundWindow() != h {
+            use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+            let fg = GetForegroundWindow();
+            let (me, other) = (GetCurrentThreadId(), if fg.is_null() { 0 } else { GetWindowThreadProcessId(fg, std::ptr::null_mut()) });
+            if other != 0 && other != me && AttachThreadInput(me, other, 1) != 0 {
+                BringWindowToTop(h);
+                SetForegroundWindow(h);
+                AttachThreadInput(me, other, 0);
+            }
+        }
+        if GetForegroundWindow() != h {
+            SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            let fi = FLASHWINFO { cbSize: std::mem::size_of::<FLASHWINFO>() as u32, hwnd: h, dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG, uCount: 3, dwTimeout: 0 };
+            FlashWindowEx(&fi);
+        }
     }
     let _ = h;
     true
