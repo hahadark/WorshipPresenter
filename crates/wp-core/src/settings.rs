@@ -28,6 +28,9 @@ pub fn deep_merge_defaults(def: &Value, val: &Value) -> Value {
             }
             Value::Object(out)
         }
+        // 기본값이 묶음·목록인데 파일에는 다른 모양(글·숫자 등)이 들어 있으면 기본값으로 — 손으로 고치다 망가진 설정에서
+        // d["a"]["b"] = … 같은 자리가 panic 하지 않게 (serde_json 은 목록·글에 열쇠로 쓰면 panic 한다)
+        (Value::Object(_), _) | (Value::Array(_), _) if std::mem::discriminant(def) != std::mem::discriminant(val) => def.clone(),
         _ => val.clone(),
     }
 }
@@ -123,6 +126,11 @@ impl Settings {
                 log::error!("설정 읽기 실패: {}", f.display());
                 continue;
             };
+            if !raw.is_object() {
+                // JSON 이기는 하지만 설정 묶음이 아니다 ([1,2,3] · "글") — 읽지 못한 것으로 보고 백업 파일을 본다
+                log::error!("설정 읽기 실패 (모양이 설정이 아님): {}", f.display());
+                continue;
+            }
             let mut d = deep_merge_defaults(&DEFAULTS, &raw);
             let mut sc = DEFAULTS["shortcuts"].clone();
             merge_into(&mut sc, &raw["shortcuts"]);

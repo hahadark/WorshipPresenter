@@ -1246,3 +1246,87 @@ mod migrate_tests {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+#[cfg(test)]
+mod audit_e_corrupt_tests {
+    use super::*;
+
+    fn open_with(settings: &str) -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-audit-e-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        std::fs::write(dir.join("settings.json"), settings).unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+
+    /// 손으로 고치다 망가진 settings.json (칸의 모양이 다름) 으로 켜고 흔한 조작을 해도 꺼지지 않는다
+    #[test]
+    fn wrong_typed_settings_do_not_panic() {
+        let bad = r#"{"templates":"글자","activeTemplates":[1,2],"overlays":{"a":1},"messageTemplates":5,"stagePresets":"x","macros":null,
+            "schedule":{"x":1},"cameras":[1],"history":"없음","imageFolders":7,"droppedFiles":{},"output":"꺼짐","obs":[],"remote":3,"shortcuts":"x",
+            "hymnFolders":"C:\\없음","uiLang":12,"port":"가","preService":[],"stage":"x","ai":1,"sync":"y","lanOutput":[],"companion":"z","devices":{}}"#;
+        let mut c = open_with(bad);
+        for out in ["main", "overlay", "stage"] {
+            let _ = c.output_payload(out);
+            let _ = c.layers_payload(out);
+        }
+        let _ = c.stage_payload();
+        let _ = c.output_status();
+        let _ = c.search("요 3:16");
+        let _ = c.search("사랑");
+        c.new_cue("손상 점검").unwrap();
+        c.add_item(new_item("title", "제목 🙂"), None);
+        c.add_item(json!({ "type": "song", "title": 5, "lyrics": ["배열"], "order": {} }), None);
+        c.add_item(json!({ "type": "모르는 것" }), Some(99));
+        c.add_item(json!("순서가 아닌 글"), None);
+        for i in 0..6 {
+            c.preview_item(i);
+            c.send_item(i);
+            c.step(1);
+            c.step(-1);
+            c.goto_live(99);
+        }
+        c.toggle_clear();
+        c.toggle_logo();
+        c.toggle_bg();
+        c.clear_all();
+        c.set_template("main", "없는 템플릿");
+        c.set_version("없는 번역본");
+        let _ = c.open_cue("없는 큐시트");
+        c.move_item(0, -5);
+        c.move_item(99, 1);
+        c.remove_item(99);
+        crate::flow::tick(&mut c, crate::util::now_ms());
+        // 설정을 고치는 기능들
+        let _ = crate::templates::save_template(&mut c.settings, &json!({ "name": "새 템플릿" }));
+        let _ = crate::templates::duplicate_template(&mut c.settings, "default", None);
+        let _ = crate::templates::delete_template(&mut c.settings, "없는 것");
+        let _ = crate::themes::apply_theme(&mut c, "red-shield", &["main", "overlay"]);
+        c.settings.update(|d| {
+            let _ = crate::overlays::save_overlay(d, &json!({ "type": "clock" }));
+            let _ = crate::overlays::save_message_template(d, &json!({ "name": "a", "text": "b" }));
+            let _ = crate::overlays::save_stage_preset(d, &json!({ "name": "a" }));
+            let _ = crate::overlays::save_macro(d, &json!({ "name": "m" }));
+            crate::overlays::delete_macro(d, "x");
+            let _ = crate::schedule::save(d, &json!({ "time": "가:1", "days": "x" }));
+            let _ = crate::schedule::save(d, &json!({ "time": "10:55", "days": [0], "macroId": "m" }));
+            crate::cameras::set(d, "카메라 🎥", Some(&json!({ "mirror": "예" })));
+            let _ = crate::library::add_folder(d, "image", std::path::Path::new("C:\\없는 폴더"), None);
+            let _ = crate::library::add_dropped(d, &[std::path::PathBuf::from("C:\\없는 파일.png")]);
+        });
+        c.flush();
+    }
+
+    /// 완전히 깨진 settings.json (JSON 이 아님 · 빈 파일 · 배열) 도 기본값으로 켜진다
+    #[test]
+    fn unreadable_settings_fall_back_to_defaults() {
+        for bad in ["", "{", "[1,2,3]", "\u{feff}null", "설정이 아님"] {
+            let mut c = open_with(bad);
+            assert!(!c.settings.templates().is_empty(), "{bad:?}");
+            let _ = c.output_payload("main");
+            c.new_cue("x").unwrap();
+            c.add_item(new_item("blank", "빈 화면"), None);
+            c.send_item(0);
+        }
+    }
+}
