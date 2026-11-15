@@ -963,7 +963,10 @@ impl App {
             let w = ui.available_width();
             let tw = tpl["width"].as_f64().unwrap_or(1920.0) as f32;
             let th = tpl["height"].as_f64().unwrap_or(1080.0) as f32;
-            let reserve = if is_live { 128.0 } else { 74.0 };
+            // 슬라이드(절) 번호 단추 줄 접기 (Electron control.js syncThumbsFold, 기억: 설정 thumbsFold { pv, lv })
+            let fold_key = if is_live { "lv" } else { "pv" };
+            let folded = self.core.lock().settings.get()["thumbsFold"][fold_key].as_bool().unwrap_or(false);
+            let reserve = if is_live { 128.0 } else { 74.0 } - if folded && deck.is_some() { 34.0 } else { 0.0 };
             let h = (w * th / tw).min(ui.available_height() - reserve).max(60.0);
             let w2 = h * tw / th;
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
@@ -1001,6 +1004,18 @@ impl App {
                 }
                 let draw_on = is_live && crate::system_ui::ST.lock().draw;
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    // 줄 오른쪽 끝 ▴/▾ (.pane-tools .thumbs-fold: 28px, muted · 접힌 때 accent). 접혀도 남아 다시 펼친다
+                    let fb = Btn::icon_only(if folded { "chevron-down" } else { "chevron-up" })
+                        .kind(widgets::Kind::Ghost)
+                        .height(28.0)
+                        .icon_color(if folded { p.accent } else { p.muted })
+                        .tooltip(if folded { tr("슬라이드(절) 번호 단추 펼치기") } else { tr("슬라이드(절) 번호 단추 접기 (화면 자리 넓히기)") });
+                    let fr = ui.add(fb);
+                    widgets::mark(&format!("{fold_key}-thumbs-fold"), fr.rect);
+                    if fr.clicked() {
+                        self.core.lock().settings.update(|d| d["thumbsFold"][fold_key] = serde_json::json!(!folded));
+                        ui.ctx().request_repaint();
+                    }
                     if is_live && ui.add(Btn::new(tr("그리기")).icon("brush").height(30.0).selected(draw_on).tooltip(tr("LIVE 화면에 그리기·강조 — 예배당·OBS 화면에 같이 보입니다"))).clicked() {
                         crate::system_ui::ST.lock().draw = true;
                     }
@@ -1033,8 +1048,8 @@ impl App {
                     });
                 });
             }
-            // ---- .thumbs: 슬라이드 칩 (1. 3:16 …)
-            if let Some(d) = deck {
+            // ---- .thumbs: 슬라이드 칩 (1. 3:16 …) — 접었으면 안 그린다 (.thumbs.folded { display: none })
+            if let Some(d) = deck.filter(|_| !folded) {
                 ui.add_space(4.0);
                 egui::ScrollArea::vertical().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).max_height(76.0).auto_shrink([false, true]).show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
@@ -1043,6 +1058,7 @@ impl App {
                         for (k, sl) in d.slides.iter().enumerate() {
                             let r = thumb_chip(ui, &chip_label(k, &slide_chip_text(sl)), k == d.index, is_live).on_hover_text(slide_snippet(sl));
                             if r.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+                            widgets::mark(&format!("{fold_key}-chip-{k}"), r.rect);
                             // 마우스 올림 단추 (격자와 같은 규칙, 칩이 작아 칩 위에 띄운다)
                             let ops = crate::center_ui::slide_hover_ops(item.map(|x| x.1), sl, false);
                             if let Some(op) = widgets::hover_ops_float(ui, egui::Id::new((if is_live { "lv-chip" } else { "pv-chip" }, k)), r.rect, &ops) {

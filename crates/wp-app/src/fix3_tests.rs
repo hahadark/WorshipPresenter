@@ -163,3 +163,52 @@ fn closing_from_control_is_not_reported_as_exit() {
     o.close();
     assert!(o.take_exit().is_none(), "조작 화면에서 끈 것은 '창이 닫혔습니다' 알림을 내지 않는다");
 }
+
+// ---------------- 2) 슬라이드(절) 번호 단추 줄 접기 ----------------
+
+fn pv_pane(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    let d = s.preview.clone();
+    app.deck_view(ui, "미리보기", d.as_ref(), false, None, s, acts);
+}
+fn lv_pane(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    let d = s.live.as_ref().map(|l| l.deck.clone());
+    app.deck_view(ui, "LIVE", d.as_ref(), true, s.live.as_ref(), s, acts);
+}
+fn fold_of(h: &H, k: &str) -> bool {
+    h.app.core.lock().settings.get()["thumbsFold"][k].as_bool().unwrap_or(false)
+}
+
+#[test]
+fn preview_chips_fold_and_unfold_with_button() {
+    let mut h = H::new(titles());
+    h.app.apply(vec![Act::PreviewItem(0)]);
+    h.frame(vec![], pv_pane);
+    h.frame(vec![], pv_pane);
+    assert!(seen("pv-chip-2").is_some(), "처음에는 번호 단추 줄이 보인다");
+    h.click("pv-thumbs-fold", pv_pane);
+    assert!(fold_of(&h, "pv"), "접으면 설정에 기억");
+    assert!(!fold_of(&h, "lv"), "미리보기·LIVE 는 따로");
+    h.frame(vec![], pv_pane);
+    assert!(seen("pv-chip-0").is_none(), "접히면 번호 단추가 안 보인다");
+    assert!(seen("pv-thumbs-fold").is_some(), "접혀도 단추는 남는다");
+    h.click("pv-thumbs-fold", pv_pane);
+    assert!(!fold_of(&h, "pv"));
+    h.frame(vec![], pv_pane);
+    assert!(seen("pv-chip-1").is_some(), "다시 펼침");
+}
+
+#[test]
+fn live_chips_fold_separately() {
+    let mut h = H::new(titles());
+    h.app.apply(vec![Act::PreviewItem(0), Act::SendPreview]);
+    h.frame(vec![], lv_pane);
+    h.frame(vec![], lv_pane);
+    assert!(seen("lv-chip-1").is_some());
+    h.click("lv-thumbs-fold", lv_pane);
+    assert!(fold_of(&h, "lv") && !fold_of(&h, "pv"));
+    h.frame(vec![], lv_pane);
+    assert!(seen("lv-chip-1").is_none());
+    h.click("lv-thumbs-fold", lv_pane);
+    h.frame(vec![], lv_pane);
+    assert!(seen("lv-chip-1").is_some(), "접혀도 남은 단추로 다시 펼친다");
+}
