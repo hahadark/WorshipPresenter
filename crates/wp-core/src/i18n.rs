@@ -44,11 +44,27 @@ static EXTRA: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
 
 static EN: AtomicBool = AtomicBool::new(false);
 
+// 시험에서는 언어를 그 시험 스레드에만 적용한다: 전역으로 바꾸면 한국어 문구를 확인하는 다른 시험이
+// 같은 때에 돌다가 가끔 실패했다 (diagnose·obs 시험이 번갈아 실패 — 갈래 D 점검에서 확인)
+#[cfg(test)]
+thread_local! {
+    static EN_TEST: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
 pub fn set_lang(lang: &str) {
+    #[cfg(test)]
+    {
+        EN_TEST.with(|c| c.set(Some(lang == "en")));
+    }
+    #[cfg(not(test))]
     EN.store(lang == "en", Ordering::Relaxed);
 }
 
 pub fn is_en() -> bool {
+    #[cfg(test)]
+    if let Some(v) = EN_TEST.with(|c| c.get()) {
+        return v;
+    }
     EN.load(Ordering::Relaxed)
 }
 
