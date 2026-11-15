@@ -174,7 +174,7 @@ fn dyn_inner(s: &str, deep: u8, nested: bool) -> String {
             }
         }
         // 긴 문구(더 구체적인 것)부터
-        out.sort_by_key(|p| std::cmp::Reverse(p.0.as_str().len()));
+        out.sort_by(|a, b| b.0.as_str().len().cmp(&a.0.as_str().len()).then_with(|| a.0.as_str().cmp(b.0.as_str())).then_with(|| a.2.cmp(&b.2)));
         out
     });
     static RECENT: Lazy<parking_lot::Mutex<Vec<(String, String)>>> = Lazy::new(|| parking_lot::Mutex::new(vec![]));
@@ -288,8 +288,8 @@ mod tests {
         assert_eq!(tr("홍길동"), "홍길동");
         assert_eq!(tr_args("{1}장 없음", &[&3]), "{1}장 없음".replace("{1}", "3"));
         // 이미 채워진 알림도 사전 패턴으로 번역
-        let (k, v) = DICT.iter().find(|(k, _)| k.starts_with("{1}") && k.matches('{').count() == 1 && k.len() > 6).map(|(k, v)| (k.clone(), v.clone())).unwrap();
-        assert_eq!(tr_dyn(&k.replace("{1}", "가나 7")), v.replace("{1}", "가나 7"));
+        // HashMap 에서 임의 패턴을 고르면 더 구체적인 다른 문구와 겹쳐 실행마다 실패할 수 있다.
+        assert_eq!(tr_dyn("지운 지 가나 7"), "deleted 가나 7");
         assert_eq!(tr_dyn("홍길동 사관"), "홍길동 사관");
         let h = String::from_utf8(with_lang(b"<html lang=\"ko\"><head></head>".to_vec())).unwrap();
         assert!(h.contains("data-lang=\"en\"") && h.contains("i18n-en.js"));
