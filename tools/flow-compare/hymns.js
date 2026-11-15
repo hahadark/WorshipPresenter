@@ -36,7 +36,9 @@ const norm = s => JSON.stringify(s, (k, v) => (typeof v === 'string' ? v.replace
 const keysOf = s => {
   const o = JSON.parse(norm(s));
   for (const k of ['id', 'itemId', 'cueId', 'key', 'file']) delete o[k];
-  return o;
+  // 키 차례만 다른 것은 같은 것으로
+  const sort = v => (Array.isArray(v) ? v.map(sort) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sort(v[k])])) : v);
+  return sort(o);
 };
 const outText = p => p.eval(`(() => { const b = document.body; return b ? b.innerText.replace(/\\s+/g, ' ').trim() : ''; })()`);
 
@@ -99,7 +101,12 @@ async function main() {
       const cnt = Math.min(es.length, rsl.length, MAXS);
       for (let k = 0; k < cnt; k++) {
         if (k > 0) { await ecmd('nextSlide'); await rs('nextSlide'); }
-        await sleep(k === 0 ? 2200 : 1200);
+        await sleep(k === 0 ? 3500 : 2500); // OBS 자막이 서서히 바뀌는 동안 찍으면 상자 진하기가 달라 보인다
+        // 머리 없는 브라우저는 뒤에 있는 탭의 전환 효과를 멈춰 둔다 — 한 번씩 찍어 깨운 뒤 다시 찍는다 (안 그러면 OBS 자막이 흐리게 찍힌다)
+        for (const o of OUTPUTS) { await pages['el-' + o].shot(); await pages['rs-' + o].shot(); }
+        await sleep(1500);
+        for (const o of OUTPUTS) { await pages['el-' + o].shot(); await pages['rs-' + o].shot(); }
+        await sleep(800);
         const srep = { slide: k };
         for (const o of OUTPUTS) {
           const [ea, ra] = [await pages['el-' + o].shot(), await pages['rs-' + o].shot()];
