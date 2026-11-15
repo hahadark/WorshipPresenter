@@ -68,6 +68,8 @@ pub fn normalize_template(t: &Value) -> Value {
 enum BgJob {
     Write(PathBuf, String, std::sync::Arc<BgState>),
     Sync(std::sync::mpsc::Sender<()>),
+    #[cfg(test)]
+    HoldForTest(std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>),
 }
 static BG_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// 실패한 뒤 다시 해 보기까지 (ms). 디스크가 찼거나 폴더를 못 쓸 때 1초마다 다시 쓰며 로그를 채우지 않게
@@ -112,6 +114,11 @@ static BG: Lazy<parking_lot::Mutex<std::sync::mpsc::Sender<BgJob>>> = Lazy::new(
                         log::info!("설정 저장이 다시 됩니다 ({})", file.display());
                     }
                 }
+                #[cfg(test)]
+                BgJob::HoldForTest(release, ready) => {
+                    let _ = ready.send(());
+                    let _ = release.recv_timeout(std::time::Duration::from_secs(2));
+                }
                 BgJob::Sync(done) => {
                     let _ = done.send(());
                 }
@@ -121,14 +128,14 @@ static BG: Lazy<parking_lot::Mutex<std::sync::mpsc::Sender<BgJob>>> = Lazy::new(
     parking_lot::Mutex::new(tx)
 });
 /// 맡겨 둔 저장이 모두 끝날 때까지 (최대 5초)
-fn bg_wait() {
+fn bg_wait() -> Result<()> {
     if !BG_STARTED.load(std::sync::atomic::Ordering::Relaxed) {
-        return;
+        return Ok(());
     }
     let (tx, rx) = std::sync::mpsc::channel();
-    if BG.lock().send(BgJob::Sync(tx)).is_ok() {
-        let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
-    }
+    BG.lock().send(BgJob::Sync(tx)).map_err(|_| anyhow::anyhow!("설정 저장 작업자가 응답하지 않습니다."))?;
+    rx.recv_timeout(std::time::Duration::from_secs(5)).map_err(|e| anyhow::anyhow!("설정 저장 완료를 확인하지 못했습니다: {e}"))?;
+    Ok(())
 }
 
 pub struct Settings {
@@ -225,8 +232,9 @@ impl Settings {
 
     /// 바뀐 것이 있으면 원자적으로 저장 (임시 파일 → 이름 바꾸기). 백그라운드에 맡긴 저장이 있으면 그것이 끝난 뒤에 돌아온다
     pub fn save_if_dirty(&mut self) -> Result<()> {
+        // 실패 표시는 맡겨 둔 쓰기가 끝난 뒤에 도착한다. 먼저 기다리지 않으면 종료 시 실패를 성공으로 넘긴다.
+        bg_wait()?;
         if !self.dirty && !self.bg.failed.load(std::sync::atomic::Ordering::Relaxed) {
-            bg_wait();
             return Ok(());
         }
         self.save_now()
@@ -260,8 +268,8 @@ impl Settings {
     }
 
     pub fn save_now(&mut self) -> Result<()> {
-        bg_wait(); // 같은 임시 파일을 쓰므로 맡겨 둔 저장이 끝난 뒤에
-        self.bg.failed.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.dirty = true; // 실패하면 다음 저장·종료 때 다시 시도해야 한다
+        bg_wait()?; // 같은 임시 파일을 쓰므로 맡겨 둔 저장이 끝난 뒤에
         if let Some(d) = self.file.parent() {
             fs::create_dir_all(d)?;
         }
@@ -269,6 +277,7 @@ impl Settings {
         fs::write(&tmp, serde_json::to_string_pretty(&self.data)?)?;
         fs::rename(&tmp, &self.file)?;
         self.dirty = false;
+        self.bg.failed.store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
@@ -356,6 +365,37 @@ mod broken_tests {
 #[cfg(test)]
 mod bg_save_tests {
     use super::*;
+    /// 저장을 맡긴 즉시 종료하면 실패 표시가 아직 도착하지 않았어도 기다린 뒤 실패를 돌려줘야 한다.
+    #[test]
+    fn shutdown_waits_then_reports_pending_background_failure() {
+        use std::sync::atomic::Ordering;
+        let dir = std::env::temp_dir().join(format!("wp-save-shutdown-{}", rand::random::<u64>()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("blocked"), "file").unwrap();
+        let mut st = Settings::load(&dir);
+        st.file = dir.join("blocked/settings.json");
+        let (release, gate) = std::sync::mpsc::channel();
+        let (ready, ack) = std::sync::mpsc::channel();
+        BG.lock().send(BgJob::HoldForTest(gate, ready)).unwrap();
+        ack.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        st.update(|d| d["shutdownValue"] = json!(42));
+        st.save_bg();
+        assert!(!st.bg.failed.load(Ordering::Relaxed));
+        let unlock = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = release.send(());
+        });
+        let result = st.save_if_dirty();
+        unlock.join().unwrap();
+        assert!(result.is_err(), "종료 전에 대기하던 저장이 실패했는데 성공으로 넘겼음");
+        assert!(st.dirty || st.bg.failed.load(Ordering::Relaxed), "실패한 저장은 다시 시도할 상태로 남아야 함");
+        st.file = dir.join("settings.json");
+        st.save_if_dirty().unwrap();
+        let saved: Value = serde_json::from_str(&fs::read_to_string(&st.file).unwrap()).unwrap();
+        assert_eq!(saved["shutdownValue"], json!(42));
+        fs::remove_dir_all(&dir).ok();
+    }
+
 
     /// 백그라운드 저장: 맡긴 뒤 save_if_dirty 가 끝까지 기다리고, 파일에 바뀐 값이 들어 있다
     #[test]
@@ -391,13 +431,13 @@ mod bg_save_tests {
         st.file = dir.join("막힘").join("settings.json");
         st.update(|d| d["auditE"] = json!(1));
         st.save_bg();
-        bg_wait();
+        bg_wait().unwrap();
         let e = st.take_save_error();
         assert!(e.is_some(), "실패하면 알릴 오류 글이 있어야 함");
         assert!(st.take_save_error().is_none(), "같은 오류는 한 번만");
         // 바로 다시 부르면 쓰지 않고(10초 뒤에 다시) 바뀐 것은 그대로 남아 있다
         st.save_bg();
-        bg_wait();
+        bg_wait().unwrap();
         assert!(st.take_save_error().is_none());
         assert!(st.dirty);
         assert!(st.save_if_dirty().is_err(), "끌 때 저장은 실패를 돌려준다");
