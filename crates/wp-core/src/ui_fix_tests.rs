@@ -76,3 +76,14 @@ fn send_item_succeeds_on_other_cue_when_preview_ok() {
     assert_eq!(l["passage"]["cueIndex"], 1);
     assert_eq!(l["passage"]["itemTitle"], "B1");
 }
+
+/// [점검 A] 장절이 빈 성경 순서는 Electron 처럼 보일 것이 없다 (제목 카드 '성경' 을 대신 내보내지 않는다).
+#[test]
+fn empty_ref_bible_item_is_not_sent_as_title_card() {
+    let mut c = core();
+    c.cue = Some(cue("A", vec![title("A0"), json!({"type":"bible", "title":"성경", "ref":""})]));
+    assert!(c.send_item(0));
+    assert!(c.item_deck(1).is_err());
+    assert!(!c.send_item(1));
+    assert_eq!(c.pres.live_state()["passage"]["cueIndex"], 0);
+}

@@ -98,6 +98,9 @@ pub fn ref_text(slide: &Value, t: &Value) -> String {
     s.unwrap_or("").to_string()
 }
 
+/// 병행 번역 글자 크기 (web/shared/render.css .bc-par font-size)
+const PAR_SCALE: f32 = 0.72;
+
 /// slide 가 템플릿 t 에서 size(px) 글꼴로 넘치지 않는가
 pub fn fits_at(slide: &Value, t: &Value, size: f32, version_name: &str) -> bool {
     let tw = num(&t["width"], 1920.0);
@@ -183,10 +186,6 @@ pub fn fits_at(slide: &Value, t: &Value, size: f32, version_name: &str) -> bool 
             if pi > 0 && pi < pc {
                 piece.push_str(" …");
             }
-            if let Some(t2) = part["text2"].as_str().filter(|x| !x.is_empty()) {
-                piece.push(' ');
-                piece.push_str(t2);
-            }
             if verse_break {
                 flush(&mut flow, &mut n_lines);
                 flow.push_str(&piece);
@@ -196,6 +195,13 @@ pub fn fits_at(slide: &Value, t: &Value, size: f32, version_name: &str) -> bool 
                     flow.push(' ');
                 }
                 flow.push_str(&piece);
+            }
+            // 병행 번역(.bc-par): 본문에 이어 붙는 글이 아니라 따로 선 줄(display:block) — 글자 0.72배, 위 여백 0.12em.
+            // 본문 크기로 이어 재면 실제보다 두 배 가까이 크게 잡혀, 긴 절이 어절 하나씩 수십 장으로 쪼개졌다.
+            if let Some(t2) = part["text2"].as_str().filter(|x| !x.is_empty()) {
+                flush(&mut flow, &mut n_lines);
+                let ps = size * PAR_SCALE;
+                h += wrap_lines(t2, w, ps, bold, letter) as f32 * ps * lh + ps * 0.12;
             }
         }
         flush(&mut flow, &mut n_lines);
@@ -227,6 +233,23 @@ pub fn fit_size(slide: &Value, t: &Value, version_name: &str) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// [점검 A] 병행 번역은 0.72배 작은 글자로 따로 선 줄 — 본문 크기로 이어 재지 않는다
+    #[test]
+    fn parallel_text_is_measured_as_smaller_block() {
+        let t = serde_json::json!({ "width": 1920, "height": 1080, "safeArea": 0, "padding": { "left": 120, "right": 120, "top": 100, "bottom": 100 },
+            "box": { "enabled": false }, "font": { "size": 64, "minSize": 64, "weight": 700, "lineHeight": 1.45, "letterSpacing": 0, "autoFit": true },
+            "reference": { "show": false }, "versionLabel": { "show": false }, "verseNumbers": { "show": false }, "headings": { "show": false } });
+        let en = "And we know that in all things God works for the good of those who love him, who have been called according to his purpose. ".repeat(5);
+        let with = serde_json::json!({ "kind": "bible", "parts": [{ "book": 45, "chapter": 8, "verse": 28, "text": "우리가 알거니와", "text2": en.trim() }] });
+        // 같은 글을 본문에 이어 붙인 것 (옛 계산과 같은 높이)
+        let joined = serde_json::json!({ "kind": "bible", "parts": [{ "book": 45, "chapter": 8, "verse": 28, "text": format!("우리가 알거니와 {}", en.trim()) }] });
+        assert!(!fits_at(&joined, &t, 64.0, ""), "본문 크기로는 넘쳐야 시험이 뜻이 있다");
+        assert!(fits_at(&with, &t, 64.0, ""), "병행 번역은 작은 글자라 들어간다");
+        // 그래도 자리는 차지한다: 병행 번역이 아주 길면 넘친다
+        let long = serde_json::json!({ "kind": "bible", "parts": [{ "book": 45, "chapter": 8, "verse": 28, "text": "우리가 알거니와", "text2": en.repeat(3) }] });
+        assert!(!fits_at(&long, &t, 64.0, ""));
+    }
+
     #[test]
     fn em_width() {
         // 맑은 고딕 한글 한 글자 폭은 대략 글꼴 크기(em)의 0.9~1.0 배
