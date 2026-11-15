@@ -71,4 +71,4 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 9. 설치 파일(NSIS 등) · 자동 업데이트(GitHub 릴리스) · 영어판 · 맥
 10. 실행 취소, 끌어서 놓기(파일·순서), 한글 입력 자동 전환
 
-조작 화면 미리보기는 근사 그림이다(실제 출력은 웹). 글자 크기 맞춤은 `measure.rs` 근사라 Electron 과 슬라이드 나눔이 조금 다를 수 있다 — 실제 교회 자료로 비교 필요.
+조작 화면 미리보기·LIVE·썸네일·편집기 그림(paint.rs paint_slide)은 웹 출력(render.js) 규칙을 그대로 옮겨 그린다 — 자리·크기 맞춤·줄바꿈이 웹과 같다(docs/slide-parity.md, 점검 --parity). 영상·카메라는 재생하지 않는다. 글자 크기 맞춤은 `measure.rs` 근사라 Electron 과 슬라이드 나눔이 조금 다를 수 있다 — 실제 교회 자료로 비교 필요.

@@ -100,6 +100,8 @@ pub(crate) struct Snap {
     port: u16,
     logo: bool,
     hide_bg: bool,
+    /// OBS 자막에 그림·악보 슬라이드를 우상단에 작게 (output.obsPip, 'OBS 전체' 가 아닐 때)
+    obs_pip: bool,
 }
 
 /// 고른 것을 넣은 결과로 왼쪽 큐시트의 고른 순서를 맞춘다 (넣은 자리 또는 이미 있던 순서)
@@ -192,9 +194,10 @@ impl App {
             cues: c.cues.clone(),
             templates: c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())).collect(),
             preview_main: c.template_for_deck("main", c.pres.preview.as_ref()),
-            preview_overlay: c.template_for_deck("overlay", c.pres.preview.as_ref()),
+            // 'OBS 전체'(obsFull) 면 OBS 화면도 예배당 템플릿으로 (core.output_payload 와 같게)
+            preview_overlay: c.template_for_deck(if c.obs_full { "main" } else { "overlay" }, c.pres.preview.as_ref()),
             tpl_main: c.template_for("main"),
-            tpl_overlay: c.template_for("overlay"),
+            tpl_overlay: c.template_for(if c.obs_full { "main" } else { "overlay" }),
             active_main: s["activeTemplates"]["main"].as_str().unwrap_or("").to_string(),
             active_overlay: s["activeTemplates"]["overlay"].as_str().unwrap_or("").to_string(),
             version: c.version_id(),
@@ -205,6 +208,7 @@ impl App {
             port: c.port,
             logo: c.layers.logo,
             hide_bg: c.layers.hide_bg,
+            obs_pip: !c.obs_full && s["output"]["obsPip"].as_bool().unwrap_or(false),
         }
     }
 
@@ -1014,6 +1018,13 @@ impl App {
             let (visible, logo, hide_bg) = match live { Some(l) => (l.visible, s.logo, s.hide_bg), None if is_live => (true, s.logo, s.hide_bg), None => (true, false, false) };
             ui.painter().rect_filled(rect, egui::CornerRadius::same(6), Color32::BLACK);
             paint_slide(ui, &c, rect.shrink(2.0), slide, tpl, &version, visible, logo, hide_bg);
+            // OBS 자막 + 그림 우상단 켬: 그림·악보 슬라이드를 예배당 모양 그대로 오른쪽 위에 작게 (output index.html .bc-pip)
+            if self.views.obs(is_live) && s.obs_pip && visible && slide.is_some_and(|x| matches!(x["kind"].as_str(), Some("image" | "score"))) {
+                let main_t = if is_live { &s.tpl_main } else { &s.preview_main };
+                let mut sl = slide.cloned().unwrap_or_default();
+                sl["caption"] = json!("");
+                paint::paint_pip(ui, &c, rect.shrink(2.0), &sl, main_t);
+            }
             if deck.is_none() {
                 let ph = if is_live { tr("송출 중인 본문 없음") } else { tr("검색한 본문이 여기에 표시됩니다") };
                 ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, ph, theme::font(14.0, Weight::Regular), p.muted2);
@@ -1483,6 +1494,7 @@ impl eframe::App for App {
         crate::parity2_ui::shortcuts(self, &ctx); // [트랙 A] Ctrl+B · Ctrl+Shift+V (위젯보다 먼저)
         self.trackb_shortcuts(&ctx); // [트랙 B]
         self.run_test(&ctx, &mut acts);
+        if crate::parity_shot::run(self, ui) { return; } // 점검용 --parity: 슬라이드 그림만 창 전체에
         let s = self.snap();
 
         crate::track_c::menu_bar(self, ui, &mut acts); // [트랙 C] 메뉴 줄 (트랙 B·D 항목도 여기서 연다)
