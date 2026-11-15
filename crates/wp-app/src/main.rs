@@ -45,6 +45,7 @@ mod icons; // 디자인 기반: Lucide 아이콘
 mod widgets; // 디자인 기반: 공용 위젯
 mod cue_ui; // 디자인 2단계: 왼쪽 큐시트 패널
 mod cuemgr_ui; // [갈래 C] 큐시트 관리 창 (cuemanager.js)
+mod pptsplit_ui; // [갈래 C] 한 PPT 를 여러 순서로 나누기 창 (cue.js openSplit)
 mod ctx_ui; // [갈래 C] 오른쪽 클릭 메뉴: 본문 줄 · 라이브러리 · 패널 (ctxmenu.js)
 
 use eframe::egui;

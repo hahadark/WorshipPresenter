@@ -355,6 +355,10 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             }
         }
         set(ui, CONFIRM, confirm);
+        // [갈래 C] cue.js openSplit: 슬라이드 썸네일을 보며 나누는 창 (두 번 누르면 그 슬라이드에서 새 순서)
+        if ui.small_button(wp_core::i18n::tr("슬라이드 보며 나누기…")).on_hover_text(wp_core::i18n::tr("슬라이드를 보며 범위·이름을 정해 여러 순서로 나눕니다 (두 번 누르면 그 슬라이드에서 새 순서)")).clicked() {
+            crate::pptsplit_ui::open(app, ui.ctx(), it);
+        }
         if ui.small_button(wp_core::i18n::tr("자동으로 나누기")).on_hover_text(wp_core::i18n::tr("한 PPT 를 순서 이름·찬송 장·성경 장절로 여러 순서로 나눕니다 (AI 없이)")).clicked() {
             let mut c = app.core.lock();
             match hymns::slide_texts(&c, &file).and_then(|t| pptsplit::rule_split(&t, &title)) {

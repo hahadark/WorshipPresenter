@@ -774,3 +774,110 @@ fn cue_manager_check_all_then_bulk_trash_and_bulk_restore() {
     h.click("cm-restore-sel", cm);
     assert_eq!(cue_names(&h, false).len(), 3);
 }
+
+// ---------------- 5) PPT 나누기 창 썸네일 (cue.js:545-557): 누르면 시작 · Shift 끝 · 두 번 = 그 슬라이드에서 새 순서 (이미 시작이면 합침) ----------------
+
+fn sp(app: &mut App, ctx: &egui::Context, _: &mut egui::Ui, _: &Snap, _: &mut Vec<Act>) {
+    app.pptsplit_window(ctx);
+}
+/// 슬라이드 6장짜리 PPT 순서 하나('주일 PPT')와 나누기 창
+fn sp_h() -> H {
+    let mut h = H::new(vec![json!({ "id": "p", "type": "hymn", "title": "주일 PPT", "file": "주일.pptx", "edits": { "0": { "items": [] } }, "skip": [1] }), json!({ "id": "z", "type": "title", "title": "끝" })]);
+    let it = items(&h)[0].clone();
+    let texts: Vec<String> = ["예배로 부름", "", "찬송 10장\n전능왕 오셔서", "가사", "설교", "축도"].iter().map(|s| s.to_string()).collect();
+    let all: Vec<Value> = (0..6).map(|k| json!({ "kind": "image", "image": "", "ref": "주일 PPT", "label": (k + 1).to_string(), "parts": [] })).collect();
+    crate::pptsplit_ui::open_with(&h.ctx, &it, all, texts);
+    h.frame(vec![], sp);
+    h.frame(vec![], sp);
+    h
+}
+fn sp_parts(h: &H) -> Vec<(usize, usize, String)> {
+    crate::pptsplit_ui::parts_now(&h.ctx)
+}
+fn sp_ranges(h: &H) -> Vec<(usize, usize)> {
+    sp_parts(h).iter().map(|p| (p.0, p.1)).collect()
+}
+fn rest(h: &mut H) {
+    for _ in 0..12 {
+        h.frame(vec![], sp);
+    }
+}
+
+#[test]
+fn dbl_ppt_split_thumbnail_toggles_split_there_and_again_merges() {
+    let mut h = sp_h();
+    for n in 1..=6 {
+        assert!(seen(&format!("sp-th-{n}")).is_some(), "썸네일 {n} 이 보인다");
+    }
+    dbl_panel(&mut h, "sp-th-3", sp);
+    assert_eq!(sp_parts(&h), [(1, 2, "예배로 부름".to_string()), (3, 6, "찬송 10장".to_string())], "두 번 = 그 슬라이드에서 새 순서 (이름은 슬라이드 첫 줄)");
+    assert_eq!(crate::pptsplit_ui::range_now(&h.ctx), "3", "첫 클릭은 시작 고르기");
+    rest(&mut h);
+    dbl_panel(&mut h, "sp-th-5", sp);
+    assert_eq!(sp_ranges(&h), [(1, 2), (3, 4), (5, 6)]);
+    rest(&mut h);
+    dbl_panel(&mut h, "sp-th-3", sp);
+    assert_eq!(sp_ranges(&h), [(1, 4), (5, 6)], "이미 시작인 슬라이드를 두 번 = 앞 순서와 합침");
+    assert_eq!(items(&h).len(), 2, "'나누기' 를 누르기 전에는 큐시트가 그대로");
+}
+
+#[test]
+fn ppt_split_click_start_shift_click_end_then_add_range_with_name() {
+    let mut h = sp_h();
+    single_panel(&mut h, "sp-th-2", sp);
+    assert_eq!(crate::pptsplit_ui::range_now(&h.ctx), "2");
+    assert!(sp_parts(&h).is_empty(), "한 번 클릭은 나누지 않는다");
+    // Shift 를 누른 채 4번
+    let p = seen("sp-th-4").unwrap().center();
+    let shift = egui::Modifiers::SHIFT;
+    h.frame_m(vec![Event::PointerMoved(p)], shift, sp);
+    for pressed in [true, false] {
+        h.frame_m(vec![Event::PointerButton { pos: p, button: PointerButton::Primary, pressed, modifiers: shift }], shift, sp);
+    }
+    rest(&mut h);
+    assert_eq!(crate::pptsplit_ui::range_now(&h.ctx), "2-4");
+    h.click("sp-name", sp);
+    h.type_text("찬송", sp);
+    h.click("sp-add", sp);
+    assert_eq!(sp_parts(&h), [(2, 4, "찬송".to_string())]);
+    assert_eq!(crate::pptsplit_ui::range_now(&h.ctx), "5", "더한 뒤에는 다음 슬라이드가 시작");
+    // 이름 칸에서 Enter 로도 더한다 (이름이 비면 '제목 범위')
+    h.click("sp-name", sp);
+    h.key(egui::Key::Enter, egui::Modifiers::NONE, sp);
+    assert_eq!(sp_parts(&h), [(2, 4, "찬송".to_string()), (5, 5, "주일 PPT 5".to_string())]);
+}
+
+#[test]
+fn ppt_split_rule_button_merge_remove_clear_and_go_replaces_the_item() {
+    let mut h = sp_h();
+    h.click("sp-rule", sp);
+    assert!(sp_parts(&h).len() >= 2, "규칙으로: {:?}", sp_parts(&h));
+    h.click("sp-clear", sp);
+    assert!(sp_parts(&h).is_empty());
+    rest(&mut h);
+    dbl_panel(&mut h, "sp-th-3", sp);
+    rest(&mut h);
+    dbl_panel(&mut h, "sp-th-5", sp);
+    rest(&mut h);
+    h.click("sp-merge-2", sp); // 3번째(5-6)를 앞(3-4)과 합침
+    assert_eq!(sp_ranges(&h), [(1, 2), (3, 6)]);
+    rest(&mut h);
+    dbl_panel(&mut h, "sp-th-6", sp);
+    assert_eq!(sp_ranges(&h), [(1, 2), (3, 5), (6, 6)]);
+    rest(&mut h); // 줄이 늘어 창 크기가 자리 잡을 때까지
+    h.click("sp-rm-1", sp); // 가운데(3-5)는 넣지 않는다
+    assert_eq!(sp_ranges(&h), [(1, 2), (6, 6)]);
+    rest(&mut h);
+    h.click("sp-go", sp);
+    let v = items(&h);
+    assert_eq!(v.len(), 3, "순서 하나가 둘로 바뀐다 (+ 원래 있던 '끝')");
+    assert_eq!((v[0]["title"].as_str().unwrap(), v[0]["range"].as_str().unwrap()), ("예배로 부름", "1-2"));
+    assert_eq!((v[1]["title"].as_str().unwrap(), v[1]["range"].as_str().unwrap()), ("축도", "6"));
+    assert_eq!(v[2]["title"], "끝");
+    for x in &v[..2] {
+        assert_eq!(x["file"], "주일.pptx");
+        assert!(x.get("edits").is_none() && x.get("skip").is_none(), "슬라이드 번호에 묶인 편집·건너뛰기는 옮기지 않는다");
+    }
+    assert_ne!(v[0]["id"], v[1]["id"]);
+    assert!(!crate::pptsplit_ui::is_open(&h.ctx), "나누면 창이 닫힌다");
+}

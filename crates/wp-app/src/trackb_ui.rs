@@ -104,6 +104,7 @@ impl App {
         self.stage_window(ctx);
         self.macros_window(ctx);
         self.cues_window(ctx);
+        self.pptsplit_window(ctx); // [갈래 C] PPT 나누기 창
         self.lyrics_window(ctx);
         self.music_tick(ctx);
         self.system_windows(ctx);
