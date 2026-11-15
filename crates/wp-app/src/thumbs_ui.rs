@@ -20,13 +20,31 @@ struct Thumbs {
     ready: HashMap<PathBuf, PathBuf>,
     failed: HashMap<PathBuf, PathBuf>,
     worker: bool,
+    /// 조금 전에 확인한 결과 (원본 → 확인한 때, 썸네일 자리)
+    memo: HashMap<PathBuf, (std::time::Instant, Option<PathBuf>)>,
 }
+
+/// 같은 그림은 이 시간 동안 파일을 다시 확인하지 않는다.
+/// 보이는 칸마다 프레임마다 원본 정보 읽기 + 썸네일 있는지 보기를 하던 것 — 라이브러리 폴더가 네트워크·원드라이브·잠든 외장 디스크이거나
+/// 파일이 없어졌으면 그 확인이 프레임마다 조작 화면을 붙잡는다.
+const RECHECK: std::time::Duration = std::time::Duration::from_secs(2);
 
 static TH: Lazy<Mutex<Thumbs>> = Lazy::new(|| Mutex::new(Thumbs::default()));
 
 /// 썸네일 자리 (아직이면 만들 차례에 넣고 None)
 pub fn get(ctx: &egui::Context, data_dir: &Path, src: &Path) -> Option<PathBuf> {
     let mut t = TH.lock();
+    if let Some((at, r)) = t.memo.get(src) {
+        if at.elapsed() < RECHECK {
+            return r.clone();
+        }
+    }
+    let r = get_checked(&mut t, ctx, data_dir, src);
+    t.memo.insert(src.to_path_buf(), (std::time::Instant::now(), r.clone()));
+    r
+}
+
+fn get_checked(t: &mut Thumbs, ctx: &egui::Context, data_dir: &Path, src: &Path) -> Option<PathBuf> {
     let expected = wp_core::thumbs::thumb_path(data_dir, src)?;
     if let Some(p) = t.ready.get(src) {
         if *p == expected && p.exists() {
@@ -60,6 +78,7 @@ pub fn get(ctx: &egui::Context, data_dir: &Path, src: &Path) -> Option<PathBuf> 
                 let r = wp_core::thumbs::make(&dir, &src);
                 let mut t = TH.lock();
                 t.queued.remove(&src);
+                t.memo.remove(&src); // 다 됐으니 다음 프레임에 바로 다시 확인
                 match r {
                     Ok(p) => {
                         t.ready.insert(src, p);
