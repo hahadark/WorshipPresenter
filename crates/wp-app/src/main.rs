@@ -177,10 +177,21 @@ fn main() -> anyhow::Result<()> {
     if let Some(pid) = arg("--wait-pid").and_then(|p| p.parse::<u32>().ok()) {
         wp_core::firstrun::wait_for_pid(pid);
     }
-    let (already, _instance) = wp_core::parity_a::single_instance(&data_dir);
+    let (mut already, mut _instance) = wp_core::parity_a::single_instance(&data_dir);
+    // 먼저 켜진 프로세스 번호로 창을 찾는다 (제목만으로 찾으면 같은 제목의 Electron 1.x 창을 올릴 수 있음)
+    if already && !wp_core::firstrun::focus_instance(&data_dir) {
+        // 앞으로 올릴 창이 없다 = 앞 프로그램이 막 꺼지는 중일 수 있다 (작업 관리자로 끝내거나 오류로 꺼진 바로 뒤 다시 켬).
+        // 그때는 잠금 이름이 잠깐 남아 있어 아무 창도 없이 조용히 끝났다 → 2초까지 기다리며 다시 본다
+        for _ in 0..10 {
+            wp_core::parity_a::release_instance(_instance.take());
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            (already, _instance) = wp_core::parity_a::single_instance(&data_dir);
+            if !already || wp_core::firstrun::focus_instance(&data_dir) {
+                break;
+            }
+        }
+    }
     if already {
-        // 먼저 켜진 프로세스 번호로 창을 찾는다 (제목만으로 찾으면 같은 제목의 Electron 1.x 창을 올릴 수 있음)
-        wp_core::firstrun::focus_instance(&data_dir);
         return Ok(());
     }
     wp_core::firstrun::write_instance_pid(&data_dir);

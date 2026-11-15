@@ -107,6 +107,18 @@ pub fn single_instance(data_dir: &std::path::Path) -> (bool, Option<isize>) {
     }
 }
 
+/// `single_instance` 가 돌려준 핸들을 놓는다 (다시 확인하기 전에 — 쥐고 있으면 앞 프로그램이 꺼져도 이름이 남는다)
+pub fn release_instance(h: Option<isize>) {
+    #[cfg(windows)]
+    if let Some(h) = h.filter(|h| *h != 0) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(h as _);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = h;
+}
+
 /// 이미 떠 있는 창을 앞으로 (창 제목으로 찾기)
 pub fn focus_existing_window(title: &str) -> bool {
     #[cfg(windows)]
