@@ -840,73 +840,9 @@ impl App {
 
     // ---------------- 큐시트 관리 ----------------
     fn cues_window(&mut self, ctx: &egui::Context) {
+        // 큐시트 관리 창 (cuemgr_ui.rs — Electron cuemanager.js)
         let mut open = self.tb.cues;
-        crate::widgets::float_window(ctx, "cues", wp_core::i18n::tr("큐시트 관리"), [460.0, 460.0]).open(&mut open).show(ctx, |ui| {
-            let (cue, trash, times) = { let c = self.core.lock(); (c.cue.clone(), c.trash_list(), c.planned_times()) };
-            // 큐시트 없는 새 데이터 폴더에서도 가져오기를 시작할 수 있다.
-                    if ui.button(wp_core::i18n::tr("가져오기…")).clicked() {
-                        if let Some(p) = rfd::FileDialog::new().add_filter("큐시트", &["json"]).pick_file() {
-                            let r = self.core.lock().import_cue_file(&p);
-                            self.tb.note = match r { Ok(n) => format!("큐시트 {n}개를 가져왔습니다."), Err(e) => e.to_string() };
-                        }
-                    }
-
-            if let Some(cue) = &cue {
-                let mut meta = json!({});
-                let mut ch = false;
-                egui::Grid::new("cuemeta").num_columns(2).show(ui, |ui| {
-                    for (k, label, v) in [("name", "이름", cue.name.clone()), ("serviceDate", "예배 날짜", cue.service_date.clone()), ("startTime", "시작 시각", cue.start_time.clone()), ("memo", "메모", cue.memo.clone())] {
-                        ui.label(wp_core::i18n::tr(label));
-                        let mut s = v;
-                        if ui.text_edit_singleline(&mut s).changed() { meta[k] = json!(s); ch = true; }
-                        ui.end_row();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    // 낯선 항목에 설명 툴팁 (휴리스틱 평가 19번). Electron cues.js: pinned = 맨 위에 고정, template = 새 큐시트의 바탕
-                    let mut p = cue.pinned; if ui.checkbox(&mut p, wp_core::i18n::tr("목록 맨 위에 고정")).on_hover_text(wp_core::i18n::tr("큐시트 고르기 목록에서 날짜와 상관없이 맨 위에 둡니다")).changed() { meta["pinned"] = json!(p); ch = true; }
-                    let mut t = cue.template; if ui.checkbox(&mut t, wp_core::i18n::tr("서식 (새 큐시트 바탕)")).on_hover_text(wp_core::i18n::tr("켜 두면 새 큐시트를 만들 때 이 큐시트의 순서를 그대로 바탕으로 씁니다 (주일 예배처럼 매번 같은 순서일 때)")).changed() { meta["template"] = json!(t); ch = true; }
-                });
-                if ch { self.tb.note = err(self.core.lock().update_cue_meta(&meta)); }
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button(wp_core::i18n::tr("복제")).clicked() { self.tb.note = err(self.core.lock().duplicate_cue(&cue.id)); }
-                    if ui.button(wp_core::i18n::tr("내보내기…")).clicked() {
-                        if let Some(p) = rfd::FileDialog::new().set_file_name(format!("{}.wpcue.json", cue.name)).save_file() { self.tb.note = err(self.core.lock().export_cue_file(&p)); }
-                    }
-                    if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("휴지통으로")).icon("trash-2").kind(crate::widgets::Kind::Danger).tooltip(wp_core::i18n::tr("아래 휴지통에서 되살릴 수 있습니다"))).clicked() { self.tb.note = err(self.core.lock().trash_cue(&cue.id)); self.sel = None; self.edit = None; }
-                });
-                ui.separator();
-                ui.label(wp_core::i18n::tr("진행 시계 (순서별 예정 시간, 분)")).on_hover_text(wp_core::i18n::tr("순서마다 몇 분 걸릴지 적으면 시작 시각부터 각 순서의 예정 시각을 계산합니다"));
-                egui::ScrollArea::vertical().id_salt("durs").max_height(160.0).show(ui, |ui| {
-                    for (i, it) in cue.items.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(times.get(i).cloned().unwrap_or_default()).monospace());
-                            duration_editor(self, ui, i, it);
-                            ui.label(it["title"].as_str().unwrap_or(""));
-                            if i > 0 && ui.small_button(wp_core::i18n::tr("첫 순서로")).on_hover_text(wp_core::i18n::tr("이 순서를 큐시트 맨 앞(1번)으로 옮깁니다")).clicked() { self.core.lock().move_item_to(i, 0); }
-                        });
-                    }
-                });
-            }
-            ui.separator();
-            ui.label(wp_core::i18n::tr_args("휴지통 ({1}개)", &[&(trash.len())]));
-            for t in &trash {
-                let id = t["id"].as_str().unwrap_or("");
-                let name = t["name"].as_str().unwrap_or("");
-                let cid = egui::Id::unique(("cue-purge", id));
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(format!("{} · {}", name, t["serviceDate"].as_str().unwrap_or("")));
-                    if ui.small_button(wp_core::i18n::tr("되살리기")).clicked() { self.tb.note = err(self.core.lock().restore_cue(id)); }
-                    // 영구 삭제는 되살릴 수 없으므로 줄 안 확인
-                    if crate::widgets::confirm_delete(ui, cid, &wp_core::i18n::tr("영구 삭제"), &wp_core::i18n::tr_args("'{1}' 큐시트가 아주 지워지고 되살릴 수 없습니다.", &[&name])) {
-                        self.tb.note = err(self.core.lock().purge_cues(Some(id)));
-                    }
-                });
-            }
-            if !trash.is_empty() && crate::widgets::confirm_delete(ui, egui::Id::unique("cue-purge-all"), &wp_core::i18n::tr("휴지통 비우기"), &wp_core::i18n::tr_args("휴지통의 큐시트 {1}개가 아주 지워지고 되살릴 수 없습니다.", &[&(trash.len())])) {
-                self.tb.note = err(self.core.lock().purge_cues(None));
-            }
-        });
+        self.cuemgr_window(ctx, &mut open);
         self.tb.cues = open;
     }
 }

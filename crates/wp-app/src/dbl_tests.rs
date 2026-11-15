@@ -611,3 +611,166 @@ fn library_menu_add_to_cue_for_song_hymn_music_image() {
         h.app.core.lock().pick.forget_last();
     }
 }
+
+// ---------------- 7) 큐시트 관리 창 (cuemanager.js): 한 번 = 고르기, 두 번 = 그 큐시트 열기 (휴지통 보기 제외) ----------------
+
+thread_local! {
+    static CM_OPEN: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+fn cm(app: &mut App, ctx: &egui::Context, _: &mut egui::Ui, _: &Snap, _: &mut Vec<Act>) {
+    let mut o = CM_OPEN.with(|c| c.get());
+    app.cuemgr_window(ctx, &mut o);
+    CM_OPEN.with(|c| c.set(o));
+    // 복사 알림 등은 실제 화면처럼 꺼내 준다
+    if let Some(m) = widgets::take_copied(ctx) {
+        app.core.lock().notify(m, "ok");
+    }
+}
+fn cm_is_open() -> bool {
+    CM_OPEN.with(|c| c.get())
+}
+/// 큐시트 셋: '주일 예배'(열림) · '수요 예배' · '새벽 예배'
+fn cm_h() -> H {
+    CM_OPEN.with(|c| c.set(true));
+    let mut h = H::new(titles());
+    {
+        let mut c = h.app.core.lock();
+        let first = c.cue.as_ref().unwrap().id.clone();
+        c.update_cue_meta_of(&first, &json!({ "name": "주일 예배", "serviceDate": "2026-11-15" })).unwrap();
+        for (n, d) in [("수요 예배", "2026-11-11"), ("새벽 예배", "2026-11-10")] {
+            c.new_cue(n).unwrap();
+            let id = c.cue.as_ref().unwrap().id.clone();
+            c.add_item(json!({ "id": format!("{n}-1"), "type": "title", "title": format!("{n} 순서") }), None);
+            c.update_cue_meta_of(&id, &json!({ "serviceDate": d })).unwrap();
+        }
+        c.open_cue(&first);
+        c.toast = None;
+    }
+    h.frame(vec![], cm);
+    h.frame(vec![], cm);
+    h
+}
+fn cur_name(h: &H) -> String {
+    h.app.core.lock().cue.as_ref().map(|c| c.name.clone()).unwrap_or_default()
+}
+fn cue_names(h: &H, trash: bool) -> Vec<String> {
+    let mut v: Vec<String> = h.app.core.lock().cue_list(trash).iter().map(|c| c["name"].as_str().unwrap_or("").to_string()).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn dbl_cue_manager_row_opens_that_cue_and_single_click_only_selects() {
+    let mut h = cm_h();
+    assert!(seen("cm-row-주일 예배").is_some() && seen("cm-row-수요 예배").is_some() && seen("cm-row-새벽 예배").is_some(), "목록에 큐시트가 모두 보인다");
+    single_panel(&mut h, "cm-row-수요 예배", cm);
+    assert_eq!(cur_name(&h), "주일 예배", "한 번 = 고르기만");
+    assert!(cm_is_open());
+    dbl_panel(&mut h, "cm-row-새벽 예배", cm);
+    assert_eq!(cur_name(&h), "새벽 예배", "두 번 = 그 큐시트 열기");
+    assert!(!cm_is_open(), "열면 관리 창이 닫힌다");
+}
+
+#[test]
+fn cue_manager_open_button_new_default_and_empty() {
+    let mut h = cm_h();
+    single_panel(&mut h, "cm-row-수요 예배", cm);
+    h.click("cm-open", cm);
+    assert_eq!(cur_name(&h), "수요 예배");
+    assert!(!cm_is_open());
+    CM_OPEN.with(|c| c.set(true));
+    h.click("cm-new", cm);
+    let c = h.app.core.lock().cue.clone().unwrap();
+    assert_eq!(c.items.len(), 8, "＋ 새 큐시트 = 기본 예배 순서 (원본 sampleItems)");
+    assert!(!cm_is_open());
+    CM_OPEN.with(|c| c.set(true));
+    h.click("cm-new-empty", cm);
+    assert!(h.app.core.lock().cue.as_ref().unwrap().items.is_empty(), "빈 큐시트");
+}
+
+#[test]
+fn cue_manager_search_views_pin_template_and_duplicate() {
+    let mut h = cm_h();
+    // 찾기: 순서 제목으로도
+    h.click("cm-q", cm);
+    h.type_text("새벽", cm);
+    h.frame(vec![], cm);
+    assert!(seen("cm-row-새벽 예배").is_some() && seen("cm-row-주일 예배").is_none(), "찾기는 이름으로 거른다");
+    for _ in 0..2 {
+        h.key(egui::Key::Backspace, egui::Modifiers::NONE, cm);
+    }
+    h.frame(vec![], cm);
+    assert!(seen("cm-row-주일 예배").is_some());
+    // 고정 · 서식
+    single_panel(&mut h, "cm-row-수요 예배", cm);
+    h.click("cm-pin", cm);
+    h.click("cm-tpl", cm);
+    let c = h.app.core.lock().cue_list(false).into_iter().find(|c| c["name"] == "수요 예배").unwrap();
+    assert_eq!((c["pinned"].clone(), c["template"].clone()), (json!(true), json!(true)));
+    h.click("cm-view-pinned", cm);
+    h.frame(vec![], cm);
+    assert!(seen("cm-row-수요 예배").is_some() && seen("cm-row-주일 예배").is_none(), "고정 보기");
+    h.click("cm-view-all", cm);
+    // 다음 주 순서로 복제: 날짜 +7, 열린 큐시트는 그대로
+    single_panel(&mut h, "cm-row-주일 예배", cm);
+    h.click("cm-dup-next", cm);
+    let made = h.app.core.lock().cue_list(false).into_iter().find(|c| c["serviceDate"] == "2026-11-22").expect("다음 주 복사본");
+    assert_eq!(made["name"], "주일 예배 (2026-11-22)");
+    assert_eq!(made["count"], 3);
+    assert_eq!(cur_name(&h), "주일 예배");
+    assert!(cm_is_open());
+    // 순서지 복사
+    h.click("cm-text", cm);
+    assert!(h.app.core.lock().toast.as_ref().is_some_and(|t| t.0.contains("순서지")), "순서지 복사 알림");
+}
+
+#[test]
+fn cue_manager_rename_saves_when_leaving_the_field() {
+    let mut h = cm_h();
+    single_panel(&mut h, "cm-row-수요 예배", cm);
+    h.click("cm-name", cm);
+    h.type_text(" 2부", cm);
+    assert!(cue_names(&h, false).contains(&"수요 예배".to_string()), "치는 중에는 아직 저장하지 않는다");
+    h.click("cm-memo", cm); // 다른 칸으로
+    h.frame(vec![], cm);
+    assert!(cue_names(&h, false).contains(&"수요 예배 2부".to_string()), "칸을 떠나면 저장: {:?}", cue_names(&h, false));
+}
+
+#[test]
+fn cue_manager_trash_restore_and_no_open_from_trash_view() {
+    let mut h = cm_h();
+    // 열린 큐시트를 휴지통으로 (한 번 더 묻는다)
+    single_panel(&mut h, "cm-row-주일 예배", cm);
+    h.click("confirm-first", cm);
+    assert_eq!(cue_names(&h, true).len(), 0, "첫 클릭은 묻기만");
+    h.click("confirm-yes", cm);
+    assert_eq!(cue_names(&h, true), ["주일 예배"]);
+    assert_ne!(cur_name(&h), "주일 예배", "열려 있던 것을 지우면 다른 큐시트가 열린다");
+    assert!(!cur_name(&h).is_empty());
+    // 휴지통 보기: 두 번 눌러도 열지 않는다
+    h.click("cm-view-trash", cm);
+    let before = cur_name(&h);
+    dbl_panel(&mut h, "cm-row-주일 예배", cm);
+    assert_eq!(cur_name(&h), before, "휴지통의 큐시트는 두 번 눌러도 열리지 않는다");
+    assert!(cm_is_open());
+    // 되살리기 → 전체 보기로
+    h.click("cm-restore", cm);
+    assert!(cue_names(&h, true).is_empty());
+    assert!(cue_names(&h, false).contains(&"주일 예배".to_string()));
+    h.frame(vec![], cm);
+    assert!(seen("cm-row-주일 예배").is_some() && seen("cm-row-수요 예배").is_some(), "되살리면 전체 보기로 돌아온다");
+}
+
+#[test]
+fn cue_manager_check_all_then_bulk_trash_and_bulk_restore() {
+    let mut h = cm_h();
+    h.click("cm-check-all", cm);
+    h.click("cm-bulk-first", cm);
+    h.click("cm-bulk-yes", cm);
+    assert_eq!(cue_names(&h, true).len(), 3, "고른 것 모두 휴지통으로");
+    assert!(h.app.core.lock().cue.is_none(), "남은 큐시트가 없으면 열린 것도 없다");
+    h.click("cm-view-trash", cm);
+    h.click("cm-check-all", cm);
+    h.click("cm-restore-sel", cm);
+    assert_eq!(cue_names(&h, false).len(), 3);
+}

@@ -751,6 +751,21 @@ pub fn click2(ui: &Ui, key: impl std::hash::Hash + std::fmt::Debug, resp: &Respo
     Click::None
 }
 
+/// 합성 입력 시험용: 방금 그린 확인 단추(confirm-first·confirm-yes) 자리를 다른 이름으로도 남긴다.
+/// 한 화면에 확인 단추가 둘 이상일 때 어느 것인지 가려 누르기 위해서다 (시험 빌드가 아니면 아무것도 안 함)
+#[allow(unused_variables)]
+pub fn mark_confirm(name: &str) {
+    #[cfg(test)]
+    HOVER_SEEN.with(|m| {
+        let mut m = m.borrow_mut();
+        for k in ["first", "yes"] {
+            if let Some(r) = m.remove(&format!("confirm-{k}")) {
+                m.insert(format!("{name}-{k}"), r);
+            }
+        }
+    });
+}
+
 /// 합성 입력 시험용: 이름 붙은 위젯 자리를 남긴다 (시험 빌드가 아니면 아무것도 안 함)
 #[allow(unused_variables)]
 pub fn mark(name: &str, rect: Rect) {
