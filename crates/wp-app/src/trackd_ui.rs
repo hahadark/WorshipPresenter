@@ -617,7 +617,7 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
             .add(
                 egui::TextEdit::singleline(&mut repo)
                     .hint_text(wp_core::i18n::tr(
-                        "예: hahadark/WorshipPresenter-rs (Rust 판은 아직 릴리스 전)",
+                        "비워 두면 hahadark/WorshipPresenter",
                     ))
                     .desired_width(320.0),
             )

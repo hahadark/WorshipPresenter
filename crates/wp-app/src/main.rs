@@ -90,7 +90,7 @@ fn main() -> anyhow::Result<()> {
     // [트랙 A] 두 번 실행 막기 (같은 데이터 폴더) · 송출 중 화면 꺼짐 막기
     let (already, _instance) = wp_core::parity_a::single_instance(&data_dir);
     if already {
-        wp_core::parity_a::focus_existing_window("워십프리젠터 (Rust)");
+        wp_core::parity_a::focus_existing_window("워십프리젠터");
         return Ok(());
     }
     wp_core::parity_a::keep_display_awake();
@@ -116,7 +116,7 @@ fn main() -> anyhow::Result<()> {
         let (w, h) = i.dimensions();
         egui::IconData { rgba: i.into_raw(), width: w, height: h }
     });
-    let mut vp = egui::ViewportBuilder::default().with_title("워십프리젠터 (Rust)").with_inner_size([1500.0, 920.0]).with_min_inner_size([1000.0, 640.0]);
+    let mut vp = egui::ViewportBuilder::default().with_title("워십프리젠터").with_inner_size([1500.0, 920.0]).with_min_inner_size([1000.0, 640.0]);
     // 점검용 --win 1600x960: 창 안쪽 크기를 고정 (기준 화면과 같은 크기로 --shot 비교)
     if let Some((w, h)) = arg("--win").and_then(|s| { let (a, b) = s.split_once(['x', 'X'])?; Some((a.trim().parse::<f32>().ok()?, b.trim().parse::<f32>().ok()?)) }) {
         vp = vp.with_inner_size([w, h]).with_min_inner_size([w, h]).with_max_inner_size([w, h]).with_resizable(false).with_position([0.0, 0.0]);

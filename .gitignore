@@ -7,3 +7,6 @@
 *.db
 *.db-wal
 *.db-shm
+
+# 릴리스 산출물 (tools\release.ps1)
+/dist/

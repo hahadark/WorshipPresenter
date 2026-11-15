@@ -9,11 +9,12 @@ use std::{
 };
 pub const TELEMETRY_URL: &str = "https://worshipcue-usage.hahadark-media.workers.dev/ping";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// 미래 출시 승인 때만 이 코드 지점을 검토·변경한다. 환경변수/설정/빌드 유형으로 해제 불가.
-pub const RELEASE_HOLD: bool = true;
+/// 출시 승인(2026-11-15, 사용자: 기존 저장소 정식판). 다시 막을 때만 true 로. 환경변수/설정/빌드 유형으로 바꿀 수 없다.
+pub const RELEASE_HOLD: bool = false;
 pub const HOLD_REASON: &str =
     "전체 기능 포팅 완료 전 릴리스 정지: 버전 확인만 가능하며 다운로드와 설치는 차단됩니다.";
-const TRUSTED_REPO: &str = "hahadark/WorshipPresenter-rs";
+/// Electron 판과 같은 저장소·같은 설치 파일 이름(WorshipPresenter-X.Y.Z-Setup.exe)을 쓴다
+pub const TRUSTED_REPO: &str = "hahadark/WorshipPresenter";
 fn hex(bytes: &[u8]) -> String { bytes.iter().map(|b|format!("{b:02x}")).collect() }
 const MAX_ASSET: u64 = 512 * 1024 * 1024;
 static BUSY: AtomicBool = AtomicBool::new(false);
@@ -100,7 +101,9 @@ fn safe_name(n: &str) -> bool {
         && !n.contains("..")
         && !n.ends_with('.')
         && n.starts_with("WorshipPresenter-")
-        && n.ends_with("-setup.exe")
+        && n.ends_with("-Setup.exe")
+        && !n.contains("-English-")
+        && !n.contains("Portable")
 }
 fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
     if repo != TRUSTED_REPO {
@@ -123,7 +126,8 @@ fn asset_from_release(r: &Value, repo: &str) -> Result<Asset, String> {
     let mut found = None;
     for a in list {
         let n = a["name"].as_str().unwrap_or("");
-        if !safe_name(n) || !n.contains(&format!("-windows-{arch}-")) {
+        // 지금은 x64 설치 파일 하나만 낸다 (arm64 는 아직 없음)
+        if !safe_name(n) || arch != "x64" {
             continue;
         }
         let u = a["browser_download_url"]
@@ -214,13 +218,14 @@ fn get_json(url: &str) -> Result<Value, String> {
 pub fn check(core: &Shared, manual: bool) {
     let repo = core.lock().settings.get()["updateRepo"]
         .as_str()
-        .unwrap_or("")
-        .trim()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(TRUSTED_REPO)
         .to_string();
     let Some(url) = api_url(&repo) else {
         if manual {
             core.lock().notify(
-                crate::i18n::tr("올바른 GitHub owner/repo를 입력하세요. Rust 판은 아직 릴리스 전입니다."),
+                crate::i18n::tr("올바른 GitHub owner/repo를 입력하세요."),
                 "warn",
             );
         }
@@ -472,7 +477,7 @@ pub fn install_now(core: &Shared) -> Result<(), String> {
     // 쉘 없이 인자 분리. 실제 릴리스 승인 전 gate가 이 경로 진입을 차단한다.
     #[cfg(windows)]
     std::process::Command::new(&p)
-        .arg("/S")
+        .args(["/S", "--updated", "--force-run"])
         .spawn()
         .map_err(|e| crate::i18n::tr_args("설치 실행 실패: {1}", &[&e]))?;
     UPDATE.lock()["state"] = json!("installing");
@@ -563,7 +568,7 @@ mod tests {
         assert_eq!(s["state"], "available");
         assert_eq!(s["version"], "9.0.0");
         assert_eq!(state_from_release(&json!({ "tag_name": "v0.0.1" }), "0.1.0", 1).unwrap()["state"], "latest");
-        assert_eq!(api_url("hahadark/WorshipPresenter-rs").unwrap(), "https://api.github.com/repos/hahadark/WorshipPresenter-rs/releases/latest");
+        assert_eq!(api_url("hahadark/WorshipPresenter").unwrap(), "https://api.github.com/repos/hahadark/WorshipPresenter/releases/latest");
         assert!(api_url("").is_none());
     }
 
@@ -614,7 +619,7 @@ mod updater_security_tests {
     fn asset(bytes: &[u8]) -> Asset {
         Asset {
             url: String::new(),
-            name: "WorshipPresenter-1.0-windows-x64-setup.exe".into(),
+            name: "WorshipPresenter-1.0.0-Setup.exe".into(),
             size: bytes.len() as u64,
             hash: hex(&Sha256::digest(bytes)),
         }
@@ -623,9 +628,13 @@ mod updater_security_tests {
         std::env::temp_dir().join(format!("wp-update-test-{}", rand::random::<u64>()))
     }
     #[test]
-    fn release_hold_cannot_be_overridden() {
-        assert!(RELEASE_HOLD);
-        assert!(gate().is_err());
+    fn release_hold_lifted_for_official_release() {
+        assert!(!RELEASE_HOLD);
+        assert!(gate().is_ok());
+        // 영어판·포터블·다른 이름은 고르지 않는다
+        assert!(safe_name("WorshipPresenter-2.0.0-Setup.exe"));
+        assert!(!safe_name("WorshipPresenter-2.0.0-English-Setup.exe"));
+        assert!(!safe_name("WorshipPresenter-2.0.0-Portable.exe"));
     }
     #[test]
     fn untrusted_metadata_rejected() {
@@ -723,7 +732,7 @@ mod updater_security_tests {
 mod transfer_edge_tests {
  use super::*;
  #[test] fn cancellation_during_stream_removes_partial(){
-  let bytes=vec![42u8;150000];let a=Asset{url:String::new(),name:"WorshipPresenter-test-windows-x64-setup.exe".into(),size:bytes.len() as u64,hash:hex(&Sha256::digest(&bytes))};
+  let bytes=vec![42u8;150000];let a=Asset{url:String::new(),name:"WorshipPresenter-9.9.9-Setup.exe".into(),size:bytes.len() as u64,hash:hex(&Sha256::digest(&bytes))};
   let d=std::env::temp_dir().join(format!("wp-cancel-{}",rand::random::<u64>()));let cancel=AtomicBool::new(false);
   assert!(cache_stream(&mut &bytes[..],&a,&d,&cancel,|_,_|cancel.store(true,Ordering::SeqCst)).is_err());
   assert_eq!(std::fs::read_dir(&d).unwrap().count(),0);std::fs::remove_dir_all(d).unwrap();
