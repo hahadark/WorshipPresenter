@@ -8,6 +8,13 @@ use serde_json::{json, Value};
 use wp_core::core::Shared;
 use wp_core::slideedit::{self as se, is_chunk};
 
+#[path = "slideedit_canvas.rs"]
+mod canvas;
+use canvas::{EdKey, ElDrag};
+#[cfg(test)]
+#[path = "slideedit_canvas_tests.rs"]
+mod canvas_tests;
+
 #[derive(Default)]
 pub struct SlideEditUi {
     pub open: bool,
@@ -27,6 +34,22 @@ pub struct SlideEditUi {
     inline: Option<Inline>,
     /// 글 바로 고치는 중에 Esc 를 눌렀다 (전역 Esc 보다 먼저 받아 둔다)
     inline_esc: bool,
+    /// 캔버스에서 고른 요소 (slideedit.js S.sel): "" = 없음 · "main" = 본문 글상자 · 그 밖 = 덧붙인 요소 id
+    sel: String,
+    /// 고른 요소가 속한 (순서 id, 편집 키) — 다른 순서·슬라이드로 가면 고르기를 푼다
+    sel_ctx: (String, String),
+    /// 전역 단축키보다 먼저 받아 둔 편집기 글쇠 (pre_keys → show)
+    keys: Vec<EdKey>,
+    /// 지난 프레임에 캔버스를 그렸다 (그렸을 때만 글쇠를 가져간다)
+    live: bool,
+    /// 요소 끌기 (옮기기·크기 조절 손잡이)
+    drag: Option<ElDrag>,
+    /// 복사한 요소와 그때 클립보드에 쓴 글 (붙여 넣는 글이 이것과 같으면 요소를 붙인다)
+    clip: Option<(Value, String)>,
+    /// 다음 바꿈은 실행 취소 한 번으로 따로 (요소 지우기·복제·붙여 넣기·끌기 뒤)
+    undo_break: bool,
+    /// 목록에서 Shift 누르고 끌어 여러 장 고르기 (slideedit.js S.lasso): 끌기 시작한 슬라이드 ekey
+    lasso: Option<String>,
     #[cfg(test)]
     pub(crate) observed: std::collections::BTreeMap<String, egui::Rect>,
 }
@@ -150,9 +173,25 @@ impl SlideEditUi {
     }
     /// 전역 단축키보다 먼저: 글을 바로 고치는 중의 Esc 는 그만두기다 (예배당 화면 끄기 등으로 새지 않게)
     pub fn pre_keys(&mut self, ctx: &egui::Context) {
-        if self.inline_active() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-            self.inline_esc = true;
+        if self.inline_active() {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+                self.inline_esc = true;
+            }
+            return;
         }
+        // 편집기 글쇠 (slideedit.js el keydown): 글 쓰는 칸에 있을 때는 그 칸이 받는다
+        if !self.open || !self.live || ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        let got = canvas::collect(ctx, !self.sel.is_empty(), self.multi.len() > 1);
+        if got.contains(&EdKey::Close) {
+            self.open = false;
+        }
+        self.keys.extend(got);
+    }
+    #[cfg(test)]
+    pub(crate) fn selected(&self) -> &str {
+        &self.sel
     }
     #[cfg(test)]
     pub(crate) fn inline_target(&self) -> Option<String> {
@@ -172,8 +211,15 @@ impl SlideEditUi {
     pub fn show(&mut self, ctx: &egui::Context, core: &Shared, sel: Option<usize>, web_dir: &std::path::Path, data_dir: &std::path::Path, acts: &mut Vec<Act>) {
         #[cfg(test)]
         self.observed.clear();
+        self.live = false;
+        let mut keys = std::mem::take(&mut self.keys);
         if !self.open {
+            self.drag = None;
+            self.lasso = None;
             return;
+        }
+        if std::mem::take(&mut self.undo_break) {
+            core.lock().b.typing = None;
         }
         let mut open = self.open;
         crate::widgets::float_window(ctx, "slideedit", wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)"), [980.0, 640.0]).open(&mut open).show(ctx, |ui| {
@@ -191,6 +237,19 @@ impl SlideEditUi {
             }
             if slides.is_empty() { return; }
             self.k = self.k.min(slides.len() - 1);
+            // 방향키 (고른 요소 없음) = 앞·뒤 슬라이드 (slideedit.js: ←↑ 이전 · →↓ 다음)
+            keys.retain(|k| {
+                let EdKey::Nav(d) = k else { return true };
+                if self.inline.is_none() {
+                    let n = (self.k as i64 + *d as i64).clamp(0, slides.len() as i64 - 1) as usize;
+                    if n != self.k {
+                        self.k = n;
+                        self.multi.clear();
+                        self.sel.clear();
+                    }
+                }
+                false
+            });
             if std::mem::take(&mut self.want_all) {
                 self.multi = slides.iter().filter(|s| !s["skipped"].as_bool().unwrap_or(false)).map(edit_key).collect();
                 if !self.multi.contains(&edit_key(&slides[self.k])) {
@@ -257,7 +316,20 @@ impl SlideEditUi {
                         }
                         #[cfg(test)]
                         self.observed.insert(format!("slide-{k}"), r.rect);
-                        if r.drag_started() { self.drag_slide = Some(k); }
+                        // 끌기: 그냥 = 차례 옮기기 (Rust 판에서 넣은 것) · Shift = 끌어서 여러 장 고르기 (slideedit.js 올가미 — 원본은 그냥 끌기)
+                        if r.drag_started() {
+                            if ui.input(|i| i.modifiers.shift) && !self.common { self.lasso = Some(edit_key(s)); } else { self.drag_slide = Some(k); }
+                        }
+                        if let Some(from) = self.lasso.clone().filter(|_| r.contains_pointer() && ui.input(|i| i.pointer.primary_down())) {
+                            let keys: Vec<String> = slides.iter().map(edit_key).collect();
+                            if let Some(a) = keys.iter().position(|x| x == &from) {
+                                if a != k || self.multi.len() > 1 {
+                                    self.anchor = Some(from);
+                                    self.multi = keys[a.min(k)..=a.max(k)].to_vec();
+                                    self.k = k;
+                                }
+                            }
+                        }
                         if r.contains_pointer() && ui.input(|i| i.pointer.any_released()) {
                             if let Some(from) = self.drag_slide.take() {
                                 // slideedit.js moveSlides: 고른 것 중 하나를 끌면 고른 것 모두, 줄 가운데보다 아래면 뒤에
@@ -353,7 +425,7 @@ impl SlideEditUi {
                     }
                 });
             });
-            if ui.input(|i| i.pointer.any_released()) { self.drag_slide = None; }
+            if ui.input(|i| i.pointer.any_released() || !i.pointer.primary_down()) { self.drag_slide = None; self.lasso = None; }
             let slide = &slides[self.k];
             let key = if self.common { "*".to_string() } else { edit_key(slide) };
             let mut e = it["edits"][&key].clone();
@@ -385,19 +457,215 @@ impl SlideEditUi {
                     }
                 }
                 let editing = self.inline.is_some();
-                // 본문 영역: 요소보다 먼저 놓아 요소가 위에서 먼저 받는다
-                let main_r = if e["box"].is_object() {
-                    let b = |k: &str, d: f64| e["box"][k].as_f64().unwrap_or(d) as f32;
-                    pct(b("x", 10.0), b("y", 10.0), b("w", 80.0), b("h", 80.0))
+                // 고른 요소는 그 순서·슬라이드 것만 (다른 데로 가면 푼다)
+                let ctx_now = (item_id.clone(), key.clone());
+                if self.sel_ctx != ctx_now {
+                    self.sel.clear();
+                    self.drag = None;
+                    self.sel_ctx = ctx_now;
+                }
+                let pal = crate::theme::pal();
+                let full = |r: se::PRect| pct(r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+                // 본문 영역 (mainRect): 따로 옮긴 자리, 없으면 템플릿 본문 영역
+                let main_p = if e["box"].is_object() {
+                    se::PRect::of(&e["box"], se::PRect { x: 10.0, y: 10.0, w: 80.0, h: 80.0 })
                 } else {
                     let cr = crate::slide_layout::content_rect(&tpl);
-                    pct(cr.left() / tw * 100.0, cr.top() / th * 100.0, cr.width() / tw * 100.0, cr.height() / th * 100.0)
+                    se::PRect { x: (cr.left() / tw * 100.0) as f64, y: (cr.top() / th * 100.0) as f64, w: (cr.width() / tw * 100.0) as f64, h: (cr.height() / th * 100.0) as f64 }
                 };
+                let main_r = full(main_p);
+                // 본문 글상자가 있는 슬라이드인가 (hasMain: 그림·영상·카메라·빈 화면은 없음)
+                let has_main = self.common || !no_text_kind(slide);
+                // 캔버스 상자들. 겹침 차례는 원본과 같이: 글 뒤 요소 → 본문 → 글 앞 요소 (뒤에 놓은 것이 위에서 먼저 받는다)
+                // 공통('*') 요소는 슬라이드에서 고르기만 된다 (원본 'locked' — '공통' 에서 고친다)
+                struct CBox { id: String, r: se::PRect, own: Option<usize>, locked: bool, text: bool, name: &'static str }
+                let mut boxes: Vec<CBox> = vec![];
+                let commons: Vec<Value> = if key != "*" { it["edits"]["*"]["items"].as_array().cloned().unwrap_or_default() } else { vec![] };
+                let owns: Vec<Value> = e["items"].as_array().cloned().unwrap_or_default();
+                let cbox = |x: &Value, own: Option<usize>| CBox {
+                    id: x["id"].as_str().unwrap_or("").to_string(),
+                    r: se::PRect::of(x, se::PRect { x: 0.0, y: 0.0, w: 30.0, h: 20.0 }),
+                    own,
+                    locked: own.is_none() || x["locked"] == true,
+                    text: x["type"] == "text",
+                    name: match x["type"].as_str() { Some("text") => "글상자", Some("image") => "그림", Some("shape") => "도형", Some("camera") => "카메라", _ => "요소" },
+                };
+                for below in [true, false] {
+                    for x in commons.iter().filter(|x| x["below"].as_bool().unwrap_or(false) == below) { boxes.push(cbox(x, None)); }
+                    for (j, x) in owns.iter().enumerate().filter(|(_, x)| x["below"].as_bool().unwrap_or(false) == below) { boxes.push(cbox(x, Some(j))); }
+                    if below && has_main {
+                        boxes.push(CBox { id: "main".into(), r: main_p, own: None, locked: false, text: true, name: if e["hideMain"] == true { "본문 (숨김)" } else { "본문" } });
+                    }
+                }
+                boxes.retain(|b| !b.id.is_empty());
+                if !self.sel.is_empty() && !boxes.iter().any(|b| b.id == self.sel) { self.sel.clear(); } // 고른 것이 없어졌다
                 let mut start: Option<Inline> = None;
+                let mut want_edit: Option<String> = None; // 두 번 누름 · Enter · F2
+                let (pdown, ppos, origin, mods) = ui.input(|i| (i.pointer.primary_down(), i.pointer.interact_pos(), i.pointer.press_origin(), i.modifiers));
                 if !editing {
-                    let mresp = ui.interact(main_r.intersect(rect), ui.id().with(("se-main", &key)), Sense::click());
-                    crate::widgets::mark("se-main", main_r.intersect(rect));
-                    if crate::widgets::click2(ui, ("se-main", item_id.as_str(), key.as_str()), &mresp) == crate::widgets::Click::Double {
+                    // 빈 곳을 누르면 고르기 풀기 (onPointerDown)
+                    let bg = ui.interact(rect, ui.id().with(("se-canvas", &key)), Sense::click());
+                    crate::widgets::mark("se-canvas", rect);
+                    if bg.clicked() { self.sel.clear(); }
+                    for b in &boxes {
+                        let er = full(b.r);
+                        let hit = er.intersect(rect);
+                        let (response, c2) = if b.id == "main" {
+                            let r = ui.interact(hit, ui.id().with(("se-main", &key)), Sense::click_and_drag());
+                            crate::widgets::mark("se-main", hit);
+                            let c = crate::widgets::click2(ui, ("se-main", item_id.as_str(), key.as_str()), &r);
+                            (r, c)
+                        } else if let Some(j) = b.own {
+                            let r = ui.interact(hit, ui.id().with(("se-element", &key, j)), Sense::click_and_drag());
+                            crate::widgets::mark(&format!("se-el-{j}"), hit);
+                            #[cfg(test)]
+                            self.observed.insert(format!("element-{j}"), r.rect);
+                            let c = crate::widgets::click2(ui, ("se-el", item_id.as_str(), key.as_str(), j), &r);
+                            (r, c)
+                        } else {
+                            let r = ui.interact(hit, ui.id().with(("se-common", &key, &b.id)), Sense::click());
+                            crate::widgets::mark(&format!("se-common-{}", b.id), hit);
+                            (r, crate::widgets::Click::None)
+                        };
+                        // 누르는 순간 고른다 (잠긴 것도 고르기는 된다)
+                        if response.is_pointer_button_down_on() || response.clicked() { self.sel = b.id.clone(); }
+                        // slideedit.js:1012 상자를 두 번 누르면 글 바로 고치기 (잠긴 상자 제외)
+                        if c2 == crate::widgets::Click::Double && !b.locked { want_edit = Some(b.id.clone()); }
+                        if response.drag_started_by(egui::PointerButton::Primary) && !b.locked {
+                            core.lock().b.typing = None; // 끌기 한 번 = 실행 취소 한 번
+                            self.drag = Some(ElDrag { id: b.id.clone(), handle: "", start: b.r, origin: origin.or(ppos).unwrap_or(er.center()), moved: false });
+                        }
+                        if (response.hovered() || response.dragged()) && self.sel != b.id {
+                            ui.painter().rect_stroke(er, 0.0, egui::Stroke::new(1.0, Color32::LIGHT_BLUE), egui::StrokeKind::Inside);
+                        }
+                    }
+                    // 크기 조절 손잡이 여덟 개: 고른 상자에만, 잠긴 것은 없다 (se-h)
+                    if let Some(b) = boxes.iter().find(|b| b.id == self.sel && !b.locked) {
+                        let er = full(b.r);
+                        for (name, fx, fy) in canvas::HANDLES {
+                            let hr = canvas::handle_rect(er, fx, fy);
+                            let resp = ui.interact(hr, ui.id().with(("se-h", name)), Sense::drag());
+                            crate::widgets::mark(&format!("se-h-{name}"), hr);
+                            if resp.hovered() || resp.dragged() { ui.ctx().set_cursor_icon(canvas::handle_cursor(name)); }
+                            if resp.drag_started_by(egui::PointerButton::Primary) {
+                                core.lock().b.typing = None;
+                                self.drag = Some(ElDrag { id: b.id.clone(), handle: name, start: b.r, origin: origin.or(ppos).unwrap_or(hr.center()), moved: false });
+                            }
+                        }
+                    }
+                } else {
+                    self.drag = None;
+                }
+                let own_pos = |e: &Value, id: &str| e["items"].as_array().and_then(|a| a.iter().position(|x| x["id"].as_str() == Some(id)));
+                // 끌기: 옮기기(가운데·가장자리에 붙음, Alt = 안 붙음) · 손잡이로 크기(Shift = 비율 유지) — onPointerMove
+                let mut guides: (Option<f64>, Option<f64>) = (None, None);
+                if let Some(mut d) = self.drag.take() {
+                    if !pdown {
+                        self.undo_break = true; // 끝났다 (onPointerUp)
+                    } else {
+                        if let Some(p) = ppos {
+                            let dx = ((p.x - d.origin.x) / rect.width() * 100.0) as f64;
+                            let dy = ((p.y - d.origin.y) / rect.height() * 100.0) as f64;
+                            if !d.moved && dx.abs() + dy.abs() >= 0.4 { d.moved = true; }
+                            if d.moved {
+                                let nr = if d.handle.is_empty() {
+                                    let (r, gv, gh) = se::drag_move(d.start, dx, dy, !mods.alt);
+                                    guides = (gv, gh);
+                                    r
+                                } else {
+                                    se::drag_resize(d.start, d.handle, dx, dy, mods.shift)
+                                };
+                                if d.id == "main" {
+                                    nr.put(&mut e["box"]);
+                                } else if let Some(j) = own_pos(&e, &d.id) {
+                                    nr.put(&mut e["items"][j]);
+                                }
+                            }
+                        }
+                        self.drag = Some(d);
+                    }
+                }
+                // 편집기 글쇠 (slideedit.js el keydown): 고른 요소에
+                for kx in keys.drain(..) {
+                    if editing { break; }
+                    let cut = kx == EdKey::Cut;
+                    let own = own_pos(&e, &self.sel).filter(|j| e["items"][*j]["locked"] != true);
+                    let mut changed = false;
+                    match kx {
+                        EdKey::Deselect => self.sel.clear(),
+                        EdKey::Edit => want_edit = Some(if self.sel.is_empty() { "main".into() } else { self.sel.clone() }),
+                        // 지우기는 이 슬라이드에 덧붙인 요소만 (delSelected): 본문 글상자·공통 요소는 안 지워진다
+                        EdKey::Delete => {
+                            if let Some(j) = own {
+                                e["items"].as_array_mut().unwrap().remove(j);
+                                self.sel.clear();
+                                changed = true;
+                            }
+                        }
+                        EdKey::Dup => {
+                            if let Some(j) = own {
+                                let c = se::dup_item(&e["items"][j]);
+                                self.sel = c["id"].as_str().unwrap_or("").to_string();
+                                e["items"].as_array_mut().unwrap().push(c);
+                                changed = true;
+                            }
+                        }
+                        EdKey::Nudge(dx, dy) => {
+                            if self.sel == "main" {
+                                if !e["box"].is_object() { main_p.put(&mut e["box"]); }
+                                se::nudge(&mut e["box"], dx, dy);
+                                changed = true;
+                            } else if let Some(j) = own {
+                                se::nudge(&mut e["items"][j], dx, dy);
+                                changed = true;
+                            }
+                        }
+                        // 요소 복사·잘라 내기 (Rust 판에서 넣은 것 — 원본은 Ctrl+D 복제만 있다). 클립보드에는 그 글(글상자) 또는 [종류] 를 쓴다
+                        EdKey::Copy | EdKey::Cut => {
+                            if let Some(j) = own {
+                                let x = e["items"][j].clone();
+                                let name = wp_core::i18n::tr(match x["type"].as_str() { Some("text") => "글상자", Some("image") => "그림", _ => "도형" });
+                                let t = x["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(String::from).unwrap_or_else(|| format!("[{name}]"));
+                                ui.ctx().copy_text(t.clone());
+                                self.clip = Some((x, t));
+                                if cut {
+                                    e["items"].as_array_mut().unwrap().remove(j);
+                                    self.sel.clear();
+                                    changed = true;
+                                }
+                            }
+                        }
+                        // 붙여 넣기: 방금 복사한 요소면 그 요소를, 그 밖의 글이면 새 글상자로 (paste.js → pasteText)
+                        EdKey::Paste(t) => {
+                            let same = self.clip.as_ref().is_some_and(|(_, c)| c.replace("\r\n", "\n").trim() == t.replace("\r\n", "\n").trim());
+                            let new = if same {
+                                let c = se::dup_item(&self.clip.as_ref().unwrap().0);
+                                self.clip.as_mut().unwrap().0 = c.clone(); // 거듭 붙이면 조금씩 비켜서
+                                Some(c)
+                            } else {
+                                se::paste_text_item(&t)
+                            };
+                            match new {
+                                Some(c) => {
+                                    self.sel = c["id"].as_str().unwrap_or("").to_string();
+                                    let mut items = e["items"].as_array().cloned().unwrap_or_default();
+                                    items.push(c);
+                                    e["items"] = json!(items);
+                                    changed = true;
+                                }
+                                None => core.lock().notify(wp_core::i18n::tr("클립보드에 붙여 넣을 글·그림이 없습니다."), "info"),
+                            }
+                        }
+                        EdKey::Nav(_) | EdKey::Close => {}
+                    }
+                    if changed {
+                        core.lock().b.typing = None; // 글쇠 한 번 = 실행 취소 한 번 (begin)
+                        self.undo_break = true;
+                    }
+                }
+                // 글 바로 고치기 열기 (inlineEdit)
+                if let Some(id) = want_edit.filter(|_| !editing) {
+                    if id == "main" {
                         if self.common {
                             core.lock().notify(wp_core::i18n::tr("글은 각 슬라이드에서 고칩니다 (왼쪽 목록에서 슬라이드를 고르세요)."), "info");
                         } else if !no_text_kind(slide) {
@@ -406,37 +674,44 @@ impl SlideEditUi {
                                 None => core.lock().notify(wp_core::i18n::tr("성경·찬송가 본문은 여기서 고치지 않습니다. 위치·꾸미기만 바꿀 수 있습니다."), "info"),
                             }
                         }
+                    } else if let Some(b) = boxes.iter().find(|b| b.id == id && b.own.is_some() && b.text && !b.locked) {
+                        if let Some(j) = own_pos(&e, &b.id) {
+                            let t = e["items"][j]["text"].as_str().unwrap_or("").to_string();
+                            start = Some(Inline { item_id: item_id.clone(), key: key.clone(), target: id.clone(), slide: Value::Null, text: t.clone(), orig: t, step: 0 });
+                        }
                     }
+                }
+                // 고른 상자 테두리·이름표·손잡이 · 붙는 자리 안내선
+                if !editing && start.is_none() {
+                    let p = ui.painter_at(rect.expand(8.0));
+                    if let Some(b) = boxes.iter().find(|b| b.id == self.sel) {
+                        // 끌거나 방향키로 옮긴 그 프레임에도 따라오게 지금 값으로
+                        let now = if b.id == "main" { if e["box"].is_object() { se::PRect::of(&e["box"], b.r) } else { b.r } } else { own_pos(&e, &b.id).map(|j| se::PRect::of(&e["items"][j], b.r)).unwrap_or(b.r) };
+                        let er = full(now);
+                        let col = if b.locked { pal.muted } else { pal.accent };
+                        p.rect_stroke(er, 0.0, egui::Stroke::new(2.0, col), egui::StrokeKind::Inside);
+                        let tag = if b.locked { format!("{} {}", wp_core::i18n::tr(b.name), wp_core::i18n::tr("(공통 — '공통' 에서 고치세요)")) } else { format!("{}", wp_core::i18n::tr(b.name)) };
+                        let g = p.layout_no_wrap(tag, egui::FontId::proportional(11.0), Color32::WHITE);
+                        let tr_ = egui::Rect::from_min_size(er.left_top(), g.size() + Vec2::new(8.0, 2.0));
+                        p.rect_filled(tr_, 0.0, col);
+                        p.galley(tr_.min + Vec2::new(4.0, 1.0), g, Color32::WHITE);
+                        if !b.locked {
+                            for (_, fx, fy) in canvas::HANDLES {
+                                let hr = canvas::handle_rect(er, fx, fy);
+                                p.rect(hr, 2.0, Color32::WHITE, egui::Stroke::new(1.5, pal.accent), egui::StrokeKind::Inside);
+                            }
+                        }
+                    }
+                    if let Some(gx) = guides.0 { p.vline(rect.left() + gx as f32 * rect.width() / 100.0, rect.y_range(), egui::Stroke::new(1.0, pal.accent)); }
+                    if let Some(gy) = guides.1 { p.hline(rect.x_range(), rect.top() + gy as f32 * rect.height() / 100.0, egui::Stroke::new(1.0, pal.accent)); }
                 }
                 let mut inline_rect = self.inline.as_ref().filter(|n| n.target == "main").map(|_| main_r);
                 let mut inline_size = e["style"]["size"].as_f64().or(tpl["font"]["size"].as_f64().map(|s| s * 1080.0 / th as f64)).unwrap_or(60.0) as f32;
-                if let Some(items) = e["items"].as_array_mut() {
-                    for (j, x) in items.iter_mut().enumerate().rev() {
-                        let v = |k: &str, d: f64| x[k].as_f64().unwrap_or(d) as f32;
-                        let er = egui::Rect::from_min_size(rect.min + Vec2::new(v("x",0.0)*rect.width()/100.0,v("y",0.0)*rect.height()/100.0),Vec2::new(v("w",30.0)*rect.width()/100.0,v("h",20.0)*rect.height()/100.0));
-                        if self.inline.as_ref().is_some_and(|n| n.target != "main" && x["id"].as_str() == Some(n.target.as_str())) {
-                            inline_rect = Some(er);
-                            inline_size = v("size", 60.0);
-                        }
-                        if editing { continue; } // 고치는 동안에는 상자를 끌거나 다시 열지 않는다
-                        let response = ui.interact(er.intersect(rect),ui.id().with(("se-element",&key,j)),Sense::click_and_drag());
-                        crate::widgets::mark(&format!("se-el-{j}"), er.intersect(rect));
-                        // slideedit.js:1012 상자를 두 번 누르면 글 바로 고치기 (글상자만 · 잠긴 상자 제외)
-                        if crate::widgets::click2(ui, ("se-el", item_id.as_str(), key.as_str(), j), &response) == crate::widgets::Click::Double && x["type"] == "text" && x["locked"] != true {
-                            if let Some(id) = x["id"].as_str() {
-                                let t = x["text"].as_str().unwrap_or("").to_string();
-                                start = Some(Inline { item_id: item_id.clone(), key: key.clone(), target: id.into(), slide: Value::Null, text: t.clone(), orig: t, step: 0 });
-                            }
-                        }
-                        #[cfg(test)]
-                        self.observed.insert(format!("element-{j}"), response.rect);
-                        if response.hovered() || response.dragged() { ui.painter().rect_stroke(er,0.0,egui::Stroke::new(1.0,Color32::LIGHT_BLUE),egui::StrokeKind::Inside); }
-                        if response.dragged() {
-                            let d=ui.input(|i| i.pointer.delta());
-                            se::translate_item(x,(d.x/rect.width()*100.0) as f64,(d.y/rect.height()*100.0) as f64);
-                        }
-                    }
+                if let Some(x) = self.inline.as_ref().filter(|n| n.target != "main").and_then(|n| own_pos(&e, &n.target)).map(|j| &e["items"][j]) {
+                    inline_rect = Some(full(se::PRect::of(x, se::PRect { x: 0.0, y: 0.0, w: 30.0, h: 20.0 })));
+                    inline_size = x["size"].as_f64().unwrap_or(60.0) as f32;
                 }
+                self.live = true;
                 if start.is_some() {
                     self.inline = start;
                 } else if let (Some(mut n), Some(r)) = (self.inline.clone(), inline_rect) {
@@ -483,7 +758,11 @@ impl SlideEditUi {
                 } else if self.inline.is_some() {
                     self.inline = None; // 고치던 상자가 없어졌다
                 }
+                // se-hint
+                ui.label(RichText::new(wp_core::i18n::tr("끌어서 옮기기 · 모서리로 크기 · 더블클릭: 글 고치기 · ←→↑↓: 슬라이드 이동 (상자를 고르면 미세 이동) · Ctrl+Z: 되돌리기")).small().color(crate::theme::pal().muted));
                 ui.add_space(6.0);
+                let sel_now = self.sel.clone();
+                let mut pick_sel: Option<String> = None;
                 egui::ScrollArea::vertical().id_salt("se-props").auto_shrink([false, false]).show(ui, |ui| {
                     if !self.common && (ty == "title" || slide["xid"].is_string()) {
                         let sk=edit_key(slide);
@@ -542,17 +821,24 @@ impl SlideEditUi {
                         for (t, l) in [("text", "+ 글상자"), ("image", "+ 그림"), ("shape", "+ 도형")] {
                             if ui.button(wp_core::i18n::tr(l)).clicked() {
                                 let mut items = e["items"].as_array().cloned().unwrap_or_default();
-                                items.push(se::new_item(t));
+                                let x = se::new_item(t);
+                                pick_sel = x["id"].as_str().map(String::from); // 새로 넣은 것을 고른다 (addItem)
+                                items.push(x);
                                 e["items"] = json!(items);
                             }
                         }
                     });
                     let mut del = None;
+                    let mut dup = None;
                     let n = e["items"].as_array().map(|a| a.len()).unwrap_or(0);
                     for j in 0..n {
                         let x = &mut e["items"][j];
                         ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new(wp_core::i18n::tr(match x["type"].as_str() { Some("text") => "글", Some("image") => "그림", Some("shape") => "도형", _ => "요소" })).small());
+                            // 캔버스에서 고른 요소의 줄은 강조한다 · 이름을 누르면 캔버스에서 고른다
+                            let on = !sel_now.is_empty() && x["id"].as_str() == Some(sel_now.as_str());
+                            let mut name = RichText::new(wp_core::i18n::tr(match x["type"].as_str() { Some("text") => "글", Some("image") => "그림", Some("shape") => "도형", _ => "요소" })).small();
+                            if on { name = name.strong().color(crate::theme::pal().accent); }
+                            if ui.add(egui::Label::new(name).sense(Sense::click())).clicked() { pick_sel = x["id"].as_str().map(String::from); }
                             for k in ["x", "y", "w", "h"] {
                                 let mut v = x[k].as_f64().unwrap_or(0.0);
                                 if ui.add(egui::DragValue::new(&mut v).range(-50.0..=200.0).speed(0.5).prefix(format!("{k} "))).changed() { x[k] = json!(v); }
@@ -583,6 +869,7 @@ impl SlideEditUi {
                             if ui.add(egui::DragValue::new(&mut opacity).range(0.05..=1.0).speed(0.01).prefix(wp_core::i18n::tr("불투명도 "))).changed() { x["opacity"] = json!(opacity); }
                             let mut below = x["below"].as_bool().unwrap_or(false);
                             if ui.checkbox(&mut below, wp_core::i18n::tr("글 뒤")).changed() { x["below"] = json!(below); }
+                            if ui.small_button(wp_core::i18n::tr("복제")).on_hover_text(wp_core::i18n::tr("복제 (Ctrl+D)")).clicked() { dup = Some(j); }
                             if ui.small_button("✕").clicked() { del = Some(j); }
                         });
                         ui.horizontal(|ui| {
@@ -599,10 +886,16 @@ impl SlideEditUi {
                             }
                         });
                     }
+                    if let Some(j) = dup {
+                        let c = se::dup_item(&e["items"][j]);
+                        pick_sel = c["id"].as_str().map(String::from);
+                        e["items"].as_array_mut().unwrap().push(c);
+                    }
                     if let Some(j) = del { e["items"].as_array_mut().unwrap().remove(j); }
                     ui.add_space(6.0);
                     if ui.button(wp_core::i18n::tr("이 슬라이드 편집 지우기")).clicked() { e = json!({}); }
                 });
+                if let Some(id) = pick_sel { self.sel = id; }
             });
             if e != before {
                 let mut a = new_it.clone().unwrap_or_else(|| it.clone());
@@ -611,6 +904,8 @@ impl SlideEditUi {
                 if multi_on && self.multi.contains(&key) {
                     let others: Vec<String> = self.multi.iter().filter(|k| **k != key).cloned().collect();
                     se::propagate(&mut a, &others, &before, &e);
+                    // 함께 지워서 빈 편집({"items":[]})이 남지 않게 정리한다 (slideedit.js clean)
+                    for k in &others { se::update_edit(&mut a, k, |_| {}); }
                 }
                 new_it = Some(a);
             }
