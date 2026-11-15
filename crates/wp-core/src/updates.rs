@@ -520,7 +520,7 @@ pub fn os_tag() -> String {
 
 /// 보낼 내용 (Electron 과 같은 칸). 이름·교회·성경·큐시트 내용은 넣지 않는다
 pub fn ping_body(settings: &Value, version: &str) -> Value {
-    let kind = if cfg!(target_os = "macos") { "mac" } else if std::env::var_os("PORTABLE_EXECUTABLE_DIR").is_some() { "portable" } else if cfg!(windows) { "installer" } else { std::env::consts::OS };
+    let kind = if cfg!(target_os = "macos") { "mac" } else if std::env::var_os("PORTABLE_EXECUTABLE_DIR").is_some() || (cfg!(windows) && !installed_copy()) { "portable" } else if cfg!(windows) { "installer" } else { std::env::consts::OS };
     let lang = settings["uiLang"].as_str().filter(|x| !x.is_empty()).unwrap_or("ko");
     json!({ "id": settings["telemetryId"], "v": version, "lang": lang, "os": os_tag(), "build": if lang == "en" { "en" } else { "ko" }, "kind": kind })
 }
@@ -756,4 +756,33 @@ mod transfer_edge_tests {
   let t=std::thread::spawn(move||{let(mut s,_)=l.accept().unwrap();s.set_read_timeout(Some(std::time::Duration::from_secs(3))).unwrap();let mut b=[0;2048];let _=s.read(&mut b);s.write_all(b"HTTP/1.1 302 Found\r\nLocation: http://example.invalid/installer.exe\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();});
   assert!(response(&format!("http://{addr}/fixture")).unwrap_err().contains("신뢰"));t.join().unwrap();
  }
+}
+
+#[cfg(test)]
+mod real_release_tests {
+    use super::*;
+
+    /// 실제 GitHub 릴리스로 끝까지: 최신 릴리스 읽기 → 설치 자산 고르기(이름·주소·digest) → 리다이렉트 따라 받기 → 크기·SHA-256 검증.
+    /// 인터넷을 쓰므로 평소에는 돌리지 않는다: cargo test -p wp-core --offline real_release -- --ignored --nocapture
+    /// WP_UPDATE_TEST_OUT 이 있으면 받은 설치 파일을 그 폴더에 남긴다 (/TEST 설치 점검용)
+    #[test]
+    #[ignore]
+    fn real_release_download_and_verify() {
+        let r = get_json(&api_url(TRUSTED_REPO).unwrap()).expect("릴리스 읽기");
+        println!("최신 릴리스: {} 자산 {}개", r["tag_name"], r["assets"].as_array().map(|a| a.len()).unwrap_or(0));
+        let st = state_from_release(&r, "1.14.1", crate::util::now_ms()).expect("상태");
+        println!("1.14.1 에서 본 상태: {st}");
+        let a = asset_from_release(&r, TRUSTED_REPO).expect("설치 자산");
+        println!("자산: {} {}바이트 sha256 {}", a.name, a.size, a.hash);
+        let keep = std::env::var_os("WP_UPDATE_TEST_OUT").map(PathBuf::from);
+        let dir = keep.clone().unwrap_or_else(|| std::env::temp_dir().join(format!("wp-real-{}", rand::random::<u64>())));
+        let cancel = AtomicBool::new(false);
+        let mut resp = response(&a.url).expect("받기 시작");
+        let p = cache_stream(&mut resp.body_mut().as_reader(), &a, &dir, &cancel, |_, _| {}).expect("받기·검증");
+        println!("받음: {}", p.display());
+        assert_eq!(std::fs::metadata(&p).unwrap().len(), a.size);
+        if keep.is_none() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }

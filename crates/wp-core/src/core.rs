@@ -186,11 +186,17 @@ impl Core {
     pub fn open(data_dir: PathBuf, web_dir: PathBuf, seed_db: Option<&Path>) -> Result<Self> {
         crate::sync::apply_pending_restore(&data_dir); // [트랙 B] 예약된 백업 되돌리기 (DB 열기 전)
         let note = prepare_data_dir(&data_dir, seed_db)?;
+        crate::firstrun::mark("자료 폴더 준비");
         let media_dir = data_dir.join("media");
         std::fs::create_dir_all(&media_dir)?;
         let store = BibleStore::open(&data_dir.join("bible.db"))?;
         let _ = crate::usage::ensure(&store.db); // [트랙 C] 사용 기록 표
-        let settings = Settings::load(&data_dir);
+        if let Some(old) = legacy_data_dir() {
+            crate::firstrun::repoint_pasted(&store.db, &data_dir, &old); // [갈래 D] 1.x 폴더가 지워졌으면 붙여 넣은 PPT 를 이 판 복사본으로
+        }
+        let mut settings = Settings::load(&data_dir);
+        crate::dpapi::adopt_electron_secrets(&mut settings, legacy_data_dir().as_deref()); // [갈래 D] 1.x 에서 잠가 둔 AI 키·OBS 비밀번호 이어받기
+        crate::firstrun::mark("설정 읽기");
         let (tx, _) = broadcast::channel(256);
         let port = settings.get()["port"].as_u64().unwrap_or(37528) as u16;
         let mut c = Self {
@@ -217,7 +223,15 @@ impl Core {
         if let Some(n) = note {
             // 복사 실패는 경고로 (기본 성경으로 시작했다는 것을 놓치지 않게)
             let kind = if n.contains("복사하지 못해") { "warn" } else { "ok" };
+            if kind == "warn" {
+                crate::firstrun::add_start_warning(n.clone());
+            }
             c.notify(n, kind);
+        }
+        // 깨진 설정 파일로 켰으면 조용히 넘어가지 않고 알린다 (자료 이전 알림보다 중요하므로 나중에 덮어쓴다)
+        if let Some(n) = c.settings.load_note.clone() {
+            crate::firstrun::add_start_warning(n.clone());
+            c.notify(n, "warn");
         }
         Ok(c)
     }

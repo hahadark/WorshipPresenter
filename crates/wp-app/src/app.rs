@@ -1533,6 +1533,7 @@ impl App {
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        wp_core::firstrun::frame_tick(); // 켜는 시간 로그 (처음 두 프레임만)
         crate::system_ui::inject(ctx, raw); // [트랙 B] 점검용 --draw-test (켜지 않으면 아무것도 안 함)
         // 점검용 --hover X,Y : 그 자리에 마우스가 있는 것처럼 (마우스 올림 단추 스크린샷용, 매 프레임)
         static HOVER: once_cell::sync::Lazy<Option<egui::Pos2>> = once_cell::sync::Lazy::new(|| {
@@ -1706,6 +1707,9 @@ mod auditc_tests;
 #[cfg(test)]
 #[path = "dbl_tests.rs"]
 mod dbl_tests;
+#[cfg(test)]
+#[path = "auditd_tests.rs"]
+mod auditd_tests;
 #[cfg(test)]
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)

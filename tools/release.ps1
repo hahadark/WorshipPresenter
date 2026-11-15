@@ -40,15 +40,8 @@ $seed = 'assets\bible-seed.db'
 if (-not (Test-Path $seed)) { throw "$seed 가 없습니다 (Electron 판 data\bible.db 를 복사해 두세요)." }
 Copy-Item $seed (Join-Path $stage 'bible.db')
 
-# 아이콘: 256px PNG 를 그대로 담은 .ico
-$png = [IO.File]::ReadAllBytes((Join-Path $root 'assets\icon-256.png'))
-$ms = New-Object IO.MemoryStream
-$bw = New-Object IO.BinaryWriter($ms)
-$bw.Write([UInt16]0); $bw.Write([UInt16]1); $bw.Write([UInt16]1)
-$bw.Write([byte]0); $bw.Write([byte]0); $bw.Write([byte]0); $bw.Write([byte]0)
-$bw.Write([UInt16]1); $bw.Write([UInt16]32); $bw.Write([UInt32]$png.Length); $bw.Write([UInt32]22)
-$bw.Write($png); $bw.Flush()
-[IO.File]::WriteAllBytes((Join-Path $stage 'WorshipPresenter.ico'), $ms.ToArray())
+# 아이콘: 여러 크기(16~256)가 든 assets\icon.ico (실행 파일에 넣는 것과 같은 파일)
+Copy-Item assets\icon.ico (Join-Path $stage 'WorshipPresenter.ico')
 
 # 설치 파일
 $makensis = Get-ChildItem "$env:LOCALAPPDATA\electron-builder\Cache\nsis" -Recurse -Filter makensis.exe -ErrorAction SilentlyContinue |

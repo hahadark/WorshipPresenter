@@ -526,7 +526,7 @@ fn ime_on_focus(app: &App, ctx: &egui::Context) {
         wp_core::winkeys::ime_korean();
     }
 }
-fn update_ui(ui: &mut egui::Ui, core: &Shared) {
+pub(crate) fn update_ui(ui: &mut egui::Ui, core: &Shared) {
     let st = wp_core::updates::status(core.lock().settings.get());
     ui.label(wp_core::i18n::tr_args(
         "지금 버전: {1}",
@@ -621,8 +621,14 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
     ui.separator();
     if st["state"] == "ready" { ui.label(wp_core::i18n::tr("SHA-256 검증 완료. 설치 준비됨. 자동 설치하지 않습니다.")); }
     if st["state"] == "cancelled" { ui.label(wp_core::i18n::tr("다운로드를 취소했습니다.")); }
+    // [갈래 D] 포터블·개발 실행: 받기·설치 단추가 왜 꺼져 있는지 보이게 (전에는 '받을 새 버전이 없거나…' 라고만 떠서 이유를 알 수 없었다)
+    let portable = st["portable"] == true;
+    if portable {
+        ui.label(RichText::new(wp_core::i18n::tr(wp_core::updates::PORTABLE_NOTE)).color(Color32::from_rgb(0xff, 0xc8, 0x6a)));
+    }
+    let why_off = if portable { wp_core::updates::PORTABLE_NOTE } else { "받을 새 버전이 없거나 이미 받는 중입니다" };
     ui.horizontal(|ui| {
-        if ui.add_enabled(st["canDownload"] == true, egui::Button::new(wp_core::i18n::tr("검증하여 다운로드"))).on_disabled_hover_text(wp_core::i18n::tr("받을 새 버전이 없거나 이미 받는 중입니다")).clicked() {
+        if ui.add_enabled(st["canDownload"] == true, egui::Button::new(wp_core::i18n::tr("검증하여 다운로드"))).on_disabled_hover_text(wp_core::i18n::tr(why_off)).clicked() {
             if let Err(e) = wp_core::updates::download(core) { core.lock().notify(e, "warn"); }
         }
         if ui.add_enabled(st["canInstall"] == true, egui::Button::new(wp_core::i18n::tr("지금 설치 요청 (프로그램 종료)"))).on_disabled_hover_text(wp_core::i18n::tr("먼저 새 버전을 받아 검증을 마쳐야 합니다")).clicked() {
@@ -683,7 +689,10 @@ fn update_ui(ui: &mut egui::Ui, core: &Shared) {
 /// [갈래 D] 첫 화면: 1.x(Electron 판) 자료가 이 판 자료보다 최근에 바뀌었으면 다시 가져올지 묻는다.
 /// 다시 가져오면 지금 이 판 자료는 지우지 않고 data\pre-reimport\ 에 보관한 뒤 프로그램이 다시 켜진다.
 pub fn migrate_ask(ctx: &egui::Context, data_dir: &std::path::Path) {
-    let Some(a) = wp_core::firstrun::ask() else { return };
+    let Some(a) = wp_core::firstrun::ask() else {
+        start_warning(ctx, data_dir);
+        return;
+    };
     let tr = wp_core::i18n::tr;
     let when = |ms: &Value| {
         wp_core::firstrun::local_time(ms.as_i64().unwrap_or(0))
@@ -736,6 +745,34 @@ pub fn migrate_ask(ctx: &egui::Context, data_dir: &std::path::Path) {
             }
             if ui.button(tr("지금 자료 그대로 쓰기")).clicked() {
                 wp_core::firstrun::keep_current(data_dir);
+            }
+        });
+    });
+}
+
+/// [갈래 D] 켤 때 생긴 중요한 문제를 [확인] 을 누를 때까지 보인다 (깨진 설정 파일 · 1.x 자료 복사 실패)
+fn start_warning(ctx: &egui::Context, data_dir: &std::path::Path) {
+    let warns = wp_core::firstrun::start_warnings();
+    if warns.is_empty() {
+        return;
+    }
+    let tr = wp_core::i18n::tr;
+    egui::Modal::new(egui::Id::new("wp-start-warning")).show(ctx, |ui| {
+        ui.set_max_width(620.0);
+        ui.heading(tr("켜는 중에 문제가 있었습니다"));
+        ui.add_space(6.0);
+        for w in &warns {
+            ui.label(w);
+            ui.add_space(4.0);
+        }
+        ui.label(RichText::new(wp_core::i18n::tr_args("자료 폴더: {1}", &[&data_dir.display()])).small());
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if ui.button(tr("확인")).clicked() {
+                wp_core::firstrun::clear_start_warnings();
+            }
+            if ui.button(tr("자료 폴더 열기")).clicked() {
+                let _ = std::process::Command::new("explorer").arg(data_dir).spawn();
             }
         });
     });
