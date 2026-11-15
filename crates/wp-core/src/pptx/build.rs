@@ -19,7 +19,72 @@ fn r2(v: f64) -> f64 {
 }
 
 fn ext_of(part: &str) -> String {
-    part.rsplit('.').next().unwrap_or("").to_lowercase()
+    part.split('#').next().unwrap_or("").rsplit('.').next().unwrap_or("").to_lowercase()
+}
+
+/// 그림 효과(mod.rs blip_fx 가 적은 것)를 칠한 PNG. 읽을 수 없는 그림(svg 등)이면 None → 원본 그대로
+pub fn apply_fx(bytes: &[u8], spec: &str) -> Option<Vec<u8>> {
+    let mut img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let hex = |h: &str| -> Option<[f32; 3]> {
+        let v = u32::from_str_radix(h, 16).ok()?;
+        Some([(v >> 16 & 255) as f32, (v >> 8 & 255) as f32, (v & 255) as f32])
+    };
+    let lum = |p: &[u8; 4]| (0.2126 * p[0] as f32 + 0.7152 * p[1] as f32 + 0.0722 * p[2] as f32) / 255.0;
+    for op in spec.split(';') {
+        let (name, arg) = op.split_once('=').unwrap_or((op, ""));
+        let a: Vec<&str> = arg.split(',').collect();
+        match name {
+            "gray" => {
+                for p in img.pixels_mut() {
+                    let l = (lum(&p.0) * 255.0).round() as u8;
+                    p.0 = [l, l, l, p.0[3]];
+                }
+            }
+            "bi" => {
+                let t: f32 = a.first().and_then(|x| x.parse().ok()).unwrap_or(0.5);
+                for p in img.pixels_mut() {
+                    let l = if lum(&p.0) >= t { 255 } else { 0 };
+                    p.0 = [l, l, l, p.0[3]];
+                }
+            }
+            // 어두운 곳은 첫 색, 밝은 곳은 둘째 색
+            "duo" => {
+                let (Some(c1), Some(c2)) = (a.first().and_then(|x| hex(x)), a.get(1).and_then(|x| hex(x))) else { continue };
+                for p in img.pixels_mut() {
+                    let l = lum(&p.0);
+                    for i in 0..3 {
+                        p.0[i] = (c1[i] + (c2[i] - c1[i]) * l).round().clamp(0.0, 255.0) as u8;
+                    }
+                }
+            }
+            "lum" => {
+                let b: f32 = a.first().and_then(|x| x.parse().ok()).unwrap_or(0.0);
+                let k: f32 = a.get(1).and_then(|x| x.parse().ok()).unwrap_or(0.0);
+                // 대비: -1 이면 회색 한 색, +1 에 가까울수록 가파르게. 밝기: 그만큼 더함
+                let g = if k >= 0.0 { 1.0 / (1.0 - k).max(0.001) } else { 1.0 + k };
+                for p in img.pixels_mut() {
+                    for i in 0..3 {
+                        let v = p.0[i] as f32 / 255.0;
+                        p.0[i] = (((v - 0.5) * g + 0.5 + b) * 255.0).round().clamp(0.0, 255.0) as u8;
+                    }
+                }
+            }
+            // 한 색을 다른 색(대개 투명)으로
+            "chg" => {
+                let (Some(f), Some(t)) = (a.first().and_then(|x| hex(x)), a.get(1).and_then(|x| hex(x))) else { continue };
+                let ta: f32 = a.get(2).and_then(|x| x.parse().ok()).unwrap_or(1.0);
+                for p in img.pixels_mut() {
+                    if (0..3).all(|i| (p.0[i] as f32 - f[i]).abs() <= 2.0) {
+                        p.0 = [t[0] as u8, t[1] as u8, t[2] as u8, (p.0[3] as f32 * ta).round() as u8];
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(img).write_to(&mut out, image::ImageFormat::Png).ok()?;
+    Some(out.into_inner())
 }
 fn ok_ext(e: &str) -> bool {
     matches!(e, "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg")
@@ -145,9 +210,13 @@ pub fn render_png(svg: &str, dir: &Path, width: u32) -> Result<Vec<u8>, String> 
     pm.encode_png().map_err(|e| e.to_string())
 }
 
+/// 직접 그린 캐시의 판. 그리는 방식이 바뀌면 올린다 (예전 캐시를 다시 만들게)
+/// rs2: 그림 효과(duotone 등) · 줄 간격 넓힌 글의 자리 · PPT 글꼴로 폭 재기
+pub const CACHE_TAG: &str = "pptx-rs2";
+
 /// 파일 → 캐시 폴더에 그림·요소를 만들고 meta 를 돌려준다
 pub fn build_cache(data_dir: &Path, file: &str) -> Result<Value, String> {
-    let key = crate::hymns::cache_key(file, "pptx-rs1");
+    let key = crate::hymns::cache_key(file, crate::pptx::build::CACHE_TAG);
     let dir = data_dir.join("hymn-cache").join(&key);
     if let Ok(t) = std::fs::read_to_string(dir.join("meta.json")) {
         if let Ok(v) = serde_json::from_str::<Value>(&t) {
@@ -210,10 +279,16 @@ pub fn build_into(bytes: &[u8], dir: &Path) -> Result<Built, String> {
             if names.contains_key(&p) || !ok_ext(&ext_of(&p)) {
                 continue;
             }
-            if let Some(b) = doc.pkg.raw(&p) {
-                let e = ext_of(&p);
-                let name = format!("media-{}.{}", names.len() + 1, if e == "jpeg" { "jpg".into() } else { e });
-                let _ = std::fs::write(dir.join(&name), b);
+            // '파트#fx:효과' 면 효과를 칠한 PNG 를 따로 둔다 (같은 그림을 효과 없이 쓴 곳과 섞이지 않게 이름을 통째로 열쇠로)
+            let (base, fx) = match p.split_once("#fx:") {
+                Some((b, f)) => (b.to_string(), Some(f.to_string())),
+                None => (p.clone(), None),
+            };
+            if let Some(b) = doc.pkg.raw(&base) {
+                let e = ext_of(&base);
+                let done = fx.as_deref().and_then(|f| apply_fx(b, f));
+                let name = format!("media-{}.{}", names.len() + 1, if done.is_some() { "png".into() } else if e == "jpeg" { "jpg".into() } else { e });
+                let _ = std::fs::write(dir.join(&name), done.as_deref().unwrap_or(b));
                 names.insert(p, name);
             }
         }
@@ -323,5 +398,34 @@ mod tests {
         let r = super::build_into(&std::fs::read(&f).unwrap(), &out).unwrap();
         eprintln!("슬라이드 {}장 {:?} ({}x{}pt)", r.slides.len(), t0.elapsed(), r.w, r.h);
         for t in r.texts.iter().take(3) { eprintln!("글: {}", t.chars().take(80).collect::<String>()); }
+    }
+}
+
+#[cfg(test)]
+mod fx_tests {
+    fn png(px: [u8; 4]) -> Vec<u8> {
+        let img = image::RgbaImage::from_pixel(2, 1, image::Rgba(px));
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(img).write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    }
+    fn first(b: &[u8]) -> [u8; 4] {
+        image::load_from_memory(b).unwrap().to_rgba8().get_pixel(0, 0).0
+    }
+    #[test]
+    fn picture_effects_recolor() {
+        // duotone: 검정 → 첫 색, 흰색 → 둘째 색, 투명도는 그대로
+        assert_eq!(first(&super::apply_fx(&png([0, 0, 0, 200]), "duo=1f3a8a,fbf8f1").unwrap()), [0x1f, 0x3a, 0x8a, 200]);
+        assert_eq!(first(&super::apply_fx(&png([255, 255, 255, 255]), "duo=1f3a8a,fbf8f1").unwrap()), [0xfb, 0xf8, 0xf1, 255]);
+        // 회색: 빨강이 회색으로
+        let g = first(&super::apply_fx(&png([255, 0, 0, 255]), "gray").unwrap());
+        assert!(g[0] == g[1] && g[1] == g[2] && g[0] > 40 && g[0] < 70, "{g:?}");
+        // 흑백
+        assert_eq!(first(&super::apply_fx(&png([200, 200, 200, 255]), "bi=0.5000").unwrap())[0], 255);
+        // 한 색을 투명으로
+        assert_eq!(first(&super::apply_fx(&png([255, 255, 255, 255]), "chg=ffffff,ffffff,0.000").unwrap())[3], 0);
+        // 그림이 아니면 None (원본 그대로 쓴다)
+        assert!(super::apply_fx(b"<svg/>", "gray").is_none());
+        assert_eq!(super::ext_of("ppt/media/image1.JPEG#fx:duo=1f3a8a,fbf8f1"), "jpeg");
     }
 }

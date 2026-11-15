@@ -409,7 +409,7 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
         return Err(crate::i18n::tr("옛 형식(.ppt/.pps)은 요소를 꺼낼 수 없습니다. PowerPoint 에서 .pptx 로 저장한 뒤 넣어 주세요.").into());
     }
     if again {
-        let dir = core.data_dir.join("hymn-cache").join(cache_key(file, "pptx-rs1"));
+        let dir = core.data_dir.join("hymn-cache").join(cache_key(file, crate::pptx::build::CACHE_TAG));
         let _ = std::fs::remove_dir_all(dir);
     }
     match read_layers_k(core, &meta).filter(|_| !again) {
@@ -985,7 +985,7 @@ pub fn read_layers(core: &Core, meta: &Value) -> Option<Value> {
 /// (layers.json 이 있는 캐시 열쇠, 내용): 이 캐시 → (PowerPoint 로 만든 것이면) 직접 읽어 만든 캐시
 pub fn read_layers_k(core: &Core, meta: &Value) -> Option<(String, Value)> {
     let file = meta["file"].as_str().unwrap_or("");
-    let keys = [meta["key"].as_str().map(String::from), (!file.is_empty()).then(|| cache_key(file, "pptx-rs1"))];
+    let keys = [meta["key"].as_str().map(String::from), (!file.is_empty()).then(|| cache_key(file, crate::pptx::build::CACHE_TAG))];
     for key in keys.into_iter().flatten() {
         if let Some(p) = cache_path(core, &key, "layers.json") {
             if let Some(v) = std::fs::read_to_string(p).ok().and_then(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).ok()) {
