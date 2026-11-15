@@ -452,6 +452,7 @@ fn add_btn(ui: &mut egui::Ui, w: f32, ic: Option<&str>, ink: Color32, label: &st
 /// 넣기 단추 격자 + 도움말 (.cue-add { grid 3열 · 간격 5 · 여백 8 · 위 테두리 })
 pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     let p = pal();
+    let direct = app.core.lock().direct_mode();
     let top = ui.cursor().top();
     let full = ui.available_width();
     let r0 = ui.cursor().left();
@@ -515,7 +516,8 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     inset(ui, 10.0, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         let mut job = egui::text::LayoutJob::single_section(
-            tr("클릭 = 미리보기 (화면에는 안 나감) · ← → 로 고르고 Enter(F9) = 송출 · Ctrl+↑↓ = 이전/다음 · 끌어서 순서 바꾸기"),
+            // 지금 방식에 맞춘 안내 (머리 줄 '클릭하면 [미리보기][바로 송출]')
+            if direct { tr("클릭 = 바로 송출 (회중 화면에 바로 나감) · ← → 로 고르고 Enter(F9) = 송출 · Ctrl+↑↓ = 이전/다음 · 끌어서 순서 바꾸기") } else { tr("클릭 = 미리보기 (화면에는 안 나감) · ← → 로 고르고 Enter(F9) = 송출 · Ctrl+↑↓ = 이전/다음 · 끌어서 순서 바꾸기") },
             egui::TextFormat { font_id: theme::font(11.5, Weight::Regular), color: p.muted2, line_height: Some(17.25), ..Default::default() },
         );
         job.wrap.max_width = ui.available_width();

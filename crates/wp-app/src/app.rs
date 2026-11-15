@@ -19,6 +19,8 @@ pub(crate) enum Act {
     SendItem(usize),
     SendPreview,
     PreviewIndex(usize),
+    /// 순서를 미리보기하며 그 순서의 k 번째 장으로 (PreviewItem + PreviewIndex 를 합친 것: 바로 송출이면 k 번째 장만 한 번 송출, Electron BCCue.previewAt)
+    PreviewItemAt(usize, usize),
     LiveGoto(usize),
     Step(i64),
     ToggleClear,
@@ -98,6 +100,18 @@ pub(crate) struct Snap {
     port: u16,
     logo: bool,
     hide_bg: bool,
+}
+
+/// 고른 것을 넣은 결과로 왼쪽 큐시트의 고른 순서를 맞춘다 (넣은 자리 또는 이미 있던 순서)
+pub(crate) fn picked_sel<T>(sel: &mut Option<usize>, edit: &mut Option<T>, r: wp_core::pick::Picked) {
+    use wp_core::pick::Picked;
+    match r {
+        Picked::Added(i) | Picked::Existing(i) => {
+            *sel = Some(i);
+            *edit = None;
+        }
+        Picked::Ignored => {}
+    }
 }
 
 fn type_info(t: &str) -> (&'static str, Color32) {
@@ -195,8 +209,26 @@ impl App {
     }
 
     fn apply(&mut self, acts: Vec<Act>) {
-        let sent = acts.iter().any(|a| matches!(a, Act::SendPreview | Act::SendItem(_) | Act::SendRef(..)));
-        self.apply_acts(acts);
+        // 바로 송출 모드에서는 누른 것(순서·본문·슬라이드·라이브러리)이 송출 없이도 나간다 → LIVE 가 바뀌었는지로 본다
+        let live_mark = |c: &wp_core::core::Core| c.pres.live.as_ref().map(|l| (l.sent_at, c.pres.version));
+        let before = live_mark(&self.core.lock());
+        let explicit = acts.iter().any(|a| matches!(a, Act::SendPreview | Act::SendItem(_) | Act::SendRef(..)));
+        // PreviewItem(i) 바로 뒤 PreviewIndex(k) 는 하나로 (바로 송출에서 첫 장이 잠깐 나갔다 k 번째가 다시 나가지 않게)
+        let mut merged = Vec::with_capacity(acts.len());
+        let mut it = acts.into_iter().peekable();
+        while let Some(a) = it.next() {
+            if let Act::PreviewItem(i) = a {
+                if let Some(Act::PreviewIndex(k)) = it.peek() {
+                    let k = *k;
+                    it.next();
+                    merged.push(Act::PreviewItemAt(i, k));
+                    continue;
+                }
+            }
+            merged.push(a);
+        }
+        self.apply_acts(merged);
+        let sent = explicit || live_mark(&self.core.lock()) != before;
         if sent {
             self.warn_output_off_after_send();
         }
@@ -234,7 +266,8 @@ impl App {
                 Act::PreviewItem(i) => { c.preview_item(i); }
                 Act::SendItem(i) => { c.send_item(i); } // 미리보기 실패·다른 큐시트의 미리보기면 송출하지 않음 (Electron sendItem)
                 Act::SendPreview => c.send_preview(),
-                Act::PreviewIndex(i) => c.set_preview_index(i),
+                Act::PreviewIndex(i) => c.pick_preview_index(i), // 바로 송출이면 송출 (Electron setPreviewIndex → directSend)
+                Act::PreviewItemAt(i, k) => { c.preview_item_at(i, k); }
                 Act::LiveGoto(i) => c.goto_live(i),
                 Act::Step(d) => c.step(d),
                 Act::ToggleClear => c.toggle_clear(),
@@ -269,10 +302,8 @@ impl App {
                         wp_core::settings::merge_into(&mut it, &b);
                     }
                     let at = self.sel.map(|s| s + 1);
-                    c.add_item(it, at);
-                    let n = c.cue.as_ref().map(|x| x.items.len()).unwrap_or(0);
-                    self.sel = Some(at.unwrap_or(n.saturating_sub(1)).min(n.saturating_sub(1)));
-                    self.edit = None;
+                    // 넣고 곧바로 미리보기(바로 송출이면 송출) · 같은 찬송가·찬양은 있는 순서를 고름 · 연타 무시 (wp_core::pick)
+                    picked_sel(&mut self.sel, &mut self.edit, c.add_picked_item(it, at, false));
                 }
                 Act::RemoveItem(i) => {
                     let name = c.cue.as_ref().and_then(|x| x.items.get(i)).map(|it| it["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).unwrap_or(type_info(it["type"].as_str().unwrap_or("")).0).to_string());
@@ -408,7 +439,7 @@ impl App {
                     c.settings.update(|d| d["previewMode"] = json!(on));
                     // 원본 control.js:491 — 켜면 미리보기 패널을 열고, 끄면 닫는다
                     sync_preview_pane(&mut self.workspace.state, on);
-                    c.notify(if on { wp_core::i18n::tr("미리보기를 켰습니다. 고른 본문은 미리보기에 놓이고 F9 로 송출합니다.") } else { wp_core::i18n::tr("미리보기를 껌습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.") }, if on { "ok" } else { "info" });
+                    c.notify(if on { wp_core::i18n::tr("미리보기를 켰습니다. 고른 본문은 미리보기에 놓이고 F9 로 송출합니다.") } else { wp_core::i18n::tr("미리보기를 껐습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.") }, if on { "ok" } else { "info" });
                 }
                 Act::OutputToggle => {
                     let port = c.port;
@@ -449,6 +480,12 @@ impl App {
                             }
                             continue;
                         }
+                        // 이미 있는 찬송가·찬양을 일부러 하나 더
+                        "add-dup" => {
+                            if let Some(r) = c.add_dup_anyway() {
+                                picked_sel(&mut self.sel, &mut self.edit, r);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -456,7 +493,7 @@ impl App {
                     use wp_core::i18n::tr;
                     let Some((idx, n, ci, cid)) = c.pres.preview.as_ref().map(|p| (p.index as i64, p.slides.len() as i64, p.passage["cueIndex"].as_i64().unwrap_or(-1), p.passage["cueId"].as_str().unwrap_or("").to_string())) else { continue };
                     let ni = idx + d;
-                    if ni >= 0 && ni < n { c.set_preview_index(ni as usize); continue; }
+                    if ni >= 0 && ni < n { c.pick_preview_index(ni as usize); continue; }
                     // 큐시트 순서의 끝: 설정 '순서 끝에서 다음 순서로'(cueAdvance)가 켜져 있으면 다음·이전 순서 미리보기 (뒤로 가면 마지막 장)
                     if ci < 0 || c.settings.get()["cueAdvance"] == json!(false) { continue; }
                     let Some(len) = c.cue.as_ref().filter(|q| q.id == cid).map(|q| q.items.len() as i64) else { continue };
@@ -555,6 +592,7 @@ impl App {
                     let out = crate::cue_ui::row(ui, i, it, &st);
                     ui.add_space(2.0); // .cue-item { margin-bottom: 2px }
                     let r = out.resp;
+                    crate::widgets::mark(&format!("cue-row-{i}"), r.rect);
                     self.cue_row_dnd(ui, &r, i); // [트랙 B] 끌어서 옮기기
                     crate::parity_ui::cue_row_menu(self, &r, i, it, s.items.len(), acts); // [트랙 A] 오른쪽 클릭 메뉴
                     if out.send {

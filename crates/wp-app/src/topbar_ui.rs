@@ -479,15 +479,15 @@ impl App {
 
     /// 송출했는데 예배당 화면이 꺼져 있고 자동으로 켜지도 않을 때, 꺼진 동안 한 번만 알림 + [예배당 화면 켜기]
     pub(super) fn warn_output_off_after_send(&mut self) {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        static WARNED: AtomicBool = AtomicBool::new(false);
+        // 화면 스레드 하나에서만 쓴다 (시험은 시험마다 스레드가 달라 서로 영향을 주지 않는다)
+        thread_local!(static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) });
         if self.out.running() {
-            WARNED.store(false, Ordering::SeqCst);
+            WARNED.with(|w| w.set(false));
             return;
         }
         let mut c = self.core.lock();
         let auto = c.settings.get()["output"]["autoOnSend"].as_bool().unwrap_or(true);
-        if auto || c.pres.live.is_none() || WARNED.swap(true, Ordering::SeqCst) {
+        if auto || c.pres.live.is_none() || WARNED.with(|w| w.replace(true)) {
             return;
         }
         c.notify_act(tr("송출했지만 예배당 화면이 꺼져 있어 회중에게 보이지 않습니다"), "warn", "output-on");
@@ -547,6 +547,7 @@ fn toast_button(act: &str) -> (String, &'static str) {
     match act {
         "undo" => (tr("되돌리기"), "undo-2"),
         "output-on" => (tr("예배당 화면 켜기"), "monitor"),
+        "add-dup" => (tr("그래도 하나 더 넣기"), "plus"),
         _ => (tr("확인"), "check"),
     }
 }

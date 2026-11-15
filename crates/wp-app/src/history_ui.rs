@@ -53,7 +53,8 @@ impl HistoryUi {
                         wp_core::templates::clear_history(&mut core.lock().settings);
                     }
                 });
-                ui.label(RichText::new(wp_core::i18n::tr("누르면 미리보기, 두 번 누르면 송출")).small().color(pal().muted));
+                let direct = core.lock().direct_mode();
+                ui.label(RichText::new(wp_core::i18n::tr(if direct { "누르면 바로 송출" } else { "누르면 미리보기, 두 번 누르면 송출" })).small().color(pal().muted));
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for h in &hist {
                         let q = h["query"].as_str().unwrap_or("").to_string();

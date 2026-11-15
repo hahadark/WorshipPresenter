@@ -63,6 +63,7 @@ pub mod i18n; // [트랙 D]
 pub mod actions; // 순서의 '⚡ 송출할 때 자동으로' 정규화·요약·매크로 저장
 
 pub mod workspace;
+pub mod pick; // 라이브러리에서 고른 것 넣기 (중복·연타 막기) · 바로 송출
 
 #[cfg(test)]
 mod ui_fix_tests; // 조작 화면 결함 수정(검토 1113) 회귀 테스트

@@ -1856,7 +1856,7 @@ impl App {
                         if ui.is_rect_visible(hr) {
                             paint_cg_head(ui, hr, i, it, n, hresp.hovered());
                         }
-                        let hresp = hresp.on_hover_text(tr("이 순서 미리보기"));
+                        let hresp = hresp.on_hover_text(if !self.core.lock().direct_mode() { tr("이 순서 미리보기") } else { tr("이 순서 바로 송출") });
                         if hresp.clicked() {
                             self.sel = Some(i);
                             acts.push(Act::PreviewItem(i));

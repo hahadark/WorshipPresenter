@@ -15,7 +15,7 @@
  "'{1}' 순서를 삭제했습니다": "Deleted item '{1}'",
  "슬라이드를 지웠습니다. Ctrl+Z 로 되돌릴 수 있습니다.": "Slide deleted. Press Ctrl+Z to undo.",
  "건너뛰기를 바꿨습니다 (건너뛴 슬라이드는 송출에서 빠집니다). Ctrl+Z 로 되돌릴 수 있습니다.": "Skip changed (skipped slides are left out when going live). Press Ctrl+Z to undo.",
- "미리보기를 껌습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.": "Preview is off. Clicked text, items and slides now go live immediately.",
+ "미리보기를 껐습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.": "Preview is off. Clicked text, items and slides now go live immediately.",
  "끌어서 편집칸 높이 바꾸기 (두 번 누르면 처음 높이)": "Drag to resize the editor (double-click for the original height)",
  "미리보기에 띄운 본문이 없습니다": "Nothing is in the preview",
  "첫 슬라이드입니다": "This is the first slide",
@@ -3960,5 +3960,12 @@
  "고른 {1}장 편집": "Edit {1} selected",
  "한 장만 (Esc)": "Just one (Esc)",
  "예배당 화면에서 Esc 를 눌러 예배당 화면을 껐습니다.": "Turned off the sanctuary screen (Esc pressed on the sanctuary screen).",
- "예배당 화면 창이 닫혔습니다.": "The sanctuary screen window closed."
+ "예배당 화면 창이 닫혔습니다.": "The sanctuary screen window closed.",
+ "클릭 = 바로 송출 (회중 화면에 바로 나감) · ← → 로 고르고 Enter(F9) = 송출 · Ctrl+↑↓ = 이전/다음 · 끌어서 순서 바꾸기": "Click = go live right away (shown on screen) · pick with ← → then Enter (F9) = go live · Ctrl+↑↓ = previous/next · drag to reorder",
+ "이 순서 바로 송출": "Send this item live",
+ "누르면 바로 송출": "Click to go live",
+ "눌러서 큐시트에 넣고 바로 송출 (이미 있으면 그 순서를 송출)": "Click to add to the cue sheet and go live (if it's already there, that item goes live)",
+ "눌러서 큐시트에 넣고 미리보기 (이미 있으면 그 순서를 미리보기)": "Click to add to the cue sheet and preview it (if it's already there, that item is previewed)",
+ "그래도 하나 더 넣기": "Add another anyway",
+ "'{1}' 은(는) 이미 {2}번 순서에 있어 그 순서를 골랐습니다.": "'{1}' is already item {2}, so that item was selected."
 }

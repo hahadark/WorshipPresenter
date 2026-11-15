@@ -285,7 +285,9 @@ fn start_build(core: &Core, file: &str) {
                     let cue_id = c.cue.as_ref().map(|q| q.id.clone()).unwrap_or_default();
                     let pv = c.pres.preview.as_ref().filter(|p| p.passage["cueId"] == cue_id.as_str()).and_then(|p| p.passage["cueIndex"].as_i64()); // 열린 큐시트의 미리보기만
                     let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
-                    if let Some(i) = want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64)) {
+                    // 방금 고르거나 넣었는데 만드는 중이라 못 띄운 순서 (Core::want_when_built): 그 순서를 띄운다 (바로 송출이면 송출)
+                    let picked = c.pick.want.clone().filter(|(cid, i)| *cid == cue_id && c.cue.as_ref().and_then(|q| q.items.get(*i)).and_then(|it| it["file"].as_str()).map(norm).as_deref() == Some(key.as_str())).map(|w| w.1);
+                    if let Some(i) = picked.or(want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64))) {
                         c.preview_item(i);
                     }
                     c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");
