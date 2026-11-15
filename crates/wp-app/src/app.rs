@@ -1667,6 +1667,9 @@ mod fix3_tests;
 #[path = "auditc_tests.rs"]
 mod auditc_tests;
 #[cfg(test)]
+#[path = "auditd_tests.rs"]
+mod auditd_tests;
+#[cfg(test)]
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)
     pub(crate) fn for_test(core: Shared, dir: std::path::PathBuf) -> Self {

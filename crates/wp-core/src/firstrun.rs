@@ -331,6 +331,12 @@ pub fn keep_current(data_dir: &Path) {
     set_ask(None);
 }
 
+static NO_RESTART: AtomicBool = AtomicBool::new(false);
+/// 시험용: 다시 가져오기를 골라도 프로그램을 다시 띄우지 않는다 (요청 파일만 남김)
+pub fn set_no_restart_for_test(v: bool) {
+    NO_RESTART.store(v, Ordering::SeqCst);
+}
+
 /// '1.x 자료 다시 가져오기': 요청 파일을 남기고 이 프로그램을 다시 띄운다 (새 프로세스는 지금 프로세스가 끝나길 기다렸다 가져온다)
 pub fn request_reimport_and_restart(data_dir: &Path) -> std::io::Result<()> {
     std::fs::write(data_dir.join(REQUEST), crate::util::iso_now())?;
@@ -346,7 +352,9 @@ pub fn request_reimport_and_restart(data_dir: &Path) -> std::io::Result<()> {
     }
     args.push("--wait-pid".into());
     args.push(std::process::id().to_string());
-    std::process::Command::new(exe).args(args).spawn()?;
+    if !NO_RESTART.load(Ordering::SeqCst) {
+        std::process::Command::new(exe).args(args).spawn()?;
+    }
     set_ask(None);
     Ok(())
 }
