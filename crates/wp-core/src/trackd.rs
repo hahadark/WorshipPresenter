@@ -222,6 +222,7 @@ pub fn on_send(c: &mut Core) {
     let auto = c.settings.get()["output"]["autoOnSend"].as_bool().unwrap_or(true);
     if auto && !DESKTOP.lock()["running"].as_bool().unwrap_or(false) {
         WANT_OUTPUT_ON.store(true, Ordering::SeqCst);
+        c.output_on_requests += 1;
     }
     // 큐시트 순서의 '송출할 때 자동으로' (item.actions)
     let ci = l.deck.passage["cueIndex"].as_i64().unwrap_or(-1);

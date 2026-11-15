@@ -316,3 +316,77 @@ fn first_click_keeps_rows_in_place_everywhere() {
         assert!(stays(&mut h, name), "{n}번 경우: 첫 클릭 뒤 {name} 이 그 자리에 있어야 한다");
     }
 }
+// ---------------- 두 번 클릭으로 송출하면 꺼져 있던 예배당 화면이 켜진다 (core.js:549 output.autoOnSend) ----------------
+// 화면 전체를 그리면 실제 예배당 창을 띄우므로(trackd_ui::frame) 패널만 그리고, 코어가 켜 달라고 요청했는지를 본다.
+
+fn cue_only(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    app.cue_panel(ui, s, acts);
+}
+fn center_only(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    app.center_body(ui, s, acts);
+}
+fn pv_only(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    let d = s.preview.clone();
+    app.deck_view(ui, "미리보기", d.as_ref(), false, None, s, acts);
+}
+fn dbl_panel(h: &mut H, name: &str, f: super::auditc_tests::Draw) {
+    h.frame(vec![], f);
+    h.frame(vec![], f);
+    let p = seen(name).unwrap_or_else(|| panic!("그린 자리 없음: {name}")).center();
+    h.click_at(p, f);
+    h.frame(vec![], f);
+    h.click_at(p, f);
+    h.frame(vec![], f);
+}
+fn asked(h: &H) -> u32 {
+    h.app.core.lock().output_on_requests
+}
+fn auto_on(h: &mut H) {
+    h.app.core.lock().settings.update(|d| d["output"]["autoOnSend"] = json!(true));
+}
+
+#[test]
+fn double_click_send_asks_to_turn_output_on_on_every_path() {
+    type Prep = fn(&mut H);
+    let cases: Vec<(&str, super::auditc_tests::Draw, Prep)> = vec![
+        ("cue-row-1", cue_only, |_| {}),
+        ("srow-2", center_only, |h| { h.app.apply(vec![Act::PreviewItem(0)]); crate::center_ui::test_set_view(&h.ctx, SlideView::List, true); }),
+        ("cell-1", center_only, |h| { h.app.apply(vec![Act::PreviewItem(0)]); crate::center_ui::test_set_view(&h.ctx, SlideView::Grid, true); }),
+        ("cell-1", center_only, |h| { h.app.apply(vec![Act::PreviewItem(0)]); crate::center_ui::test_set_view(&h.ctx, SlideView::All, true); }),
+        ("cgl-1-1", center_only, |h| { h.app.apply(vec![Act::PreviewItem(0)]); crate::center_ui::test_set_view(&h.ctx, SlideView::AllList, true); }),
+        ("row-1", center_only, |h| { h.app.search = "요3:16-17".into(); h.app.apply(vec![Act::Search("요3:16-17".into())]); crate::center_ui::test_set_view(&h.ctx, SlideView::List, false); }),
+        ("pv-chip-2", pv_only, |h| { h.app.apply(vec![Act::PreviewItem(0)]); }),
+    ];
+    for (n, (name, f, prep)) in cases.into_iter().enumerate() {
+        let mut h = H::new(titles());
+        prep(&mut h);
+        auto_on(&mut h);
+        assert_eq!(asked(&h), 0);
+        dbl_panel(&mut h, name, f);
+        assert!(live(&h).is_some(), "{n}번 경우({name}): 두 번 클릭 = 송출");
+        assert!(asked(&h) >= 1, "{n}번 경우({name}): 송출하면 꺼져 있던 예배당 화면을 켜 달라고 요청한다");
+    }
+}
+
+#[test]
+fn direct_mode_first_click_asks_to_turn_output_on_and_second_click_too() {
+    let mut h = H::new(titles());
+    h.direct();
+    auto_on(&mut h);
+    h.click("cue-row-1", cue_only);
+    assert_eq!(live(&h), Some((1, 0)));
+    assert_eq!(asked(&h), 1, "바로 송출: 첫 클릭에 켜 달라고 요청");
+    // 방금 보낸 것을 또 누르면 다시 보내지는 않지만(1.5초), 꺼져 있으면 또 켜 달라고 한다
+    let v = version(&h);
+    h.app.apply(vec![Act::SendItem(1)]);
+    assert_eq!(version(&h), v, "같은 것을 다시 송출하지는 않는다");
+    assert!(asked(&h) >= 2);
+}
+
+#[test]
+fn auto_on_off_setting_is_respected() {
+    let mut h = H::new(titles());
+    dbl_panel(&mut h, "cue-row-0", cue_only);
+    assert!(live(&h).is_some());
+    assert_eq!(asked(&h), 0, "자동 켜기를 끄면 요청하지 않는다 (LIVE 칸 띠 [지금 켜기] 로 안내)");
+}
