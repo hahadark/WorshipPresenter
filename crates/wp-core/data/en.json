@@ -15,7 +15,7 @@
  "'{1}' 순서를 삭제했습니다": "Deleted item '{1}'",
  "슬라이드를 지웠습니다. Ctrl+Z 로 되돌릴 수 있습니다.": "Slide deleted. Press Ctrl+Z to undo.",
  "건너뛰기를 바꿨습니다 (건너뛴 슬라이드는 송출에서 빠집니다). Ctrl+Z 로 되돌릴 수 있습니다.": "Skip changed (skipped slides are left out when going live). Press Ctrl+Z to undo.",
- "미리보기를 껐습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.": "Preview is off. Clicked text, items and slides now go live immediately.",
+ "미리보기를 껐습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.": "Preview off. Passages, items and slides you click now go live directly.",
  "끌어서 편집칸 높이 바꾸기 (두 번 누르면 처음 높이)": "Drag to resize the editor (double-click for the original height)",
  "미리보기에 띄운 본문이 없습니다": "Nothing is in the preview",
  "첫 슬라이드입니다": "This is the first slide",
@@ -2099,7 +2099,6 @@
  "미리보기 켜짐": "Preview on",
  "미리보기 현재 장 처음으로": "Preview start of chapter",
  "미리보기·LIVE 를 크게, 큐시트와 슬라이드 격자, 아래에 무대·타이머": "Large preview and LIVE, cue sheet and slide grid, stage/timer below",
- "미리보기를 껐습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.": "Preview off. Passages, items and slides you click now go live directly.",
  "미리보기를 끄면 클릭한 본문·순서가 바로 송출됩니다 (OBS 스튜디오 모드 끄기와 같음)": "With preview off, passages and items you click go live directly (like turning off OBS Studio Mode)",
  "미리보기를 켰습니다. 고른 본문은 미리보기에 놓이고 F9 로 송출합니다.": "Preview on. What you pick goes to preview; press F9 to go live.",
  "바꾸기": "Change",
@@ -4117,5 +4116,6 @@
  "매크로를 찾을 수 없습니다: {1}": "Macro not found: {1}",
  ", 확인할 것 {1}개": ", {1} to check",
  "송출 중인 큐시트를 먼저 여세요.": "Open the cue sheet that is live first.",
- "{1}번 '{2}'": "#{1} '{2}'"
+ "{1}번 '{2}'": "#{1} '{2}'",
+ "설정을 저장하지 못했습니다: {1} — 지금 바꾼 내용이 다음에 켤 때 사라질 수 있습니다. 디스크 공간과 자료 폴더 권한을 확인하세요.": "Could not save settings: {1} — changes you make now may be lost the next time the app starts. Check disk space and permissions on the data folder."
 }

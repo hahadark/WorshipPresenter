@@ -147,11 +147,18 @@ fn remember(r: &Result<Value, String>) {
     let mut c = CACHE.lock();
     match r {
         Ok(v) => {
+            if c["connected"] != true {
+                log::info!("OBS 연결됨");
+            }
             let mut v = v.clone();
             v["at"] = json!(crate::util::now_ms());
             *c = v;
         }
         Err(e) => {
+            // 같은 오류가 10초마다 되풀이되므로 바뀔 때만 로그에 (처음부터 못 붙은 경우는 알림이 없어 로그가 유일한 기록)
+            if c["error"].as_str() != Some(e.as_str()) {
+                log::warn!("OBS 연결 실패: {e}");
+            }
             c["connected"] = json!(false);
             c["streaming"] = json!(false);
             c["recording"] = json!(false);
