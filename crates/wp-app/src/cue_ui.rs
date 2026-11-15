@@ -200,7 +200,9 @@ pub fn detail(it: &Value) -> String {
     match it["type"].as_str().unwrap_or("") {
         // Electron cues.js 정규화가 null 을 +null = 0 으로 저장해 붙여 넣은 PPT 가 '0장' 으로 보이던 것을 고침: 번호는 1 이상일 때만
         "hymn" => match it["number"].as_i64().or_else(|| it["number"].as_str().and_then(|x| x.trim().parse().ok())).filter(|n| *n > 0) {
-            Some(n) => wp_core::i18n::tr_args("{1}장", &[&n]),
+            // 영어 화면: 성경의 "{1}장"(Chapter) 과 갈라 "Hymn 3" (예전에는 "Chapter 3")
+            Some(n) if wp_core::i18n::is_en() => wp_core::i18n::tr_args("찬송가 {1}장", &[&n]),
+            Some(n) => format!("{n}장"),
             None if s("file").replace('/', "\\").to_lowercase().contains("\\pasted\\") => tr("붙여 넣은 슬라이드"),
             None => tr("찬송가"),
         },
@@ -677,7 +679,7 @@ pub fn books(app: &mut App, ui: &mut egui::Ui) {
             inset(ui, 8.0, |ui| {
                 let n = b["chapters"].as_array().map(|a| a.len()).unwrap_or(0);
                 // .chapter-title { 700 · 아래 6px }
-                ui.label(rich(format!("{} ({}{})", b["name"].as_str().unwrap_or(""), n, tr("장")), 14.0, Weight::Bold, p.text));
+                ui.label(rich(wp_core::i18n::tr_args("{1} ({2}장)", &[&b["name"].as_str().unwrap_or(""), &n]), 14.0, Weight::Bold, p.text));
                 ui.add_space(6.0 - ui.spacing().item_spacing.y);
                 // .chapter-grid { auto-fill minmax(36px, 1fr) · 간격 4 }
                 // 스크롤 막대 자리를 빼고 계산 (예전에는 오른쪽 칸이 패널 밖으로 넘쳐 24·36·48장이 잘렸다)
@@ -766,6 +768,9 @@ mod tests {
         assert_eq!(detail(&json!({"type": "song", "lyrics": "[1절]\n[C]주 [G7]사랑\n"})), "주 사랑");
         assert_eq!(detail(&json!({"type": "hymn", "number": 0})), "찬송가");
         assert_eq!(detail(&json!({"type": "hymn", "number": 3})), "3장");
+        // 영어 화면용 문구가 사전에 있고 성경 장(Chapter)과 다르다 (언어 전환은 전역이라 여기서 바꾸지 않는다)
+        let en: serde_json::Value = serde_json::from_str(include_str!("../../wp-core/data/en.json")).unwrap();
+        assert_eq!(en["찬송가 {1}장"], "Hymn {1}");
         assert_eq!(detail(&json!({"type": "hymn", "number": 0, "file": "C:\\Users\\a\\AppData\\Roaming\\WorshipCue\\data\\pasted\\clip-1.pptx"})), "붙여 넣은 슬라이드");
         assert_eq!(detail(&json!({"type": "hymn"})), "찬송가");
         assert_eq!(detail(&json!({"type": "text", "body": ""})), "(내용 없음)");
