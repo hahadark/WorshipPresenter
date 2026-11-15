@@ -28,6 +28,8 @@ pub fn deep_merge_defaults(def: &Value, val: &Value) -> Value {
             }
             Value::Object(out)
         }
+        // 기본값은 묶음(객체)인데 저장된 값이 다른 종류면(손으로 고치다 틀림 등) 기본값을 쓴다 — 그대로 두면 그 설정을 바꿀 때 죽는다
+        (Value::Object(_), _) => def.clone(),
         _ => val.clone(),
     }
 }
@@ -50,6 +52,9 @@ pub fn merge_into(target: &mut Value, patch: &Value) {
 pub fn normalize_template(t: &Value) -> Value {
     let mut out = TEMPLATE_BASE.clone();
     merge_into(&mut out, t);
+    if !out["animation"].is_object() {
+        out["animation"] = TEMPLATE_BASE["animation"].clone();
+    }
     let anim = out["animation"]["type"].as_str().unwrap_or("").to_string();
     out["animation"]["type"] = json!(if anim == "fade" || anim == "dissolve" { "dissolve" } else { "cut" });
     let pm = out["pptMode"].as_str().unwrap_or("").to_string();
@@ -83,7 +88,8 @@ impl Settings {
                 }
                 continue;
             };
-            let Ok(raw) = serde_json::from_str::<Value>(txt.trim_start_matches('\u{feff}')) else {
+            // 문법은 맞아도 객체가 아니면([] · null · 숫자 등) 깨진 것으로 본다: 전에는 여기서 켜지다 죽어 프로그램이 아예 안 켜졌다
+            let Some(raw) = serde_json::from_str::<Value>(txt.trim_start_matches('\u{feff}')).ok().filter(|v| v.is_object()) else {
                 log::error!("설정 읽기 실패(내용이 깨짐): {}", f.display());
                 if f == &file {
                     // 깨진 파일은 지우거나 덮어쓰지 않고 따로 둔다 (손으로 되살릴 수 있게)
@@ -212,5 +218,34 @@ mod broken_tests {
         for x in [d, d2, d3] {
             let _ = fs::remove_dir_all(x);
         }
+    }
+
+    /// 문법은 맞지만 모양이 틀린 설정: 전에는 켜지다 죽어(panic) 프로그램이 아예 안 켜졌다
+    #[test]
+    fn wrong_shape_settings_do_not_crash() {
+        for (i, body) in ["[]", "null", "123", "\"x\""].iter().enumerate() {
+            let d = std::env::temp_dir().join(format!("wp-shape{i}-{}", rand::random::<u64>()));
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("settings.backup.json"), r#"{"port":40001}"#).unwrap();
+            fs::write(d.join("settings.json"), body).unwrap();
+            let s = Settings::load(&d);
+            assert_eq!(s.get()["port"], 40001, "{body}: 백업본으로 켠다");
+            assert!(s.load_note.is_some(), "{body}: 알림");
+            assert!(fs::read_dir(&d).unwrap().flatten().any(|e| e.file_name().to_string_lossy().starts_with("settings.broken-")), "{body}: 보존");
+            let _ = fs::remove_dir_all(d);
+        }
+        // 묶음이어야 할 칸이 다른 종류면 기본값으로: 그 설정을 바꾸어도 죽지 않는다
+        let d = std::env::temp_dir().join(format!("wp-shape-x-{}", rand::random::<u64>()));
+        fs::create_dir_all(&d).unwrap();
+        fs::write(d.join("settings.json"), r#"{"port":40003,"output":[],"remote":"x","shortcuts":5,"templates":[{"id":"t1","name":"t","animation":"fade"}]}"#).unwrap();
+        let mut s = Settings::load(&d);
+        assert_eq!(s.get()["port"], 40003);
+        assert!(s.get()["output"].is_object() && s.get()["remote"].is_object() && s.get()["shortcuts"].is_object());
+        s.update(|v| {
+            v["output"]["enabled"] = json!(true);
+            v["remote"]["port"] = json!(1);
+        });
+        assert!(s.get()["templates"][0]["animation"].is_object());
+        let _ = fs::remove_dir_all(d);
     }
 }
