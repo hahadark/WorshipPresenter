@@ -4,6 +4,18 @@ use crate::settings::{normalize_template, Settings};
 use crate::util::{now_ms, to36};
 use serde_json::{json, Value};
 
+/// 같은 밀리초에 여러 번 만들더라도 서로 다른 id를 쓴다. 가져온 파일의 id와도 충돌하지 않는다.
+fn fresh_id(st: &Settings) -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    loop {
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = format!("tpl-{}-{}", to36(now_ms() as u64), to36(n));
+        if st.template(&id).is_none() {
+            return id;
+        }
+    }
+}
+
 /// 정수로 반올림해 범위 안으로 (core.js clampInt). 숫자가 아니면 def
 pub fn clamp_int(v: &Value, min: i64, max: i64, def: i64) -> i64 {
     let n = match v {
@@ -29,6 +41,7 @@ pub fn save_template(st: &mut Settings, tpl: &Value) -> Result<Value, String> {
     t["font"]["size"] = json!(size);
     t["font"]["minSize"] = json!(clamp_int(&t["font"]["minSize"], 8, size, 44.min(size)));
     let id = t["id"].as_str().unwrap_or("").to_string();
+    let generated_id = id.is_empty().then(|| fresh_id(st));
     let mut out = t.clone();
     st.update(|d| {
         if !d["templates"].is_array() {
@@ -42,7 +55,7 @@ pub fn save_template(st: &mut Settings, tpl: &Value) -> Result<Value, String> {
             }
             None => {
                 if id.is_empty() {
-                    out["id"] = json!(format!("tpl-{}", to36(now_ms() as u64)));
+                    out["id"] = json!(generated_id.as_ref().expect("새 템플릿 id"));
                 }
                 out["preset"] = json!(false);
                 list.push(out.clone());
@@ -55,7 +68,7 @@ pub fn save_template(st: &mut Settings, tpl: &Value) -> Result<Value, String> {
 pub fn duplicate_template(st: &mut Settings, id: &str, name: Option<&str>) -> Result<Value, String> {
     let src = st.template(id).ok_or("템플릿을 찾을 수 없습니다.")?;
     let mut copy = src.clone();
-    copy["id"] = json!(format!("tpl-{}", to36(now_ms() as u64)));
+    copy["id"] = json!(fresh_id(st));
     copy["name"] = json!(name.map(String::from).unwrap_or_else(|| format!("{} 복사본", src["name"].as_str().unwrap_or(""))));
     copy["preset"] = json!(false);
     let c2 = copy.clone();
@@ -91,6 +104,25 @@ mod tests {
     fn settings() -> Settings {
         let dir = std::env::temp_dir().join(format!("wpc-tpl-{}", now_ms()));
         Settings::load(&dir)
+    }
+    #[test]
+    fn rapid_template_creation_and_duplication_keep_distinct_ids() {
+        let mut s = settings();
+        let before = s.templates().len();
+        let mut ids = std::collections::HashSet::new();
+        for n in 0..40 {
+            let v = save_template(&mut s, &json!({ "name": format!("새 템플릿 {n}") })).unwrap();
+            assert!(ids.insert(v["id"].as_str().unwrap().to_string()), "새 템플릿 id 충돌: {}", v["id"]);
+        }
+        let source = ids.iter().next().unwrap().clone();
+        for n in 0..40 {
+            let v = duplicate_template(&mut s, &source, Some(&format!("복제 {n}"))).unwrap();
+            assert!(ids.insert(v["id"].as_str().unwrap().to_string()), "복제 템플릿 id 충돌: {}", v["id"]);
+        }
+        assert_eq!(s.templates().len(), before + 80);
+        for id in &ids {
+            assert_eq!(s.templates().iter().filter(|t| t["id"].as_str() == Some(id.as_str())).count(), 1);
+        }
     }
     #[test]
     fn clamp() {
