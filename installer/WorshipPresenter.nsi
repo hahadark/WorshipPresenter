@@ -26,7 +26,7 @@ ManifestDPIAware true
 
 Name "워십프리젠터 ${VERSION}"
 OutFile "${OUT}"
-InstallDir "$LOCALAPPDATA\Programs\WorshipCue"
+InstallDir "" ; 비워 둔다: .onInit 에서 /D= 를 주었는지($INSTDIR 가 비어 있지 않음) 가려내려고
 BrandingText "워십프리젠터 ${VERSION}"
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "WorshipPresenter"
@@ -41,6 +41,7 @@ Var TestMode
 Var PerMachine    ; 1 = '모든 사용자'용으로 설치돼 있던 자리(HKLM)를 이어받는다
 Var ElevatedChild ; 1 = 관리자 권한으로 다시 실행된 쪽
 Var RegView64     ; 1 = HKLM 항목이 64비트 보기에 있다
+Var ExplicitDir   ; 1 = /D=<폴더> 로 설치할 자리를 직접 주었다
 
 !define MUI_ICON "${SRC}\WorshipPresenter.ico"
 !define MUI_UNICON "${SRC}\WorshipPresenter.ico"
@@ -76,6 +77,11 @@ Function .onInit
   StrCpy $PerMachine 0
   StrCpy $ElevatedChild 0
   StrCpy $RegView64 0
+  StrCpy $ExplicitDir 1
+  ${If} $INSTDIR == ""
+    StrCpy $ExplicitDir 0
+    StrCpy $INSTDIR "$LOCALAPPDATA\Programs\WorshipCue"
+  ${EndIf}
   ${GetParameters} $R0
   ClearErrors
   ${GetOptions} $R0 "--updated" $R1
@@ -97,9 +103,15 @@ Function .onInit
   ${IfNot} ${Errors}
     StrCpy $TestMode 1
   ${EndIf}
-  ; /D= 를 주지 않았으면 지금 설치된 자리(Electron 판 포함)를 그대로 쓴다
+  ; /D= 를 주지 않았으면 지금 설치된 자리(Electron 판 포함)를 그대로 쓴다.
+  ; (전에는 /D= 를 주어도 등록된 자리가 있으면 그쪽에 설치해 버렸다)
+  ; 관리자 권한으로 다시 실행된 쪽은 다른 계정일 수 있으므로 HKCU 를 보지 않고 모든 사용자용 자리만 본다
   ${If} $TestMode == 0
-    ReadRegStr $0 HKCU "${APPKEY}" "InstallLocation"
+  ${AndIf} $ExplicitDir == 0
+    StrCpy $0 ""
+    ${If} $ElevatedChild == 0
+      ReadRegStr $0 HKCU "${APPKEY}" "InstallLocation"
+    ${EndIf}
     ${If} $0 != ""
     ${AndIf} ${FileExists} "$0\*.*"
       StrCpy $INSTDIR $0
@@ -335,6 +347,17 @@ Section "Uninstall"
     SetShellVarContext all
   ${Else}
     SetShellVarContext current
+  ${EndIf}
+  ; 켜져 있으면 실행 파일은 못 지우고 web\ 만 지워져 반쯤 남는다 → 아무것도 지우기 전에 그만둔다
+  StrCpy $3 0
+  !insertmacro CheckLocked "$INSTDIR\${EXE}"
+  !insertmacro CheckLocked "$INSTDIR\wp-output.exe"
+  ${If} $3 == 1
+    ${IfNot} ${Silent}
+      MessageBox MB_OK|MB_ICONEXCLAMATION "워십프리젠터가 켜져 있습니다.$\r$\n프로그램을 끈 뒤 다시 제거해 주세요."
+    ${EndIf}
+    SetErrorLevel 2
+    Abort "워십프리젠터가 켜져 있어 제거하지 못했습니다."
   ${EndIf}
   Delete "$INSTDIR\${EXE}"
   Delete "$INSTDIR\wp-output.exe"
