@@ -20,7 +20,7 @@ impl H {
         // 빈 DB 를 먼저 만들어 사용자 원본 자동 복사를 막는다
         drop(wp_core::db::BibleStore::open(&dir.join("bible.db")).unwrap());
         let core = Core::open(dir.clone(), dir.clone(), None).unwrap();
-        let mut h = H { ctx: egui::Context::default(), ui: TemplateUi::default(), core: std::sync::Arc::new(parking_lot::Mutex::new(core)), dir, time: 0.0 };
+        let mut h = H { ctx: egui::Context::default(), ui: TemplateUi::default(), core: std::sync::Arc::new(wp_core::lockcheck::Mutex::new(core)), dir, time: 0.0 };
         h.ui.open = true;
         h.frame(vec![]);
         h.frame(vec![]);

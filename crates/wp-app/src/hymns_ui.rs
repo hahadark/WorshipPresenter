@@ -366,7 +366,8 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
             }
         }
         if ui.small_button(wp_core::i18n::tr("모아보기 그림 저장")).on_hover_text(wp_core::i18n::tr("슬라이드 16장씩 번호를 붙인 그림 — 글자가 없는 PPT 를 채팅 AI 에 올릴 때")).clicked() {
-            match wp_core::pptsheets::inputs(&app.core.lock(), &file) {
+            let r = wp_core::pptsheets::inputs(&app.core.lock(), &file); // 잠금을 먼저 푼다 (아래에서 다시 잠금)
+            match r {
                 Ok(inp) => {
                     app.core.lock().notify(wp_core::i18n::tr("모아보기 그림을 만드는 중…"), "info");
                     hymns::run_bg(move || wp_core::pptsheets::build(&inp), |c, r| match r.and_then(|s| wp_core::pptsheets::save(c, &s).map(|d| (d, s.len()))) {

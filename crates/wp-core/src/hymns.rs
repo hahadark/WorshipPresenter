@@ -187,7 +187,7 @@ pub const BUILDING: &str = "PPT 를 그림으로 만드는 중입니다… 끝�
 /// 만드는 중인 파일 (같은 파일을 두 번 만들지 않게)
 static PENDING: Lazy<Mutex<std::collections::HashSet<String>>> = Lazy::new(|| Mutex::new(Default::default()));
 /// 코어 (백그라운드 일이 끝나면 다시 잡으려고). main 에서 install 로 넣는다
-static SHARED: once_cell::sync::OnceCell<std::sync::Weak<parking_lot::Mutex<Core>>> = once_cell::sync::OnceCell::new();
+static SHARED: once_cell::sync::OnceCell<std::sync::Weak<crate::lockcheck::Mutex<Core>>> = once_cell::sync::OnceCell::new();
 
 pub fn install(shared: &crate::core::Shared) {
     let _ = SHARED.set(std::sync::Arc::downgrade(shared));

@@ -391,7 +391,7 @@ mod file_boundary_tests {
         std::fs::write(&file, &bytes).unwrap();
         drop(rusqlite::Connection::open(data.join("bible.db")).unwrap());
         let core = crate::core::Core::open(data.clone(), data.join("web"), None).unwrap();
-        let shared = std::sync::Arc::new(parking_lot::Mutex::new(core));
+        let shared = std::sync::Arc::new(crate::lockcheck::Mutex::new(core));
         let query = HashMap::from([("p".to_string(), file.to_string_lossy().into_owned())]);
         let full = lib_file(State(shared.clone()), Query(query.clone()), HeaderMap::new()).await;
         assert_eq!(full.status(), StatusCode::OK);
@@ -444,7 +444,7 @@ mod camera_command_tests {
         std::fs::create_dir_all(&dir).unwrap();
         drop(rusqlite::Connection::open(dir.join("bible.db")).unwrap());
         let core = crate::core::Core::open(dir.clone(), dir.join("web"), None).unwrap();
-        (std::sync::Arc::new(parking_lot::Mutex::new(core)), dir)
+        (std::sync::Arc::new(crate::lockcheck::Mutex::new(core)), dir)
     }
 
     /// 실제 HTTP 로 가짜 도우미 POST 를 보내 계약(헤더·토큰·검증·저장)을 시험한다. 카메라는 켜지 않는다.

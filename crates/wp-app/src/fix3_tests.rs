@@ -30,7 +30,7 @@ impl H {
         }
         core.b.undo = Default::default();
         core.toast = None;
-        let core = std::sync::Arc::new(parking_lot::Mutex::new(core));
+        let core = std::sync::Arc::new(wp_core::lockcheck::Mutex::new(core));
         Self { ctx: egui::Context::default(), app: App::for_test(core, dir.clone()), dir, time: 0.0 }
     }
     fn raw_frame(&mut self, events: Vec<Event>, f: Draw) -> Vec<Act> {

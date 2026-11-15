@@ -70,7 +70,8 @@ pub struct Core {
     pub pick: crate::pick::PickState,
 }
 
-pub type Shared = Arc<Mutex<Core>>;
+/// 코어 잠금. lockcheck::Mutex 는 같은 스레드의 재진입을 멈춤 대신 로그+panic 으로 바꾼다
+pub type Shared = Arc<crate::lockcheck::Mutex<Core>>;
 
 /// Electron 판(1.x) 자료 폴더 (읽기만). Electron 과 같은 규칙: BIBLECAST_DATA → %APPDATA%\WorshipCue\data.
 /// 점검용 WP_LEGACY_DATA 가 있으면 그것을 먼저 쓴다 (실제 자료 대신 사본으로 이전을 시험할 때).

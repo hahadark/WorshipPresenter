@@ -27,7 +27,7 @@ impl H {
         }
         core.b.undo = Default::default(); // 준비로 넣은 것은 되돌리기 기록에서 뺀다
         core.toast = None;
-        let core = std::sync::Arc::new(parking_lot::Mutex::new(core));
+        let core = std::sync::Arc::new(wp_core::lockcheck::Mutex::new(core));
         Self { ctx: egui::Context::default(), app: App::for_test(core, dir.clone()), dir, time: 0.0 }
     }
     fn frame(&mut self, events: Vec<Event>, f: Draw) {

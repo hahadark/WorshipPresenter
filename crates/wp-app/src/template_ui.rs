@@ -359,7 +359,8 @@ impl TemplateUi {
                 let mut t = wp_core::settings::TEMPLATE_BASE.clone();
                 t["id"] = json!("");
                 t["name"] = json!(tr("새 템플릿"));
-                match templates::save_template(&mut core.lock().settings, &t) {
+                let r = templates::save_template(&mut core.lock().settings, &t); // 잠금을 먼저 푼다 (아래에서 다시 잠금)
+                match r {
                     Ok(t) => {
                         self.load(&t);
                         self.msg = tr("새 템플릿을 만들었습니다.");
@@ -370,7 +371,8 @@ impl TemplateUi {
             }
             if ui.add(Btn::new(tr("복제")).icon("copy").size(Size::Sm).enabled(!self.sel.is_empty()).tooltip(tr("이 템플릿을 복사해 새로 만듭니다"))).clicked() {
                 self.flush(core);
-                match templates::duplicate_template(&mut core.lock().settings, &self.sel, None) {
+                let r = templates::duplicate_template(&mut core.lock().settings, &self.sel, None); // 잠금을 먼저 푼다
+                match r {
                     Ok(t) => {
                         self.load(&t);
                         self.msg = tr("복제했습니다.");

@@ -610,7 +610,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("wp-tel-{}", crate::util::now_ms()));
         std::fs::create_dir_all(&dir).unwrap();
         drop(rusqlite::Connection::open(dir.join("bible.db")).unwrap());
-        let core: Shared = std::sync::Arc::new(parking_lot::Mutex::new(crate::core::Core::open(dir.clone(), dir.join("web"), None).unwrap()));
+        let core: Shared = std::sync::Arc::new(crate::lockcheck::Mutex::new(crate::core::Core::open(dir.clone(), dir.join("web"), None).unwrap()));
         let url = format!("http://127.0.0.1:{port}/ping");
         assert_eq!(send_once(&core, &url), Ok(true));
         let req = got.lock().clone();

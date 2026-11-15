@@ -76,7 +76,7 @@ fn main() -> anyhow::Result<()> {
     let data = PathBuf::from(arg("--data").ok_or_else(|| anyhow::anyhow!("--data <임시 폴더> 가 필요합니다"))?);
     let web = arg("--web").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("web"));
     let core = Core::open(data.clone(), web, None)?;
-    let shared: Shared = Arc::new(Mutex::new(core));
+    let shared: Shared = Arc::new(wp_core::lockcheck::Mutex::new(core));
     wp_core::flow::install(&shared);
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
     let port = rt.block_on(wp_core::server::serve(shared.clone()))?;

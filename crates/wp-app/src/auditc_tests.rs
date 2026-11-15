@@ -36,7 +36,7 @@ impl H {
         core.b.undo = Default::default();
         core.toast = None;
         core.settings.update(|d| d["output"]["autoOnSend"] = json!(false));
-        let core = std::sync::Arc::new(parking_lot::Mutex::new(core));
+        let core = std::sync::Arc::new(wp_core::lockcheck::Mutex::new(core));
         Self { ctx: egui::Context::default(), app: App::for_test(core, dir.clone()), dir, time: 0.0 }
     }
     pub fn frame_m(&mut self, mut events: Vec<Event>, mods: Modifiers, f: Draw) {
