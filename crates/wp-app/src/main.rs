@@ -104,9 +104,16 @@ fn main() -> anyhow::Result<()> {
     }
     let (mut already, mut _instance) = wp_core::parity_a::single_instance(&data_dir);
     let waiting = std::time::Instant::now();
+    let (mut rounds, mut focus_ms, mut focused) = (0u32, 0u128, 0u32); // 기다린 까닭을 로그로 남기려고
+    let mut splash_shown = false;
     while already {
+        rounds += 1;
+        let t_focus = std::time::Instant::now();
+        let found = wp_core::firstrun::focus_instance(&data_dir);
+        focus_ms += t_focus.elapsed().as_millis();
+        focused += found as u32;
         // 먼저 켜진 프로세스 번호로 창을 찾는다 (제목만으로 찾으면 같은 제목의 Electron 1.x 창을 올릴 수 있음)
-        if wp_core::firstrun::focus_instance(&data_dir) {
+        if found {
             // 그 창이 닫히는 중일 수도 있다(끄자마자 다시 켠 경우): 잠깐 지켜보고 사라지면 아래에서 기다렸다 켠다
             let mut gone = false;
             for _ in 0..8 {
@@ -124,17 +131,28 @@ fn main() -> anyhow::Result<()> {
         // 전에는 여기서 조용히 끝나서 '껐다가 바로 다시 켜면 아무 일도 안 일어나는' 일이 있었다 → 풀릴 때까지 기다렸다 켠다
         if waiting.elapsed() > std::time::Duration::from_secs(15) {
             log::warn!("두 번 실행: 먼저 켜진 것(instance.pid {:?})이 15초 동안 끝나지도 창을 보이지도 않았습니다", std::fs::read_to_string(data_dir.join("instance.pid")).ok());
+            wp_core::firstrun::splash_done();
             wp_core::firstrun::error_box("워십프리젠터가 이미 켜져 있는데 창을 찾지 못했습니다.\n\n작업 관리자(Ctrl+Shift+Esc)에서 WorshipPresenter 를 끝낸 뒤 다시 켜 주세요.");
             return Ok(());
+        }
+        // 강제 종료된 앞 프로세스가 다 정리되기까지 몇 초 걸릴 때가 있다(실측 2.6~8.2초). 그동안 아무것도 안 보이면 안 켜진 줄 안다 → 시작 창을 먼저
+        if !splash_shown && waiting.elapsed() > std::time::Duration::from_millis(400) {
+            wp_core::firstrun::start_splash();
+            splash_shown = true;
         }
         wp_core::firstrun::close_instance_handle(_instance.take());
         std::thread::sleep(std::time::Duration::from_millis(120));
         (already, _instance) = wp_core::parity_a::single_instance(&data_dir);
     }
+    if waiting.elapsed().as_millis() > 300 {
+        log::info!("두 번 실행: 먼저 켜진 것이 끝나길 {}ms 기다렸다 켭니다 (다시 본 횟수 {rounds}, 창을 찾은 횟수 {focused}, 창 앞으로 가져오기에 쓴 시간 {focus_ms}ms)", waiting.elapsed().as_millis());
+    }
     wp_core::firstrun::mark("로그·단일 실행");
     wp_core::firstrun::write_instance_pid(&data_dir);
     // 창이 늦게 뜨면(첫 실행 자료 옮기기·느린 디스크) 작은 '켜는 중…' 창을 먼저 보인다
-    wp_core::firstrun::start_splash();
+    if !splash_shown {
+        wp_core::firstrun::start_splash();
+    }
     wp_core::parity_a::keep_display_awake();
     // 자료 열기·서버 시작은 창·그래픽 준비(0.5초쯤)와 동시에 한다 → 창이 그만큼 빨리 뜬다
     let (ptx, prx) = std::sync::mpsc::channel();
