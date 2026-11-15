@@ -5,7 +5,7 @@
 // 실행: node tools\flow-compare\hymns.js --el <포트> --rs-data tmp\rs-data --el-data tmp\el-data --out tmp\hymn-out --files files.json
 //   files.json: [{ "title": "3장 성부 성자와 성령", "file": "D:\\…\\003 ….pps", "number": 3 }, { "pasted": "clip-….pptx" }, …]
 //   "pasted" 는 두 자료 폴더의 pasted\ 아래 같은 이름 파일 (판마다 자기 폴더 것만 열 수 있다)
-//   순서에 넣을 다른 값(background · obsLyrics 등)은 "extra": {…} 로.
+//   순서에 넣을 다른 값(background · obsLyrics 등)은 "extra": {…} 로. 넣기 전에 두 판 설정을 바꾸려면 "settings": { "hymnBackground": "template" } 처럼.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -66,6 +66,12 @@ async function main() {
       const rItem = { type: 'hymn', ...eItem, file: f.pasted ? path.join(RSD, 'pasted', f.pasted) : f.file };
       const irep = { n: n + 1, title: eItem.title, file: path.basename(eItem.file), extra: f.extra || null };
       report.items.push(irep);
+      if (f.settings) {
+        await ecmd('updateSettings', { patch: f.settings });
+        await rs('updateSettings', { patch: f.settings });
+        irep.settings = f.settings;
+        await sleep(700);
+      }
       // 넣기
       await ctl.eval(`BCCue.addItem('hymn', ${JSON.stringify({ ...eItem, _at: 100000 })})`, 120000).catch(e => { irep.elAdd = e.message; });
       const ri = await rs('addItem', { item: rItem });
