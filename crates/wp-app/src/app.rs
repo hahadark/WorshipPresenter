@@ -1050,7 +1050,11 @@ impl App {
             }
             if deck.is_none() {
                 let ph = if is_live { tr("송출 중인 본문 없음") } else { tr("검색한 본문이 여기에 표시됩니다") };
-                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, ph, theme::font(14.0, Weight::Regular), p.muted2);
+                // 화면 상자가 작으면(창이 작거나 미리보기·LIVE 를 위아래로 둘 때) 글이 상자 밖으로 넘쳤다 — 폭에 맞춰 줄인다
+                let g = ui.painter().layout_no_wrap(ph.clone(), theme::font(14.0, Weight::Regular), p.muted2);
+                let room = (rect.width() - 12.0).max(10.0);
+                let g = if g.size().x > room { ui.painter().layout_no_wrap(ph, theme::font((14.0 * room / g.size().x).max(7.0), Weight::Regular), p.muted2) } else { g };
+                ui.painter().galley(rect.center() - g.size() / 2.0, g, p.muted2);
             }
             let border = if is_live { p.live } else { p.pv };
             if hidden {
