@@ -140,4 +140,5 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+// 열어 둔 CDP 연결 때문에 끝나고도 안 꺼지는 일이 있어 직접 끝낸다
+main().then(() => process.exit(0), e => { console.error(e); process.exit(1); });
