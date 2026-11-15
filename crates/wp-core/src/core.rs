@@ -336,7 +336,8 @@ impl Core {
         let (passage, p) = if ty == "bible" {
             let r = it["ref"].as_str().unwrap_or("");
             if r.trim().is_empty() {
-                (None, None)
+                // Electron cue.js previewItem: 장절이 빈 성경 순서는 보일 것이 없다 — 제목 카드로 대신 내보내지 않는다
+                return Err(crate::i18n::tr("장절을 입력하세요.").into());
             } else {
                 let v = it["versionId"].as_str().filter(|x| !x.is_empty() && self.store.has_version(x)).map(String::from).unwrap_or_else(|| self.version_id());
                 let res = self.store.resolve_reference(&v, r);
