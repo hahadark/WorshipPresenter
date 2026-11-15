@@ -520,7 +520,7 @@ pub fn os_tag() -> String {
 
 /// 보낼 내용 (Electron 과 같은 칸). 이름·교회·성경·큐시트 내용은 넣지 않는다
 pub fn ping_body(settings: &Value, version: &str) -> Value {
-    let kind = if cfg!(target_os = "macos") { "mac" } else if std::env::var_os("PORTABLE_EXECUTABLE_DIR").is_some() { "portable" } else if cfg!(windows) { "installer" } else { std::env::consts::OS };
+    let kind = if cfg!(target_os = "macos") { "mac" } else if std::env::var_os("PORTABLE_EXECUTABLE_DIR").is_some() || (cfg!(windows) && !installed_copy()) { "portable" } else if cfg!(windows) { "installer" } else { std::env::consts::OS };
     let lang = settings["uiLang"].as_str().filter(|x| !x.is_empty()).unwrap_or("ko");
     json!({ "id": settings["telemetryId"], "v": version, "lang": lang, "os": os_tag(), "build": if lang == "en" { "en" } else { "ko" }, "kind": kind })
 }
