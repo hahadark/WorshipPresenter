@@ -26,6 +26,13 @@ pub struct Hits {
 
 thread_local! {
     static HITS: std::cell::Cell<Hits> = std::cell::Cell::new(Hits::default());
+    /// 바로 앞에 그린 글 덩어리의 맞춘 글자 크기 (템플릿 px, 점검용)
+    static LAST_FIT: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// 바로 앞 paint_slide 가 고른 글자 크기 (점검 --parity 가 웹 fit 크기와 비교)
+pub fn last_fit() -> f32 {
+    LAST_FIT.with(|c| c.replace(0.0))
 }
 
 /// 바로 앞 paint_slide 가 기록한 자리를 꺼낸다 (꺼내면 비워짐)
@@ -103,6 +110,8 @@ pub fn image_uri(c: &Ctx, url: &str) -> Option<String> {
     Some(format!("file:///{}", path.to_string_lossy().replace('\\', "/").trim_start_matches('/')))
 }
 
+const IMG_OPTS: egui::TextureOptions = egui::TextureOptions { magnification: egui::TextureFilter::Linear, minification: egui::TextureFilter::Linear, wrap_mode: egui::TextureWrapMode::ClampToEdge, mipmap_mode: Some(egui::TextureFilter::Linear) };
+
 /// [트랙 A] 다른 모듈에서 쓰는 그림 그리기
 pub fn draw_image_pub(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool) -> bool {
     draw_image(ui, c, rect, url, cover)
@@ -110,7 +119,8 @@ pub fn draw_image_pub(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool
 
 fn draw_image(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool) -> bool {
     let Some(uri) = image_uri(c, url) else { return false };
-    let img = egui::Image::new(uri);
+    // 작게 줄인 그림도 거칠지 않게 (밉맵) — 브라우저 축소와 비슷하게
+    let img = egui::Image::new(uri).texture_options(IMG_OPTS);
     let img = if cover { img.fit_to_exact_size(rect.size()) } else { img.fit_to_exact_size(rect.size()).maintain_aspect_ratio(true) };
     // 그림 비율 맞추기: 모양을 알면 가운데에 맞춰 넣는다
     match img.load_for_size(ui.ctx(), rect.size()) {
@@ -127,7 +137,7 @@ fn draw_image(ui: &egui::Ui, c: &Ctx, rect: Rect, url: &str, cover: bool) -> boo
                 } else {
                     Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))
                 };
-                egui::Image::new(image_uri(c, url).unwrap()).uv(uv).paint_at(ui, r);
+                egui::Image::new(image_uri(c, url).unwrap()).texture_options(IMG_OPTS).uv(uv).paint_at(ui, r);
             } else {
                 img.paint_at(ui, rect);
             }
@@ -189,7 +199,7 @@ fn regex_lite_hex(s: &str) -> Vec<Color32> {
 /// 그림의 원래 크기 (아직 못 읽었으면 None — 다음 프레임에 다시)
 fn image_size(ui: &egui::Ui, c: &Ctx, url: &str) -> Option<Vec2> {
     let uri = image_uri(c, url)?;
-    egui::Image::new(uri).load_for_size(ui.ctx(), Vec2::splat(512.0)).ok()?.size()
+    egui::Image::new(uri).texture_options(IMG_OPTS).load_for_size(ui.ctx(), Vec2::splat(512.0)).ok()?.size()
 }
 
 type GradKey = (String, u32, u32, u32, u32);
@@ -235,7 +245,7 @@ fn checker(p: &egui::Painter, rect: Rect, sc: f32) {
     let mut y = rect.top();
     let mut row = 0;
     while y < rect.bottom() {
-        let mut x = rect.left() + if row % 2 == 0 { 0.0 } else { s };
+        let mut x = rect.left() + if row % 2 == 0 { s } else { 0.0 }; // 웹: (0,0) 칸은 바탕색
         while x < rect.right() {
             p.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::splat(s)).intersect(rect), 0.0, Color32::from_rgb(0x2a, 0x2f, 0x38));
             x += 2.0 * s;
@@ -293,7 +303,9 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
         if dim > 0.0 && matches!(bgt, "image" | "video" | "camera") {
             p.rect_filled(rect, 0.0, Color32::from_black_alpha((dim.min(1.0) * 255.0) as u8));
         }
-        // 로고: 배경층에 함께 (높이 = size, 폭 = 그림 비율)
+    }
+    // 로고: 배경층에 함께 (높이 = size, 폭 = 그림 비율). 투명 배경(OBS)에도 보인다
+    if !bg_off {
         if let Some(u) = t["logo"]["image"].as_str().filter(|x| !x.is_empty()) {
             if t["logo"]["show"].as_bool().unwrap_or(false) {
                 let aspect = image_size(ui, c, u).map(|s| s.x / s.y.max(1.0)).unwrap_or(1.0);
@@ -302,7 +314,7 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
                     hit_set(|h| h.logo = Some(lr));
                     let op = num(&t["logo"]["opacity"], 1.0).clamp(0.0, 1.0);
                     if let Some(uri) = image_uri(c, u) {
-                        egui::Image::new(uri).tint(Color32::WHITE.gamma_multiply(op)).paint_at(ui, lr);
+                        egui::Image::new(uri).texture_options(IMG_OPTS).tint(Color32::WHITE.gamma_multiply(op)).paint_at(ui, lr);
                     }
                 }
             }
@@ -588,7 +600,8 @@ fn pre_line(s: &str) -> String {
 
 /// 본문 글 덩어리를 만든다 (partsHtml · hangingHtml · refHtml · 번역본 이름). 크기는 화면 px
 #[allow(clippy::too_many_arguments)]
-fn lay_block(p: &egui::Painter, s: &Value, t: &Value, size: f32, sc: f32, w: f32, version_name: &str, kind: &str) -> Laid {
+fn lay_block(p: &egui::Painter, s: &Value, t: &Value, size: f32, sc: f32, w: f32, version_name: &str, kind: &str, wrap: &mut Wrap) -> Laid {
+    let mut counter = 0usize;
     let ctx = p.ctx();
     let f = &t["font"];
     let weight = num(&f["weight"], 500.0);
@@ -612,13 +625,32 @@ fn lay_block(p: &egui::Painter, s: &Value, t: &Value, size: f32, sc: f32, w: f32
         j
     };
     let mut push = |pieces: &mut Vec<Piece>, y: &mut f32, job: LayoutJob, a: crate::slide_layout::HAlign, mt: f32, mb: f32, role: Role, x0: f32, width: f32| {
-        let g = p.layout_job(job);
-        if g.size().x > width + 1.0 {
-            wide = true;
-        }
-        *y += mt;
+        // 줄바꿈 자리는 템플릿 크기(px)에서 정하고, 작은 화면에는 같은 자리에서 끊어 그린다 (작은 글자의 반올림으로 줄이 달라지지 않게)
+        let idx = counter;
+        counter += 1;
+        // CSS 줄 상자 높이 = 줄마다 가장 큰 line-height (egui 는 줄 자리를 픽셀로 반올림해 합이 조금 달라진다)
+        let line = job.sections.iter().filter_map(|s| s.format.line_height).fold(0.0f32, f32::max);
+        let (g, rows) = match wrap {
+            Wrap::Measure(v) => {
+                // 한 줄로 늘어놓고 웹(CSS)처럼 끊는다: 빈칸 뒤에서만(keep-all), 줄 끝 빈칸은 폭에 넣지 않음, 끊을 데가 없으면 글자 사이(anywhere)
+                let mut nj = job;
+                let max_w = nj.wrap.max_width;
+                nj.wrap.max_width = f32::INFINITY;
+                let g = p.layout_job(nj);
+                let br = css_breaks(&g, max_w);
+                let rows = g.rows.len() + br.len();
+                v.push(br);
+                (g, rows)
+            }
+            Wrap::Apply(b) => {
+                let g = p.layout_job(apply_breaks(job, b.get(idx).map(|x| x.as_slice()).unwrap_or(&[])));
+                let rows = g.rows.len();
+                (g, rows)
+            }
+        };
+        let _ = &mut wide;        *y += mt;
         let x = crate::slide_layout::anchor_x(x0, width, a);
-        let h = g.size().y;
+        let h = if line > 0.0 { rows as f32 * line } else { g.size().y };
         pieces.push(Piece { g, pos: Pos2::new(x, *y), role });
         *y += h + mb;
     };
@@ -653,12 +685,24 @@ fn lay_block(p: &egui::Painter, s: &Value, t: &Value, size: f32, sc: f32, w: f32
         // 가사·공지: 줄바꿈 그대로 (pre-line), '>' 줄은 번역 줄(작게)
         let bold_fam = tpl_family(ctx, t, 700.0);
         let runs_into = |j: &mut LayoutJob, txt: &str, base: &Fmt| {
-            for (seg, b, col, mul) in fmt_runs(txt) {
+            // 줄마다 본문 글자 크기의 줄 높이(strut)를 둔다: 작은 글자만 있는 줄도 웹처럼 본문 줄 높이
+            let strut = |j: &mut LayoutJob| if j.text.is_empty() || j.text.ends_with('\n') { j.append("\u{200B}", 0.0, base.tf()); };
+            strut(j);
+            for (seg, b, col, mul) in fmt_runs(txt).into_iter().flat_map(|(s, b, c, m)| s.split_inclusive('\n').map(|x| (x.to_string(), b, c, m)).collect::<Vec<_>>()) {
                 let mut f = base.with(mul, 1.0);
                 f.line = base.line.max(base.line * mul); // 큰 글자는 줄도 커진다
                 if b { f.fam = bold_fam.clone(); }
                 if let Some(c) = col { f.color = c; }
-                j.append(&seg, 0.0, f.tf());
+                let mut tf = f.tf();
+                if mul < 0.999 {
+                    // 작은 글자는 본문 글자와 밑줄(baseline)을 맞춘다 (egui 는 줄 가운데에 둔다)
+                    let fb = p.fonts_mut(|x| x.row_height(&FontId::new(base.size.max(0.5), base.fam.clone())));
+                    let fs = p.fonts_mut(|x| x.row_height(&tf.font_id));
+                    tf.line_height = Some(crate::slide_layout::baseline_line_height(base.line, fb, fs, ASCENT));
+                    tf.valign = Align::BOTTOM;
+                }
+                j.append(&seg, 0.0, tf);
+                strut(j);
             }
         };
         let mut cur = new_job(align, w);
@@ -743,7 +787,7 @@ fn lay_block(p: &egui::Painter, s: &Value, t: &Value, size: f32, sc: f32, w: f32
             }
         } else {
             let (fb, fnn) = (fh(&body), fh(&body.with(vsc, vsc)));
-            let sup_line = crate::slide_layout::superscript_line_height(body.line, fb, fnn, ASCENT, 0.45 * size);
+            let sup_line = crate::slide_layout::superscript_line_height(body.line, fb, fnn, ASCENT, 0.45 * size * vsc); // .bc-vn vertical-align .45em (번호 자신의 글자 크기 기준)
             let mut nf = Fmt { size: size * vsc, fam: num_fam.clone(), color: vcol, line: sup_line, letter }.tf();
             nf.valign = Align::TOP;
             let mut cur = new_job(align, w);
@@ -810,6 +854,67 @@ fn lay_block(p: &egui::Painter, s: &Value, t: &Value, size: f32, sc: f32, w: f32
     Laid { pieces, height: y, wide }
 }
 
+/// 줄바꿈: Measure = 템플릿 크기에서 끊긴 자리를 모은다, Apply = 그 자리에서 끊는다 (조각 차례대로)
+enum Wrap {
+    Measure(Vec<Vec<usize>>),
+    Apply(Vec<Vec<usize>>),
+}
+
+/// 한 줄로 늘어놓은 galley 를 폭 max_w 로 끊을 자리 (글 안의 바이트 위치 = 다음 줄이 시작하는 곳).
+/// CSS word-break: keep-all + overflow-wrap: anywhere + white-space: normal 과 같은 규칙
+fn css_breaks(g: &egui::Galley, max_w: f32) -> Vec<usize> {
+    let text = g.job.text.as_str();
+    let byte_of = |ci: usize| text.char_indices().nth(ci).map(|(b, _)| b).unwrap_or(text.len());
+    let mut out = vec![];
+    let mut base = 0usize;
+    for row in g.rows.iter() {
+        let gs = &row.row.glyphs;
+        let mut start = 0usize;
+        let mut cand: Option<usize> = None;
+        for i in 0..gs.len() {
+            let ch = gs[i].chr;
+            if i > start && matches!(gs[i - 1].chr, ' ' | '-' | '\u{2014}' | '/') && ch != ' ' {
+                cand = Some(i);
+            }
+            if ch == ' ' {
+                continue; // 줄 끝 빈칸은 넘쳐도 된다
+            }
+            let right = gs[i].pos.x + gs[i].advance_width;
+            if i > start && right - gs[start].pos.x > max_w + 0.01 {
+                let b = cand.filter(|&c| c > start).unwrap_or(i);
+                out.push(byte_of(base + b));
+                start = b;
+                cand = None;
+            }
+        }
+        base += row.char_count_including_newline().0;
+    }
+    out
+}
+/// 정해진 자리에서 줄을 바꾼 job (끊긴 자리 앞의 빈칸은 줄바꿈으로 바꾸고, 그 밖에는 줄바꿈을 끼운다). 저절로 줄바꿈은 끈다
+fn apply_breaks(mut job: LayoutJob, breaks: &[usize]) -> LayoutJob {
+    job.wrap.max_width = f32::INFINITY;
+    for &b in breaks.iter().rev() {
+        let bytes = job.text.as_bytes();
+        if b > 0 && b <= bytes.len() && bytes[b - 1] == b' ' {
+            job.text.replace_range(b - 1..b, "\n");
+        } else if b < bytes.len() && bytes[b] == b' ' {
+            job.text.replace_range(b..b + 1, "\n");
+        } else if b <= job.text.len() && job.text.is_char_boundary(b) {
+            job.text.insert(b, '\n');
+            for sec in &mut job.sections {
+                if sec.byte_range.start.0 >= b && sec.byte_range.start.0 > 0 {
+                    sec.byte_range.start.0 += 1;
+                }
+                if sec.byte_range.end.0 >= b {
+                    sec.byte_range.end.0 += 1;
+                }
+            }
+        }
+    }
+    job
+}
+
 /// 글자 그림자 (text-shadow x y blur color): 흐림은 둥글게 여러 번 겹쳐 그려 비슷하게
 fn draw_shadowed(p: &egui::Painter, pos: Pos2, g: &std::sync::Arc<egui::Galley>, t: &Value, sc: f32, base: Color32) {
     let sh = &t["shadow"];
@@ -855,21 +960,33 @@ fn paint_text_block(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32
     let bpad = if boxed { num(&bx["padding"], 32.0) * sc } else { 0.0 };
     let w = (area.width() - 2.0 * bpad).max(4.0);
     // ---- fit: 설정 크기 → 넘치면 (autoFit) 최소 크기까지 정수로 나눠 찾기
-    let over = |l: &Laid| l.height + 2.0 * bpad > area.height() + 0.5 * sc.max(0.01) || l.wide;
-    let lay = |z: f32| lay_block(p, s, t, z * sc, sc, w, version_name, kind);
+    // 크기 맞춤·줄바꿈은 템플릿 해상도(px)에서 한다 (웹 fit 과 같은 수치) → 화면에는 배율만 곱해서
+    let bpad_t = if boxed { num(&bx["padding"], 32.0) } else { 0.0 };
+    let w_t = (area_t.width() - 2.0 * bpad_t).max(4.0);
+    let over = |l: &Laid| l.height + 2.0 * bpad_t > area_t.height() + 0.5 || l.wide;
+    let lay = |z: f32| {
+        let mut m = Wrap::Measure(vec![]);
+        let l = lay_block(p, s, t, z, 1.0, w_t, version_name, kind, &mut m);
+        (l, match m { Wrap::Measure(v) => v, Wrap::Apply(_) => vec![] })
+    };
     let full = num(&f["size"], 72.0);
-    let mut laid = lay(full);
-    if over(&laid) && f["autoFit"].as_bool().unwrap_or(true) {
+    let mut chosen = full;
+    let mut measured = lay(full);
+    if over(&measured.0) && f["autoFit"].as_bool().unwrap_or(true) {
         let (mut lo, mut hi) = (num(&f["minSize"], 44.0).floor() as i32, full.floor() as i32);
-        laid = lay(lo as f32);
-        if !over(&laid) {
+        measured = lay(lo as f32);
+        chosen = lo as f32;
+        if !over(&measured.0) {
             while hi - lo > 1 {
                 let mid = (lo + hi) / 2;
-                if over(&lay(mid as f32)) { hi = mid } else { lo = mid }
+                if over(&lay(mid as f32).0) { hi = mid } else { lo = mid }
             }
-            laid = lay(lo as f32);
+            chosen = lo as f32;
+            measured = lay(chosen);
         }
     }
+    LAST_FIT.with(|c| c.set(chosen));
+    let laid = lay_block(p, s, t, chosen * sc, sc, w, version_name, kind, &mut Wrap::Apply(measured.1));
     let block_h = laid.height + 2.0 * bpad;
     let top = crate::slide_layout::block_top(area, block_h, t["valign"].as_str().unwrap_or("middle"));
     let block = Rect::from_min_size(Pos2::new(area.left(), top), Vec2::new(area.width(), block_h));
@@ -943,4 +1060,18 @@ fn paint_text_block(p: &egui::Painter, rect: Rect, s: &Value, t: &Value, sc: f32
         h.reference = ref_rect;
     });
     let _ = Stroke::NONE;
+}
+
+
+/// OBS 자막의 '그림 우상단'(output index.html .bc-pip): 위 3%·오른쪽 2%·폭 30%, 둥글기 1%, 그림자
+pub fn paint_pip(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: &Value, main_t: &Value) {
+    let (tw, th) = crate::slide_layout::stage_size(main_t);
+    let w = rect.width() * 0.30;
+    let r = Rect::from_min_size(Pos2::new(rect.right() - rect.width() * 0.02 - w, rect.top() + rect.height() * 0.03), Vec2::new(w, w * th / tw.max(1.0)));
+    let p = ui.painter_at(rect);
+    for k in 1..=4 {
+        let k = k as f32;
+        p.rect_filled(r.translate(Vec2::new(0.0, rect.width() * 0.005)).expand(rect.width() * 0.004 * k), rect.width() * 0.01 + k, Color32::from_black_alpha(22));
+    }
+    paint_slide(ui, c, r, Some(slide), main_t, "", true, false, false);
 }

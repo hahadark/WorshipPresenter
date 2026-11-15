@@ -787,9 +787,13 @@ fn set_or_remove(it: &mut Value, k: &str, v: Value) {
 /// 편집을 이 출력의 템플릿에 반영 (render.js editTemplate 근사): 글상자 위치·크기·꾸미기
 /// 투명 배경(OBS 자막) 출력은 '모든 출력에 적용' 일 때만
 pub fn edited_template(t: &Value, e: &Value) -> Value {
+    // 웹 render.js editFor 와 같은 규칙
     let mut t = t.clone();
-    let transparent = t["background"]["type"] == "transparent";
-    if transparent && !e["allOutputs"].as_bool().unwrap_or(false) {
+    let lyrics_only = match t["pptMode"].as_str().filter(|x| !x.is_empty()) {
+        Some(m) => m == "lyrics",
+        None => t["background"]["type"] == "transparent",
+    };
+    if lyrics_only && !e["allOutputs"].as_bool().unwrap_or(false) {
         return t;
     }
     let (w, h) = (t["width"].as_f64().unwrap_or(1920.0), t["height"].as_f64().unwrap_or(1080.0));
@@ -801,27 +805,32 @@ pub fn edited_template(t: &Value, e: &Value) -> Value {
     }
     let s = &e["style"];
     let k = h / 1080.0;
-    if let Some(z) = s["size"].as_f64() {
-        t["font"]["size"] = json!(z * k);
-        t["font"]["minSize"] = json!((z * k * 0.6).min(z * k));
+    if let Some(z) = s["size"].as_f64().filter(|z| *z > 0.0) {
+        let size = (z * k).round();
+        let min = t["font"]["minSize"].as_f64().unwrap_or(size);
+        t["font"]["size"] = json!(size);
+        t["font"]["minSize"] = json!(min.min(size));
     }
     if let Some(v) = s["autoFit"].as_bool() { t["font"]["autoFit"] = json!(v); }
-    if let Some(c) = s["color"].as_str() { t["font"]["color"] = json!(c); }
+    if let Some(c) = s["color"].as_str().filter(|c| !c.is_empty()) { t["font"]["color"] = json!(c); }
     if let Some(b) = s["bold"].as_bool() { t["font"]["weight"] = json!(if b { 700 } else { 400 }); }
-    if let Some(a) = s["align"].as_str() { t["align"] = json!(a); }
-    if let Some(a) = s["valign"].as_str() { t["valign"] = json!(a); }
-    if let Some(l) = s["lineHeight"].as_f64() { t["font"]["lineHeight"] = json!(l); }
-    if let Some(sh) = s["shadow"].as_bool() { t["shadow"]["enabled"] = json!(sh); }
-    if s["boxColor"].is_string() || s["boxOpacity"].is_number() {
+    if s["italic"].as_bool().unwrap_or(false) { t["font"]["style"] = json!("italic"); }
+    if let Some(l) = s["lineHeight"].as_f64().filter(|l| *l > 0.0) { t["font"]["lineHeight"] = json!(l); }
+    if let Some(a) = s["align"].as_str().filter(|a| !a.is_empty()) { t["align"] = json!(a); }
+    if let Some(a) = s["valign"].as_str().filter(|a| !a.is_empty()) { t["valign"] = json!(a); }
+    if let Some(c) = s["boxColor"].as_str().filter(|c| !c.is_empty()) {
+        let radius = s["radius"].as_f64().or(t["box"]["radius"].as_f64()).unwrap_or(12.0);
+        let padding = s["padding"].as_f64().or(t["box"]["padding"].as_f64()).unwrap_or(24.0);
         t["box"]["enabled"] = json!(true);
-        if let Some(c) = s["boxColor"].as_str() { t["box"]["color"] = json!(c); }
-        if let Some(o) = s["boxOpacity"].as_f64() { t["box"]["opacity"] = json!(o); }
+        t["box"]["gradient"] = json!("");
+        t["box"]["color"] = json!(c);
+        t["box"]["opacity"] = json!(s["boxOpacity"].as_f64().unwrap_or(0.6));
+        t["box"]["radius"] = json!(radius);
+        t["box"]["padding"] = json!(padding);
     }
-    if let Some(r) = s["radius"].as_f64() { t["box"]["radius"] = json!(r * k); }
-    if let Some(p) = s["padding"].as_f64() { t["box"]["padding"] = json!(p * k); }
+    if s["shadow"] == json!(false) { t["shadow"]["enabled"] = json!(false); }
     t
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

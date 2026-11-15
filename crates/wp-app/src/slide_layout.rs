@@ -142,6 +142,13 @@ pub fn superscript_line_height(line: f32, fh_body: f32, fh_num: f32, asc: f32, r
     (2.0 * top_num + fh_num).clamp(fh_num.min(line), line)
 }
 
+/// 본문 줄(line) 안에 작은 글자를 밑줄(baseline) 맞춰 놓을 egui 줄 높이 (valign BOTTOM 일 때).
+/// egui: y = (줄 - lh) + (lh - fh_small)/2 → 원하는 위 y = 본문 밑줄 - ascent
+pub fn baseline_line_height(line: f32, fh_body: f32, fh_small: f32, asc: f32) -> f32 {
+    let top = 0.5 * (line - fh_body) + asc * fh_body - asc * fh_small;
+    (2.0 * (line - top) - fh_small).clamp(fh_small.min(line), line)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,6 +235,16 @@ mod tests {
         assert!(!lyrics_only(&json!({ "background": { "type": "color" } })));
         assert!(!lyrics_only(&json!({ "pptMode": "slide", "background": { "type": "transparent" } })));
         assert!(lyrics_only(&json!({ "pptMode": "lyrics", "background": { "type": "color" } })));
+    }
+
+    #[test]
+    fn small_text_sits_on_body_baseline() {
+        // 72px 줄 108 안의 0.7배 글자: egui 위치 (줄-lh)+(lh-fs)/2 가 본문 밑줄 - ascent 와 같아야
+        let (line, fb, fs, asc) = (108.0f32, 95.6f32, 66.9f32, 0.8f32);
+        let lh = baseline_line_height(line, fb, fs, asc);
+        let y = (line - lh) + (lh - fs) / 2.0;
+        let want = 0.5 * (line - fb) + asc * fb - asc * fs;
+        assert!((y - want).abs() < 0.01, "{y} {want}");
     }
 
     #[test]

@@ -77,6 +77,7 @@ fn resolve(app: &App, cases: &[Value]) -> Vec<Value> {
         out.push(json!({
             "name": case["name"], "output": output, "template": tpl, "slide": slide, "versionName": ver,
             "hideBg": case["hideBg"].as_bool().unwrap_or(false), "logo": case["logo"].as_bool().unwrap_or(false),
+            "pipTemplate": if case["pip"].as_bool().unwrap_or(false) { c.template_for_deck("main", deck.as_ref()) } else { Value::Null },
         }));
     }
     out
@@ -120,10 +121,22 @@ pub fn run(app: &App, ui: &mut egui::Ui) -> bool {
     let c = crate::paint::Ctx { web_dir: &app.web_dir, data_dir: &app.data_dir };
     let slide = case["slide"].is_object().then_some(&case["slide"]);
     crate::paint::paint_slide(ui, &c, rect, slide, &case["template"], case["versionName"].as_str().unwrap_or(""), true, case["logo"].as_bool().unwrap_or(false), case["hideBg"].as_bool().unwrap_or(false));
+    if case["pipTemplate"].is_object() {
+        let mut sl = case["slide"].clone();
+        sl["caption"] = json!("");
+        crate::paint::paint_pip(ui, &c, rect, &sl, &case["pipTemplate"]);
+    }
     let _ = crate::paint::take_hits();
+    let fit = crate::paint::last_fit();
     if !st.asked && st.shown_at.elapsed().as_secs_f32() > 1.5 {
         st.asked = true;
         let path = st.out.join(format!("rust-{}.png", case["name"].as_str().unwrap_or("case")));
+        // 고른 글자 크기를 fit.txt 에 (웹 fit 크기와 비교)
+        let fit_log = ();
+        if let Ok(mut fh) = std::fs::OpenOptions::new().create(true).append(true).open(st.out.join("fit.txt")) {
+            use std::io::Write;
+            let _ = writeln!(fh, "{} {}", case["name"].as_str().unwrap_or(""), fit);
+        }
         let c2 = ctx.clone();
         ctx.request_screenshot(move |img| {
             let [w, h] = img.size;
@@ -132,6 +145,7 @@ pub fn run(app: &App, ui: &mut egui::Ui) -> bool {
                 let _ = buf.save(&path);
             }
             SAVED.store(true, Ordering::SeqCst);
+            let _ = fit_log;
             c2.request_repaint();
         });
     }
