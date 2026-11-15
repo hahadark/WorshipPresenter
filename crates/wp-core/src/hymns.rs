@@ -127,9 +127,12 @@ pub fn search(core: &Core, query: &str) -> Vec<HymnFile> {
         for h in list_folder(Path::new(f["path"].as_str().unwrap_or("")), name) {
             let hit = q.is_empty()
                 || match num {
-                    Some(n) => h.number == Some(n) || jang.is_none() && h.number.is_some_and(|x| x.to_string().starts_with(q.trim_start_matches('0')) && !q.trim_start_matches('0').is_empty()),
+                    // 번호가 친 글로 시작하는 것도 (Electron `String(h.number).startsWith(q)`): '45' → 45·450~459. '010' 처럼 0 을 붙여 치면 그 번호만
+                    Some(n) => h.number == Some(n) || jang.is_none() && h.number.is_some_and(|x| x.to_string().starts_with(q)),
                     None => h.title.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(&key),
-                };
+                }
+                // '3장' 은 번호 3 뒤에 제목에 '3장' 이 든 것(교독문 '잠언 3장' — Electron 은 이것만 나왔다)도
+                || jang.is_some() && h.title.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(&raw.chars().filter(|c| !c.is_whitespace()).collect::<String>());
             if hit {
                 out.push(h);
             }
@@ -146,18 +149,39 @@ fn norm(p: &str) -> String {
     p.replace('/', "\\").to_lowercase()
 }
 
+/// norm + '.'·'..' 풀기 (파일을 건드리지 않고 글자로만 — node path.resolve 처럼)
+fn resolve(p: &str) -> String {
+    let n = norm(p);
+    let unc = n.starts_with("\\\\");
+    let mut out: Vec<&str> = vec![];
+    for part in n.split('\\') {
+        match part {
+            "." | "" => {}
+            ".." => {
+                // 드라이브(또는 \\서버\공유) 위로는 올라가지 않는다
+                if out.len() > if unc { 2 } else { 1 } {
+                    out.pop();
+                }
+            }
+            x => out.push(x),
+        }
+    }
+    format!("{}{}", if unc { "\\\\" } else { "" }, out.join("\\"))
+}
+
 /// 열어도 되는 PPT: 등록한 폴더 · 붙여 넣은 슬라이드 폴더 · 끌어다 놓은 파일
 pub fn is_allowed(core: &Core, file: &str) -> bool {
     if !EXT.is_match(file) {
         return false;
     }
-    let f = norm(file);
+    // Electron 은 path.resolve 로 '..' 을 풀고 견준다 — 등록 폴더 뒤에 '..' 을 붙여 폴더 밖 파일을 여는 것을 막는다
+    let f = resolve(file);
     let s = core.settings.get();
-    let under = |d: &str| !d.is_empty() && f.starts_with(&(norm(d).trim_end_matches('\\').to_string() + "\\"));
+    let under = |d: &str| !d.is_empty() && f.starts_with(&(resolve(d) + "\\"));
     if s["hymnFolders"].as_array().into_iter().flatten().any(|x| under(x["path"].as_str().unwrap_or(""))) {
         return true;
     }
-    if s["droppedFiles"].as_array().into_iter().flatten().any(|x| x.as_str().map(norm).as_deref() == Some(f.as_str())) {
+    if s["droppedFiles"].as_array().into_iter().flatten().any(|x| x.as_str().map(resolve).as_deref() == Some(f.as_str())) {
         return true;
     }
     let pasted = [core.data_dir.join("pasted"), electron_data().map(|d| d.join("pasted")).unwrap_or_default()];
@@ -186,6 +210,29 @@ pub const BUILDING: &str = "PPT 를 그림으로 만드는 중입니다… 끝�
 
 /// 만드는 중인 파일 (같은 파일을 두 번 만들지 않게)
 static PENDING: Lazy<Mutex<std::collections::HashSet<String>>> = Lazy::new(|| Mutex::new(Default::default()));
+/// 만들기가 끝날 때마다(성공·실패) 올라가는 번호 — 화면이 순서별로 모아 둔 슬라이드(전체 격자)를 다시 읽게 한다.
+/// 없으면 '그림으로 만드는 중' 이던 순서가 다 만든 뒤에도 0장으로 남는다.
+static BUILD_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub fn build_gen() -> u64 {
+    BUILD_GEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+fn bump_gen() {
+    BUILD_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+/// 방금 만들다 실패한 파일(파일·크기·시각 → 오류, 때). 화면이 다시 읽을 때마다 PowerPoint 를 또 띄워 같은 실패를 되풀이하지 않게
+/// 잠깐(FAIL_HOLD) 은 같은 오류를 바로 돌려준다. 그 뒤 다시 고르면 새로 만든다 (Electron 은 누를 때마다 다시 만든다).
+static FAILED: Lazy<Mutex<HashMap<String, (String, std::time::Instant)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+const FAIL_HOLD: std::time::Duration = std::time::Duration::from_secs(8);
+fn recent_failure(stamp: &str) -> Option<String> {
+    let mut g = FAILED.lock();
+    match g.get(stamp) {
+        Some((e, t)) if t.elapsed() < FAIL_HOLD => Some(e.clone()),
+        Some(_) => { g.remove(stamp); None }
+        None => None,
+    }
+}
+/// PowerPoint 로 내보내기는 한 번에 하나씩 — 스크립트 끝의 '열린 문서가 없으면 Quit' 이 옆에서 막 연 PowerPoint 를 꺼 버리지 않게
+static PP_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 /// 코어 (백그라운드 일이 끝나면 다시 잡으려고). main 에서 install 로 넣는다
 static SHARED: once_cell::sync::OnceCell<std::sync::Weak<parking_lot::Mutex<Core>>> = once_cell::sync::OnceCell::new();
 
@@ -224,7 +271,12 @@ pub fn build_meta(data_dir: &Path, file: &str, render: &str) -> Result<Value, St
         }
     }
     if pp {
-        return export_powerpoint(data_dir, file);
+        return match export_powerpoint(data_dir, file) {
+            Ok(m) => Ok(m),
+            // PowerPoint 가 못 열면(사용 중·보호된 보기·라이선스 창 등) 새 형식은 직접 그려 본다. 그것도 안 되면 PowerPoint 오류를 알린다
+            Err(e) if xml => crate::pptx::build::build_cache(data_dir, file).map_err(|e2| { log::warn!("PowerPoint 실패 뒤 직접 그리기도 실패: {e2}"); e }),
+            Err(e) => Err(e),
+        };
     }
     if xml { crate::pptx::build::build_cache(data_dir, file) } else { crate::pps::build_cache(data_dir, file) }
 }
@@ -301,14 +353,18 @@ fn start_build(core: &Core, file: &str) {
     let tx = core.tx.clone();
     spawn_big(move || {
         let r = build_meta(&data_dir, &file, &render);
+        let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
+        if let Err(e) = &r {
+            FAILED.lock().insert(stamp.clone(), (e.clone(), std::time::Instant::now()));
+        }
         PENDING.lock().remove(&key);
+        bump_gen();
         let Some(shared) = SHARED.get().and_then(|w| w.upgrade()) else { return };
         let mut c = shared.lock();
+        let name = Path::new(&file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         match r {
             Ok(m) => {
-                let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
                 META.lock().insert(stamp, with_captions(&c, m));
-                let name = Path::new(&file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                 if finish_deferred(&mut c, &key) {
                     // 꿝에서 F6/F5 로 기다리던 다음 순서를 이어서 송출했다 (Electron onCueNext 와 같은 결과)
                     c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들어 다음 순서로 넘어갔습니다.", &[&name]), "ok");
@@ -319,15 +375,25 @@ fn start_build(core: &Core, file: &str) {
                     let want = c.cue.as_ref().and_then(|q| q.items.iter().position(|it| it["file"].as_str().map(norm).as_deref() == Some(key.as_str())));
                     // 방금 고르거나 넣었는데 만드는 중이라 못 띄운 순서 (Core::want_when_built): 그 순서를 띄운다 (바로 송출이면 송출)
                     let picked = c.pick.want.clone().filter(|(cid, i)| *cid == cue_id && c.cue.as_ref().and_then(|q| q.items.get(*i)).and_then(|it| it["file"].as_str()).map(norm).as_deref() == Some(key.as_str())).map(|w| w.1);
+                    // 두 번 눌러 송출하려던 순서였으면 (Core::send_item) 그 사이 다른 송출이 없었을 때만 이어서 송출 (cue.js sendItem: previewItem 을 기다린 뒤 sendPreview)
+                    let send = picked.is_some() && c.pick.want_send.take() == Some(c.pres.version);
                     if let Some(i) = picked.or(want.filter(|i| c.pres.preview.is_none() || pv == Some(*i as i64))) {
-                        c.preview_item(i);
+                        if c.preview_item(i) && send && !c.direct_mode() && c.preview_is_item(i) {
+                            c.send_preview();
+                        }
                     }
                     c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들었습니다.", &[&name]), "ok");
                 }
             }
             Err(e) => {
                 clear_deferred(&key);
-                c.notify(e, "error");
+                // 기다리던 순서는 더 기다리지 않는다
+                if c.pick.want.as_ref().is_some_and(|(_, i)| c.cue.as_ref().and_then(|q| q.items.get(*i)).and_then(|it| it["file"].as_str()).map(norm).as_deref() == Some(key.as_str())) {
+                    c.pick.want = None;
+                    c.pick.want_send = None;
+                }
+                // 어느 파일인지 함께 (Electron: "N번 '제목': 오류")
+                c.notify(crate::i18n::tr_args("'{1}' 슬라이드를 만들지 못했습니다: {2}", &[&name, &e]), "error");
             }
         }
         let _ = tx.send(crate::core::Ev::Ui);
@@ -384,11 +450,11 @@ pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done
 /// again=true: 캐시를 지우고 요소·배경 그림을 다시 만든다 (cue.js pptTextOn mode 'bg' — 순서의 edits 는 손대지 않는다). 끝나면 이 파일을 보던 미리보기도 다시.
 pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool) -> Result<Value, String> {
     let meta = load(core, file)?;
-    if !meta["layers"].as_bool().unwrap_or(false) && !file.to_lowercase().ends_with('x') {
+    if !meta["layers"].as_bool().unwrap_or(false) && !is_xml_ppt(file) {
         return Err(crate::i18n::tr("옛 형식(.ppt/.pps)은 요소를 꺼낼 수 없습니다. PowerPoint 에서 .pptx 로 저장한 뒤 넣어 주세요.").into());
     }
     if again {
-        let dir = core.data_dir.join("hymn-cache").join(cache_key(file, "pptx-rs1"));
+        let dir = core.data_dir.join("hymn-cache").join(cache_key(file, crate::pptx::build::CACHE_TAG));
         let _ = std::fs::remove_dir_all(dir);
     }
     match read_layers_k(core, &meta).filter(|_| !again) {
@@ -416,6 +482,7 @@ pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool)
                 }, move |c, r: Result<Value, String>| {
                     PENDING.lock().remove(&lk);
                     META.lock().clear(); // layerBgs 를 다시 읽게
+                    bump_gen();
                     match r {
                         Ok(_) => {
                             // 이 파일의 순서를 미리보기하고 있었으면 새 배경 그림으로 다시 (cue.js previewItem(i, {keepIndex}))
@@ -593,6 +660,7 @@ pub fn has_powerpoint() -> bool {
 /// Electron pptrender.js 의 PS 와 같은 스크립트: 슬라이드마다 PNG + 글자(texts.json)
 const PS_EXPORT: &str = r#"
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $pp = New-Object -ComObject PowerPoint.Application
 try {
   $p = $pp.Presentations.Open($env:WC_PPT_FILE, -1, 0, 0)
@@ -632,6 +700,7 @@ try {
 /// Electron pptrender.js PS_BG: hide.json 의 도형을 숨기고 슬라이드마다 slide-NNN-bg.png (파일은 저장하지 않음)
 const PS_BG: &str = r#"
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $hide = Get-Content -LiteralPath $env:WC_PPT_HIDE -Raw -Encoding UTF8 | ConvertFrom-Json
 $pp = New-Object -ComObject PowerPoint.Application
 try {
@@ -678,6 +747,7 @@ pub fn powerpoint_bgs(file: &str, dir: &Path) -> Result<usize, String> {
     std::fs::write(&hide, raw["hide"].to_string()).map_err(|e| e.to_string())?;
     let script = dir.join("bg.ps1");
     std::fs::write(&script, format!("\u{feff}{PS_BG}")).map_err(|e| e.to_string())?;
+    let _one = PP_LOCK.lock();
     let mut cmd = std::process::Command::new("powershell");
     cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]).arg(&script).env("WC_PPT_FILE", file).env("WC_PPT_OUT", dir).env("WC_PPT_HIDE", &hide);
     #[cfg(windows)]
@@ -722,6 +792,7 @@ fn export_powerpoint(data_dir: &Path, file: &str) -> Result<Value, String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let script = dir.join("export.ps1");
     std::fs::write(&script, format!("\u{feff}{}", PS_EXPORT)).map_err(|e| e.to_string())?;
+    let _one = PP_LOCK.lock();
     let mut cmd = std::process::Command::new("powershell");
     cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]).arg(&script).env("WC_PPT_FILE", file).env("WC_PPT_OUT", &dir);
     #[cfg(windows)]
@@ -741,15 +812,29 @@ fn export_powerpoint(data_dir: &Path, file: &str) -> Result<Value, String> {
         return Err(crate::i18n::tr("슬라이드가 없는 파일입니다.").into());
     }
     let texts: Value = std::fs::read_to_string(dir.join("texts.json")).ok().and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok()).unwrap_or(json!([]));
+    // 슬라이드가 한 장이면 글자 하나로 온다 · PowerPoint 줄바꿈(\r · 세로탭)을 \n 으로 (pptrender.js 와 같게 — 안 하면 OBS 자막에서 줄이 붙는다)
+    let texts = match texts {
+        Value::Array(a) => a,
+        Value::Null => vec![],
+        one => vec![one],
+    };
+    let texts: Vec<String> = texts.iter().map(|t| clean_ppt_text(t.as_str().unwrap_or(""))).collect();
     let (number, title, name) = parse_name(Path::new(file));
     let meta = json!({
         "key": key, "number": number, "title": title, "name": name, "file": file, "mode": "slides", "background": null, "scores": [], "texts": [],
         "slides": (1..=n).map(|i| format!("/hymn/{key}/slide-{i:03}.png")).collect::<Vec<_>>(),
         "slideTexts": texts, "aspect": nums.get(1).copied().unwrap_or(16.0) / nums.get(2).copied().unwrap_or(9.0),
-        "layers": file.to_lowercase().ends_with("x"),
+        "layers": is_xml_ppt(file),
     });
     std::fs::write(dir.join("meta.json"), meta.to_string()).map_err(|e| e.to_string())?;
     Ok(meta)
+}
+
+/// PowerPoint 가 준 슬라이드 글: \r\n · \r · 세로탭 → \n, 빈 줄은 하나까지, 앞뒤 공백 없이 (pptrender.js)
+pub fn clean_ppt_text(t: &str) -> String {
+    let t = t.replace("\r\n", "\n").replace(['\r', '\u{b}'], "\n");
+    static MANY: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n{3,}").unwrap());
+    MANY.replace_all(&t, "\n\n").trim().to_string()
 }
 
 /// 파일 → meta (캐시에 있으면 바로, 없으면 PowerPoint 로 만든다) + captions
@@ -767,6 +852,9 @@ pub fn load(core: &Core, file: &str) -> Result<Value, String> {
     let meta = match find_cached(core, file) {
         Some(m) => m,
         None => {
+            if let Some(e) = recent_failure(&stamp) {
+                return Err(e);
+            }
             // 코어 잠금 밖에서 만든다: 이번에는 '만드는 중' 으로 돌려주고, 끝나면 알림 + 미리보기 다시
             start_build(core, file);
             return Err(BUILDING.into());
@@ -783,7 +871,7 @@ pub fn load(core: &Core, file: &str) -> Result<Value, String> {
 /// 슬라이드마다 OBS 자막(가사만)용 글자: PPT 안의 글자 (새찬송가 가사 DB 는 트랙 A 다음 작업)
 pub fn with_captions(core: &Core, mut meta: Value) -> Value {
     let own: Vec<String> = if meta["slides"].is_array() {
-        meta["slideTexts"].as_array().into_iter().flatten().map(|t| t.as_str().unwrap_or("").to_string()).collect()
+        meta["slideTexts"].as_array().into_iter().flatten().map(|t| clean_ppt_text(t.as_str().unwrap_or(""))).collect() // 예전 캐시의 \r 도 정리
     } else {
         let n = meta["scores"].as_array().map(|a| a.len()).unwrap_or(0);
         let t = meta["texts"].as_array().cloned().unwrap_or_default();
@@ -801,7 +889,9 @@ pub fn with_captions(core: &Core, mut meta: Value) -> Value {
     let file = meta["file"].as_str().unwrap_or("").to_string();
     let folder_name = core.settings.get()["hymnFolders"].as_array().into_iter().flatten()
         .find(|x| { let d = norm(x["path"].as_str().unwrap_or("")); !d.is_empty() && norm(&file).starts_with(&(d.trim_end_matches('\\').to_string() + "\\")) })
-        .map(|x| format!("{} {}", x["name"].as_str().unwrap_or(""), x["path"].as_str().unwrap_or(""))).unwrap_or_default();
+        // 폴더 이름 + 경로의 마지막 폴더 이름만 본다 (Electron `path.basename(folder.path)`). 경로 전체를 보면
+        // '…\새찬송가및 구세군찬송가\구세군 찬송가' 도 새찬송가로 보아 구세군 찬송가 646장에 새찬송가 DB 의 글이 OBS 자막으로 나갔다
+        .map(|x| format!("{} {}", x["name"].as_str().unwrap_or(""), folder_base(x["path"].as_str().unwrap_or("")))).unwrap_or_default();
     let n = meta["slides"].as_array().or(meta["scores"].as_array()).map(|a| a.len()).unwrap_or(0);
     let num = meta["number"].as_i64().unwrap_or(0);
     if folder_name.contains("새찬송가") && num > 0 && n > 0 {
@@ -811,6 +901,11 @@ pub fn with_captions(core: &Core, mut meta: Value) -> Value {
         }
     }
     meta
+}
+
+/// 경로의 마지막 폴더 이름
+fn folder_base(p: &str) -> &str {
+    p.trim_end_matches(['\\', '/']).rsplit(['\\', '/']).next().unwrap_or("")
 }
 
 fn range_of(r: &str) -> Option<(usize, usize)> {
@@ -964,7 +1059,7 @@ pub fn read_layers(core: &Core, meta: &Value) -> Option<Value> {
 /// (layers.json 이 있는 캐시 열쇠, 내용): 이 캐시 → (PowerPoint 로 만든 것이면) 직접 읽어 만든 캐시
 pub fn read_layers_k(core: &Core, meta: &Value) -> Option<(String, Value)> {
     let file = meta["file"].as_str().unwrap_or("");
-    let keys = [meta["key"].as_str().map(String::from), (!file.is_empty()).then(|| cache_key(file, "pptx-rs1"))];
+    let keys = [meta["key"].as_str().map(String::from), (!file.is_empty()).then(|| cache_key(file, crate::pptx::build::CACHE_TAG))];
     for key in keys.into_iter().flatten() {
         if let Some(p) = cache_path(core, &key, "layers.json") {
             if let Some(v) = std::fs::read_to_string(p).ok().and_then(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).ok()) {
@@ -1160,7 +1255,7 @@ mod search_tests {
         std::fs::create_dir_all(&r).unwrap();
         std::fs::write(dir.join("bible.db"), b"").unwrap();
         for f in ["003 성부 성자와 성령.pps", "030 전능하신 주님.pps", "303 날 위하여 십자가의.pps"] { std::fs::write(h.join(f), b"").unwrap(); }
-        for f in ["교독문 3 (시편 3편).pps", "교독문 30 (시편 40편).pps", "교독문 130 (추수감사주일).pps"] { std::fs::write(r.join(f), b"").unwrap(); }
+        for f in ["교독문 3 (시편 3편).pps", "교독문 30 (시편 40편).pps", "교독문 130 (추수감사주일).pps", "교독문 67 (잠언 3장).pps"] { std::fs::write(r.join(f), b"").unwrap(); }
         let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
         add_folder(&mut c, &h, Some("새찬송가")).unwrap();
         add_folder(&mut c, &r, Some("교독문")).unwrap();
@@ -1168,8 +1263,12 @@ mod search_tests {
         // 숫자만: 같은 번호가 먼저, 앞자리가 같은 것도 (Electron 과 같음)
         assert_eq!(t("3")[0], "성부 성자와 성령");
         assert!(t("3").len() >= 4);
-        // '3장' · '찬송가 3장': 그 번호만
-        assert_eq!(t("3장"), vec!["성부 성자와 성령".to_string(), "교독문 3 (시편 3편)".to_string()]);
+        // 0 을 붙여 치면 그 번호만 (Electron 과 같음 — 전에는 '03' 이 30·303 까지 나왔다)
+        assert_eq!(t("03"), vec!["성부 성자와 성령".to_string(), "교독문 3 (시편 3편)".to_string()]);
+        assert_eq!(t("003"), t("03"));
+        assert_eq!(t("30"), vec!["전능하신 주님".to_string(), "교독문 30 (시편 40편)".to_string(), "날 위하여 십자가의".to_string()]);
+        // '3장' · '찬송가 3장': 그 번호 먼저, 그 뒤에 제목에 '3장' 이 든 것 (Electron 은 제목만 찾아 '잠언 3장' 만 나왔다)
+        assert_eq!(t("3장"), vec!["성부 성자와 성령".to_string(), "교독문 3 (시편 3편)".to_string(), "교독문 67 (잠언 3장)".to_string()]);
         assert_eq!(t("찬송가 303장"), vec!["날 위하여 십자가의".to_string()]);
         // '교독문 3' · '교독 3': 교독문 3 만 (30·130 아님)
         assert_eq!(t("교독문 3"), vec!["교독문 3 (시편 3편)".to_string()]);
@@ -1253,6 +1352,35 @@ mod timing_tests {
 }
 
 #[cfg(test)]
+mod timing_list_tests {
+    /// 출시 빌드로 여러 파일의 처음 만드는 시간 재기 (곡당): WP_TIMING_LIST=<한 줄에 파일 하나인 글 파일> [WP_TIMING_MODE=auto|direct|slides]
+    /// cargo test --release -p wp-core --lib first_build_list -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn first_build_list() {
+        let list = std::fs::read_to_string(std::env::var("WP_TIMING_LIST").expect("WP_TIMING_LIST")).unwrap();
+        let mode = std::env::var("WP_TIMING_MODE").unwrap_or_else(|_| "auto".into());
+        let dir = std::env::temp_dir().join(format!("wp-timing-list-{}", std::process::id()));
+        crate::pptx::build::warm_fonts();
+        let (mut total, mut n) = (0.0f32, 0);
+        for file in list.lines().map(|l| l.trim().trim_start_matches('\u{feff}')).filter(|l| !l.is_empty()) {
+            let t0 = std::time::Instant::now();
+            let r = super::build_meta(&dir, file, &mode);
+            let t = t0.elapsed().as_secs_f32();
+            total += t;
+            n += 1;
+            let name = std::path::Path::new(file).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            match r {
+                Ok(m) => println!("{t:6.3}s  {}장  {}  {name}", m["slides"].as_array().or(m["scores"].as_array()).map(|a| a.len()).unwrap_or(0), m["mode"].as_str().unwrap_or("")),
+                Err(e) => println!("{t:6.3}s  오류 {e}  {name}"),
+            }
+        }
+        println!("합계 {total:.2}s · {n}개 · 평균 {:.3}s ({mode})", total / n.max(1) as f32);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
 mod render_dump_tests {
     /// 파일 하나를 직접 그려 폴더에 남긴다: WP_RENDER_FILE · WP_RENDER_OUT
     #[test]
@@ -1304,6 +1432,152 @@ mod magic_tests {
         // 파일이 없으면 확장자로
         assert!(super::is_xml_ppt(&dir.join("none.PPTX").to_string_lossy()));
         assert!(!super::is_xml_ppt(&dir.join("none.pps").to_string_lossy()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod allow_tests {
+    use super::*;
+    #[test]
+    fn powerpoint_text_line_breaks() {
+        assert_eq!(clean_ppt_text("10일(화)\r안동 KSI\u{b}연수원\r\n\r\n\r\n끝 \r"), "10일(화)\n안동 KSI\n연수원\n\n끝");
+    }
+
+    #[test]
+    fn lyrics_db_only_for_new_hymnal_folder() {
+        assert_eq!(folder_base(r"D:\자료실\새찬송가및 구세군찬송가\구세군 찬송가"), "구세군 찬송가");
+        assert_eq!(folder_base("D:/a/새찬송가/"), "새찬송가");
+        assert!(!format!("{} {}", "구세군 찬송가", folder_base(r"D:\새찬송가및 구세군찬송가\구세군 찬송가")).contains("새찬송가"));
+    }
+
+    #[test]
+    fn dotdot_does_not_escape_registered_folder() {
+        assert_eq!(resolve(r"C:\A\b\..\c\.\d.PPTX"), r"c:\a\c\d.pptx");
+        assert_eq!(resolve("c:/a//b/../../../x.pps"), r"c:\x.pps");
+        assert_eq!(resolve(r"\\srv\share\h\..\..\x.pps"), r"\\srv\share\x.pps");
+        let dir = std::env::temp_dir().join(format!("wp-allow-{}", crate::util::short_id("t")));
+        let h = dir.join("h");
+        std::fs::create_dir_all(&h).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        std::fs::write(h.join("001 가.pps"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
+        add_folder(&mut c, &h, Some("새찬송가")).unwrap();
+        let hs = h.to_string_lossy().to_string();
+        assert!(is_allowed(&c, &format!(r"{hs}\001 가.pps")));
+        assert!(is_allowed(&c, &format!(r"{hs}\sub\..\001 가.pps")));
+        // 폴더 밖: Electron '등록한 찬송가 폴더 안의 파일만 열 수 있습니다.'
+        assert!(!is_allowed(&c, &format!(r"{hs}\..\secret.pptx")));
+        assert!(!is_allowed(&c, &format!(r"{hs}\..\..\secret.pptx")));
+        assert!(load(&c, &format!(r"{hs}\..\secret.pptx")).unwrap_err().contains("등록한 찬송가 폴더"));
+        // 붙여 넣은 슬라이드 폴더(자료 폴더\pasted)는 열린다
+        assert!(is_allowed(&c, &dir.join("pasted").join("clip-1.pptx").to_string_lossy()));
+        assert!(!is_allowed(&c, &format!(r"{}\pasted\..\x.pptx", dir.to_string_lossy())));
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod async_build_tests {
+    use super::*;
+    use crate::db::Cue;
+
+    /// 슬라이드 한 장짜리 아주 작은 pptx
+    fn tiny_pptx() -> Vec<u8> {
+        use std::io::Write;
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut z = zip::ZipWriter::new(&mut buf);
+            let o = zip::write::SimpleFileOptions::default();
+            let ns = r#"xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main""#;
+            let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+            let files = [
+                ("[Content_Types].xml".to_string(), r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/></Types>"#.to_string()),
+                ("_rels/.rels".to_string(), format!(r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#)),
+                ("ppt/presentation.xml".to_string(), format!(r#"<?xml version="1.0"?><p:presentation {ns}><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/></p:presentation>"#)),
+                ("ppt/_rels/presentation.xml.rels".to_string(), format!(r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/slide" Target="slides/slide1.xml"/></Relationships>"#)),
+                ("ppt/slides/slide1.xml".to_string(), format!(r#"<?xml version="1.0"?><p:sld {ns}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:sp><p:nvSpPr><p:cNvPr id="2" name="t"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="6096000" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="ko-KR" sz="2400"/><a:t>시험 슬라이드</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"#)),
+            ];
+            for (n, t) in files {
+                z.start_file(n, o).unwrap();
+                z.write_all(t.as_bytes()).unwrap();
+            }
+            z.finish().unwrap();
+        }
+        buf.into_inner()
+    }
+
+    fn wait(mut done: impl FnMut() -> bool) -> bool {
+        for _ in 0..600 {
+            if done() { return true; }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        false
+    }
+
+    /// 캐시가 없는 PPT: 처음에는 '만드는 중', 다 만들면 ① 두 번 눌러 송출하려던 순서는 이어서 송출 ② 화면이 다시 읽게 번호가 오름
+    /// ③ 실패하면 파일 이름이 든 알림, 바로 다시 읽어도 또 만들지 않음(되풀이 방지) ④ 기다리던 순서 기억은 지움
+    #[test]
+    fn built_in_background_then_shown_and_failure_reported() {
+        let dir = std::env::temp_dir().join(format!("wp-hymnasync-{}", crate::util::short_id("t")));
+        let hs = dir.join("h");
+        std::fs::create_dir_all(&hs).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let good = hs.join("001 가.pptx");
+        let bad = hs.join("002 나.pptx");
+        std::fs::write(&good, tiny_pptx()).unwrap();
+        std::fs::write(&bad, b"PK\x03\x04 not a zip").unwrap();
+        let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
+        // 'direct' = PowerPoint 를 띄우지 않고 직접 그린다 (시험이 PowerPoint 를 건드리지 않게)
+        let hp = hs.to_string_lossy().to_string();
+        c.settings.update(|d| { d["hymnFolders"] = json!([{ "name": "t", "path": hp, "render": "direct" }]); d["previewMode"] = json!(true); });
+        c.cue = Some(Cue { id: "q1".into(), name: "q1".into(), service_date: String::new(), start_time: String::new(), items: vec![
+            json!({ "type": "hymn", "title": "1장 가", "number": 1, "file": good.to_string_lossy() }),
+            json!({ "type": "hymn", "title": "2장 나", "number": 2, "file": bad.to_string_lossy() }),
+        ], memo: String::new(), pinned: false, template: false });
+        let shared: crate::core::Shared = std::sync::Arc::new(parking_lot::Mutex::new(c));
+        install(&shared);
+
+        // ① 두 번 눌러 송출 → 아직 못 나감, 만든 뒤 저절로 나감
+        let g0 = build_gen();
+        {
+            let mut c = shared.lock();
+            assert!(!c.send_item(0));
+            assert!(c.pres.live.is_none());
+            assert!(is_building(&good.to_string_lossy()));
+            assert_eq!(c.item_deck(0).unwrap_err(), crate::i18n::tr(BUILDING));
+        }
+        assert!(wait(|| shared.lock().pres.live.is_some()), "다 만든 뒤 송출되지 않음: {:?}", shared.lock().toast);
+        {
+            let mut c = shared.lock();
+            let live = c.pres.live.clone().unwrap();
+            assert_eq!(live.deck.passage["cueIndex"], json!(0));
+            assert_eq!(live.deck.slides.len(), 1);
+            assert!(c.preview_is_item(0));
+            assert!(build_gen() > g0, "화면이 다시 읽게 번호가 올라야 함");
+            assert_eq!(c.item_deck(0).unwrap().slides.len(), 1);
+            assert!(c.pick.want.is_none() && c.pick.want_send.is_none());
+        }
+
+        // ③ 실패: 알림에 파일 이름, 바로 다시 읽어도 만들기를 또 시작하지 않음
+        let g1 = build_gen();
+        let v = shared.lock().pres.version;
+        assert!(!shared.lock().send_item(1));
+        assert!(wait(|| build_gen() > g1));
+        assert!(wait(|| shared.lock().toast.as_ref().is_some_and(|t| t.0.contains("002 나.pptx") && t.1 == "error")), "{:?}", shared.lock().toast);
+        {
+            let mut c = shared.lock();
+            let g2 = build_gen();
+            let e = c.item_deck(1).unwrap_err();
+            assert_ne!(e, crate::i18n::tr(BUILDING), "방금 실패한 파일을 또 만들기 시작함");
+            assert!(!is_building(&bad.to_string_lossy()));
+            assert_eq!(build_gen(), g2);
+            assert!(c.pick.want.is_none() && c.pick.want_send.is_none());
+            assert_eq!(c.pres.version, v, "실패한 순서 때문에 송출이 바뀌면 안 됨");
+            assert_eq!(c.pres.live.as_ref().unwrap().deck.passage["cueIndex"], json!(0));
+        }
+        drop(shared);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

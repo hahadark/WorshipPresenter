@@ -1826,7 +1826,8 @@ impl App {
             let c = self.core.lock();
             c.cue.as_ref().map(|q| (q.id.clone(), q.items.clone())).unwrap_or_default()
         };
-        let key = format!("{}|{}|{}", cue_id, serde_json::to_string(&items).unwrap_or_default(), serde_json::to_string(&s.tpl_main).unwrap_or_default().len());
+        // 끝의 번호: 찬송가 PPT 그림 만들기가 끝날 때마다 바뀐다 — '만드는 중' 이던 순서가 다 만든 뒤 저절로 채워지게
+        let key = format!("{}|{}|{}|{}", cue_id, serde_json::to_string(&items).unwrap_or_default(), serde_json::to_string(&s.tpl_main).unwrap_or_default().len(), wp_core::hymns::build_gen());
         if key != st.all_key {
             st.all_key = key;
             let mut c = self.core.lock();

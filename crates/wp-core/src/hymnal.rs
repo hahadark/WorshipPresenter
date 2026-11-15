@@ -150,12 +150,16 @@ pub fn candidates() -> Vec<PathBuf> {
             }
         }
     }
+    // 앞쪽은 Electron hymnlyrics.js candidates 와 같은 차례 (여러 곳에 판이 다른 파일이 있을 때 같은 것을 읽게):
+    // 문서\베들레헴 성경\BethlehemWin 들 → Program Files → C:\BethlehemWin. 그 뒤가 가져오기 화면(findDirs)이 더 찾는 곳
     for d in &docs {
         out.push(d.join("베들레헴 성경").join("BethlehemWin"));
-        out.push(d.join("BethlehemWin"));
     }
     for pf in [std::env::var("ProgramFiles(x86)").ok(), std::env::var("ProgramFiles").ok()].into_iter().flatten() {
         out.push(PathBuf::from(pf).join("BethlehemWin"));
+    }
+    for d in &docs {
+        out.push(d.join("BethlehemWin"));
     }
     for d in "CDEFGHIJ".chars() {
         out.push(PathBuf::from(format!("{d}:\\BethlehemWin")));

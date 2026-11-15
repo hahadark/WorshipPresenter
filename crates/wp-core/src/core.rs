@@ -469,6 +469,7 @@ impl Core {
         if e == crate::hymns::BUILDING || e == crate::i18n::tr(crate::hymns::BUILDING) {
             let cid = self.cue.as_ref().map(|c| c.id.clone()).unwrap_or_default();
             self.pick.want = Some((cid, i));
+            self.pick.want_send = None;
         }
     }
 
@@ -576,7 +577,14 @@ impl Core {
     /// 미리보기가 실패하면 송출하지 않는다 — 전에 올려 둔 다른 큐시트·다른 내용의 미리보기가 LIVE 로 나가는 것을 막는다.
     /// 보조로 미리보기의 cueId·cueIndex 가 지금 큐시트의 이 순서와 같은지도 확인한다.
     pub fn send_item(&mut self, i: usize) -> bool {
-        if !self.preview_item(i) { return false; }
+        if !self.preview_item(i) {
+            // 그림을 만드는 중이면 다 만든 뒤 이어서 송출 (그 사이 다른 송출이 없을 때만 — hymns::start_build)
+            let cid = self.cue.as_ref().map(|c| c.id.clone()).unwrap_or_default();
+            if self.pick.want == Some((cid, i)) {
+                self.pick.want_send = Some(self.pres.version);
+            }
+            return false;
+        }
         if !self.preview_is_item(i) {
             self.notify(crate::i18n::tr("미리보기가 이 순서가 아니어서 송출하지 않았습니다."), "warn");
             return false;
@@ -594,6 +602,7 @@ impl Core {
 
     fn after_preview(&mut self) {
         self.pick.want = None; // 다른 것을 띄웠으면 '만들면 띄우기' 는 버린다
+        self.pick.want_send = None;
         if !self.settings.get()["previewMode"].as_bool().unwrap_or(true) {
             self.send_preview();
         }

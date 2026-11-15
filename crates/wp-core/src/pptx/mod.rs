@@ -354,6 +354,11 @@ pub fn parse_fill(parent: Option<Node>, ctx: &Ctx, pkg: &mut Pkg, ph: Option<Rgb
                 let crop = src.map(|s| [num(Some(s), "l", 0.0) / 100000.0, num(Some(s), "t", 0.0) / 100000.0, num(Some(s), "r", 0.0) / 100000.0, num(Some(s), "b", 0.0) / 100000.0]).filter(|c| c.iter().any(|v| *v != 0.0));
                 let alpha = kid(blip, "alphaModFix").map(|a| num(Some(a), "amt", 100000.0) / 100000.0).unwrap_or(1.0);
                 let part = if rid.is_empty() { None } else { pkg.rel_target(&ctx.part, rid) };
+                // 그림 효과가 있으면 파트 이름 뒤에 붙여 둔다 — build 가 다시 칠한 그림을 캐시에 둔다 (build.rs apply_fx)
+                let part = part.map(|p| match blip_fx(blip, ctx) {
+                    Some(fx) => format!("{p}#fx:{fx}"),
+                    None => p,
+                });
                 return Some(Fill::Blip { part, crop, alpha });
             }
             "pattFill" => {
@@ -365,6 +370,39 @@ pub fn parse_fill(parent: Option<Node>, ctx: &Ctx, pkg: &mut Pkg, ph: Option<Rgb
         }
     }
     None
+}
+
+/// 그림 효과(duotone · grayscl · biLevel · lum · clrChange)를 글자로. PowerPoint 는 이 효과를 칠해서 보여 주는데
+/// 예전에는 무시해서 흐린 단색 문장이 원래 색(노랑·빨강)으로 나왔다.
+fn blip_fx(blip: Option<Node>, ctx: &Ctx) -> Option<String> {
+    let mut out: Vec<String> = vec![];
+    for c in blip?.children().filter(|c| c.is_element()) {
+        match c.tag_name().name() {
+            "grayscl" => out.push("gray".into()),
+            "biLevel" => out.push(format!("bi={:.4}", num(Some(c), "thresh", 50000.0) / 100000.0)),
+            "duotone" => {
+                let cols: Vec<Rgba> = c.children().filter(|x| x.is_element()).filter_map(|x| resolve_color(Some(x), Some(ctx), None)).collect();
+                if cols.len() == 2 {
+                    out.push(format!("duo={},{}", &cols[0].hex()[1..], &cols[1].hex()[1..]));
+                }
+            }
+            "lum" => {
+                let (b, k) = (num(Some(c), "bright", 0.0) / 100000.0, num(Some(c), "contrast", 0.0) / 100000.0);
+                if b != 0.0 || k != 0.0 {
+                    out.push(format!("lum={b:.4},{k:.4}"));
+                }
+            }
+            "clrChange" => {
+                let from = resolve_color(color_kid(kid(Some(c), "clrFrom")), Some(ctx), None);
+                let to = resolve_color(color_kid(kid(Some(c), "clrTo")), Some(ctx), None);
+                if let (Some(f), Some(t)) = (from, to) {
+                    out.push(format!("chg={},{},{:.3}", &f.hex()[1..], &t.hex()[1..], t.a));
+                }
+            }
+            _ => {}
+        }
+    }
+    (!out.is_empty()).then(|| out.join(";"))
 }
 
 /// fillRef idx → 테마 채우기

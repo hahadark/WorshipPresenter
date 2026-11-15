@@ -121,8 +121,71 @@ pub fn font_list(latin: &str, ea: &str, text: &str) -> String {
     out.join(", ")
 }
 
-struct Piece {
-    text: String,
+/// PPT 가 쓰는 글꼴이 이 PC 에 있으면 그 글꼴로 폭을 잰다 (없으면 맑은 고딕 근사).
+/// 예전에는 늘 맑은 고딕으로 재서, 폭이 다른 글꼴(구세군체 등)의 오른쪽·가운데 맞춤 글이 자리에서 벗어나고 줄바꿈이 달랐다.
+fn run_width(s: &str, r: &super::Run) -> f64 {
+    use ab_glyph::{Font, PxScale, ScaleFont};
+    let Some(f) = run_font(s, r) else { return text_width(s, r.sz as f32, r.b, 0.0) as f64 };
+    let em = f.units_per_em().unwrap_or(1000.0);
+    let sf = f.as_scaled(PxScale::from(r.sz as f32 * f.height_unscaled() / em));
+    s.chars()
+        .map(|c| {
+            let g = f.glyph_id(c);
+            // 이 글꼴에 없는 글자는 대신 그려질 맑은 고딕 폭으로
+            if g.0 == 0 { text_width(&c.to_string(), r.sz as f32, r.b, 0.0) as f64 } else { sf.h_advance(g) as f64 }
+        })
+        .sum()
+}
+
+/// 글 조각을 SVG 글로: PPT 글꼴에 없는 글자(– 등)는 맑은 고딕으로 그리게 따로 싼다.
+/// (그냥 두면 그리는 쪽이 아무 글꼴이나 골라 줄표가 굵고 짧게 나왔다 — PowerPoint 는 맑은 고딕으로 바꿔 그린다)
+fn run_text(s: &str, r: &super::Run) -> String {
+    use ab_glyph::Font;
+    let Some(f) = run_font(s, r) else { return esc(s) };
+    let mut out = String::new();
+    let mut buf = String::new();
+    let mut miss = false;
+    let mut flush = |buf: &mut String, miss: bool, out: &mut String| {
+        if buf.is_empty() {
+            return;
+        }
+        if miss {
+            let _ = write!(out, "<tspan font-family=\"'Malgun Gothic', sans-serif\">{}</tspan>", esc(buf));
+        } else {
+            out.push_str(&esc(buf));
+        }
+        buf.clear();
+    };
+    for c in s.chars() {
+        let m = !c.is_whitespace() && f.glyph_id(c).0 == 0;
+        if m != miss {
+            flush(&mut buf, miss, &mut out);
+            miss = m;
+        }
+        buf.push(c);
+    }
+    flush(&mut buf, miss, &mut out);
+    out
+}
+
+/// 이 글 조각을 그릴 PPT 글꼴 (이 PC 에 있을 때만)
+fn run_font(s: &str, r: &super::Run) -> Option<ab_glyph::FontArc> {
+    static CACHE: once_cell::sync::Lazy<parking_lot::Mutex<std::collections::HashMap<(String, bool), Option<ab_glyph::FontArc>>>> = once_cell::sync::Lazy::new(Default::default);
+    let names = if is_hangul(s) { [&r.ea, &r.latin] } else { [&r.latin, &r.ea] };
+    names.into_iter().filter(|n| !n.is_empty() && !n.starts_with('+')).find_map(|n| {
+        CACHE
+            .lock()
+            .entry((n.to_lowercase(), r.b))
+            .or_insert_with(|| {
+                let bold_name = format!("{n} Bold");
+                let got = if r.b && !n.to_lowercase().ends_with(" bold") { super::build::font_bytes(&bold_name).or_else(|| super::build::font_bytes(n)) } else { super::build::font_bytes(n) };
+                got.and_then(|(data, index)| ab_glyph::FontVec::try_from_vec_and_index(data, index).ok()).map(ab_glyph::FontArc::new)
+            })
+            .clone()
+    })
+}
+
+struct Piece {    text: String,
     run: usize,
     w: f64,
 }
@@ -152,19 +215,18 @@ fn wrap_para(p: &Para, width: f64, wrap: bool) -> Vec<Vec<Piece>> {
             limit = (width - p.mar_l).max(1.0);
             continue;
         }
-        let bold = r.b;
         // 공백을 붙인 어절들로
         let mut word = String::new();
         let flush = |word: &mut String, lines: &mut Vec<Vec<Piece>>, cur: &mut f64, limit: &mut f64| {
             if word.is_empty() {
                 return;
             }
-            let w = text_width(word, r.sz as f32, bold, 0.0) as f64;
+            let w = run_width(word, r);
             if wrap && w > (width - p.mar_l).max(1.0) {
                 // 긴 어절: 글자 단위
                 for ch in word.chars() {
                     let s = ch.to_string();
-                    let cw = text_width(&s, r.sz as f32, bold, 0.0) as f64;
+                    let cw = run_width(&s, r);
                     push(lines, cur, limit, Piece { text: s, run: ri, w: cw });
                 }
             } else {
@@ -213,8 +275,11 @@ pub fn text_svg(t: &TextBody, x: f64, y: f64, w: f64, h: f64) -> String {
                 (Some(pct), _) => sz * 1.2 * pct,
                 _ => sz * 1.2,
             };
+            // 줄 간격을 %로 넓히면 PowerPoint 는 늘어난 만큼을 줄 위쪽에도 둔다 (첫 줄부터 아래로 내려감). 예전에는 1배로 막아 글이 위로 붙었다
+            let k = lh / (sz * 1.2);
+            let asc_k = if p.ln_spc_pct.is_some() && p.ln_spc_pts.is_none() && k > 1.0 { k } else { k.min(1.0).max(0.75) };
             gaps.push(if li == 0 && pi > 0 { p.spc_bef + t.paras[pi - 1].spc_aft } else { 0.0 });
-            all.push(L { pieces: l, h: lh, asc: sz * 0.92 * (lh / (sz * 1.2)).min(1.0).max(0.75), para: pi, first: li == 0 });
+            all.push(L { pieces: l, h: lh, asc: sz * 0.92 * asc_k, para: pi, first: li == 0 });
             let _ = n;
         }
     }
@@ -242,7 +307,7 @@ pub fn text_svg(t: &TextBody, x: f64, y: f64, w: f64, h: f64) -> String {
         let lw: f64 = pieces.iter().map(|pc| pc.w).sum();
         // 첫 줄: 글머리표는 marL+indent 자리, 글은 marL (글머리표가 더 길면 그 뒤)
         let r0 = &p.runs[pieces[0].run];
-        let bw = if l.first && !p.bullet.is_empty() { text_width(&p.bullet, r0.sz as f32, false, 0.0) as f64 + r0.sz * 0.25 } else { 0.0 };
+        let bw = if l.first && !p.bullet.is_empty() { run_width(&p.bullet, r0) + r0.sz * 0.25 } else { 0.0 };
         let indent = if l.first {
             if p.bullet.is_empty() { p.mar_l + p.indent } else { p.mar_l.max(p.mar_l + p.indent + bw) }
         } else {
@@ -282,7 +347,7 @@ pub fn text_svg(t: &TextBody, x: f64, y: f64, w: f64, h: f64) -> String {
                 if r.u { " text-decoration=\"underline\"" } else { "" },
                 col(&fill),
                 if fill.a < 1.0 { format!(" fill-opacity=\"{:.3}\"", fill.a) } else { String::new() },
-                esc(&s)
+                run_text(&s, r)
             );
             px += sw;
         }
