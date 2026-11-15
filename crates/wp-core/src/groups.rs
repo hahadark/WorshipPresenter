@@ -86,3 +86,72 @@ mod tests {
         assert_eq!(strip_chords("[G]주 [D/F#]사랑\n[Am7]\n[1절]"), "주 사랑\n[1절]");
     }
 }
+
+// ---------------- 송출 중 이름표로 건너뛰기 (control.js jumpKey · liveLabels) ----------------
+
+/// 송출 슬라이드들의 이름표. 번호만 있는 이름표(이름표 없이 이어지는 칸)는 앞 이름표에 붙인다 ("1절-2" → "1절")
+pub fn live_labels(slides: &[serde_json::Value]) -> Vec<String> {
+    let mut prev = String::new();
+    slides
+        .iter()
+        .map(|s| {
+            let raw = s["label"].as_str().unwrap_or("");
+            let l = match raw.rsplit_once('-') {
+                Some((a, b)) if !b.is_empty() && b.chars().all(|c| c.is_ascii_digit()) => a,
+                _ => raw,
+            };
+            if l.is_empty() || l.chars().all(|c| c.is_ascii_digit()) {
+                return prev.clone();
+            }
+            prev = l.to_string();
+            prev.clone()
+        })
+        .collect()
+}
+
+/// 누른 글쇠(1~9 · c/ㅊ 후렴 · b/ㅠ 브릿지 · e/ㄷ 엔딩 · p/ㅔ 전주)에 맞는 묶음의 첫 슬라이드.
+/// None = 건너뛰기 글쇠가 아님 · Some(None) = 맞는 부분이 없음 · Some(Some(k)) = k 번째로 (지금 다음부터 찾고, 없으면 처음부터)
+pub fn jump_target(labels: &[String], cur: usize, key: &str) -> Option<Option<usize>> {
+    let k = key.to_lowercase();
+    let names: Vec<String> = match k.as_str() {
+        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => vec![format!("{k}절")],
+        "c" | "ㅊ" => vec!["후렴".into(), "chorus".into()],
+        "b" | "ㅠ" => vec!["브릿지".into(), "브리지".into(), "bridge".into()],
+        "e" | "ㄷ" => vec!["엔딩".into(), "마무리".into(), "ending".into()],
+        "p" | "ㅔ" => vec!["전주".into(), "pre".into()],
+        _ => return None,
+    };
+    let norm = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase();
+    let starts: Vec<usize> = labels
+        .iter()
+        .enumerate()
+        .filter(|(i, l)| !l.is_empty() && names.iter().any(|n| norm(l).starts_with(n.as_str())) && (*i == 0 || labels[*i - 1] != **l))
+        .map(|(i, _)| i)
+        .collect();
+    Some(starts.iter().copied().find(|i| *i > cur).or(starts.first().copied()))
+}
+
+#[cfg(test)]
+mod jump_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn labels_carry_over_numbered_continuations() {
+        let s: Vec<_> = ["1절", "1절-2", "", "후렴", "2", "2절"].iter().map(|l| json!({ "label": l })).collect();
+        assert_eq!(live_labels(&s), ["1절", "1절", "1절", "후렴", "후렴", "2절"]);
+    }
+
+    #[test]
+    fn jump_goes_to_next_matching_group_and_wraps() {
+        let l: Vec<String> = ["1절", "1절", "후렴", "2절", "후렴", "Bridge"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(jump_target(&l, 0, "c"), Some(Some(2)));
+        assert_eq!(jump_target(&l, 2, "ㅊ"), Some(Some(4)), "지금 다음의 후렴");
+        assert_eq!(jump_target(&l, 4, "C"), Some(Some(2)), "없으면 처음부터");
+        assert_eq!(jump_target(&l, 3, "1"), Some(Some(0)));
+        assert_eq!(jump_target(&l, 0, "2"), Some(Some(3)));
+        assert_eq!(jump_target(&l, 0, "b"), Some(Some(5)));
+        assert_eq!(jump_target(&l, 0, "3"), Some(None), "맞는 부분이 없음");
+        assert_eq!(jump_target(&l, 0, "x"), None, "건너뛰기 글쇠가 아님");
+    }
+}

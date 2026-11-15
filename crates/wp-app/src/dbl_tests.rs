@@ -1045,3 +1045,28 @@ fn cue_row_menu_note_is_saved_on_the_item() {
     assert_eq!(items(&h)[1]["note"], "일어서서");
     assert_eq!(items(&h)[0]["note"].as_str().unwrap_or(""), "", "다른 순서는 그대로");
 }
+// ---------------- 송출 중 이름표로 건너뛰기 (control.js jumpKey): 1~9 = 그 절 · C = 후렴 ----------------
+
+fn keys_only(app: &mut App, ctx: &egui::Context, _: &mut egui::Ui, _: &Snap, acts: &mut Vec<Act>) {
+    let typing = ctx.egui_wants_keyboard_input();
+    app.shortcuts(ctx, acts, typing);
+}
+
+#[test]
+fn live_song_number_and_c_keys_jump_to_that_verse_and_chorus() {
+    let mut h = H::new(vec![json!({ "id": "s", "type": "song", "title": "은혜", "lyrics": "[1절]\n하나\n\n[후렴]\n후렴 가사\n\n[2절]\n둘\n\n[후렴]\n후렴 가사" })]);
+    h.app.core.lock().send_item(0);
+    h.frame(vec![], keys_only);
+    assert_eq!(live(&h), Some((0, 0)));
+    h.type_text("2", keys_only);
+    assert_eq!(live(&h), Some((0, 2)), "2 = 2절 첫 슬라이드");
+    h.type_text("c", keys_only);
+    assert_eq!(live(&h), Some((0, 3)), "C = 지금 다음의 후렴");
+    h.type_text("ㅊ", keys_only);
+    assert_eq!(live(&h), Some((0, 1)), "한글 자판 ㅊ 도 후렴 · 끝이면 처음부터");
+    h.type_text("1", keys_only);
+    assert_eq!(live(&h), Some((0, 0)));
+    h.type_text("7", keys_only);
+    assert_eq!(live(&h), Some((0, 0)), "없는 절은 그대로");
+    assert!(h.app.core.lock().toast.as_ref().is_some_and(|t| t.0.contains("7")), "없다고 알린다");
+}

@@ -592,6 +592,20 @@ impl App {
                 }
             }
             if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Space)) { acts.push(Act::Step(1)) }
+            // [갈래 C] control.js jumpKey: 송출 중인 찬양에서 1~9 = 그 절, C = 후렴, B = 브릿지, E = 엔딩, P = 전주 의 첫 슬라이드로
+            if !self.tc.slideedit.open {
+                let typed: Option<String> = ctx.input(|i| if i.modifiers.ctrl || i.modifiers.alt || i.modifiers.command { None } else { i.events.iter().find_map(|e| if let egui::Event::Text(t) = e { Some(t.clone()) } else { None }) });
+                if let Some(t) = typed.filter(|t| t.chars().count() == 1) {
+                    let live = self.core.lock().pres.live.as_ref().map(|l| (wp_core::groups::live_labels(&l.deck.slides), l.deck.index));
+                    if let Some((labels, cur)) = live.filter(|(l, _)| l.iter().any(|x| !x.is_empty())) {
+                        match wp_core::groups::jump_target(&labels, cur, &t) {
+                            Some(Some(k)) => acts.push(Act::LiveGoto(k)),
+                            Some(None) => self.core.lock().notify(wp_core::i18n::tr_args("'{1}' 에 맞는 부분이 이 찬양에 없습니다.", &[&t]), "info"),
+                            None => {}
+                        }
+                    }
+                }
+            }
         }
     }
     /// 큐시트 쪽 (Electron #cuePanel): 고르기 콤보 + 폴더 단추 · 순서 줄 · 넣기 단추 격자 · 도움말.
