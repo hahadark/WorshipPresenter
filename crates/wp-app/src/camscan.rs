@@ -40,7 +40,9 @@ fn spawn(args: &[&str]) -> Result<Child, String> {
     let mut cmd = Command::new(crate::outwin::exe());
     cmd.args(args);
     crate::outwin::no_window(&mut cmd);
-    cmd.spawn().map_err(|e| format!("{}: {e}", tr("예배당 화면 프로그램을 띄우지 못했습니다")))
+    let c = cmd.spawn().map_err(|e| format!("{}: {e}", tr("예배당 화면 프로그램을 띄우지 못했습니다")))?;
+    crate::outwin::bind_to_app(&c);
+    Ok(c)
 }
 
 /// 도우미 페이지 주소 (query 는 percent-encoding)

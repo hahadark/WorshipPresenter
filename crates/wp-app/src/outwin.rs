@@ -20,6 +20,39 @@ pub struct OutWin {
     pub extra_args: Vec<String>,
 }
 
+/// 조작 화면이 띄운 창(예배당·무대·카메라 도우미)을 조작 화면 프로세스와 묶는다.
+/// 작업 개체(Job)에 KILL_ON_JOB_CLOSE 를 걸어 두면, 조작 화면이 어떻게 끝나든(정상 종료·작업 관리자 종료·오류)
+/// 운영체제가 묶인 창과 그 WebView2 하위 프로세스를 함께 끈다. (Electron 판: 조작 화면을 끄면 출력 창도 꺼짐)
+/// 조작 화면 자신은 넣지 않는다 — 넣으면 링크로 연 브라우저까지 같이 꺼진다.
+#[cfg(windows)]
+pub(crate) fn bind_to_app(child: &Child) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::JobObjects::*;
+    static JOB: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let job = *JOB.get_or_init(|| unsafe {
+        let h = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if h.is_null() {
+            return 0;
+        }
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(
+            h,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const core::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+        h as usize // 일부러 닫지 않는다: 조작 화면이 끝나며 핸들이 닫힐 때 묶인 창이 꺼진다
+    });
+    if job != 0 {
+        unsafe {
+            AssignProcessToJobObject(job as _, child.as_raw_handle() as _);
+        }
+    }
+}
+#[cfg(not(windows))]
+pub(crate) fn bind_to_app(_child: &Child) {}
+
 /// wp-output 이 Esc 로 닫혔을 때의 종료 코드 (wp-output main.rs EXIT_ESC)
 pub const EXIT_ESC: i32 = 3;
 
@@ -97,6 +130,7 @@ impl OutWin {
         cmd.args(self.open_args(port, monitor, windowed));
         match cmd.spawn() {
             Ok(c) => {
+                bind_to_app(&c);
                 self.child = Some(c);
                 self.error.clear();
             }

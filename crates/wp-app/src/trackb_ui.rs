@@ -606,6 +606,7 @@ impl App {
                         cmd.args(["--url", &format!("http://127.0.0.1:{port}/outputs/stage?window=1")]);
                         if windowed { cmd.arg("--windowed"); } else { cmd.args(["--monitor", "2"]); }
                         self.tb.stage_child = cmd.spawn().ok();
+                        if let Some(c) = &self.tb.stage_child { crate::outwin::bind_to_app(c); }
                     }
                 }
                 let url = format!("http://127.0.0.1:{port}/outputs/stage");
