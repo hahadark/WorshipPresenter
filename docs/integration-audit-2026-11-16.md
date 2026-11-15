@@ -5,7 +5,7 @@
 - 현재 공개판 2.0.1과 이 저장소의 로컬 수정분은 다르다. 테스트 통과를 전체 기능 동등성의 증거로 삼지 않는다.
 
 ## 메인이 재검증한 것
-- 통합 후 전체 자동 시험: wp-app 177 통과·1 무시, wp-core 250 통과·18 무시 (총427 통과). 편집기 키 입력 소유권 후속 수정은 아직 통합 전.
+- 통합 후 전체 자동 시험: wp-app 180 통과·1 무시, wp-core 250 통과·18 무시 (총430 통과). 편집기 키 입력 소유권 후속 수정까지 통합했다.
 - 설치 경로/재설치/제거 보호: tools/install-guard-test.ps1, 33개 확인 통과. 실제 설치 대신 가짜 파일을 둔 임시 폴더만 사용.
 - settings::bg_save_tests::shutdown_waits_then_reports_pending_background_failure: 수정 전 실패를 재현하고 수정 후 통과. 종료 직전 대기하던 저장 실패를 성공으로 넘기던 경합을 고쳤다.
 - OBS fake_server 반복6회 전부 통과. 언어 시험6회 전부 통과(임의 HashMap 패턴 선택 제거).
@@ -21,6 +21,7 @@
 - 1.x자료 재가져오기시 Rust의 설정/템플릿/성경변경을 못 보던 것, kept/existing자료를 말없이 교체할 수 있던 것, 옛파일 복사경합, 받은업데이트를정리작업이지우는경합.
 - /S /D=로 남의Electron폴더를 지정하면 파일을 지울 수 있던 것. 파일소유목록 기반 설치/제거로 보완.
 - 큐시트목록·장격자·송출기록의 키보드이동, 검색Esc전체선택, 편집기요소선택·손잡이·이동·텍스트수정·복제·붙여넣기.
+- 편집기가 떠 있기만 해도 메인 화면의 Enter·방향키를 가로채던 회귀: 실제 App::ui_body 전체 경로를 거치는 포커스 전환 시험3개로 보완.
 
 ## 검증 수준과 남은 점
 - 원본 처리기282개 중 현재 미확인22개, 소스근거만158개. 표 전체는 docs/behavior-parity.md. 없는 기능과 단지 실행시험이없는 기능을 구분한다.
@@ -34,7 +35,7 @@
 - tmp/audit-integrated-flow-final/report.json
 - tmp/audit-integrated-contract-ready.json
 - tmp/install-guard-integrated.log
-- tmp/audit-editor-navigation-test.log
+- tmp/audit-final-test.log
 - tmp/settings-shutdown-before.log / settings-shutdown-after.log
 
 점검에띄운프로세스는개별PID를확인해종료했다. 사용자의실제자료와설치폴더는바꾸지않았다.
