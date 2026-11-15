@@ -110,6 +110,8 @@ fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
         "clearMessage" => { c.clear_message(); json!(true) }
         "toggleOverlaysOff" => { c.toggle_overlays_off(); json!(true) }
         // 큐시트 끝에 순서 넣기 (비교용 성경·공지 순서)
+        // 대조하며 끝에 넣은 순서들을 걷어 낸다 (앞의 count 개만 남김)
+        "truncateItems" => { let keep = a["count"].as_u64().unwrap_or(0) as usize; while c.cue.as_ref().is_some_and(|q| q.items.len() > keep) { let n = c.cue.as_ref().map(|q| q.items.len()).unwrap_or(0); c.remove_item(n - 1); } json!(keep) }
         "addItem" => { let n = c.cue.as_ref().map(|q| q.items.len()).unwrap_or(0); c.add_item(a["item"].clone(), Some(n)); json!(n) }
         // 설정 맨 위 키를 그대로 바꾼다 (split · parallelVersionId 등)
         "updateSettings" => {

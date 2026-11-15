@@ -25,11 +25,18 @@ async function launch(profileDir, port = 9400 + Math.floor(Math.random() * 400))
     try { const r = await fetch(base + '/json/version'); if (r.ok) break; } catch {}
     await sleep(150);
   }
+  // 브라우저 전체 연결 (창 만들기)
+  const bws = new WebSocket((await (await fetch(base + '/json/version')).json()).webSocketDebuggerUrl);
+  await new Promise((res, rej) => { bws.onopen = res; bws.onerror = rej; });
+  let bid = 0; const bwait = new Map();
+  bws.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id && bwait.has(m.id)) { const { res, rej } = bwait.get(m.id); bwait.delete(m.id); m.error ? rej(new Error(m.error.message)) : res(m.result); } };
+  const bsend = (method, params = {}) => new Promise((res, rej) => { const i = ++bid; bwait.set(i, { res, rej }); bws.send(JSON.stringify({ id: i, method, params })); });
   const browser = {
     proc,
     async open(url, w = 1920, h = 1080) {
-      const t = await (await fetch(`${base}/json/new?about:blank`, { method: 'PUT' })).json();
-      const ws = new WebSocket(t.webSocketDebuggerUrl);
+      // 탭마다 따로 창을 연다: 한 창의 뒤 탭은 '안 보임' 이라 영상이 멈추고 타이머가 늦어져, 영상 끝남·자동 넘김이 한쪽만 늦게 일어난다
+      const t = { id: (await bsend('Target.createTarget', { url: 'about:blank', newWindow: true })).targetId };
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/devtools/page/${t.id}`);
       await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
       let id = 0; const wait = new Map(); const logs = [];
       ws.onmessage = ev => {
@@ -60,7 +67,7 @@ async function launch(profileDir, port = 9400 + Math.floor(Math.random() * 400))
         // 화면 내용이 연달아 세 번 같을 때. (글이 뜨기 전에 찍어 '둘 다 검은 화면 = 같음' 으로 잘못 판정하던 것 막기)
         async settle(maxMs = 6000) {
           const probe = `(() => { const run = document.getAnimations().filter(a => a.playState === 'running' && !(a.effect && a.effect.getComputedTiming && a.effect.getComputedTiming().iterations === Infinity)).length;
-            const imgs = [...document.images].filter(i => !i.complete).length;
+            const imgs = [...document.images].filter(i => !i.complete).length + [...document.querySelectorAll('video')].filter(v => v.getAttribute('src') && v.offsetParent !== null && !v.error && (v.readyState < 3 || (!v.paused && v.currentTime < 0.35))).length; // 영상은 첫 그림이 그려진 뒤에
             const areas = document.querySelectorAll('.bc-stage:not(.bc-measure .bc-stage) > .bc-area').length;
             const fading = [...document.querySelectorAll('.bc-area,.bc-bg,.bc-vlayer,.bc-logoscreen,.bc-medialayer')].filter(e => { const o = parseFloat(getComputedStyle(e).opacity); return o > 0.001 && o < 0.999; }).length;
             return JSON.stringify([run, imgs, areas > 1 ? areas : 0, fading, document.body.innerHTML.length, (document.body.innerText || '').replace(/\\d/g, '#').length]); })()`;
@@ -89,7 +96,7 @@ async function launch(profileDir, port = 9400 + Math.floor(Math.random() * 400))
       await sleep(300);
       return page;
     },
-    close() { try { proc.kill(); } catch {} },
+    close() { try { bws.close(); } catch {} try { proc.kill(); } catch {} },
   };
   return browser;
 }

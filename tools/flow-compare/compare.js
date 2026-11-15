@@ -13,7 +13,7 @@ const png = require('./png');
 
 const A = process.argv.slice(2);
 const opt = (k, d) => { const i = A.indexOf('--' + k); return i >= 0 ? A[i + 1] : d; };
-const EL = `http://127.0.0.1:${opt('el', '37528')}`;
+const EL = `http://127.0.0.1:${opt('el', (() => { try { return JSON.parse(fs.readFileSync('tmp/flow-ports.json', 'utf8')).el; } catch { return ''; } })())}`;
 const RSD = opt('rs-data', 'tmp/rs-data');
 const RS = `http://127.0.0.1:${fs.readFileSync(path.join(RSD, 'flow-port.txt'), 'utf8').trim()}`;
 const RSCTL = fs.readFileSync(path.join(RSD, 'flow-ctl.txt'), 'utf8').trim();

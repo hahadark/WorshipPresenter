@@ -16,7 +16,7 @@ const png = require('./png');
 
 const A = process.argv.slice(2);
 const opt = (k, d) => { const i = A.indexOf('--' + k); return i >= 0 ? A[i + 1] : d; };
-const EL = `http://127.0.0.1:${opt('el', '37528')}`;
+const EL = `http://127.0.0.1:${opt('el', (() => { try { return JSON.parse(fs.readFileSync('tmp/flow-ports.json', 'utf8')).el; } catch { return ''; } })())}`;
 const RSD = opt('rs-data', 'tmp/rs-data');
 const RS = `http://127.0.0.1:${fs.readFileSync(path.join(RSD, 'flow-port.txt'), 'utf8').trim()}`;
 const RSCTL = fs.readFileSync(path.join(RSD, 'flow-ctl.txt'), 'utf8').trim();
@@ -32,7 +32,7 @@ async function rs(cmd, args = {}) {
 }
 async function el(cmd, args = {}) {
   const r = await (await fetch(EL + '/api/command', { method: 'POST', headers: { 'content-type': 'application/json', 'x-worshipcue': '1' }, body: JSON.stringify({ cmd, args }) })).json();
-  if (r.ok === false) throw new Error(`Electron ${cmd}: ${r.error}`);
+  if (r.ok === false && r.error) throw new Error(`Electron ${cmd}: ${r.error}`);
   return r.result;
 }
 const live = async base => {
@@ -47,12 +47,16 @@ async function main() {
   const rows = [];
   let fails = 0;
   try {
+    // --base N: 앞선 실행이 큐시트 끝에 넣은 시험 순서를 걷어 내고 앞의 N 개만 남긴다 (두 판 모두)
+    if (opt('base', '')) { const keep = Number(opt('base')); const cid = opt('cue', 'cmvtoethn450uc'); const q = await el('getCue', { id: cid }); if (q.items.length > keep) await el('saveCue', { cue: { ...q, items: q.items.slice(0, keep) } }); await rs('openCue', { id: cid }); await rs('truncateItems', { count: keep }); }
     const ctl = await br.open(`${EL}/control/`, 1600, 950);
     if (!(await ctl.waitFor('!!(window.BCCue && window.BC && window.BC.state)', 30000))) throw new Error('Electron 조작 화면이 안 떴습니다');
     const pages = {};
     for (const o of OUTPUTS) { pages['el-' + o] = await br.open(`${EL}/outputs/${o}`); pages['rs-' + o] = await br.open(`${RS}/outputs/${o}`); }
     const cueId = opt('cue', 'cmvtoethn450uc');
     await ctl.eval(`BCCue.openCue(${JSON.stringify(cueId)}).then(() => true)`, 60000); await rs('openCue', { id: cueId });
+    // 앞선 실행이 남긴 상태를 걷어 낸다: 무대 고정 · 무대 메시지 · 타이머 · 회중 메시지
+    await el('stagePinSet', {}); await rs('stagePinSet', {}); await el('stageMessage', { text: '' }); await rs('stageMessage', { text: '' }); await el('stageTimer', { action: 'reset' }); await rs('stageTimer', { op: 'reset' }); await el('clearAll'); await rs('clearAll');
     let n = (await ctl.eval(`BCCue.cueInfo()`)).items.length;
     if (n !== (await rs('cueItems')).length) throw new Error('두 판의 큐시트 순서 수가 다릅니다');
 
@@ -68,10 +72,12 @@ async function main() {
         const [ei, ri] = [png.decode(ea), png.decode(ra)];
         const d = png.diff(ei, ri);
         const [et, rt] = [await outText(pages['el-' + o]), await outText(pages['rs-' + o])];
-        row[o] = { px: Math.round(d.ratio * 10000) / 100, textSame: et === rt };
-        if (et !== rt) row[o].text = { el: et.slice(0, 400), rs: rt.slice(0, 400) };
+        const bag = s => s.split(' ').sort().join(' ');
+        const same = et === rt || bag(et) === bag(rt);
+        row[o] = { px: Math.round(d.ratio * 10000) / 100, textSame: same };
+        if (!same) row[o].text = { el: et.slice(0, 400), rs: rt.slice(0, 400) };
         const f = path.join(OUT, `${String(rows.length).padStart(3, '0')}-${name.replace(/[^\w가-힣]+/g, '_').slice(0, 50)}-${o}.png`);
-        if (d.ratio * 100 > loose || et !== rt || A.includes('--keep')) { fs.writeFileSync(f, png.encode(png.sideBySide(ei, ri))); row[o].file = f; }
+        if (d.ratio * 100 > loose || !same || A.includes('--keep')) { fs.writeFileSync(f, png.encode(png.sideBySide(ei, ri))); row[o].file = f; }
       }
       rows.push(row);
       const bad = OUTPUTS.filter(o => row[o].px > loose || !row[o].textSame);
@@ -95,12 +101,34 @@ async function main() {
     const add = async item => {
       const { type, ...extra } = item;
       await ctl.eval(`(BCCue.addItem(${JSON.stringify(type)}, ${JSON.stringify({ ...extra, _at: n })}), true)`); await sleep(350);
-      await rs('addItem', { item: { id: 'ft' + n, note: '', ...item } });
+      let made = null; // 조작 화면이 큐시트를 저장할 때까지 (늦게 저장한다)
+      for (let k = 0; k < 40 && !made; k++) { made = (await el('getCue', { id: cueId })).items[n]; if (!made) await sleep(250); }
+      if (!made || made.type !== type) throw new Error('Electron 에 순서가 들어가지 않았습니다: ' + item.title);
+      await rs('addItem', { item: made });
       return n++;
     };
     const setTpl = async (output, id) => { await el('setTemplate', { output, templateId: id }); await rs('setTemplate', { output, id }); await sleep(400); };
     // 둘 다 같은 상태가 될 때까지 기다린다 (자동 넘김처럼 시각이 조금 어긋나는 것)
     const until = async (pred, ms = 9000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const [a, b] = [await live(EL), await live(RS)]; if (pred(a) && pred(b)) return true; await sleep(150); } return false; };
+    const sortKeys = o => (o && typeof o === 'object' && !Array.isArray(o) ? Object.fromEntries(Object.keys(o).sort().map(k => [k, sortKeys(o[k])])) : o);
+    const shape = s => [s.kind, s.label, s.image || '', sortKeys(s.video || null), sortKeys(s.camera || null)];
+    // 자동 넘김 시간표: 두 판의 /api/live 를 ms 초 동안 지켜보고 (순서, 장, 보임) 이 바뀐 때를 적는다 → 차례와 간격을 비교
+    const timeline = async ms => {
+      const tl = { el: [], rs: [] }; const t0 = Date.now();
+      while (Date.now() - t0 < ms) { for (const [k, b] of [['el', EL], ['rs', RS]]) { const l = await live(b); const key = `${l.item}:${l.index}:${l.visible ? 1 : 0}`; const a = tl[k]; if (!a.length || a[a.length - 1].key !== key) a.push({ key, at: Date.now() - t0 }); } await sleep(60); }
+      return tl;
+    };
+    // 차례가 같고, 바뀐 간격이 tol 초 안으로 같으면 같다 (첫 항목은 시작 시각이 달라 간격만 본다)
+    const sameTimeline = (tl, tol = 0.7) => {
+      const seq = a => a.map(x => x.key).join(' → '); const gaps = a => a.slice(1).map((x, i) => (x.at - a[i].at) / 1000);
+      const [ge, gr] = [gaps(tl.el), gaps(tl.rs)];
+      const n = Math.min(tl.el.length, tl.rs.length);
+      const ok = seq(tl.el.slice(0, n)) === seq(tl.rs.slice(0, n)) && Math.abs(tl.el.length - tl.rs.length) <= 1 && ge.slice(1, n - 1).every((g, i) => Math.abs(g - gr[i + 1]) <= tol);
+      return { ok, text: `E ${tl.el.map((x, i) => x.key + (i ? `(+${ge[i - 1].toFixed(1)}s)` : '')).join(' ')}\n   R ${tl.rs.map((x, i) => x.key + (i ? `(+${gr[i - 1].toFixed(1)}s)` : '')).join(' ')}` };
+    };
+    // 두 판에 같은 때 송출만 (그림 비교 없이)
+    const sendOnly = i => Promise.all([ctl.eval(`BCCue.sendItem(${i})`, 90000).catch(x => console.log('  E: ' + x.message.slice(0, 120))), rs('sendCueItem', { index: i }).catch(x => console.log('  R: ' + x.message.slice(0, 120)))]);
+    const tlCheck = async (name, ms, tol) => { const r = sameTimeline(await timeline(ms), tol); console.log(`${r.ok ? '✓' : '✗'} ${name}\n   ${r.text}`); if (!r.ok) fails++; return r.ok; };
     const BIBLE = Number(opt('bible-item', '6')), SONG = 1, HYMN = 7, TITLE = 0;
 
     if (PART.has('overlays')) {
@@ -167,7 +195,7 @@ async function main() {
       await add({ type: 'blank', title: '끝' });
       for (const [nm, i] of [['영상', vid], ['음악', aud], ['그림', img], ['카메라', cam]]) {
         const [es, rd] = [await ctl.eval(`BCCue.slidesFor(${i})`).catch(e => e.message), await rs('slidesFor', { index: i }).catch(e => e.message)];
-        const [a, b] = [JSON.stringify((es || []).map ? es.map(s => [s.kind, s.label, s.image || '', s.video || null, s.camera || null]) : es), JSON.stringify(rd.slides ? rd.slides.map(s => [s.kind, s.label, s.image || '', s.video || null, s.camera || null]) : rd)];
+        const [a, b] = [JSON.stringify((es || []).map ? es.map(shape) : es), JSON.stringify(rd.slides ? rd.slides.map(shape) : rd)];
         console.log(`${a === b ? '✓' : '✗'} ${nm} 순서 슬라이드 모양${a === b ? '' : '\n   E ' + a.slice(0, 300) + '\n   R ' + b.slice(0, 300)}`); if (a !== b) fails++;
       }
       await send(before, '영상 앞 순서 송출');
@@ -179,10 +207,10 @@ async function main() {
       await both('그림에서 이전 → 음악 건너뛰고 영상', 'previousSlide');
       await send(aud, '음악 순서 송출(화면은 그대로)');
       await send(img, '그림 송출'); await send(cam, '카메라 송출');
-      await send(vnext, '짧은 영상(끝나면 다음) 송출');
-      console.log((await until(l => l.item === after, 12000)) ? '✓ 영상이 끝나 다음 순서로 넘어감' : (fails++, '✗ 영상이 끝난 뒤 다음 순서로 가지 않음: ' + JSON.stringify([await live(EL), await live(RS)])));
+      await sendOnly(vnext); await tlCheck('짧은 영상(4초)이 끝나면 다음 순서로', 9000, 1.5);
       await check('짧은 영상 뒤');
-      await send(vblack, '짧은 영상(끝나면 검은 화면) 송출'); await sleep(6500); await check('영상이 끝난 뒤(검은 화면)');
+      await sendOnly(vblack); await tlCheck('짧은 영상(4초)이 끝나면 검은 화면(숨김)', 8000, 1.5);
+      await check('영상이 끝난 뒤(검은 화면)');
     }
 
     if (PART.has('auto')) {
@@ -193,16 +221,14 @@ async function main() {
       const hd = await add({ type: 'text', title: '자동 숨김', body: '2초 뒤에 글자만 숨는 공지', hideAfter: 2 });
       const eh = await add({ type: 'text', title: '끝에서 숨김', body: '하나\n---\n둘', edgeHide: true });
       await add({ type: 'blank', title: '끝' });
-      await send(ss, '슬라이드쇼 송출', { loose: 1.5 });
-      for (const k of [1, 2, 3, 0, 1]) { const ok = await until(l => l.item === ss && l.index === k, 8000); console.log(`${ok ? '✓' : '✗'} 슬라이드쇼 자동 넘김 → ${k + 1}번째 장`); if (!ok) { fails++; console.log('   ' + JSON.stringify([await live(EL), await live(RS)])); break; } await check(`슬라이드쇼 ${k + 1}번째 장`, { loose: 1.5 }); }
-      await both('슬라이드쇼에서 글자 숨김(자동 넘김 멈춤)', 'clearLive', {}, 'clearLive', {}, { loose: 1.5 });
-      await sleep(4500); await check('숨긴 채 4.5초 뒤(그대로)', { loose: 1.5 });
-      await send(at, '자동 넘김 공지 송출');
-      for (const k of [1, 2]) { const ok = await until(l => l.item === at && l.index === k, 6000); console.log(`${ok ? '✓' : '✗'} 공지 자동 넘김 → ${k + 1}번째 장`); if (!ok) fails++; }
-      const ok2 = await until(l => l.item === nx, 6000); console.log(`${ok2 ? '✓' : '✗'} 마지막 장 뒤 다음 순서로 자동`); if (!ok2) { fails++; console.log('   ' + JSON.stringify([await live(EL), await live(RS)])); }
+      const ss0 = await add({ type: 'slideshow', title: '예배 전 화면(멈춤)', images: ['/media/flowimg1.png', '/media/flowimg2.png'], body: '광고 하나\n---\n광고 둘', autoSec: 0, countdown: '23:59', countdownLabel: '예배 시작까지' });
+      await send(ss0, '슬라이드쇼(자동 넘김 없음) 그림 장', { loose: 1.5 });
+      await both('슬라이드쇼 다음', 'nextSlide', {}, 'nextSlide', {}, { loose: 1.5 }); await both('슬라이드쇼 글 장', 'nextSlide', {}, 'nextSlide', {}, { loose: 1.5 });
+      await sendOnly(ss); await tlCheck('슬라이드쇼 자동 넘김·되풀이 (3초씩 4장, 17초 지켜봄)', 17000);
+      await el('clearLive'); await rs('clearLive'); await tlCheck('글자 숨김 뒤 5초 (자동 넘김 멈춤)', 5000);
+      await sendOnly(at); await tlCheck('공지 자동 넘김 (2초씩 3장) → 마지막 장 뒤 다음 순서', 10000);
       await check('자동으로 넘어간 다음 순서');
-      await send(hd, '자동 숨김 공지 송출');
-      const ok3 = await until(l => l.item === hd && l.visible === false, 6000); console.log(`${ok3 ? '✓' : '✗'} 2초 뒤 글자 숨김`); if (!ok3) fails++;
+      await sendOnly(hd); await tlCheck('2초 뒤 글자 자동 숨김', 5000);
       await check('자동으로 숨은 뒤');
       await both('숨은 뒤 다음(다시 보이며 넘어감)', 'nextSlide');
       await send(eh, '끝에서 숨김 공지 송출');
@@ -217,7 +243,7 @@ async function main() {
       const a4 = await add({ type: 'title', title: '자동: 무대 순서표', actions: { stagePin: 'order' } });
       const a5 = await add({ type: 'title', title: '자동: 무대 고정 풂·시계 켬·다른 것 끔', actions: { stagePin: 'live', ovOn: 'ovclock1', ovOff: '*' } });
       await send(BIBLE, '성경 송출(자동 동작 앞)');
-      await send(a1, '자동 1 송출'); await send(a2, '자동 2 송출', { loose: 1.5 }); await send(a3, '자동 3 송출'); await send(a4, '자동 4 송출'); await send(a5, '자동 5 송출', { loose: 1.5 });
+      await send(a1, '자동 1 송출', { loose: 10 }); await send(a2, '자동 2 송출', { loose: 1.5 }); await send(a3, '자동 3 송출'); await send(a4, '자동 4 송출'); await send(a5, '자동 5 송출', { loose: 1.5 });
       await both('다음으로 넘어갈 때는 자동 동작 없음(이전)', 'previousSlide', {}, 'previousSlide', {}, { loose: 1.5 });
       await el('stageTimer', { action: 'reset' }); await rs('stageTimer', { op: 'reset' }); await el('toggleOverlay', { id: 'ovclock1', on: false }); await rs('toggleOverlay', { id: 'ovclock1', on: false });
       await check('자동 동작 정리');

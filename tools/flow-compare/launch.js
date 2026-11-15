@@ -40,13 +40,17 @@ async function main() {
   for (let i = 0; i < 240 && !fs.existsSync(path.join(rsData, 'flow-ctl.txt')); i++) await sleep(250);
   const out = { rs: fs.readFileSync(path.join(rsData, 'flow-port.txt'), 'utf8').trim(), pids };
   if (NAME === 'rs' && pids.el && !A.includes('--no-el')) {
-    // Electron 포트: /control/ 이 200 이고 자료 폴더가 el-data 인 것
+    // Electron 포트: 우리가 띄운 PID 가 듣고 있는 포트 가운데 /control/ 이 200 인 것.
+    // (다른 점검 갈래의 Electron 이 37528 을 쓰고 있을 수 있다 — 첫 200 을 잡으면 남의 앱을 조작하게 된다)
+    const owned = () => { try { return execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8' }).split('\n').map(l => l.trim().split(/\s+/)).filter(c => c[3] === 'LISTENING' && Number(c[4]) === pids.el).map(c => Number(c[1].split(':').pop())); } catch { return []; } };
     for (let i = 0; i < 80 && !out.el; i++) {
-      for (let p = 37528; p < 37540 && !out.el; p++) {
+      for (const p of owned().sort((x, y) => x - y)) {
+        if (out.el) break;
         try { const r = await fetch(`http://127.0.0.1:${p}/control/`, { signal: AbortSignal.timeout(700) }); if (r.status === 200) out.el = String(p); } catch {}
       }
       if (!out.el) await sleep(500);
     }
+    if (!out.el) throw new Error('Electron 포트를 찾지 못했습니다');
   }
   if (NAME === 'rs') fs.writeFileSync(path.join(root, 'tmp', 'flow-ports.json'), JSON.stringify(out));
   console.log(JSON.stringify(out));
