@@ -104,20 +104,22 @@ pub fn tr_s(s: &'static str) -> &'static str {
 /// 사전에 글 그대로 있으면 그것, 없으면 {N} 자리가 있는 문구를 정규식으로 맞춰 자리를 옮겨 채운다.
 /// 맞는 것이 없으면 그대로. 알림은 자주 같은 글이 다시 그려지므로 마지막 몇 개를 기억해 둔다.
 pub fn tr_dyn(s: &str) -> String {
-    dyn_inner(s, 0)
+    dyn_inner(s, 0, false)
 }
 
 /// tr_dyn 과 같지만 채워진 자리 안의 글도 다시 옮긴다 ("모니터 2대 · 출력 꺼짐 — …" 처럼 문구 안에 문구가 든 것).
 /// 프로그램이 만든 글(연결 점검 결과)에만 쓴다 — 사용자 글이 사전 문구와 같으면 그것도 옮겨지므로.
 pub fn tr_dyn_deep(s: &str) -> String {
-    dyn_inner(s, 3)
+    dyn_inner(s, 3, false)
 }
 
-fn dyn_inner(s: &str, deep: u8) -> String {
+/// nested = 다른 문구의 자리 안에 든 글. 번역본 이름·순서 제목 같은 사용자 글일 수 있으므로
+/// 뚜렷한 문구(글 그대로면 4자 이상, 패턴이면 자리 밖 글이 12바이트 이상)만 옮긴다.
+fn dyn_inner(s: &str, deep: u8, nested: bool) -> String {
     if !is_en() || s.is_empty() {
         return s.to_string();
     }
-    static PATS: Lazy<Vec<(regex::Regex, Vec<usize>, String)>> = Lazy::new(|| {
+    static PATS: Lazy<Vec<(regex::Regex, Vec<usize>, String, usize)>> = Lazy::new(|| {
         let mut out = vec![];
         for (k, v) in DICT.iter() {
             if !k.contains('{') {
@@ -150,7 +152,8 @@ fn dyn_inner(s: &str, deep: u8) -> String {
                 continue;
             }
             if let Ok(r) = regex::Regex::new(&re) {
-                out.push((r, order, v.clone()));
+                let literal = k.len().saturating_sub(order.len() * 3);
+                out.push((r, order, v.clone(), literal));
             }
         }
         // 긴 문구(더 구체적인 것)부터
@@ -164,16 +167,17 @@ fn dyn_inner(s: &str, deep: u8) -> String {
         return v.1.clone();
     }
     let t = tr(s);
-    let out = if t != s {
+    let out = if t != s && (!nested || s.chars().count() >= 4) {
         t
     } else {
         PATS.iter()
-            .find_map(|(re, order, en)| {
+            .filter(|p| !nested || p.3 >= 12)
+            .find_map(|(re, order, en, _)| {
                 let c = re.captures(s)?;
                 let mut args: Vec<String> = vec![String::new(); order.iter().copied().max().unwrap_or(0)];
                 for (k, &i) in order.iter().enumerate() {
                     if let (Some(slot), Some(m)) = (i.checked_sub(1).and_then(|i| args.get_mut(i)), c.get(k + 1)) {
-                        *slot = if deep > 1 && m.as_str().chars().any(|ch| ('가'..='힣').contains(&ch)) { dyn_inner(m.as_str(), deep - 1) } else { m.as_str().to_string() };
+                        *slot = if deep > 1 && m.as_str().chars().any(|ch| ('가'..='힣').contains(&ch)) { dyn_inner(m.as_str(), deep - 1, true) } else { m.as_str().to_string() };
                     }
                 }
                 let refs: Vec<&dyn std::fmt::Display> = args.iter().map(|a| a as &dyn std::fmt::Display).collect();
@@ -258,6 +262,9 @@ mod tests {
         assert!(!tr_dyn_deep("모니터 2대 · 출력 꺼짐 — '예배당 화면 켜기' 로 켭니다").chars().any(|c| ('가'..='힣').contains(&c)), "{}", tr_dyn_deep("모니터 2대 · 출력 꺼짐 — '예배당 화면 켜기' 로 켭니다"));
         assert_eq!(tr_dyn("저장 실패: 디스크 가득"), "Save failed: 디스크 가득");
         assert_eq!(tr_dyn("'찬양' 순서 삭제"), "Delete item '찬양'");
+        // 자리 안의 번역본 이름·순서 제목은 건드리지 않는다
+        assert!(tr_dyn_deep("7개 — NIV (2011) · 개역개정 · 개역한글 …").contains("개역개정 · 개역한글"), "{}", tr_dyn_deep("7개 — NIV (2011) · 개역개정 · 개역한글 …"));
+        assert!(tr_dyn_deep("2번 '찬양': 찬양 가사가 비어 있습니다").contains("'찬양'"), "{}", tr_dyn_deep("2번 '찬양': 찬양 가사가 비어 있습니다"));
         assert_eq!(tr("파일"), "File");
         assert_eq!(tr("새 버전"), "New version");
         assert_eq!(tr("홍길동"), "홍길동");
