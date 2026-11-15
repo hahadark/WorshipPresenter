@@ -13,7 +13,7 @@ const png = require('./png');
 
 const A = process.argv.slice(2);
 const opt = (k, d) => { const i = A.indexOf('--' + k); return i >= 0 ? A[i + 1] : d; };
-const EL = `http://127.0.0.1:${opt('el', '37528')}`;
+const EL = `http://127.0.0.1:${opt('el', (() => { try { return JSON.parse(fs.readFileSync('tmp/flow-ports.json', 'utf8')).el; } catch { return ''; } })())}`;
 const RSD = opt('rs-data', 'tmp/rs-data');
 const RS = `http://127.0.0.1:${fs.readFileSync(path.join(RSD, 'flow-port.txt'), 'utf8').trim()}`;
 const RSCTL = fs.readFileSync(path.join(RSD, 'flow-ctl.txt'), 'utf8').trim();
@@ -41,7 +41,23 @@ function slideKey(s) {
   return parts.join(' ‖ ');
 }
 
-const outText = p => p.eval(`(() => { const b = document.body; return b ? b.innerText.replace(/\\s+/g, ' ').trim() : ''; })()`);
+// 시계·타이머처럼 흐르는 숫자는 빼고 비교 (무대 화면)
+const outText = p => p.eval(`(() => { const b = document.body; return b ? b.innerText.replace(/\\d{1,2}:\\d{2}(:\\d{2})?/g, '#').replace(/(오전|오후|AM|PM)/g, '').replace(/\\s+/g, ' ').trim() : ''; })()`);
+// 이 슬라이드에서 화면에 보여야 할 글의 앞머리 (서식 표시·빈칸은 빼고). 글이 없는 슬라이드(빈 화면·그림)는 ''
+function expectText(s) {
+  if (!s || ['blank', 'image', 'score', 'video', 'camera'].includes(s.kind)) return '';
+  const raw = ((s.parts || []).map(p => p.text || '').find(t => t.trim()) || s.title || '').split('\n').map(l => l.replace(/\{[^}]*\}/g, '').replace(/[*_~^#>\-]/g, '')).find(l => l.replace(/\s/g, '').length >= 2) || '';
+  return raw.replace(/\s+/g, '').slice(0, 6);
+}
+// '내용이 실제로 보일 때까지' 기다린다: 글이 DOM 에 있고, 그 글 영역의 불투명도가 1 이 될 때까지 (페이드 중·글이 뜨기 전에 찍으면 둘 다 빈 화면이라 0% 로 잘못 판정된다)
+async function waitShown(page, want, maxMs = 5000) {
+  if (!want) return true;
+  return page.waitFor(`(() => { const a = [...document.querySelectorAll('.bc-stage:not(.bc-measure .bc-stage) > .bc-area')].filter(e => parseFloat(getComputedStyle(e).opacity) > 0.99);
+    return a.some(e => (e.innerText || '').replace(/\\s+/g, '').includes(${JSON.stringify(want)})); })()`, maxMs);
+}
+// 그림 전체가 한 가지 색인가 (아무것도 안 그려짐)
+function uniform(img) { const d = img.data; for (let i = 4; i < d.length; i += 4 * 97) if (Math.abs(d[i] - d[0]) > 6 || Math.abs(d[i + 1] - d[1]) > 6 || Math.abs(d[i + 2] - d[2]) > 6) return false; return true; }
+
 
 async function main() {
   const br = await launch(path.join(OUT, 'profile'));
@@ -87,14 +103,23 @@ async function main() {
         const n = Math.min(es.length, rsl.length, MAXS);
         for (let k = 0; k < n; k++) {
           if (k > 0) { await ecmd('nextSlide'); await rs('nextSlide'); }
-          await sleep(900);
+          for (const o of OUTPUTS) { await pages['el-' + o].settle(); await pages['rs-' + o].settle(); }
           const srep = { slide: k };
+          // 예배당 화면에 이 슬라이드의 글이 실제로 보일 때까지
+          const want = expectText(rsl[k]);
+          if (OUTPUTS.includes('main') && want) {
+            const [se, sr] = [await waitShown(pages['el-main'], want), await waitShown(pages['rs-main'], want)];
+            if (!se || !sr) { srep.notShown = { want, el: se, rs: sr }; irep.notShown = (irep.notShown || 0) + 1; report.notShown = (report.notShown || 0) + 1; }
+          }
           for (const o of OUTPUTS) {
             const [ea, ra] = [await pages['el-' + o].shot(), await pages['rs-' + o].shot()];
             const [ei, ri] = [png.decode(ea), png.decode(ra)];
             const d = png.diff(ei, ri);
             const [et, rt] = [await outText(pages['el-' + o]), await outText(pages['rs-' + o])];
             srep[o] = { px: Math.round(d.ratio * 10000) / 100, box: d.box, textSame: et === rt };
+            // 글이 있어야 하는데 두 판 모두 한 가지 색이면 '같음' 이 아니라 '판정 못 함'
+            if (o === 'main' && want && uniform(ei) && uniform(ri)) { srep[o].blankBoth = true; report.blankBoth = (report.blankBoth || 0) + 1; }
+            report.checked = (report.checked || 0) + 1; if (srep[o].px > 0.4) report.pxDiff = (report.pxDiff || 0) + 1; if (et !== rt) report.textDiff = (report.textDiff || 0) + 1;
             if (et !== rt) srep[o].text = { el: et.slice(0, 300), rs: rt.slice(0, 300) };
             if (d.ratio > 0.004 || et !== rt) {
               const f = path.join(OUT, `${cueId}-${i}-${k}-${o}.png`);
@@ -103,15 +128,18 @@ async function main() {
             }
           }
           irep.shots.push(srep);
-          const bad = OUTPUTS.filter(o => srep[o].px > 0.4 || !srep[o].textSame);
-          if (bad.length) console.log(`   장 ${k + 1}: ` + bad.map(o => `${o} ${srep[o].px}%${srep[o].textSame ? '' : ' 글 다름'}`).join(' · '));
+          const bad = OUTPUTS.filter(o => srep[o].px > 0.4 || !srep[o].textSame || srep[o].blankBoth);
+          if (bad.length || srep.notShown) console.log(`   장 ${k + 1}: ` + bad.map(o => `${o} ${srep[o].px}%${srep[o].textSame ? '' : ' 글 다름'}${srep[o].blankBoth ? ' 둘 다 빈 화면(판정 못 함)' : ''}`).join(' · ') + (srep.notShown ? ` · 내용 안 보임(${srep.notShown.want}) E${srep.notShown.el ? '보임' : '안 보임'} R${srep.notShown.rs ? '보임' : '안 보임'}` : ''));
         }
       }
       fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
     }
+    const cnt = report.cues.flatMap(c => c.items).filter(i => i.count && i.count[0] !== i.count[1]).length, cdiff = report.cues.flatMap(c => c.items).filter(i => i.diffs.length).length, all = report.cues.flatMap(c => c.items).length;
+    console.log(`\n== 순서 ${all}개: 장 수 다름 ${cnt} · 내용 다름 ${cdiff} | 출력 비교 ${report.checked || 0}건: 그림 다름(>0.4%) ${report.pxDiff || 0} · 글 다름 ${report.textDiff || 0} · 내용 안 보임 ${report.notShown || 0} · 둘 다 빈 화면 ${report.blankBoth || 0}`);
   } finally {
     fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
     br.close();
+    setTimeout(() => process.exit(process.exitCode || 0), 500);
   }
 }
 

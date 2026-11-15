@@ -134,7 +134,7 @@ Rust 위치는 `core`=crates/wp-core/src, `app`=crates/wp-app/src.
 | /api/trigger/<동작> | core/trigger.rs | 됨 | 16개 |
 | /dock · /remote.js · /groups.js · /r/state · POST /r/do | core/remote.rs | 됨 | 리모컨 서버(37540)와 조작 서버 /dock |
 | /api/state · /api/live · /events (SSE render·draw·hello) · /api/ack | core/server.rs | 됨 | |
-| POST /api/command | core/server.rs command | 일부 | 출력 화면이 쓰는 videoEnded 만 (다른 명령은 egui 에서 직접) — 의도적 |
+| POST /api/command | core/server.rs command · core/extcmd.rs | 일부 | 2026-11-16 점검 A: Electron README 의 외부 연동 길이라 송출·무대·오버레이·큐시트 읽기/저장 등 35개 명령을 같은 이름·응답 봉투로 받는다(조작 서버 127.0.0.1 + X-WorshipCue 에서만, 내부망 출력에서는 videoEnded 말고 403). 파일 열기·설정 통째 바꾸기·AI·가져오기·지우기는 받지 않음(의도적). /api/state 는 getState 의 맨 위 키를 채우되 설정의 비밀(열쇠·PIN)은 뺀다. tools/flow-compare/contract.js 로 두 판 115개 요청 대조 |
 | POST /api/bulletin · /api/readtext · /api/media · /api/import | — | 대체 | 웹 조작 화면의 파일 올리기. Rust 는 파일 고르기 창으로 바로 읽음 |
 | 내부망 출력 서버 (37550, 열쇠) | core/lan.rs | 됨 | |
 | Host 검사 (DNS rebinding) · X-WorshipCue 머리글 | core/server.rs host_check · command | 됨 | |

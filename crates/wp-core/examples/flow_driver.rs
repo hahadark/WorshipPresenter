@@ -23,6 +23,13 @@ fn deck_json(d: &wp_core::presentation::Deck) -> Value {
     json!({ "passage": d.passage, "slides": d.slides, "index": d.index })
 }
 
+fn pick_templates(c: &Core, a: &Value) -> Vec<Value> {
+    match a["templates"].as_array() {
+        Some(ids) => ids.iter().filter_map(|x| if x.is_object() { Some(x.clone()) } else { x.as_str().and_then(|id| c.settings.template(id)) }).collect(),
+        None => vec![c.template_for("main"), c.template_for("overlay")],
+    }
+}
+
 fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
     let idx = || a["index"].as_u64().unwrap_or(0) as usize;
     Ok(match cmd {
@@ -49,9 +56,62 @@ fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Value, String> {
             json!(true)
         }
         "setTemplate" => { c.set_template(a["output"].as_str().unwrap_or("main"), a["id"].as_str().unwrap_or("")); json!(true) }
+        // ---- 일괄 나눔 대조 (tools/flow-compare/split-batch.js): 송출 없이 슬라이드만 만든다 ----
+        // 장절 → 본문(병행 번역 포함) + 슬라이드. templates: 템플릿 id 목록 (없으면 지금 쓰는 것)
+        "bibleBuild" => {
+            let v = a["versionId"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| c.version_id());
+            let res = c.store.resolve_reference(&v, a["query"].as_str().unwrap_or(""));
+            if res["ok"] != json!(true) { return Err(res["error"].as_str().unwrap_or("본문을 찾지 못했습니다.").to_string()); }
+            let pass = wp_core::flow::with_parallel(c, res["passage"].clone());
+            let tpls = pick_templates(c, a);
+            let opts = wp_core::slides::SplitOpts { mode: a["mode"].as_str().unwrap_or("auto").into(), count: a["count"].as_u64().unwrap_or(1) as usize, templates: tpls.clone() };
+            let slides = wp_core::slides::build_bible(&pass, &opts);
+            json!({ "passage": pass, "slides": slides, "templates": tpls })
+        }
+        // 순서(찬양·공지·교독문 등) → 슬라이드
+        "itemBuild" => {
+            let tpls = pick_templates(c, a);
+            let opts = wp_core::slides::SplitOpts { mode: a["mode"].as_str().unwrap_or("auto").into(), count: a["count"].as_u64().unwrap_or(1) as usize, templates: tpls.clone() };
+            json!({ "slides": wp_core::slides::build_item(&a["item"], None, &opts), "templates": tpls })
+        }
+        // 슬라이드 하나의 높이: (글 덩어리 높이, 본문 영역 높이)
+        "measure" => {
+            let (h, area) = wp_core::measure::content_height(&a["slide"], &a["tpl"], a["size"].as_f64().unwrap_or(0.0) as f32, a["ver"].as_str().unwrap_or(""));
+            json!({ "h": h, "area": area })
+        }
+        "textWidth" => json!(a["texts"].as_array().into_iter().flatten().map(|x| wp_core::measure::text_width(x.as_str().unwrap_or(""), a["size"].as_f64().unwrap_or(0.0) as f32, a["bold"].as_bool().unwrap_or(false), 0.0)).collect::<Vec<f32>>()),
+        "cueItems" => json!(c.cue.as_ref().map(|q| q.items.clone()).unwrap_or_default()),
+        "templates" => json!(c.settings.templates()),
+        // ---- 조작 흐름 대조 (tools/flow-compare/features.js) ----
+        // 순서 송출 (조작 화면의 두 번 누르기와 같은 길: 미리보기 → 송출 → 순서의 '송출할 때 자동으로')
+        "sendCueItem" => json!(c.send_item(idx())),
+        "saveOverlay" => c.save_overlay(&a["overlay"]).map_err(|e| e.to_string())?,
+        "toggleOverlay" => c.toggle_overlay(a["id"].as_str().unwrap_or(""), a["on"].as_bool()).map_err(|e| e.to_string())?,
+        "overlays" => json!(c.overlays()),
+        "setObsView" => wp_core::themes::set_obs_view(c, a["full"].as_bool(), a["pip"].as_bool()),
+        "videoControl" => { c.video_control(a["action"].as_str().unwrap_or(""), a["value"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?; json!(true) }
+        "stagePinSet" => { c.stage_pin_set(if a.is_null() || a.as_object().is_some_and(|o| o.is_empty()) { None } else { Some(a) }).map_err(|e| e.to_string())?; json!(true) }
+        "saveMacro" => json!(c.save_macro(&a["macro"]).map_err(|e| e.to_string())?),
+        "runMacro" => { c.run_macro(a["id"].as_str().or(a["name"].as_str()).unwrap_or("")).map_err(|e| e.to_string())?; json!(true) }
+        // 즉석 자막 (조작 화면 trackb_ui.rs quick_send 와 같은 만들기)
+        "quickText" => {
+            let text = a["text"].as_str().unwrap_or("").replace('\r', "").trim().to_string();
+            let opts = c.split_opts(None);
+            let slides = wp_core::slides::build_text("", false, &wp_core::slides::text_chunks(&text, 1), &opts);
+            let n = slides.len();
+            if n == 0 { return Err("송출할 글을 쓰세요.".into()); }
+            c.send_deck(wp_core::presentation::Deck { passage: json!({ "title": "즉석 자막", "itemTitle": "즉석 자막", "versionName": "", "cueIndex": -1, "cueId": "", "itemType": "text" }), slides, index: 0 });
+            json!(n)
+        }
+        "listCues" => json!(c.store.list_cues().iter().map(|q| q.id.clone()).collect::<Vec<_>>()),
+        "cueOf" => json!(c.store.get_cue(a["id"].as_str().unwrap_or("")).map(|q| q.items).unwrap_or_default()),
+        "songs" => json!(c.list_songs("").iter().filter_map(|s| s["id"].as_str().and_then(|id| c.get_song(id))).collect::<Vec<_>>()),
+        "plannedTimes" => json!(c.planned_times()),
         "clearMessage" => { c.clear_message(); json!(true) }
         "toggleOverlaysOff" => { c.toggle_overlays_off(); json!(true) }
         // 큐시트 끝에 순서 넣기 (비교용 성경·공지 순서)
+        // 대조하며 끝에 넣은 순서들을 걷어 낸다 (앞의 count 개만 남김)
+        "truncateItems" => { let keep = a["count"].as_u64().unwrap_or(0) as usize; while c.cue.as_ref().is_some_and(|q| q.items.len() > keep) { let n = c.cue.as_ref().map(|q| q.items.len()).unwrap_or(0); c.remove_item(n - 1); } json!(keep) }
         "addItem" => { let n = c.cue.as_ref().map(|q| q.items.len()).unwrap_or(0); c.add_item(a["item"].clone(), Some(n)); json!(n) }
         // 설정 맨 위 키를 그대로 바꾼다 (split · parallelVersionId 등)
         "updateSettings" => {

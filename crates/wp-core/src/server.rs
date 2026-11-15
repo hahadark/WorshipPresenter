@@ -262,7 +262,11 @@ async fn ack(State(core): State<Shared>, Json(b): Json<Value>) -> Json<Value> {
     Json(json!({ "ok": true }))
 }
 
-async fn command(State(core): State<Shared>, headers: HeaderMap, Json(b): Json<Value>) -> Response {
+/// 조작 서버(127.0.0.1 · Host 검사를 지난 요청)라는 표시. 내부망 출력 서버는 같은 길(output_routes)을 쓰지만 이 표시가 없다.
+#[derive(Clone, Copy)]
+pub struct LocalControl;
+
+async fn command(State(core): State<Shared>, headers: HeaderMap, local: Option<axum::Extension<LocalControl>>, Json(b): Json<Value>) -> Response {
     if headers.get("x-worshipcue").and_then(|v| v.to_str().ok()) != Some("1") {
         return status(StatusCode::FORBIDDEN);
     }
@@ -274,18 +278,26 @@ async fn command(State(core): State<Shared>, headers: HeaderMap, Json(b): Json<V
             Ok(n) => Json(json!({ "ok": true, "result": { "count": n } })).into_response(),
             Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": e }))).into_response(),
         },
-        _ => Json(json!({ "ok": false, "error": "조작 명령은 Rust 판 조작 화면에서만 합니다." })).into_response(),
+        // [점검 A] 외부 연동 명령 (Electron 판과 같은 이름·응답): 조작 서버에서만. 내부망 출력에서는 위의 '영상 끝남' 만 (Electron: req.lan → 403)
+        Some(cmd) if local.is_some() => {
+            let t0 = std::time::Instant::now();
+            let mut r = crate::extcmd::respond(&mut core.lock(), cmd, &b["args"]);
+            if let Some(o) = r.as_object_mut() { o.insert("ms".into(), json!((t0.elapsed().as_secs_f64() * 10_000.0).round() / 10.0)); }
+            Json(r).into_response()
+        }
+        _ => (StatusCode::FORBIDDEN, Json(json!({ "ok": false }))).into_response(),
     }
 }
 
 /// 다른 컴퓨터 이름으로 들어온 요청은 거절 (DNS rebinding 막기)
-async fn host_check(State(core): State<Shared>, req: Request<Body>, next: Next) -> Response {
+async fn host_check(State(core): State<Shared>, mut req: Request<Body>, next: Next) -> Response {
     let port = core.lock().port;
     let host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
     let ok = [format!("127.0.0.1:{port}"), format!("localhost:{port}"), format!("[::1]:{port}")].contains(&host);
     if !ok {
         return status(StatusCode::MISDIRECTED_REQUEST);
     }
+    req.extensions_mut().insert(LocalControl);
     let mut res = next.run(req).await;
     res.headers_mut().insert("X-Content-Type-Options", HeaderValue::from_static("nosniff"));
     res
@@ -308,7 +320,8 @@ pub fn output_routes(core: Shared) -> Router<Shared> {
         .route("/hymn/{key}/{file}", get(hymn_file)) // [트랙 A]
         .route("/hymnal/score/{book}/{file}", get(hymnal_score)) // [트랙 A]
         .route("/events", get(events))
-        .route("/api/state", get(|State(c): State<Shared>| async move { Json(c.lock().output_payload("main")) }))
+        // Electron getState 의 맨 위 키 + 출력 화면용 키 (extcmd::state_json). 내부망 출력에서는 lan.rs 가 이 길을 막는다
+        .route("/api/state", get(|State(c): State<Shared>| async move { Json(crate::extcmd::state_json(&c.lock())) }))
         .route("/api/live", get(|State(c): State<Shared>| async move { Json(c.lock().pres.live_state()) }))
         .route("/api/ack", post(ack))
         .route("/api/command", post(command))
@@ -506,5 +519,66 @@ mod camera_command_tests {
         let j = src.find("pub fn router").unwrap();
         assert!(!src[i..j].contains("camhelper"));
         assert!(src[j..].contains("camhelper::routes()"));
+    }
+}
+#[cfg(test)]
+mod extcmd_http_tests {
+    use super::*;
+
+    /// [점검 A] 외부 연동 명령은 조작 서버에서만: 머리글 없으면 403, 내부망 출력 서버에서는 '영상 끝남' 말고 403 (Electron 판과 같은 경계)
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn command_boundary_control_vs_lan() {
+        let dir = std::env::temp_dir().join(format!("wp-extcmd-http-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        drop(rusqlite::Connection::open(dir.join("bible.db")).unwrap());
+        let core: Shared = std::sync::Arc::new(parking_lot::Mutex::new(crate::core::Core::open(dir.clone(), dir.join("web"), None).unwrap()));
+        core.lock().settings.update(|d| d["lanOutput"] = json!({ "enabled": false, "port": 0, "key": "lanKeyForTest01" }));
+        let l = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        core.lock().port = port;
+        let app = router(core.clone());
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        let l2 = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let lan_port = l2.local_addr().unwrap().port();
+        let lan = crate::lan::router(core.clone());
+        tokio::spawn(async move { axum::serve(l2, lan).await.unwrap() });
+        let post = |url: String, body: Value, header_on: bool| async move {
+            tokio::task::spawn_blocking(move || {
+                let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).build().into();
+                let mut r = agent.post(&url);
+                if header_on { r = r.header("x-worshipcue", "1"); }
+                let mut res = r.send_json(body).unwrap();
+                (res.status().as_u16(), serde_json::from_str::<Value>(&res.body_mut().read_to_string().unwrap_or_default()).unwrap_or(Value::Null))
+            }).await.unwrap()
+        };
+        let ctl = format!("http://127.0.0.1:{port}/api/command");
+        let lanu = format!("http://127.0.0.1:{lan_port}/api/command?key=lanKeyForTest01");
+        // 조작 서버: 머리글 없으면 403
+        assert_eq!(post(ctl.clone(), json!({ "cmd": "stageMessage", "args": { "text": "x" } }), false).await.0, 403);
+        assert_eq!(core.lock().b.stage.message, "");
+        // 조작 서버: 머리글이 있으면 Electron 과 같은 봉투
+        let (code, r) = post(ctl.clone(), json!({ "cmd": "stageMessage", "args": { "text": "설교 5분 남음" } }), true).await;
+        assert_eq!((code, r["ok"].clone(), r["result"]["message"].clone()), (200, json!(true), json!("설교 5분 남음")));
+        assert!(r["liveVersion"].is_number() && r["ms"].is_number());
+        let (code, r) = post(ctl.clone(), json!({ "cmd": "noSuchCommand" }), true).await;
+        assert_eq!((code, r["ok"].clone()), (200, json!(false)));
+        // 내부망 출력 서버: 열쇠가 맞아도 조작 명령은 403, 무대 메시지는 그대로
+        let (code, _) = post(lanu.clone(), json!({ "cmd": "stageMessage", "args": { "text": "내부망에서" } }), true).await;
+        assert_eq!(code, 403);
+        assert_eq!(post(lanu.clone(), json!({ "cmd": "clearAll" }), true).await.0, 403);
+        assert_eq!(post(lanu.clone(), json!({ "cmd": "saveCue", "args": { "cue": { "name": "x", "items": [] } } }), true).await.0, 403);
+        assert_eq!(core.lock().b.stage.message, "설교 5분 남음");
+        // 내부망 출력 서버: 출력 화면이 알리는 '영상 끝남' 은 받는다
+        assert_eq!(post(lanu, json!({ "cmd": "videoEnded", "args": {} }), true).await.0, 200);
+        // 상태: 조작 서버는 Electron 모양, 내부망에서는 막힘
+        let get = |url: String| async move { tokio::task::spawn_blocking(move || { let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).build().into(); let mut res = agent.get(&url).call().unwrap(); (res.status().as_u16(), res.body_mut().read_to_string().unwrap_or_default()) }).await.unwrap() };
+        let (code, text) = get(format!("http://127.0.0.1:{port}/api/state")).await;
+        assert_eq!(code, 200);
+        let s: Value = serde_json::from_str(&text).unwrap();
+        assert!(s["live"].is_object() && s["stage"].is_object() && s["obsView"].is_object() && s.get("cameras").is_some());
+        assert!(!text.contains("lanKeyForTest01"), "내부망 열쇠가 상태에 들어 있다");
+        assert_eq!(get(format!("http://127.0.0.1:{lan_port}/api/state?key=lanKeyForTest01")).await.0, 403);
+        drop(core);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

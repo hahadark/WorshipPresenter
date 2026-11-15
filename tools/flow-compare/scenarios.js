@@ -9,7 +9,7 @@ const png = require('./png');
 
 const A = process.argv.slice(2);
 const opt = (k, d) => { const i = A.indexOf('--' + k); return i >= 0 ? A[i + 1] : d; };
-const EL = `http://127.0.0.1:${opt('el', '37530')}`;
+const EL = `http://127.0.0.1:${opt('el', (() => { try { return JSON.parse(fs.readFileSync('tmp/flow-ports.json', 'utf8')).el; } catch { return ''; } })())}`;
 const RSD = opt('rs-data', 'tmp/rs-data');
 const RS = `http://127.0.0.1:${fs.readFileSync(path.join(RSD, 'flow-port.txt'), 'utf8').trim()}`;
 const RSCTL = fs.readFileSync(path.join(RSD, 'flow-ctl.txt'), 'utf8').trim();
@@ -47,7 +47,8 @@ async function main() {
     const bi = Number(opt('bible-item', '6'));
 
     async function check(name) {
-      await sleep(1100);
+      await sleep(200);
+      for (const o of OUTPUTS) { await pages['el-' + o].settle(); await pages['rs-' + o].settle(); }
       const row = { step: name };
       const [le, lr] = [await live(EL), await live(RS)];
       row.live = JSON.stringify(le) === JSON.stringify(lr) ? 'same' : { el: le, rs: lr };
@@ -58,7 +59,7 @@ async function main() {
         const [et, rt] = [await outText(pages['el-' + o]), await outText(pages['rs-' + o])];
         row[o] = { px: Math.round(d.ratio * 10000) / 100, textSame: et === rt };
         if (et !== rt) row[o].text = { el: et.slice(0, 400), rs: rt.slice(0, 400) };
-        if (d.ratio > 0.004 || et !== rt) { const f = path.join(OUT, `${String(rows.length).padStart(2, '0')}-${name.replace(/[^\w가-힣]+/g, '_')}-${o}.png`); fs.writeFileSync(f, png.encode(png.sideBySide(ei, ri))); row[o].file = f; }
+        if (d.ratio > 0.004 || et !== rt || A.includes('--keep')) { const f = path.join(OUT, `${String(rows.length).padStart(2, '0')}-${name.replace(/[^\w가-힣]+/g, '_')}-${o}.png`); fs.writeFileSync(f, png.encode(png.sideBySide(ei, ri))); row[o].file = f; }
       }
       rows.push(row);
       const bad = OUTPUTS.filter(o => row[o].px > 0.4 || !row[o].textSame);
