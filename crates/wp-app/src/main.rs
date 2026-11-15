@@ -86,6 +86,7 @@ fn seed_db() -> Option<PathBuf> {
 }
 
 fn main() -> anyhow::Result<()> {
+    wp_core::firstrun::mark("main");
     let data_dir = arg("--data").map(PathBuf::from).unwrap_or_else(|| dirs_data().join("WorshipPresenter-rs").join("data"));
     let _ = std::fs::create_dir_all(&data_dir);
     wp_core::logger::init(&data_dir); // [트랙 B] 파일 로그 (logs\날짜.log)
@@ -102,33 +103,21 @@ fn main() -> anyhow::Result<()> {
         wp_core::firstrun::focus_instance(&data_dir);
         return Ok(());
     }
+    wp_core::firstrun::mark("로그·단일 실행");
     wp_core::firstrun::write_instance_pid(&data_dir);
     // 창이 늦게 뜨면(첫 실행 자료 옮기기·느린 디스크) 작은 '켜는 중…' 창을 먼저 보인다
     wp_core::firstrun::start_splash();
     wp_core::parity_a::keep_display_awake();
-    let core = match Core::open(data_dir.clone(), web.clone(), seed_db().as_deref()) {
-        Ok(c) => c,
-        Err(e) => {
-            wp_core::firstrun::error_box(&format!("워십프리젠터를 켜지 못했습니다.\n\n{e:#}\n\n자료 폴더: {}", data_dir.display()));
-            return Err(e);
-        }
-    };
-    let shared = Arc::new(Mutex::new(core));
-    wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
-    wp_core::i18n::set_lang(shared.lock().settings.get()["uiLang"].as_str().unwrap_or("ko")); // [트랙 D] 영어 화면 (출력 웹도)
-    wp_core::winkeys::start_global_shortcuts(shared.clone()); // [트랙 D] 전역 단축키
-    wp_core::updates::start_telemetry(shared.clone()); // [트랙 D] 익명 사용 통계 (디버그 빌드는 안 보냄)
-    if shared.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true) { wp_core::updates::check(&shared, false); } // [트랙 D] 새 버전 확인
-    wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
-    wp_core::sync::install(&shared); // [트랙 B] 여러 PC 동기화 · 하루 1회 백업
-
-    // 웹 서버 (출력 화면) — 따로 tokio 실행기
-    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
-    let port = rt.block_on(wp_core::server::serve(shared.clone()))?;
-    log::info!("로컬 서버: http://127.0.0.1:{port}");
-    let rx = shared.lock().tx.subscribe();
-    std::thread::spawn(move || rt.block_on(std::future::pending::<()>()));
-
+    // 자료 열기·서버 시작은 창·그래픽 준비(0.5초쯤)와 동시에 한다 → 창이 그만큼 빨리 뜬다
+    let (ptx, prx) = std::sync::mpsc::channel();
+    {
+        let (d, w) = (data_dir.clone(), web.clone());
+        std::thread::Builder::new().name("prepare".into()).spawn(move || {
+            let _ = ptx.send(prepare(d, w));
+        })?;
+    }
+    // 그래픽 장치 준비(0.3~0.5초)도 창 만들기 전에 다른 스레드에서 시작한다
+    let gfx = std::thread::Builder::new().name("gfx".into()).spawn(prepare_gfx).ok();
     let icon = image::load_from_memory(include_bytes!("../../../assets/icon.png")).ok().map(|i| {
         let i = i.to_rgba8();
         let (w, h) = i.dimensions();
@@ -142,16 +131,34 @@ fn main() -> anyhow::Result<()> {
     if let Some(i) = icon {
         vp = vp.with_icon(Arc::new(i));
     }
-    let opts = eframe::NativeOptions { viewport: vp, ..Default::default() };
+    wp_core::firstrun::mark("아이콘");
+    let mut opts = eframe::NativeOptions { viewport: vp, ..Default::default() };
+    // 그래픽 장치를 미리(다른 스레드에서) 만들어 둔 것이 있으면 그것을 쓴다
+    if let Some(g) = gfx.and_then(|h| h.join().ok()).flatten() {
+        opts.wgpu_options.wgpu_setup = eframe::egui_wgpu::WgpuSetup::Existing(g);
+    }
+    wp_core::firstrun::mark("그래픽 장치");
     let web2 = web.clone();
     eframe::run_native(
         "worship-presenter-rs",
         opts,
         Box::new(move |cc| {
-            wp_core::firstrun::splash_done(); // 조작 화면 창이 생겼다 → 안내 창 닫기
+            wp_core::firstrun::mark("창·그래픽 준비");
+
             theme::install_fonts(&cc.egui_ctx); // Pretendard + 맑은 고딕(대체·슬라이드)
+            wp_core::firstrun::mark("글꼴");
             egui_extras::install_image_loaders(&cc.egui_ctx);
             theme::apply(&cc.egui_ctx, theme::ThemeId::Dark); // 설정 테마는 첫 프레임에 apply_ui_prefs 가 다시 적용
+            // 자료 준비가 끝나길 기다린다 (보통 이미 끝나 있다. 첫 실행 자료 옮기기는 시작 창이 진행률을 보인다)
+            let (shared, rx) = match prx.recv() {
+                Ok(Ok(v)) => v,
+                Ok(Err(e)) => {
+                    wp_core::firstrun::error_box(&format!("워십프리젠터를 켜지 못했습니다.\n\n{e:#}\n\n자료 폴더: {}", data_dir.display()));
+                    return Err(format!("{e:#}").into());
+                }
+                Err(e) => return Err(format!("자료 준비가 중간에 끝났습니다: {e}").into()),
+            };
+            wp_core::firstrun::mark("자료 기다림 끝");
             // 코어가 바뀌면 화면을 다시 그린다
             let ctx = cc.egui_ctx.clone();
             let mut rx = rx;
@@ -162,10 +169,83 @@ fn main() -> anyhow::Result<()> {
                     Err(_) => break,
                 }
             });
-            Ok(Box::new(app::App::new(shared, web2, data_dir)))
+            let app = app::App::new(shared, web2, data_dir);
+            wp_core::firstrun::mark("화면 준비");
+            Ok(Box::new(app))
         }),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+/// 자료 열기 · 백그라운드 일 · 출력 웹 서버 (창 만드는 동안 다른 스레드에서)
+fn prepare(data_dir: PathBuf, web: PathBuf) -> anyhow::Result<(wp_core::core::Shared, tokio::sync::broadcast::Receiver<Ev>)> {
+    let core = Core::open(data_dir, web, seed_db().as_deref())?;
+    wp_core::firstrun::mark("자료 열기");
+    let shared = Arc::new(Mutex::new(core));
+    wp_core::flow::install(&shared); // [트랙 C] 자동 넘김·글자 자동 숨김 타이머
+    wp_core::i18n::set_lang(shared.lock().settings.get()["uiLang"].as_str().unwrap_or("ko")); // [트랙 D] 영어 화면 (출력 웹도)
+    wp_core::winkeys::start_global_shortcuts(shared.clone()); // [트랙 D] 전역 단축키
+    wp_core::updates::start_telemetry(shared.clone()); // [트랙 D] 익명 사용 통계 (디버그 빌드는 안 보냄)
+    if shared.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true) {
+        wp_core::updates::check(&shared, false); // [트랙 D] 새 버전 확인
+    }
+    wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
+    wp_core::sync::install(&shared); // [트랙 B] 여러 PC 동기화 · 하루 1회 백업
+
+    // 웹 서버 (출력 화면) — 따로 tokio 실행기
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
+    let port = rt.block_on(wp_core::server::serve(shared.clone()))?;
+    log::info!("로컬 서버: http://127.0.0.1:{port}");
+    let rx = shared.lock().tx.subscribe();
+    std::thread::spawn(move || rt.block_on(std::future::pending::<()>()));
+    wp_core::firstrun::mark("서버");
+    Ok((shared, rx))
+}
+
+/// 그래픽 장치를 미리 만든다: 윈도우에서는 DX12 만 살펴 본다.
+/// eframe 기본값은 Vulkan·DX12·OpenGL 을 모두 살펴 0.7~0.8초 걸렸다(측정). DX12 하나면 0.5초쯤이고 다른 준비와 동시에 할 수 있다.
+/// 쓸 만한 DX12 장치(하드웨어)가 없거나 WGPU_BACKEND 를 정해 두었으면 None → eframe 기본 방식 그대로.
+fn prepare_gfx() -> Option<eframe::egui_wgpu::WgpuSetupExisting> {
+    use eframe::wgpu;
+    if !cfg!(windows) || std::env::var_os("WGPU_BACKEND").is_some() {
+        return None;
+    }
+    let rt = tokio::runtime::Builder::new_current_thread().build().ok()?;
+    let r = rt.block_on(async {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::DX12,
+            flags: wgpu::InstanceFlags::from_build_config().with_env(),
+            backend_options: wgpu::BackendOptions::from_env_or_default(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            display: None,
+        });
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, force_fallback_adapter: false, compatible_surface: None, ..Default::default() })
+            .await
+            .map_err(|e| e.to_string())?;
+        let info = adapter.get_info();
+        if info.device_type == wgpu::DeviceType::Cpu {
+            return Err(format!("소프트웨어 장치뿐 ({})", info.name));
+        }
+        // eframe 기본값과 같은 장치 설정 (큰 화면용 텍스처 8192)
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("egui wgpu device"),
+                required_limits: wgpu::Limits { max_texture_dimension_2d: 8192, ..wgpu::Limits::default() },
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+        log::info!("그래픽: {} ({:?})", info.name, info.backend);
+        Ok::<_, String>(eframe::egui_wgpu::WgpuSetupExisting { instance, adapter, device, queue })
+    });
+    match r {
+        Ok(v) => Some(v),
+        Err(e) => {
+            log::info!("그래픽 미리 준비 건너뜀 (기본 방식으로): {e}");
+            None
+        }
+    }
 }
 
 fn dirs_data() -> PathBuf {

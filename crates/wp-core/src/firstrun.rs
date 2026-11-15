@@ -3,7 +3,7 @@
 //! - 다시 가져오기 판단: 가져온 뒤 Electron 판(1.x) 자료가 또 바뀌었는데 이 판에서는 아직 쓰지 않았으면 저절로 다시 가져오고,
 //!   양쪽 다 바뀌었거나(표시 파일 없이) 예전 2.x 자료가 1.x 자료보다 낡았으면 첫 화면에서 묻는다. 지금 자료는 pre-reimport\ 에 보관.
 //! - DB 복사는 SQLite 온라인 백업(쪽 단위 복사)으로: VACUUM INTO 는 실제 자료(163MB)에서 11초 걸렸다. 진행률을 시작 안내 창에 보인다
-//! - 시작 안내 창: 자료를 옮기는 중이면 0.3초, 아니면 1.2초 안에 창이 안 뜨면 작은 '켜는 중…' 창을 띄워 더블클릭 뒤 아무것도 안 보이는 일이 없게
+//! - 시작 창: 켜자마자 작은 시작 창을 띄워 더블클릭 뒤 아무것도 안 보이는 일이 없게 (조작 화면 첫 프레임이 그려지면 닫힘)
 //! - 두 번 실행: 먼저 켜진 프로세스 번호(instance.pid)의 창을 앞으로 (같은 제목의 Electron 판 창을 잘못 올리지 않게)
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -213,6 +213,49 @@ pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
     Ok(())
 }
 
+// ---------------- 켜는 시간 재기 ----------------
+static MARKS: once_cell::sync::Lazy<parking_lot::Mutex<Vec<(&'static str, u64)>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(vec![]));
+static FRAMES: AtomicU32 = AtomicU32::new(0);
+
+/// 프로세스가 만들어진 뒤 지난 시간(ms). 실행 파일 읽기·백신 검사 시간도 들어간다
+pub fn since_process_start_ms() -> u64 {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::Foundation::FILETIME;
+        use windows_sys::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+        let z = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let (mut c, mut e, mut k, mut u, mut now) = (z, z, z, z, z);
+        if GetProcessTimes(GetCurrentProcess(), &mut c, &mut e, &mut k, &mut u) != 0 {
+            GetSystemTimeAsFileTime(&mut now);
+            let v = |f: FILETIME| ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64;
+            return v(now).saturating_sub(v(c)) / 10_000;
+        }
+    }
+    0
+}
+
+/// 시작 단계 표시 (첫 프레임 뒤 한 줄로 로그에 남긴다)
+pub fn mark(name: &'static str) {
+    MARKS.lock().push((name, since_process_start_ms()));
+}
+
+/// 조작 화면이 프레임을 그릴 때마다 부른다: 첫 프레임 시작·끝 시각을 적고 로그로 남긴다
+pub fn frame_tick() {
+    let n = FRAMES.fetch_add(1, Ordering::Relaxed);
+    if n > 1 {
+        return;
+    }
+    mark(if n == 0 { "첫 프레임 시작" } else { "첫 프레임 끝" });
+    if n == 1 {
+        splash_done(); // 조작 화면이 실제로 그려졌다 → 시작 창 닫기
+    }
+    if n == 1 {
+        let line = MARKS.lock().iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(" → ");
+        log::info!("켜는 시간(ms, 프로세스 시작부터): {line}");
+    }
+}
+
 // ---------------- 첫 화면에서 묻기 ----------------
 static CUR_DIR: once_cell::sync::Lazy<parking_lot::Mutex<Option<PathBuf>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(None));
 pub fn set_ask(v: Option<Value>) {
@@ -324,79 +367,143 @@ pub fn focus_instance(data_dir: &Path) -> bool {
 }
 
 // ---------------- 시작 안내 창 ----------------
-/// 조작 화면이 늦게 뜨면(자료 옮기는 중 0.3초 · 그 밖 1.2초) 작은 안내 창을 띄운다 (첫 실행 자료 복사 · 느린 디스크). splash_done() 으로 닫힘
+/// 더블클릭하자마자(프로세스 시작 뒤 수십 ms) 작은 시작 창을 띄운다. 조작 화면은 그래픽 준비 때문에 0.6~1초 뒤에야 보이므로
+/// 그동안 '켜지고 있다'는 것이 보이게. 자료를 옮길 때는 진행률을 함께 보인다. 조작 화면 첫 프레임이 그려지면 닫힌다(splash_done)
 pub fn start_splash() {
     SPLASH_DONE.store(false, Ordering::SeqCst);
+    // 점검 실행(--shot·--parity 등 화면을 찍는 실행)에는 띄우지 않는다
+    if std::env::args().any(|a| a == "--no-splash" || a == "--shot" || a == "--parity") {
+        return;
+    }
     #[cfg(windows)]
-    std::thread::Builder::new()
-        .name("splash".into())
-        .spawn(|| unsafe {
-            use windows_sys::Win32::Graphics::Gdi::*;
-            use windows_sys::Win32::UI::WindowsAndMessaging::*;
-            // 보통은 1초쯤이면 조작 화면이 뜬다(측정: 1.0초) → 그때는 안내 창이 번쩍였다 사라지지 않게 1.2초까지 기다린다.
-            // 자료 옮기기가 시작됐으면(PROGRESS > 0) 오래 걸릴 것이므로 0.3초 뒤 바로 보인다
-            for i in 0..24 {
-                if SPLASH_DONE.load(Ordering::SeqCst) {
-                    return;
-                }
-                if i >= 6 && PROGRESS.load(Ordering::Relaxed) > 0 {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            let w16 = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
-            let (w, h) = (460, 96);
-            let (sx, sy) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-            let text = |p: u32| {
-                if p == 0 {
-                    "워십프리젠터를 켜는 중입니다…".to_string()
-                } else {
-                    format!("처음 켜는 중: 예전 자료를 옮기고 있습니다… {}%", p / 10)
-                }
-            };
-            let hwnd = CreateWindowExW(
-                WS_EX_TOOLWINDOW,
-                w16("STATIC").as_ptr(),
-                w16(&text(0)).as_ptr(),
-                WS_POPUP | WS_VISIBLE | WS_BORDER | 0x0000_0001 /* SS_CENTER */ | 0x0000_0200, /* SS_CENTERIMAGE */
-                (sx - w) / 2,
-                (sy - h) / 2,
-                w,
-                h,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null(),
-            );
-            if hwnd.is_null() {
-                return;
-            }
-            let font = CreateFontW(-18, 0, 0, 0, 400, 0, 0, 0, 1 /* DEFAULT_CHARSET */, 0, 0, 5 /* CLEARTYPE */, 0, w16("맑은 고딕").as_ptr());
-            if !font.is_null() {
-                SendMessageW(hwnd, WM_SETFONT, font as usize, 1);
-            }
-            let mut last = u32::MAX;
-            let mut msg: MSG = std::mem::zeroed();
-            while !SPLASH_DONE.load(Ordering::SeqCst) {
-                while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
-                    TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                }
-                let p = PROGRESS.load(Ordering::Relaxed);
-                if p != last {
-                    last = p;
-                    SetWindowTextW(hwnd, w16(&text(p)).as_ptr());
-                }
-                std::thread::sleep(std::time::Duration::from_millis(40));
-            }
-            DestroyWindow(hwnd);
-            if !font.is_null() {
-                DeleteObject(font);
-            }
-        })
-        .ok();
+    {
+        // winit 이 나중에 하는 것과 같은 DPI 설정을 창을 만들기 전에 먼저 (창을 먼저 만들면 조작 화면이 흐릿하게 뜰 수 있다)
+        unsafe {
+            windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
+        std::thread::Builder::new().name("splash".into()).spawn(|| unsafe { splash_thread() }).ok();
+    }
 }
 
+#[cfg(windows)]
+fn w16(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+unsafe fn splash_thread() {
+    use windows_sys::Win32::Graphics::Gdi::*;
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    unsafe {
+        let hinst = GetModuleHandleW(std::ptr::null());
+        let class = w16("WorshipPresenterSplash");
+        let mut wc: WNDCLASSW = std::mem::zeroed();
+        wc.lpfnWndProc = Some(splash_proc);
+        wc.hInstance = hinst;
+        wc.lpszClassName = class.as_ptr();
+        wc.hCursor = LoadCursorW(std::ptr::null_mut(), IDC_APPSTARTING);
+        RegisterClassW(&wc);
+        let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForSystem().max(96) as i32;
+        let (w, h) = (440 * dpi / 96, 150 * dpi / 96);
+        let (sx, sy) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+        let hwnd = CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            class.as_ptr(),
+            w16("워십프리젠터 켜는 중").as_ptr(),
+            WS_POPUP | WS_VISIBLE,
+            (sx - w) / 2,
+            (sy - h) / 2,
+            w,
+            h,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            hinst,
+            std::ptr::null(),
+        );
+        if hwnd.is_null() {
+            return;
+        }
+        mark("시작 창");
+        let mut last = u32::MAX;
+        let mut msg: MSG = std::mem::zeroed();
+        while !SPLASH_DONE.load(Ordering::SeqCst) {
+            while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+            let p = PROGRESS.load(Ordering::Relaxed);
+            if p != last {
+                last = p;
+                InvalidateRect(hwnd, std::ptr::null(), 0);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        DestroyWindow(hwnd);
+    }
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn splash_proc(h: windows_sys::Win32::Foundation::HWND, m: u32, w: windows_sys::Win32::Foundation::WPARAM, l: windows_sys::Win32::Foundation::LPARAM) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::*;
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    unsafe {
+        match m {
+            WM_ERASEBKGND => 1,
+            WM_PAINT => {
+                let mut ps: PAINTSTRUCT = std::mem::zeroed();
+                let dc = BeginPaint(h, &mut ps);
+                let mut rc: RECT = std::mem::zeroed();
+                GetClientRect(h, &mut rc);
+                let s = |v: i32| v * rc.right / 440; // 96dpi 기준 치수 → 지금 크기
+                let rgb = |r: u32, g: u32, b: u32| r | (g << 8) | (b << 16);
+                let fill = |r: &RECT, c: u32| {
+                    let b = CreateSolidBrush(c);
+                    FillRect(dc, r, b);
+                    DeleteObject(b);
+                };
+                fill(&rc, rgb(0x2f, 0x34, 0x40)); // 테두리
+                fill(&RECT { left: 1, top: 1, right: rc.right - 1, bottom: rc.bottom - 1 }, rgb(0x17, 0x1a, 0x21)); // 바탕 (조작 화면 어두운 테마와 비슷하게)
+                // 아이콘 (실행 파일에 넣은 것, 없으면 건너뜀)
+                let icon = LoadImageW(GetModuleHandleW(std::ptr::null()), 1 as *const u16, IMAGE_ICON, s(56), s(56), 0);
+                let text_left = if icon.is_null() {
+                    s(28)
+                } else {
+                    DrawIconEx(dc, s(28), s(38), icon, s(56), s(56), 0, std::ptr::null_mut(), DI_NORMAL);
+                    DestroyIcon(icon);
+                    s(104)
+                };
+                SetBkMode(dc, TRANSPARENT as _);
+                let face = w16("맑은 고딕");
+                let big = CreateFontW(-s(24), 0, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0, face.as_ptr());
+                let small = CreateFontW(-s(14), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, face.as_ptr());
+                let old = SelectObject(dc, big);
+                SetTextColor(dc, rgb(0xf2, 0xf4, 0xf8));
+                let mut r1 = RECT { left: text_left, top: s(36), right: rc.right - s(20), bottom: s(72) };
+                DrawTextW(dc, w16("워십프리젠터").as_ptr(), -1, &mut r1, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                SelectObject(dc, small);
+                SetTextColor(dc, rgb(0x9a, 0xa3, 0xb2));
+                let p = PROGRESS.load(Ordering::Relaxed);
+                let line = if p == 0 { "켜는 중입니다…".to_string() } else { format!("처음 켜는 중: 예전 자료를 옮기고 있습니다… {}%", p / 10) };
+                let mut r2 = RECT { left: text_left, top: s(74), right: rc.right - s(20), bottom: s(98) };
+                DrawTextW(dc, w16(&line).as_ptr(), -1, &mut r2, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                if p > 0 {
+                    let (l0, r0) = (s(28), rc.right - s(28));
+                    fill(&RECT { left: l0, top: s(118), right: r0, bottom: s(122) }, rgb(0x2f, 0x34, 0x40));
+                    fill(&RECT { left: l0, top: s(118), right: l0 + (r0 - l0) * p as i32 / 1000, bottom: s(122) }, rgb(0x4f, 0x8c, 0xff));
+                }
+                SelectObject(dc, old);
+                DeleteObject(big);
+                DeleteObject(small);
+                EndPaint(h, &ps);
+                0
+            }
+            _ => DefWindowProcW(h, m, w, l),
+        }
+    }
+}
 /// 켜지 못했을 때 (창이 없어 아무것도 안 보이는 일이 없게) 오류 상자
 pub fn error_box(msg: &str) {
     splash_done();
