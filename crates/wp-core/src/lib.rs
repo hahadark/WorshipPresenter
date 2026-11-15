@@ -55,6 +55,7 @@ pub mod dpapi;
 pub mod lan;
 pub mod remote;
 pub mod trigger;
+pub mod extcmd; // [점검 A] 외부 연동 명령 (/api/command)
 pub mod bulletin; // [트랙 D]
 pub mod trackd; // [트랙 D]
 pub mod obs; // [트랙 D]
