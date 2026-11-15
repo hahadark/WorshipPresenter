@@ -146,18 +146,39 @@ fn norm(p: &str) -> String {
     p.replace('/', "\\").to_lowercase()
 }
 
+/// norm + '.'·'..' 풀기 (파일을 건드리지 않고 글자로만 — node path.resolve 처럼)
+fn resolve(p: &str) -> String {
+    let n = norm(p);
+    let unc = n.starts_with("\\\\");
+    let mut out: Vec<&str> = vec![];
+    for part in n.split('\\') {
+        match part {
+            "." | "" => {}
+            ".." => {
+                // 드라이브(또는 \\서버\공유) 위로는 올라가지 않는다
+                if out.len() > if unc { 2 } else { 1 } {
+                    out.pop();
+                }
+            }
+            x => out.push(x),
+        }
+    }
+    format!("{}{}", if unc { "\\\\" } else { "" }, out.join("\\"))
+}
+
 /// 열어도 되는 PPT: 등록한 폴더 · 붙여 넣은 슬라이드 폴더 · 끌어다 놓은 파일
 pub fn is_allowed(core: &Core, file: &str) -> bool {
     if !EXT.is_match(file) {
         return false;
     }
-    let f = norm(file);
+    // Electron 은 path.resolve 로 '..' 을 풀고 견준다 — 등록 폴더 뒤에 '..' 을 붙여 폴더 밖 파일을 여는 것을 막는다
+    let f = resolve(file);
     let s = core.settings.get();
-    let under = |d: &str| !d.is_empty() && f.starts_with(&(norm(d).trim_end_matches('\\').to_string() + "\\"));
+    let under = |d: &str| !d.is_empty() && f.starts_with(&(resolve(d) + "\\"));
     if s["hymnFolders"].as_array().into_iter().flatten().any(|x| under(x["path"].as_str().unwrap_or(""))) {
         return true;
     }
-    if s["droppedFiles"].as_array().into_iter().flatten().any(|x| x.as_str().map(norm).as_deref() == Some(f.as_str())) {
+    if s["droppedFiles"].as_array().into_iter().flatten().any(|x| x.as_str().map(resolve).as_deref() == Some(f.as_str())) {
         return true;
     }
     let pasted = [core.data_dir.join("pasted"), electron_data().map(|d| d.join("pasted")).unwrap_or_default()];
@@ -384,7 +405,7 @@ pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done
 /// again=true: 캐시를 지우고 요소·배경 그림을 다시 만든다 (cue.js pptTextOn mode 'bg' — 순서의 edits 는 손대지 않는다). 끝나면 이 파일을 보던 미리보기도 다시.
 pub fn ppt_text_layers(core: &Core, file: &str, screen: (f64, f64), again: bool) -> Result<Value, String> {
     let meta = load(core, file)?;
-    if !meta["layers"].as_bool().unwrap_or(false) && !file.to_lowercase().ends_with('x') {
+    if !meta["layers"].as_bool().unwrap_or(false) && !is_xml_ppt(file) {
         return Err(crate::i18n::tr("옛 형식(.ppt/.pps)은 요소를 꺼낼 수 없습니다. PowerPoint 에서 .pptx 로 저장한 뒤 넣어 주세요.").into());
     }
     if again {
@@ -1304,6 +1325,36 @@ mod magic_tests {
         // 파일이 없으면 확장자로
         assert!(super::is_xml_ppt(&dir.join("none.PPTX").to_string_lossy()));
         assert!(!super::is_xml_ppt(&dir.join("none.pps").to_string_lossy()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod allow_tests {
+    use super::*;
+    #[test]
+    fn dotdot_does_not_escape_registered_folder() {
+        assert_eq!(resolve(r"C:\A\b\..\c\.\d.PPTX"), r"c:\a\c\d.pptx");
+        assert_eq!(resolve("c:/a//b/../../../x.pps"), r"c:\x.pps");
+        assert_eq!(resolve(r"\\srv\share\h\..\..\x.pps"), r"\\srv\share\x.pps");
+        let dir = std::env::temp_dir().join(format!("wp-allow-{}", crate::util::short_id("t")));
+        let h = dir.join("h");
+        std::fs::create_dir_all(&h).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        std::fs::write(h.join("001 가.pps"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
+        add_folder(&mut c, &h, Some("새찬송가")).unwrap();
+        let hs = h.to_string_lossy().to_string();
+        assert!(is_allowed(&c, &format!(r"{hs}\001 가.pps")));
+        assert!(is_allowed(&c, &format!(r"{hs}\sub\..\001 가.pps")));
+        // 폴더 밖: Electron '등록한 찬송가 폴더 안의 파일만 열 수 있습니다.'
+        assert!(!is_allowed(&c, &format!(r"{hs}\..\secret.pptx")));
+        assert!(!is_allowed(&c, &format!(r"{hs}\..\..\secret.pptx")));
+        assert!(load(&c, &format!(r"{hs}\..\secret.pptx")).unwrap_err().contains("등록한 찬송가 폴더"));
+        // 붙여 넣은 슬라이드 폴더(자료 폴더\pasted)는 열린다
+        assert!(is_allowed(&c, &dir.join("pasted").join("clip-1.pptx").to_string_lossy()));
+        assert!(!is_allowed(&c, &format!(r"{}\pasted\..\x.pptx", dir.to_string_lossy())));
+        drop(c);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
