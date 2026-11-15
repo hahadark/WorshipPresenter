@@ -9,13 +9,21 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 - **릴리스 (2026-11-15 사용자 지시로 정지 해제): 기존 저장소 hahadark/WorshipPresenter 의 정식판(v2.0.0~)으로 낸다.** 소스는 그 저장소의 `rust` 가지, Electron 판은 `main` 가지에 그대로. 설치 파일은 Electron 판 자리(%LOCALAPPDATA%\Programs\WorshipCue)·바로가기·제거 항목을 이어받고, `latest.yml` 로 Electron 판 자동 업데이트도 이어진다.
 
 - 커밋: `git -c user.name=hahadark -c user.email=29118505+hahadark@users.noreply.github.com commit …`. 공동 작성자 표기는 실제 작업 모델과 일치시킨다. 챗GPT가 만든 새 작업을 클로드 작업으로 표기하지 않는다.
-- **모델 (2026-11-13 사용자 지시): 클로드 페이블(claude-code/claude-fable-5-1)로 진행한다. 작업자도 같은 모델.** 2026-11-12~13 일부 작업은 챗GPT 구독(gpt-6.1-sol)으로 했다. 별도 유료 API로 자동 전환하지 않는다. 클로드 사용량을 다 쓰면 멈추고, 회복(약 5시간)되면 다시 이어서 한다(매시간 점검 루틴이 작업 세션에 '이어서'를 보냄).
+- **모델 (2026-11-15 사용자 지시): 클로드 페이블로 진행한다. 최근 확인한 작업자 모델은 claude-code/claude-fable-5-2.** 2026-11-12~13 일부 작업은 챗GPT 구독(gpt-6.1-sol)으로 했다. 별도 유료 API로 자동 전환하지 않는다. 클로드 사용량을 다 쓰면 멈추고, 회복 뒤 사용자가 지정한 예약으로 이어서 한다. 2026-11-16 01시·06시 예약은 끝났으므로 새 예약이 있는지 확인한다.
 - 릴리스·푸시는 사용자가 시킬 때만. 커밋은 작업 단위마다.
 - 릴리스 전 필수: `tools\parity\run.ps1` 로 조작 화면 그림과 실제 웹 출력을 나란히 비교해 차이가 없을 것 (2.0.0 에서 미리보기·LIVE 가 실제 출력과 달랐던 사고, 2026-11-15). 테스트 통과만으로 릴리스하지 않는다.
 - 릴리스 순서: Cargo.toml 4곳 버전 → 커밋 → `tools\release.ps1 -Version X.Y.Z` (dist\ 에 Setup.exe·Portable.zip·latest.yml) → 설치 파일을 `/S /TEST /D=<임시>` 로 점검 → `git push origin master:rust` → `gh release create vX.Y.Z --target rust --draft` 로 세 파일 올리기 → 확인 뒤 `gh release edit vX.Y.Z --draft=false --latest`. 맥 빌드는 아직 없다.
-- Electron 판 저장소와 사용자의 실제 자료(`%APPDATA%\WorshipCue\data`)는 건드리지 않는다. Rust 판은 처음 실행할 때 그 자료를 **복사**(SQLite `VACUUM INTO`)해서 `%APPDATA%\WorshipPresenter-rs\data` 에서 쓴다.
+- Electron 판 저장소와 사용자의 실제 자료(`%APPDATA%\WorshipCue\data`)는 건드리지 않는다. Rust 판은 처음 실행할 때 그 자료를 **복사**(SQLite backup API·임시 파일 검증 후 교체)해서 `%APPDATA%\WorshipPresenter-rs\data` 에서 쓴다.
 - 점검은 `--data <임시 폴더>` 로. 사용자가 띄워 둔 프로그램을 끄지 않는다.
 - 저작권 있는 번역본·찬송가 자료(`data-personal/`)는 저장소에 넣지 않는다.
+
+## 2026-11-16 통합 점검 현재 상태
+
+- 다섯 갈래의 밤사이 수정과 추가 안전성·입력 보완을 master에 합쳤다. 전체 자동 시험 430개 통과·19개 제외. 세부는 docs/integration-audit-2026-11-16.md.
+- 공개판·설치본은 여전히 2.0.1이다. 이 로컬 수정은 아직 푸시·릴리스하지 않았다.
+- 원본 처리기282개 중 미대조22개, 소스근거만158개다. docs/behavior-parity.md를 읽고 '전부 동일'로 보고하지 말 것.
+- 편집기 입력 소유권은 App::ui_body 전체 합성시험으로 보완했다. 원본에는 잠금 단추가 없고 공통요소 제한이 그 동작이다. 원본에 없는 기능을 누락이라고 세지 말 것.
+- 실제 OBS/카메라/Companion/여러 모니터 장비, 일부 첫 실행 지연·4K 프레임 튐은 추가 검증이 필요하다.
 
 ## 구조
 
