@@ -66,6 +66,8 @@ pub struct Core {
     pub port: u16,
     pub b: crate::trackb::TrackB, // [트랙 B]
     pub flow: crate::flow::Flow, // [트랙 C] 자동 넘김·글자 자동 숨김
+    /// 라이브러리에서 고른 것 넣기 (중복·연타 막기, 만드는 중인 찬송가 기다렸다 띄우기)
+    pub pick: crate::pick::PickState,
 }
 
 pub type Shared = Arc<Mutex<Core>>;
@@ -123,7 +125,7 @@ impl Core {
         let mut c = Self {
             data_dir, media_dir, web_dir, store, settings, pres: Presentation::default(), layers: Layers::default(), pending_audio: None, obs_hold: false, obs_full: false, // [트랙 C] obs_full
            
-            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, toast_act: None, port, b: Default::default(), flow: Default::default(), // [트랙 B] · [트랙 C] flow
+            outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, toast_act: None, port, b: Default::default(), flow: Default::default(), pick: Default::default(), // [트랙 B] · [트랙 C] flow
         };
         c.trackb_init(); // [트랙 B]
         if c.version_id().is_empty() {
@@ -369,8 +371,118 @@ impl Core {
                 true
             }
             Err(e) => {
+                self.want_when_built(i, &e);
                 self.notify(e, "warn");
                 false
+            }
+        }
+    }
+
+    /// 찬송가 PPT 를 아직 만드는 중이라 못 띄운 순서: 다 만들면 미리보기 (바로 송출이면 송출, hymns::start_build).
+    /// Electron 은 previewItem 이 loadHymn 을 기다린 뒤 directSend 한다.
+    fn want_when_built(&mut self, i: usize, e: &str) {
+        if e == crate::hymns::BUILDING || e == crate::i18n::tr(crate::hymns::BUILDING) {
+            let cid = self.cue.as_ref().map(|c| c.id.clone()).unwrap_or_default();
+            self.pick.want = Some((cid, i));
+        }
+    }
+
+    /// 순서를 미리보기하며 k 번째 장으로 (전체 격자·오른쪽 클릭 메뉴: Electron BCCue.previewAt = 순서는 holdDirect 로 조용히, 그 뒤 setPreviewIndex).
+    /// 바로 송출이면 k 번째 장을 한 번만 송출한다.
+    pub fn preview_item_at(&mut self, i: usize, k: usize) -> bool {
+        match self.item_deck(i) {
+            Ok(mut d) => {
+                d.index = k.min(d.slides.len().saturating_sub(1));
+                self.pres.preview = Some(d);
+                self.after_preview();
+                true
+            }
+            Err(e) => {
+                self.want_when_built(i, &e);
+                self.notify(e, "warn");
+                false
+            }
+        }
+    }
+
+    /// 미리보기 대신 바로 송출 중인지 (머리 줄 '클릭하면 [바로 송출]', 설정 previewMode=false)
+    pub fn direct_mode(&self) -> bool {
+        self.settings.get()["previewMode"].as_bool() == Some(false)
+    }
+
+    /// 사용자가 고른 슬라이드 (본문 목록·격자·전체 보기·번호 단추·←→·PageUp/Down):
+    /// 미리보기를 그 장으로 옮기고, '바로 송출' 이면 송출 (Electron control.js setPreviewIndex → directSend).
+    /// 이미 그 장이 보이는 채로 송출 중이면 다시 보내지 않는다.
+    pub fn pick_preview_index(&mut self, i: usize) {
+        self.pres.set_preview_index(i);
+        if self.direct_mode() {
+            let same = match (&self.pres.preview, &self.pres.live) {
+                (Some(p), Some(l)) => l.visible && l.deck.index == p.index && l.deck.slides.len() == p.slides.len() && l.deck.passage == p.passage,
+                _ => false,
+            };
+            if !same {
+                self.send_preview();
+            }
+        }
+        self.emit(Ev::Ui);
+    }
+
+    /// 라이브러리·찬송가·넣기 단추에서 고른 것을 큐시트에 넣는다 (Electron cue.js addItem: 넣고 곧바로 previewItem → 바로 송출이면 송출).
+    /// - 같은 찬송가·찬양·파일이 이미 있으면(force 가 아니면) 새로 넣지 않고 그 순서를 고른다 + 알림 [그래도 하나 더 넣기]
+    /// - 같은 것을 짧은 시간(pick::RAPID) 안에 또 넣으려 하면 무시 (두 번 누르기·연타)
+    pub fn add_picked_item(&mut self, it: Value, at: Option<usize>, force: bool) -> crate::pick::Picked {
+        use crate::pick::{content_key, lib_key, Picked};
+        let now = std::time::Instant::now();
+        let ck = content_key(&it);
+        if self.pick.rapid(&ck, now) {
+            return Picked::Ignored;
+        }
+        if !force {
+            if let Some(k) = lib_key(&it) {
+                let found = self.cue.as_ref().and_then(|c| c.items.iter().position(|x| lib_key(x).as_deref() == Some(k.as_str())));
+                if let Some(j) = found {
+                    self.pick.mark(ck, now);
+                    let title = self.cue.as_ref().and_then(|c| c.items.get(j)).and_then(|x| x["title"].as_str()).unwrap_or("").to_string();
+                    self.preview_item(j);
+                    self.pick.dup_pending = Some((it, at));
+                    self.notify_act(crate::i18n::tr_args("'{1}' 은(는) 이미 {2}번 순서에 있어 그 순서를 골랐습니다.", &[&title, &(j + 1)]), "info", "add-dup");
+                    return Picked::Existing(j);
+                }
+            }
+        }
+        self.pick.mark(ck, now);
+        self.pick.dup_pending = None;
+        self.add_item(it, at);
+        let n = self.cue.as_ref().map(|c| c.items.len()).unwrap_or(0);
+        let i = at.unwrap_or(n.saturating_sub(1)).min(n.saturating_sub(1));
+        self.preview_new_item(i);
+        Picked::Added(i)
+    }
+
+    /// 알림 [그래도 하나 더 넣기]
+    pub fn add_dup_anyway(&mut self) -> Option<crate::pick::Picked> {
+        let (mut it, at) = self.pick.dup_pending.take()?;
+        it["id"] = json!(crate::util::short_id("i"));
+        self.pick.last = None;
+        Some(self.add_picked_item(it, at, true))
+    }
+
+    /// 새로 넣은 순서 미리보기 (바로 송출이면 송출). 내용이 아직 없는 빈 순서(새 찬양·빈 그림)는 조용히 넘어간다.
+    fn preview_new_item(&mut self, i: usize) {
+        match self.item_deck(i) {
+            Ok(d) if !d.slides.is_empty() || d.passage.get("audioItem").is_some() => {
+                self.pres.preview = Some(d);
+                self.after_preview();
+            }
+            Ok(_) => {}
+            Err(e) => {
+                let ty = self.cue.as_ref().and_then(|c| c.items.get(i)).and_then(|x| x["type"].as_str()).unwrap_or("").to_string();
+                self.want_when_built(i, &e);
+                // 내용을 골라 넣은 찬송가(만드는 중·파일 없음)는 알리고, 빈 새 순서의 '보일 슬라이드가 없습니다' 는 알리지 않는다
+                let has_content = crate::pick::lib_key(self.cue.as_ref().and_then(|c| c.items.get(i)).unwrap_or(&Value::Null)).is_some();
+                if ty == "hymn" && has_content {
+                    self.notify(e, "info");
+                }
             }
         }
     }
@@ -396,6 +508,7 @@ impl Core {
     }
 
     fn after_preview(&mut self) {
+        self.pick.want = None; // 다른 것을 띄웠으면 '만들면 띄우기' 는 버린다
         if !self.settings.get()["previewMode"].as_bool().unwrap_or(true) {
             self.send_preview();
         }

@@ -105,12 +105,10 @@ impl App {
     }
 
     fn add_to_cue(&mut self, it: Value) {
+        // 넣고 곧바로 미리보기(바로 송출이면 송출) · 같은 것이 이미 있으면 그 순서를 고름 · 연타 무시 (wp_core::pick)
         let at = self.sel.map(|s| s + 1);
-        let mut c = self.core.lock();
-        c.add_item(it, at);
-        let n = c.cue.as_ref().map(|x| x.items.len()).unwrap_or(0);
-        self.sel = Some(at.unwrap_or(n.saturating_sub(1)).min(n.saturating_sub(1)));
-        self.edit = None;
+        let r = self.core.lock().add_picked_item(it, at, false);
+        crate::app::picked_sel(&mut self.sel, &mut self.edit, r);
     }
 
     // ---------------- 찬양 ----------------

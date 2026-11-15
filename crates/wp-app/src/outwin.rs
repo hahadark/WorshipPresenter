@@ -14,7 +14,14 @@ pub struct OutWin {
     child: Option<Child>,
     pub monitors: Vec<Monitor>,
     pub error: String,
+    /// 창이 스스로 끝났음 (종료 코드). 조작 화면이 한 번 가져가 알림·OBS 연동을 처리한다 (take_exit)
+    exited: Option<Option<i32>>,
+    /// 점검용으로 창에 더 넘길 인자 (--selftest-esc)
+    pub extra_args: Vec<String>,
 }
+
+/// wp-output 이 Esc 로 닫혔을 때의 종료 코드 (wp-output main.rs EXIT_ESC)
+pub const EXIT_ESC: i32 = 3;
 
 pub(crate) fn exe() -> std::path::PathBuf {
     let me = std::env::current_exe().unwrap_or_default();
@@ -35,10 +42,10 @@ pub(crate) fn no_window(c: &mut Command) -> &mut Command {
 impl OutWin {
     #[cfg(test)]
     pub(crate) fn for_test() -> Self {
-        Self { child: None, monitors: vec![], error: String::new() }
+        Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![] }
     }
     pub fn new() -> Self {
-        let mut o = Self { child: None, monitors: vec![], error: String::new() };
+        let mut o = Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![] };
         o.refresh_monitors();
         o
     }
@@ -73,7 +80,9 @@ impl OutWin {
         match &mut self.child {
             Some(c) => match c.try_wait() {
                 Ok(None) => true,
-                _ => {
+                r => {
+                    // 스스로 끝남 (예배당 창에서 Esc · 오류): 조작 화면 상태는 '꺼짐' 으로, 알림은 take_exit 로
+                    self.exited = Some(r.ok().flatten().and_then(|s| s.code()));
                     self.child = None;
                     false
                 }
@@ -84,12 +93,8 @@ impl OutWin {
 
     pub fn open(&mut self, port: u16, monitor: usize, windowed: bool) {
         self.close();
-        let url = format!("http://127.0.0.1:{port}/outputs/main?window=1");
         let mut cmd = Command::new(exe());
-        cmd.args(["--url", &url, "--monitor", &monitor.to_string()]);
-        if windowed {
-            cmd.arg("--windowed");
-        }
+        cmd.args(self.open_args(port, monitor, windowed));
         match cmd.spawn() {
             Ok(c) => {
                 self.child = Some(c);
@@ -99,7 +104,33 @@ impl OutWin {
         }
     }
 
+    /// 예배당 창(wp-output) 인자
+    pub(crate) fn open_args(&self, port: u16, monitor: usize, windowed: bool) -> Vec<String> {
+        let url = format!("http://127.0.0.1:{port}/outputs/main?window=1");
+        // --esc-close: 예배당 창을 눌러 고르고 Esc = 예배당 화면 끄기 (Electron main.js onOutputKey)
+        let mut a: Vec<String> = vec!["--url".into(), url, "--monitor".into(), monitor.to_string(), "--esc-close".into()];
+        a.extend(self.extra_args.iter().cloned());
+        if windowed {
+            a.push("--windowed".into());
+        }
+        a
+    }
+
+    /// 창이 스스로 끝났으면 한 번만 Some(종료 코드). 조작 화면에서 끈 것(close)은 여기에 안 나온다
+    pub fn take_exit(&mut self) -> Option<Option<i32>> {
+        let _ = self.running();
+        self.exited.take()
+    }
+
+    /// 시험용: 창이 스스로 끝난 것처럼
+    #[cfg(test)]
+    pub(crate) fn fake_exit(&mut self, code: Option<i32>) {
+        self.child = None;
+        self.exited = Some(code);
+    }
+
     pub fn close(&mut self) {
+        self.exited = None;
         if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();

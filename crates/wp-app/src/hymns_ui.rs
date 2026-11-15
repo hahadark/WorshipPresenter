@@ -205,7 +205,8 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             } else {
                 format!("{}  · {}", h["label"].as_str().unwrap_or(""), h["book"].as_str().unwrap_or(""))
             };
-            if ui.selectable_label(false, t).on_hover_text(wp_core::i18n::tr("눌러서 큐시트에 넣기")).clicked() {
+            let tip = if app.core.lock().direct_mode() { wp_core::i18n::tr("눌러서 큐시트에 넣고 바로 송출 (이미 있으면 그 순서를 송출)") } else { wp_core::i18n::tr("눌러서 큐시트에 넣고 미리보기 (이미 있으면 그 순서를 미리보기)") };
+            if ui.selectable_label(false, t).on_hover_text(tip).clicked() {
                 if src == "ppt" {
                     // 제목은 "10장 전능왕 오셔서" (cue.js 1527) · 번호 없으면 null
                     let num = h["number"].as_i64();
