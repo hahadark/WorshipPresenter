@@ -183,8 +183,19 @@ impl App {
                 .font(theme::font(17.0, Weight::Regular))
                 .text_color(p.text)
                 .vertical_align(Align::Center)
+                // Esc 를 egui 의 '초점 놓기' 로 넘기지 않고 이 칸이 받는다 (아래: 내용 모두 고르기, control.js:1077)
+                .event_filter(egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, tab: false, escape: true })
                 .desired_width(text_rect.width()),
         );
+        // 검색칸 Esc = 내용 모두 고르기 (control.js #q keydown: `else $('#q').select()`).
+        // 글 쓰는 중이라 전역 Esc(보조 화면 끄기)는 shortcuts 에서 이미 빠졌고, 여기서 눌림을 먹어 뒤의 창·목록도 받지 않는다
+        if r.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
+            if let Some(mut st) = egui::TextEdit::load_state(ui.ctx(), id) {
+                let n = self.search.chars().count();
+                st.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
+                st.store(ui.ctx(), id);
+            }
+        }
         let focused = r.has_focus();
         let hov = ui.rect_contains_pointer(rect);
         let mut shapes = vec![];

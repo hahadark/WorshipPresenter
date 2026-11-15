@@ -19,8 +19,185 @@ const BOTTOM_H: &str = "cue-bottom-h";
 const HYMN_PICK: &str = "cue-hymn-pick";
 const PPT_WIN: &str = "cue-ppt-win";
 
+const NAV: &str = "nav-owner";
+const DEL_SEL: &str = "cue-key-del-sel";
+const SCROLL_SEL: &str = "cue-key-scroll";
+const CHAP_CUR: &str = "cue-chap-cur";
+
 fn id(k: &str) -> egui::Id {
     egui::Id::new(k)
+}
+
+// ---------------------------------------------------------------- 키보드가 있는 목록 (원본의 DOM 초점)
+
+/// 방향키·Enter 를 받는 목록. 원본은 DOM 초점(#cueList · #chapterGrid 단추 · .history-list)으로 가르고,
+/// egui 에서는 누른 줄이 초점을 갖지 않으므로 따로 적어 둔다 (본문 목록은 center_ui 의 kbd).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum Nav {
+    #[default]
+    None,
+    /// 큐시트 순서 목록 (cue.js:1271)
+    Cue,
+    /// 성경 책의 장 격자 (control.js:390)
+    Chapters,
+    /// 송출 기록 창 (control.js:1364)
+    History,
+}
+
+#[derive(Clone, Copy, Default)]
+struct NavState {
+    owner: Nav,
+    /// 그 목록을 마지막으로 그린 패스. 목록이 화면에서 사라지면(탭 바꿈·패널 접기) 키를 계속 쥐고 있지 않게 한다
+    stamp: u64,
+}
+
+/// 지금 키보드를 가진 목록. 글 쓰는 칸에 초점이 있거나 그 목록이 더 그려지지 않으면 None
+pub(crate) fn nav_owner(ctx: &egui::Context) -> Nav {
+    let st: NavState = ctx.data(|d| d.get_temp(id(NAV))).unwrap_or_default();
+    if st.owner == Nav::None || ctx.egui_wants_keyboard_input() || ctx.cumulative_pass_nr() > st.stamp + 2 {
+        return Nav::None;
+    }
+    st.owner
+}
+
+/// 이 목록이 키보드를 갖는다 (누르거나 창을 열었을 때)
+pub(crate) fn nav_set(ctx: &egui::Context, n: Nav) {
+    let stamp = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(id(NAV), NavState { owner: n, stamp }));
+}
+
+/// 이 목록이 갖고 있었으면 놓는다 (밖을 누름 · 창 닫힘)
+pub(crate) fn nav_release(ctx: &egui::Context, n: Nav) {
+    ctx.data_mut(|d| {
+        if d.get_temp::<NavState>(id(NAV)).is_some_and(|s| s.owner == n) {
+            d.remove_temp::<NavState>(id(NAV));
+        }
+    });
+}
+
+/// 목록을 그릴 때마다: 아직 화면에 있다는 표시. 글 쓰는 칸으로 초점이 가면 놓는다 (원본 blur)
+pub(crate) fn nav_touch(ctx: &egui::Context, n: Nav) {
+    if ctx.egui_wants_keyboard_input() {
+        nav_release(ctx, n);
+        return;
+    }
+    let stamp = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        if let Some(s) = d.get_temp::<NavState>(id(NAV)).filter(|s| s.owner == n) {
+            if stamp > s.stamp + 2 {
+                d.remove_temp::<NavState>(id(NAV)); // 한동안 안 그렸다 다시 나타난 목록은 키보드를 되찾지 않는다
+            } else {
+                d.insert_temp(id(NAV), NavState { stamp, ..s });
+            }
+        }
+    });
+}
+
+/// 전역 Enter(= 미리보기 송출)를 막을 목록이 키보드를 갖고 있는가 (control.js:1660 이 #cueList · #chapterGrid · 모달을 뺀다)
+pub(crate) fn nav_takes_enter(ctx: &egui::Context) -> bool {
+    nav_owner(ctx) != Nav::None
+}
+
+/// 전역 ←→(= 미리보기 앞뒤 슬라이드)를 막을 목록인가 (control.js:1654 가 #chapterGrid · 모달을 뺀다. #cueList 는 빼지 않는다)
+pub(crate) fn nav_takes_arrows(ctx: &egui::Context) -> bool {
+    matches!(nav_owner(ctx), Nav::Chapters | Nav::History)
+}
+
+// ---------------------------------------------------------------- 순서 목록 키
+
+/// 순서 목록 키 (cue.js:1271 list keydown): ↑↓ 고르기만 · Alt+↑↓ 순서 옮기기 · Enter 미리보기(이미 미리보기 중이면 송출) · Delete 지우기.
+/// 목록(줄·빈 자리)을 누르면 키보드를 갖고, 밖을 누르거나 글 쓰는 칸에 들어가면 놓는다. 메뉴가 열려 있으면 메뉴가 키를 받는다.
+/// `pv_idx` = 열린 큐시트에서 지금 미리보기 중인 순서.
+pub(crate) fn list_keys(app: &mut App, ui: &egui::Ui, list_rect: Rect, n: usize, pv_idx: Option<i64>, acts: &mut Vec<Act>) {
+    use egui::{Key, Modifiers};
+    let ctx = ui.ctx();
+    // 지난 프레임에 Delete 로 지웠으면 고른 자리를 원본처럼 같은 자리(끝이었으면 새 끝)에 둔다 (removeItem: st.sel = min(i, len - 1))
+    if let Some(j) = ctx.data_mut(|d| d.remove_temp::<usize>(id(DEL_SEL))) {
+        app.sel = if n == 0 { None } else { Some(j.min(n - 1)) };
+        app.edit = None;
+    }
+    if ui.input(|i| i.pointer.any_pressed()) {
+        if ui.rect_contains_pointer(list_rect) {
+            nav_set(ctx, Nav::Cue);
+        } else {
+            nav_release(ctx, Nav::Cue);
+        }
+    }
+    nav_touch(ctx, Nav::Cue);
+    if nav_owner(ctx) != Nav::Cue || egui::Popup::is_any_open(ctx) {
+        return;
+    }
+    let sel = app.sel.filter(|s| *s < n);
+    // Alt+↑↓ 먼저 (꾸밈 키 없는 ↑↓ 가 Alt 를 누른 것도 받으므로). Ctrl+↑↓ 는 전역 단축키가 이미 먹었다
+    let (aup, adown) = ctx.input_mut(|i| (i.consume_key(Modifiers::ALT, Key::ArrowUp), i.consume_key(Modifiers::ALT, Key::ArrowDown)));
+    if aup || adown {
+        let d: i64 = if aup { -1 } else { 1 };
+        if let Some(s) = sel {
+            let to = s as i64 + d;
+            if to >= 0 && (to as usize) < n {
+                acts.push(Act::MoveItem(s, d));
+                ctx.data_mut(|m| m.insert_temp(id(SCROLL_SEL), true));
+            }
+        }
+        return;
+    }
+    let (up, down, enter, del) = ctx.input_mut(|i| {
+        (
+            i.consume_key(Modifiers::NONE, Key::ArrowUp),
+            i.consume_key(Modifiers::NONE, Key::ArrowDown),
+            i.consume_key(Modifiers::NONE, Key::Enter),
+            i.consume_key(Modifiers::NONE, Key::Delete),
+        )
+    });
+    if n == 0 {
+        return;
+    }
+    if down || up {
+        // 고르기만 바꾼다 — 미리보기·송출은 그대로 (st.sel ± 1; render(); forceEditor())
+        app.sel = Some(match (sel, down) {
+            (Some(s), true) => (s + 1).min(n - 1),
+            (Some(s), false) => s.saturating_sub(1),
+            (None, _) => 0,
+        });
+        app.edit = None;
+        ctx.data_mut(|m| m.insert_temp(id(SCROLL_SEL), true));
+    } else if enter {
+        if let Some(s) = sel {
+            if pv_idx == Some(s as i64) {
+                acts.push(Act::SendPreview); // 이미 미리보기 중인 순서면 고른 슬라이드 송출
+            } else {
+                quiet_preview(app, s, acts);
+            }
+        }
+    } else if del {
+        if let Some(s) = sel {
+            // 원본은 confirm() 으로 묻는다. Rust 판은 다른 지우기와 같이 바로 지우고 알림의 [되돌리기]·Ctrl+Z 로 되살린다
+            acts.push(Act::RemoveItem(s));
+            ctx.data_mut(|m| m.insert_temp(id(DEL_SEL), s));
+        }
+    }
+}
+
+/// 키로 고른 줄이 보이게 스크롤할 차례인가 (고른 줄을 그릴 때 한 번)
+pub(crate) fn take_scroll(ctx: &egui::Context) -> bool {
+    ctx.data_mut(|d| d.remove_temp::<bool>(id(SCROLL_SEL))).unwrap_or(false)
+}
+
+/// cue.js quietPreview: 순서를 미리보기에만 올린다 — '바로 송출' 모드여도 송출하지 않는다 (holdDirect)
+fn quiet_preview(app: &mut App, i: usize, acts: &mut Vec<Act>) {
+    let mut c = app.core.lock();
+    if !c.direct_mode() {
+        drop(c);
+        acts.push(Act::PreviewItem(i));
+        return;
+    }
+    match c.item_deck(i) {
+        Ok(d) => {
+            c.pres.preview = Some(d);
+            c.emit(wp_core::core::Ev::Ui);
+        }
+        Err(e) => c.notify(e, "warn"),
+    }
 }
 
 /// 처음 고른 쪽: 점검용 `--left-tab books` (예전 숫자 값은 큐시트)
@@ -615,6 +792,8 @@ pub fn books(app: &mut App, ui: &mut egui::Ui) {
     // 점검용 --book 43 (처음 고른 책)
     let mut sel: Option<i64> = ui.data(|d| d.get_temp(id(BOOK_SEL))).unwrap_or_else(|| std::env::args().position(|x| x == "--book").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()));
     let mut pick: Option<(i64, i64)> = None;
+    // 장 격자에서 키보드가 있는 장 (책 번호, 장) — 원본의 초점 있는 장 단추
+    let mut chap_cur: Option<(i64, i64)> = ui.data(|d| d.get_temp(id(CHAP_CUR))).unwrap_or(None);
     // #bookFilter { margin: 8px }
     ui.add_space(4.0);
     let mut enter = false;
@@ -693,16 +872,55 @@ pub fn books(app: &mut App, ui: &mut egui::Ui) {
                 let cw = (aw - 4.0 * (cols - 1) as f32) / cols as f32;
                 ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
                 let chs: Vec<i64> = b["chapters"].as_array().into_iter().flatten().map(|x| x.as_i64().unwrap_or(0)).collect();
+                let bid = b["id"].as_i64().unwrap_or(0);
+                // 장 격자 방향키 (control.js:390): ←→ ±1 · ↑↓ ±한 줄, 끝에서는 첫·끝 장에 멈춤. 초점만 옮기고 Enter 가 그 장을 연다 (단추의 기본 동작)
+                chap_cur = chap_cur.filter(|c| c.0 == bid && c.1 >= 1 && c.1 as usize <= chs.len());
+                let ctx = ui.ctx().clone();
+                nav_touch(&ctx, Nav::Chapters);
+                let mut moved = false;
+                if let (Nav::Chapters, Some((_, cur)), false) = (nav_owner(&ctx), chap_cur, egui::Popup::is_any_open(&ctx)) {
+                    use egui::{Key, Modifiers};
+                    let none = ctx.input(|i| !i.modifiers.alt && !i.modifiers.command && !i.modifiers.ctrl);
+                    let (r, l, d, u, enter) = if none {
+                        ctx.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowRight), i.consume_key(Modifiers::NONE, Key::ArrowLeft), i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp), i.consume_key(Modifiers::NONE, Key::Enter)))
+                    } else {
+                        (false, false, false, false, false)
+                    };
+                    let step = if r { 1 } else if l { -1 } else if d { cols as i64 } else if u { -(cols as i64) } else { 0 };
+                    if step != 0 {
+                        chap_cur = Some((bid, (cur + step).clamp(1, chs.len() as i64)));
+                        moved = true;
+                    } else if enter {
+                        pick = Some((bid, cur));
+                    }
+                }
+                let focus_ring = nav_owner(&ctx) == Nav::Chapters;
+                let mut grid_rect = Rect::NOTHING;
                 for row in chs.chunks(cols).enumerate() {
                     ui.horizontal(|ui| {
                         for (k, verses) in row.1.iter().enumerate() {
                             let ch = (row.0 * cols + k + 1) as i64;
                             let r = ui.add(Btn::new(ch.to_string()).min_width(cw).height(29.0).tooltip(wp_core::i18n::tr_args("{1}장 · {2}절", &[&ch, verses])));
+                            widgets::mark(&format!("chap-{ch}"), r.rect);
+                            grid_rect = grid_rect.union(r.rect);
                             if r.clicked() {
-                                pick = Some((b["id"].as_i64().unwrap_or(0), ch));
+                                pick = Some((bid, ch));
+                                chap_cur = Some((bid, ch)); // 누른 단추가 초점을 갖는다
+                                nav_set(&ctx, Nav::Chapters);
+                            }
+                            if focus_ring && chap_cur == Some((bid, ch)) {
+                                // :focus-visible 테두리
+                                ui.painter().rect_stroke(r.rect.expand(1.0), CornerRadius::same(theme::RADIUS), Stroke::new(2.0, p.accent), StrokeKind::Outside);
+                                if moved {
+                                    r.scroll_to_me(None);
+                                }
                             }
                         }
                     });
+                }
+                // 격자 밖을 누르면 키보드를 놓는다 (단추 blur)
+                if ui.input(|i| i.pointer.any_pressed()) && !ui.rect_contains_pointer(grid_rect) {
+                    nav_release(&ctx, Nav::Chapters);
                 }
                 ui.add_space(8.0);
             });
@@ -711,6 +929,7 @@ pub fn books(app: &mut App, ui: &mut egui::Ui) {
     ui.data_mut(|d| {
         d.insert_temp(id(BOOK_Q), q);
         d.insert_temp(id(BOOK_SEL), sel);
+        d.insert_temp(id(CHAP_CUR), chap_cur);
     });
     if let Some((bid, ch)) = pick {
         open_chapter(app, &structure, bid, ch);
