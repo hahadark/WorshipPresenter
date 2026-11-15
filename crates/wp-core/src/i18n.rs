@@ -49,7 +49,18 @@ pub fn set_lang(lang: &str) {
 }
 
 pub fn is_en() -> bool {
+    #[cfg(test)]
+    if let Some(v) = TEST_LANG.with(|c| c.get()) {
+        return v;
+    }
     EN.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// 시험용: 이 스레드에서만 화면 언어를 바꾼다. set_lang 은 프로세스 전체 값이라
+    /// 같이 도는 다른 시험(한국어 문구를 보는 것)이 가끔 실패했다 (diagnose::obsws_stage_update_items)
+    static TEST_LANG: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
 /// 화면 문구: 영어 화면이면 사전에서 찾고, 없으면 그대로 (사용자 글은 넣지 말 것)
@@ -250,6 +261,7 @@ mod tests {
 
     #[test]
     fn lang() {
+        let set_lang = |l: &str| TEST_LANG.with(|c| c.set(Some(l == "en"))); // 이 스레드에서만
         set_lang("ko");
         assert_eq!(tr("파일"), "파일");
         assert_eq!(with_lang(b"<html lang=\"ko\"><head></head>".to_vec()), b"<html lang=\"ko\"><head></head>".to_vec());
