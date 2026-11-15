@@ -23,8 +23,53 @@ pub struct SlideEditUi {
     anchor: Option<String>,
     /// Ctrl+A: 다음 프레임에 건너뛰지 않은 슬라이드 모두 고르기
     want_all: bool,
+    /// [갈래 C] 캔버스에서 글 바로 고치는 중 (slideedit.js inlineEdit — 상자를 두 번 누르면)
+    inline: Option<Inline>,
+    /// 글 바로 고치는 중에 Esc 를 눌렀다 (전역 Esc 보다 먼저 받아 둔다)
+    inline_esc: bool,
     #[cfg(test)]
     pub(crate) observed: std::collections::BTreeMap<String, egui::Rect>,
+}
+
+/// 캔버스 위 글 바로 고치기 한 건
+#[derive(Clone)]
+struct Inline {
+    item_id: String,
+    /// 편집 키 ('*' 또는 슬라이드 ekey)
+    key: String,
+    /// "main" = 본문, 그 밖 = 덧붙인 글상자 id
+    target: String,
+    /// 본문이면 그 슬라이드 (글 덩어리 번호·덧붙인 카드 id 를 알아야 저장한다)
+    slide: Value,
+    text: String,
+    orig: String,
+    /// 0 = 막 열림(초점 주기) · 1 = 모두 고르기 · 2 = 치는 중
+    step: u8,
+}
+
+impl Inline {
+    /// 고친 글을 순서에 반영한다. 바뀐 것이 없으면 false
+    fn commit(&self, it: &mut Value) -> Result<bool, &'static str> {
+        if self.text == self.orig {
+            return Ok(false);
+        }
+        if self.target == "main" {
+            se::set_main_text(it, &self.slide, &self.text)?;
+        } else {
+            let (id, text) = (self.target.clone(), self.text.clone());
+            se::update_edit(it, &self.key, |e| {
+                if let Some(x) = e["items"].as_array_mut().and_then(|a| a.iter_mut().find(|x| x["id"].as_str() == Some(id.as_str()))) {
+                    x["text"] = json!(text);
+                }
+            });
+        }
+        Ok(true)
+    }
+}
+
+/// 글이 없는 슬라이드 종류 (slideedit.js NOTEXT): 본문 글 고치기가 없다
+fn no_text_kind(slide: &Value) -> bool {
+    matches!(slide["kind"].as_str().unwrap_or(""), "image" | "score" | "video" | "camera" | "blank" | "slideshow" | "audio")
 }
 
 fn edit_key(slide: &Value) -> String {
@@ -98,6 +143,20 @@ impl SlideEditUi {
             self.multi = keys.to_vec();
             self.anchor = Some(first.clone());
         }
+    }
+    /// 캔버스에서 글을 바로 고치는 중인가 (전역 Ctrl+Enter 송출을 막는다 — 원본은 keydown stopPropagation)
+    pub fn inline_active(&self) -> bool {
+        self.open && self.inline.is_some()
+    }
+    /// 전역 단축키보다 먼저: 글을 바로 고치는 중의 Esc 는 그만두기다 (예배당 화면 끄기 등으로 새지 않게)
+    pub fn pre_keys(&mut self, ctx: &egui::Context) {
+        if self.inline_active() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            self.inline_esc = true;
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn inline_target(&self) -> Option<String> {
+        self.inline.as_ref().map(|n| n.target.clone())
     }
     /// 편집기 목록 키: Esc = 한 장만 (여러 장을 고른 중) · Ctrl+A = 모두 (slideedit.js 키 처리)
     pub fn list_keys(&mut self, ctx: &egui::Context) {
@@ -310,11 +369,65 @@ impl SlideEditUi {
                 if let Some(m) = wp_core::hymns::merge_edit(&{ let mut x = it["edits"].clone(); if x.is_object() { x[&key] = e.clone(); } else { x = json!({ &key: e.clone() }); } x }, &edit_key(slide)) { show["edit"] = m; }
                 let c = paint::Ctx { web_dir, data_dir };
                 paint_slide(ui, &c, rect, Some(&show), &tpl, "", true, false, false);
+                // ---- [갈래 C] 글 바로 고치기 (slideedit.js:452 inlineEdit · 1012 dblclick) ----
+                let item_id = it["id"].as_str().unwrap_or("").to_string();
+                let pct = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(rect.min + Vec2::new(x * rect.width() / 100.0, y * rect.height() / 100.0), Vec2::new(w * rect.width() / 100.0, h * rect.height() / 100.0));
+                // 다른 순서·슬라이드로 옮겨 갔으면 고치던 글을 저장하고 닫는다 (원본은 blur 때 저장)
+                if let Some(n) = self.inline.clone().filter(|n| n.item_id != item_id || n.key != key || (n.target == "main" && edit_key(&n.slide) != edit_key(slide))) {
+                    self.inline = None;
+                    if n.item_id == item_id {
+                        let mut a = new_it.clone().unwrap_or_else(|| it.clone());
+                        match n.commit(&mut a) {
+                            Ok(true) => new_it = Some(a),
+                            Ok(false) => {}
+                            Err(m) => core.lock().notify(wp_core::i18n::tr(m), "info"),
+                        }
+                    }
+                }
+                let editing = self.inline.is_some();
+                // 본문 영역: 요소보다 먼저 놓아 요소가 위에서 먼저 받는다
+                let main_r = if e["box"].is_object() {
+                    let b = |k: &str, d: f64| e["box"][k].as_f64().unwrap_or(d) as f32;
+                    pct(b("x", 10.0), b("y", 10.0), b("w", 80.0), b("h", 80.0))
+                } else {
+                    let cr = crate::slide_layout::content_rect(&tpl);
+                    pct(cr.left() / tw * 100.0, cr.top() / th * 100.0, cr.width() / tw * 100.0, cr.height() / th * 100.0)
+                };
+                let mut start: Option<Inline> = None;
+                if !editing {
+                    let mresp = ui.interact(main_r.intersect(rect), ui.id().with(("se-main", &key)), Sense::click());
+                    crate::widgets::mark("se-main", main_r.intersect(rect));
+                    if crate::widgets::click2(ui, ("se-main", item_id.as_str(), key.as_str()), &mresp) == crate::widgets::Click::Double {
+                        if self.common {
+                            core.lock().notify(wp_core::i18n::tr("글은 각 슬라이드에서 고칩니다 (왼쪽 목록에서 슬라이드를 고르세요)."), "info");
+                        } else if !no_text_kind(slide) {
+                            match se::main_text(&it, slide) {
+                                Some(t) => start = Some(Inline { item_id: item_id.clone(), key: key.clone(), target: "main".into(), slide: slide.clone(), text: t.clone(), orig: t, step: 0 }),
+                                None => core.lock().notify(wp_core::i18n::tr("성경·찬송가 본문은 여기서 고치지 않습니다. 위치·꾸미기만 바꿀 수 있습니다."), "info"),
+                            }
+                        }
+                    }
+                }
+                let mut inline_rect = self.inline.as_ref().filter(|n| n.target == "main").map(|_| main_r);
+                let mut inline_size = e["style"]["size"].as_f64().or(tpl["font"]["size"].as_f64().map(|s| s * 1080.0 / th as f64)).unwrap_or(60.0) as f32;
                 if let Some(items) = e["items"].as_array_mut() {
                     for (j, x) in items.iter_mut().enumerate().rev() {
                         let v = |k: &str, d: f64| x[k].as_f64().unwrap_or(d) as f32;
                         let er = egui::Rect::from_min_size(rect.min + Vec2::new(v("x",0.0)*rect.width()/100.0,v("y",0.0)*rect.height()/100.0),Vec2::new(v("w",30.0)*rect.width()/100.0,v("h",20.0)*rect.height()/100.0));
-                        let response = ui.interact(er.intersect(rect),ui.id().with(("se-element",&key,j)),Sense::drag());
+                        if self.inline.as_ref().is_some_and(|n| n.target != "main" && x["id"].as_str() == Some(n.target.as_str())) {
+                            inline_rect = Some(er);
+                            inline_size = v("size", 60.0);
+                        }
+                        if editing { continue; } // 고치는 동안에는 상자를 끌거나 다시 열지 않는다
+                        let response = ui.interact(er.intersect(rect),ui.id().with(("se-element",&key,j)),Sense::click_and_drag());
+                        crate::widgets::mark(&format!("se-el-{j}"), er.intersect(rect));
+                        // slideedit.js:1012 상자를 두 번 누르면 글 바로 고치기 (글상자만 · 잠긴 상자 제외)
+                        if crate::widgets::click2(ui, ("se-el", item_id.as_str(), key.as_str(), j), &response) == crate::widgets::Click::Double && x["type"] == "text" && x["locked"] != true {
+                            if let Some(id) = x["id"].as_str() {
+                                let t = x["text"].as_str().unwrap_or("").to_string();
+                                start = Some(Inline { item_id: item_id.clone(), key: key.clone(), target: id.into(), slide: Value::Null, text: t.clone(), orig: t, step: 0 });
+                            }
+                        }
                         #[cfg(test)]
                         self.observed.insert(format!("element-{j}"), response.rect);
                         if response.hovered() || response.dragged() { ui.painter().rect_stroke(er,0.0,egui::Stroke::new(1.0,Color32::LIGHT_BLUE),egui::StrokeKind::Inside); }
@@ -323,6 +436,52 @@ impl SlideEditUi {
                             se::translate_item(x,(d.x/rect.width()*100.0) as f64,(d.y/rect.height()*100.0) as f64);
                         }
                     }
+                }
+                if start.is_some() {
+                    self.inline = start;
+                } else if let (Some(mut n), Some(r)) = (self.inline.clone(), inline_rect) {
+                    // 그 자리에 글칸 (.se-inline): Esc = 그만두기 · Ctrl+Enter 또는 다른 곳 누름 = 저장
+                    let r = r.intersect(rect);
+                    let tid = ui.id().with("se-inline");
+                    let fs = (inline_size * rect.height() / 1080.0).clamp(11.0, 40.0);
+                    let resp = ui.put(r, egui::TextEdit::multiline(&mut n.text).id(tid).font(egui::FontId::proportional(fs)).desired_width(r.width()));
+                    crate::widgets::mark("se-inline", r);
+                    let (esc, ctrl_enter) = ui.input(|i| (i.key_pressed(egui::Key::Escape), i.modifiers.command && i.key_pressed(egui::Key::Enter)));
+                    let esc = esc | std::mem::take(&mut self.inline_esc);
+                    let mut done: Option<bool> = None; // Some(true) = 저장
+                    match n.step {
+                        0 => { resp.request_focus(); n.step = 1; }
+                        1 => {
+                            // 열자마자 모두 고르기 (ta.select()) — 바로 치면 바뀐다
+                            if let Some(mut s) = egui::TextEdit::load_state(ui.ctx(), tid) {
+                                let end = n.text.chars().count();
+                                s.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(end))));
+                                s.store(ui.ctx(), tid);
+                            }
+                            n.step = 2;
+                        }
+                        _ => {
+                            if ctrl_enter { done = Some(true); }
+                            else if resp.lost_focus() || !resp.has_focus() { done = Some(!esc); }
+                        }
+                    }
+                    if esc && n.step == 2 { done = Some(false); }
+                    match done {
+                        None => self.inline = Some(n),
+                        Some(save) => {
+                            self.inline = None;
+                            if save {
+                                let mut a = new_it.clone().unwrap_or_else(|| it.clone());
+                                match n.commit(&mut a) {
+                                    Ok(true) => new_it = Some(a),
+                                    Ok(false) => {}
+                                    Err(m) => core.lock().notify(wp_core::i18n::tr(m), "info"),
+                                }
+                            }
+                        }
+                    }
+                } else if self.inline.is_some() {
+                    self.inline = None; // 고치던 상자가 없어졌다
                 }
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical().id_salt("se-props").auto_shrink([false, false]).show(ui, |ui| {

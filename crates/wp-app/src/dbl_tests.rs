@@ -881,3 +881,94 @@ fn ppt_split_rule_button_merge_remove_clear_and_go_replaces_the_item() {
     assert_ne!(v[0]["id"], v[1]["id"]);
     assert!(!crate::pptsplit_ui::is_open(&h.ctx), "나누면 창이 닫힌다");
 }
+
+// ---------------- 11) 슬라이드 편집기 상자 두 번 = 글 바로 고치기 (slideedit.js:1012 · inlineEdit, 잠긴 상자 제외) ----------------
+
+fn sedit(app: &mut App, ctx: &egui::Context, _: &mut egui::Ui, _: &Snap, acts: &mut Vec<Act>) {
+    let typing = ctx.egui_wants_keyboard_input();
+    app.shortcuts(ctx, acts, typing); // 전역 Ctrl+Enter(바로 송출)가 글 저장을 가로채지 않는지 함께 본다
+    let (core, sel, wd, dd) = (app.core.clone(), app.sel, app.web_dir.clone(), app.data_dir.clone());
+    app.tc.slideedit.show(ctx, &core, sel, &wd, &dd, acts);
+}
+fn se_h(items: Vec<Value>) -> H {
+    let mut h = H::new(items);
+    h.app.sel = Some(0);
+    h.app.tc.slideedit.open_at("0");
+    for _ in 0..4 {
+        h.frame(vec![], sedit);
+    }
+    h
+}
+fn se_target(h: &H) -> Option<String> {
+    h.app.tc.slideedit.inline_target()
+}
+fn boxed(extra: Value) -> Value {
+    let mut b = json!({ "id": "t1", "type": "text", "x": 20, "y": 70, "w": 60, "h": 20, "text": "글상자", "size": 60, "color": "#ffffff", "align": "center", "valign": "middle" });
+    for (k, v) in extra.as_object().unwrap() {
+        b[k] = v.clone();
+    }
+    json!({ "id": "a", "type": "text", "title": "공지", "body": "첫째 장\n---\n둘째 장", "edits": { "0": { "items": [b] } } })
+}
+
+#[test]
+fn dbl_editor_main_text_edits_in_place_and_ctrl_enter_saves_without_sending() {
+    let mut h = se_h(vec![json!({ "id": "a", "type": "text", "title": "공지", "body": "첫째 장\n---\n둘째 장" })]);
+    assert!(se_target(&h).is_none());
+    single_panel(&mut h, "se-main", sedit);
+    assert!(se_target(&h).is_none(), "한 번 클릭으로는 열리지 않는다");
+    dbl_panel(&mut h, "se-main", sedit);
+    assert_eq!(se_target(&h).as_deref(), Some("main"), "본문을 두 번 누르면 그 자리에서 글 고치기");
+    h.frame(vec![], sedit);
+    h.frame(vec![], sedit);
+    assert!(seen("se-inline").is_some(), "글칸이 본문 자리에 나온다");
+    h.type_text("새 글", sedit); // 열자마자 모두 골라져 있어 바로 치면 바뀐다
+    assert_eq!(items(&h)[0]["body"], "첫째 장\n---\n둘째 장", "치는 중에는 저장하지 않는다");
+    h.key(egui::Key::Enter, egui::Modifiers::COMMAND, sedit);
+    h.frame(vec![], sedit);
+    assert_eq!(items(&h)[0]["body"], "새 글\n---\n둘째 장", "Ctrl+Enter = 저장 (그 장만 바뀐다)");
+    assert!(se_target(&h).is_none());
+    assert!(h.live_title().is_none(), "글 저장의 Ctrl+Enter 가 송출로 새지 않는다");
+}
+
+#[test]
+fn dbl_editor_text_box_edits_in_place_escape_cancels_click_away_saves() {
+    let mut h = se_h(vec![boxed(json!({}))]);
+    let text = |h: &H| items(h)[0]["edits"]["0"]["items"][0]["text"].as_str().unwrap_or("").to_string();
+    dbl_panel(&mut h, "se-el-0", sedit);
+    assert_eq!(se_target(&h).as_deref(), Some("t1"), "글상자를 두 번 누르면 그 글상자 글 고치기");
+    h.frame(vec![], sedit);
+    h.frame(vec![], sedit);
+    h.type_text("버릴 글", sedit);
+    h.key(egui::Key::Escape, egui::Modifiers::NONE, sedit);
+    h.frame(vec![], sedit);
+    assert!(se_target(&h).is_none());
+    assert_eq!(text(&h), "글상자", "Esc = 그만두기");
+    for _ in 0..12 {
+        h.frame(vec![], sedit);
+    }
+    dbl_panel(&mut h, "se-el-0", sedit);
+    h.frame(vec![], sedit);
+    h.frame(vec![], sedit);
+    h.type_text("환영합니다", sedit);
+    // 다른 곳(본문 위쪽)을 누르면 저장
+    let away = seen("se-main").map(|r| r.center_top() + Vec2::new(0.0, 12.0));
+    let away = away.unwrap_or_else(|| seen("se-inline").unwrap().center_top() - Vec2::new(0.0, 120.0));
+    h.click_at(away, sedit);
+    h.frame(vec![], sedit);
+    assert!(se_target(&h).is_none());
+    assert_eq!(text(&h), "환영합니다", "다른 곳을 누르면 저장");
+    assert_eq!(items(&h)[0]["body"], "첫째 장\n---\n둘째 장", "본문은 그대로");
+}
+
+#[test]
+fn dbl_editor_locked_box_image_slide_and_bible_text_do_not_open_inline_edit() {
+    // 잠긴 상자
+    let mut h = se_h(vec![boxed(json!({ "locked": true }))]);
+    dbl_panel(&mut h, "se-el-0", sedit);
+    assert!(se_target(&h).is_none(), "잠긴 상자는 두 번 눌러도 열리지 않는다");
+    // 성경 본문은 여기서 고치지 않는다 (알림만)
+    let mut h = se_h(vec![json!({ "id": "b", "type": "bible", "title": "요한복음 3:16", "ref": "요3:16", "reference": "요3:16", "version": "tst" })]);
+    dbl_panel(&mut h, "se-main", sedit);
+    assert!(se_target(&h).is_none(), "성경 본문은 글 고치기가 열리지 않는다");
+    assert!(h.app.core.lock().toast.as_ref().is_some_and(|t| t.0.contains("성경")), "왜 안 되는지 알린다");
+}

@@ -545,6 +545,7 @@ impl App {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context, acts: &mut Vec<Act>, typing: bool) {
+        self.tc.slideedit.pre_keys(ctx); // [갈래 C] 편집기에서 글 바로 고치는 중의 Esc = 그만두기
         // [트랙 C] 설정 → 단축키에서 바꾼 키를 쓴다 (없으면 기본값)
         let st = self.core.lock().settings.get()["shortcuts"].clone();
         let st = serde_json::json!({ "shortcuts": st });
@@ -556,7 +557,8 @@ impl App {
         if on("sendPreview", "F9") { acts.push(Act::SendPreview) }
         if on("toggleClear", "F10") { acts.push(Act::ToggleClear) }
         if on("focusSearch", "Ctrl+K") { self.focus_search = true }
-        if on("sendNow", "Ctrl+Enter") { acts.push(Act::SendNow(self.search.clone())) }
+        // 슬라이드 편집기에서 글을 바로 고치는 중의 Ctrl+Enter 는 그 글 저장이다 (slideedit.js: keydown stopPropagation)
+        if !self.tc.slideedit.inline_active() && on("sendNow", "Ctrl+Enter") { acts.push(Act::SendNow(self.search.clone())) }
         if on("cueNext", "Ctrl+ArrowDown") { acts.push(Act::CuePreviewStep(1)) }
         if on("cuePrev", "Ctrl+ArrowUp") { acts.push(Act::CuePreviewStep(-1)) }
         if on("toggleOutputWindow", "Ctrl+Shift+F") { acts.push(Act::OutputToggle) }
