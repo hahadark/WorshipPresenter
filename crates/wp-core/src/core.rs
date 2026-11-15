@@ -199,6 +199,7 @@ impl Core {
             outputs: HashMap::new(), tx, cue: None, cues: vec![], toast: None, toast_act: None, port, b: Default::default(), flow: Default::default(), pick: Default::default(), output_on_requests: 0, // [트랙 B] · [트랙 C] flow
         };
         c.trackb_init(); // [트랙 B]
+        c.purge_old_trash(30); // 휴지통의 큐시트는 30일 뒤 저절로 비운다 (Electron core.js:123)
         if c.version_id().is_empty() {
             if let Some(v) = c.store.list_versions().first() {
                 let id = v.id.clone();

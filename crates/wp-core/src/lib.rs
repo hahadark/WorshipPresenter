@@ -25,6 +25,7 @@ pub mod slides;
 pub mod textnorm;
 pub mod util;
 pub mod cues; // [트랙 B]
+pub mod cuemgr; // [갈래 C] 큐시트 관리 창 (목록·찾기·정렬·새로·복제·휴지통·내보내기)
 pub mod library; // [트랙 B]
 pub mod localtime; // [트랙 B]
 pub mod schedule; // [트랙 B]
