@@ -531,7 +531,7 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
 }
 
 /// 넣기 단추 동작 (Electron cue.js #cueAdd click)
-fn add(app: &mut App, ctx: &egui::Context, ty: &str, acts: &mut Vec<Act>) {
+pub(crate) fn add(app: &mut App, ctx: &egui::Context, ty: &str, acts: &mut Vec<Act>) {
     match ty {
         "hymn" => {
             ctx.data_mut(|d| d.insert_temp(id(HYMN_PICK), true));

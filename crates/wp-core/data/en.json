@@ -4024,5 +4024,10 @@
  "제목·그 밖": "Title / other",
  "슬라이드 보며 나누기…": "Split while viewing slides…",
  "슬라이드를 보며 범위·이름을 정해 여러 순서로 나눕니다 (두 번 누르면 그 슬라이드에서 새 순서)": "Pick ranges and names while viewing the slides to split into several items (double-click a slide to start a new item there)",
- "AI 로 나눴습니다": "Split by AI"
+ "AI 로 나눴습니다": "Split by AI",
+ "주보로 큐시트 만들기…": "Build a cue sheet from the bulletin…",
+ "송출 배경 (카메라·미디어)…": "Live background (camera / media)…",
+ "조작자 메모 (무대 화면에도 보임)": "Operator note (also shown on the stage display)",
+ "예: 일어서서": "e.g. Please stand",
+ "미리보기 켜기 (거쳐서 송출)": "Turn preview on (send via preview)"
 }

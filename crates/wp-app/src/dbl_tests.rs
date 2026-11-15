@@ -972,3 +972,76 @@ fn dbl_editor_locked_box_image_slide_and_bible_text_do_not_open_inline_edit() {
     assert!(se_target(&h).is_none(), "성경 본문은 글 고치기가 열리지 않는다");
     assert!(h.app.core.lock().toast.as_ref().is_some_and(|t| t.0.contains("성경")), "왜 안 되는지 알린다");
 }
+// ---------------- 오른쪽 클릭 메뉴: 미리보기·LIVE 화면 · 큐시트 빈 자리 · 순서 메모 (ctxmenu.js previewMenu · liveMenu · cueEmptyMenu · cueItemMenu) ----------------
+
+fn rclick_full(h: &mut H, name: &str) {
+    let p = at(h, name);
+    rclick_full_at(h, p);
+}
+fn rclick_full_at(h: &mut H, p: Pos2) {
+    full(h, vec![Event::PointerMoved(p)]);
+    for pressed in [true, false] {
+        full(h, vec![Event::PointerButton { pos: p, button: PointerButton::Secondary, pressed, modifiers: Default::default() }]);
+    }
+    idle(h, 2);
+}
+fn pick_full(h: &mut H, item: &str) {
+    let p = seen(item).unwrap_or_else(|| panic!("메뉴 항목 없음: {item} (있는 것: {:?})", widgets::HOVER_SEEN.with(|m| m.borrow().keys().filter(|k| k.starts_with("menu")).cloned().collect::<Vec<_>>()))).center();
+    click_at(h, p);
+    idle(h, 2);
+}
+
+#[test]
+fn preview_pane_menu_sends_and_live_pane_menu_hides_text() {
+    let mut h = H::new(titles());
+    h.app.core.lock().preview_item(0);
+    idle(&mut h, 3);
+    assert!(live(&h).is_none());
+    rclick_full(&mut h, "pane-preview");
+    pick_full(&mut h, "menu-next");
+    assert_eq!(h.app.core.lock().pres.preview.as_ref().map(|d| d.index), Some(1), "미리보기 메뉴 '다음 슬라이드'");
+    rclick_full(&mut h, "pane-preview");
+    pick_full(&mut h, "menu-send");
+    assert_eq!(live(&h), Some((0, 1)), "미리보기 메뉴 '송출' = F9");
+    rclick_full(&mut h, "pane-live");
+    pick_full(&mut h, "menu-clear");
+    assert_eq!(h.app.core.lock().pres.live.as_ref().map(|l| l.visible), Some(false), "LIVE 메뉴 '글자 숨김·복원' = F10");
+    rclick_full(&mut h, "pane-live");
+    pick_full(&mut h, "menu-next");
+    assert_eq!(live(&h), Some((0, 2)), "LIVE 메뉴 '다음 슬라이드' = F6");
+}
+
+#[test]
+fn cue_list_empty_area_menu_adds_item_and_opens_cue_manager() {
+    let mut h = H::new(titles());
+    idle(&mut h, 3);
+    let area = seen("cue-empty").expect("큐시트 목록");
+    let last = seen("cue-row-2").expect("마지막 순서 줄");
+    let p = Pos2::new(area.center().x, (last.bottom() + 30.0).min(area.bottom() - 4.0));
+    assert!(p.y > last.bottom(), "시험 전제: 목록 아래에 빈 자리가 있다");
+    rclick_full_at(&mut h, p);
+    pick_full(&mut h, "menu-add-title");
+    assert_eq!(items(&h).len(), 4, "빈 자리 메뉴 '제목' = 순서 하나 넣기");
+    assert_eq!(items(&h).iter().filter(|x| x["type"] == "title").count(), 1);
+    idle(&mut h, 12);
+    let area = seen("cue-empty").unwrap();
+    let last = seen("cue-row-3").unwrap();
+    rclick_full_at(&mut h, Pos2::new(area.center().x, (last.bottom() + 30.0).min(area.bottom() - 4.0)));
+    pick_full(&mut h, "menu-cues");
+    assert!(h.app.tb.cues, "빈 자리 메뉴 '큐시트 관리' = 관리 창 열기");
+}
+
+#[test]
+fn cue_row_menu_note_is_saved_on_the_item() {
+    let mut h = H::new(titles());
+    idle(&mut h, 3);
+    rclick_full(&mut h, "cue-row-1");
+    let p = seen("menu-note").expect("메모 칸").center();
+    click_at(&mut h, p);
+    for ch in "일어서서".chars() {
+        full(&mut h, vec![Event::Text(ch.to_string())]);
+    }
+    pick_full(&mut h, "menu-note-ok");
+    assert_eq!(items(&h)[1]["note"], "일어서서");
+    assert_eq!(items(&h)[0]["note"].as_str().unwrap_or(""), "", "다른 순서는 그대로");
+}

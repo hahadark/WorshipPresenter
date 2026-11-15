@@ -608,6 +608,10 @@ impl App {
         let list_h = crate::cue_ui::list_height(ui);
         // .cue-list { flex: 1; padding: 2px 6px }
         egui::ScrollArea::vertical().id_salt("items").max_height(list_h).min_scrolled_height(list_h).auto_shrink([false, false]).show(ui, |ui| {
+            // [갈래 C] 목록의 빈 자리 오른쪽 클릭 (ctxmenu.js cueEmptyMenu) — 줄보다 먼저 놓아 줄이 위에서 먼저 받는다
+            let bg = ui.interact(ui.clip_rect(), ui.id().with("cue-empty"), Sense::click());
+            crate::widgets::mark("cue-empty", ui.clip_rect());
+            crate::ctx_ui::cue_empty_menu(self, &bg, acts);
             egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, it) in s.items.iter().enumerate() {
@@ -1058,6 +1062,10 @@ impl App {
                 sl["caption"] = json!("");
                 paint::paint_pip(ui, &c, rect.shrink(2.0), &sl, main_t);
             }
+            // [갈래 C] 화면 오른쪽 클릭 메뉴 (ctxmenu.js previewMenu · liveMenu)
+            let mresp = ui.interact(rect, ui.id().with(("pane-menu", is_live)), Sense::click());
+            crate::widgets::mark(if is_live { "pane-live" } else { "pane-preview" }, rect);
+            crate::ctx_ui::pane_menu(self, &mresp, is_live, acts);
             if deck.is_none() {
                 let ph = if is_live { tr("송출 중인 본문 없음") } else { tr("검색한 본문이 여기에 표시됩니다") };
                 ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, ph, theme::font(14.0, Weight::Regular), p.muted2);

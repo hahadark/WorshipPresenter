@@ -110,3 +110,179 @@ pub(crate) fn lib_menu(resp: &Response, name: &str, can_add: bool, ops: &[LibOp]
     });
     out
 }
+
+// ---------------- 패널 메뉴 (ctxmenu.js previewMenu · liveMenu · clearItems · cueEmptyMenu) ----------------
+use crate::app::{Act, App};
+
+/// 순서 종류 (ctxmenu.js TYPES): (종류, 이름, 아이콘)
+pub(crate) const TYPES: [(&str, &str, &str); 11] = [
+    ("hymn", "찬송가·PPT", "music-2"),
+    ("bible", "성경", "book-open"),
+    ("song", "찬양", "music"),
+    ("text", "공지", "megaphone"),
+    ("title", "제목", "tag"),
+    ("image", "이미지", "image"),
+    ("video", "영상", "clapperboard"),
+    ("slideshow", "슬라이드쇼", "images"),
+    ("camera", "카메라", "camera"),
+    ("audio", "음악", "volume-2"),
+    ("blank", "빈 화면", "square"),
+];
+
+/// '순서 넣기' 줄들: 클립보드에서 붙여 넣기 + 종류마다 (고른 순서 다음에 들어간다)
+pub(crate) fn add_items(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
+    if item(ui, "paste", Some("clipboard"), &tr("클립보드에서 붙여 넣기"), "Ctrl+V", true, false) {
+        crate::parity2_ui::open_paste();
+    }
+    for (ty, label, ic) in TYPES {
+        if item(ui, &format!("add-{ty}"), Some(ic), &tr(label), "", true, false) {
+            let ctx = ui.ctx().clone();
+            crate::cue_ui::add(app, &ctx, ty, acts);
+        }
+    }
+}
+
+/// 큐시트 목록의 빈 자리 (cueEmptyMenu): 순서 넣기 · 주보로 큐시트 만들기 · 큐시트 관리
+pub(crate) fn cue_empty_menu(app: &mut App, resp: &Response, acts: &mut Vec<Act>) {
+    resp.context_menu(|ui| {
+        ui.set_min_width(240.0);
+        head(ui, &tr("순서 넣기"));
+        add_items(app, ui, acts);
+        ui.separator();
+        if item(ui, "bulletin", Some("sparkles"), &tr("주보로 큐시트 만들기…"), "", true, false) {
+            crate::trackd_ui::handle_menu("d:bulletin");
+        }
+        if item(ui, "cues", Some("folder-open"), &tr("큐시트 관리 (새로·복제·내보내기)…"), "", true, false) {
+            app.tb.cues = true;
+        }
+    });
+}
+
+/// 음악 멈춤 (control.js #bAudio: 줄이며 끄기)
+fn music_fade(ms: u64) {
+    crate::music_ui::MUSIC.with(|m| m.borrow_mut().fade_out(ms));
+}
+
+/// 화면 지우기 줄들 (clearItems): LIVE 메뉴와 아래 줄 메뉴가 함께 쓴다
+fn clear_items(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
+    let (hide_bg, ov_off, media, logo) = {
+        let c = app.core.lock();
+        (c.layers.hide_bg, !c.b.saved_overlays.is_empty(), c.layers.media.clone(), c.layers.logo)
+    };
+    if item(ui, "clear", None, &tr("글자 숨김·복원"), "F10", true, false) {
+        acts.push(Act::ToggleClear);
+    }
+    if item(ui, "bg", None, &tr(if hide_bg { "배경 다시 켜기" } else { "배경 지우기" }), "", true, false) {
+        acts.push(Act::ToggleBg);
+    }
+    if item(ui, "ovoff", None, &tr(if ov_off { "오버레이 다시 켜기" } else { "오버레이 끄기" }), "", true, false) {
+        app.core.lock().toggle_overlays_off();
+    }
+    if item(ui, "audio", None, &tr("음악 멈춤"), "", true, false) {
+        music_fade(2500);
+    }
+    if item(ui, "logo", None, &tr(if logo { "로고 화면 끄기" } else { "로고 화면" }), "", true, false) {
+        acts.push(Act::ToggleLogo);
+    }
+    if item(ui, "all", None, &tr("모두 지우기"), "", true, true) {
+        acts.push(Act::ClearAll);
+        music_fade(2000);
+    }
+    match media {
+        Some(m) => {
+            let label = m["label"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| tr("미디어"));
+            if item(ui, "mediaoff", None, &wp_core::i18n::tr_args("송출 배경 끄기 ({1})", &[&label]), "", true, false) {
+                app.core.lock().set_background_media(None);
+            }
+        }
+        None => {
+            if item(ui, "media", Some("camera"), &tr("송출 배경 (카메라·미디어)…"), "", true, false) {
+                crate::track_c::handle_menu(app, "b:lib");
+            }
+        }
+    }
+}
+
+/// 미리보기 화면 (previewMenu) · LIVE 화면 (liveMenu)
+pub(crate) fn pane_menu(app: &mut App, resp: &Response, is_live: bool, acts: &mut Vec<Act>) {
+    resp.context_menu(|ui| {
+        ui.set_min_width(250.0);
+        if is_live {
+            head(ui, &tr("LIVE (송출 중)"));
+            if item(ui, "next", None, &tr("다음 슬라이드"), "F6", true, false) {
+                acts.push(Act::Step(1));
+            }
+            if item(ui, "prev", None, &tr("이전 슬라이드"), "F5", true, false) {
+                acts.push(Act::Step(-1));
+            }
+            ui.separator();
+            clear_items(app, ui, acts);
+            ui.separator();
+            let running = app.out.running();
+            if item(ui, "output", None, &tr(if running { "예배당 화면 끄기" } else { "예배당 화면 켜기" }), "Ctrl+Shift+F", true, false) {
+                acts.push(Act::OutputToggle);
+            }
+            if item(ui, "stage", Some("monitor"), &tr("무대 화면 창 열기"), "", true, false) {
+                crate::track_c::handle_menu(app, "b:stage");
+            }
+            if item(ui, "history", None, &tr("송출 기록"), "Ctrl+H", true, false) {
+                crate::track_c::handle_menu(app, "c:history");
+            }
+            ui.separator();
+            if item(ui, "draw", Some("brush"), &tr("화면에 그리기·강조"), "", true, false) {
+                crate::track_c::handle_menu(app, "b:draw");
+            }
+            if item(ui, "drawclear", None, &tr("그린 것 지우기"), "", true, false) {
+                app.core.lock().draw_clear();
+            }
+            return;
+        }
+        head(ui, &tr("미리보기"));
+        let (has, cue) = {
+            let c = app.core.lock();
+            let p = c.pres.preview.as_ref();
+            let cue = p.and_then(|d| {
+                let i = d.passage["cueIndex"].as_i64().filter(|i| *i >= 0)? as usize;
+                let open = c.cue.as_ref().is_some_and(|q| d.passage["cueId"] == q.id.as_str());
+                open.then(|| (i, d.slides.get(d.index).map(crate::center_ui::slide_key).unwrap_or_default()))
+            });
+            (p.is_some(), cue)
+        };
+        if item(ui, "send", Some("play"), &tr("송출"), "F9", has, false) {
+            acts.push(Act::SendPreview);
+        }
+        if item(ui, "prev", None, &tr("이전 슬라이드"), "PageUp", has, false) {
+            acts.push(Act::PreviewStep(-1));
+        }
+        if item(ui, "next", None, &tr("다음 슬라이드"), "PageDown", has, false) {
+            acts.push(Act::PreviewStep(1));
+        }
+        ui.separator();
+        if item(ui, "cuenext", None, &tr("다음 순서 미리보기"), "Ctrl+↓", true, false) {
+            acts.push(Act::CuePreviewStep(1));
+        }
+        if item(ui, "cueprev", None, &tr("이전 순서 미리보기"), "Ctrl+↑", true, false) {
+            acts.push(Act::CuePreviewStep(-1));
+        }
+        if let Some((i, key)) = cue {
+            if item(ui, "edit", Some("square-pen"), &tr("이 슬라이드 편집"), "Ctrl+E", true, false) {
+                app.sel = Some(i);
+                app.tc.slideedit.open_at(&key);
+            }
+        }
+        ui.separator();
+        let direct = app.core.lock().direct_mode();
+        if item(ui, "mode", None, &tr(if direct { "미리보기 켜기 (거쳐서 송출)" } else { "미리보기 끄기 (바로 송출)" }), "", true, false) {
+            acts.push(Act::TogglePreviewMode);
+        }
+    });
+}
+
+/// 아래 송출 줄의 빈 자리 (footer.bottom): 화면 지우기
+pub(crate) fn footer_menu(app: &mut App, resp: &Response, acts: &mut Vec<Act>) {
+    resp.context_menu(|ui| {
+        ui.set_min_width(230.0);
+        head(ui, &tr("화면 지우기"));
+        clear_items(app, ui, acts);
+    });
+}
