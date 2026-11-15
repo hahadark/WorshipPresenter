@@ -42,6 +42,13 @@ pub struct SlideEditUi {
     keys: Vec<EdKey>,
     /// 지난 프레임에 캔버스를 그렸다 (그렸을 때만 글쇠를 가져간다)
     live: bool,
+    /// 마지막으로 누른 곳이 편집기 창 안이다 (열 때도 켠다). 메인 창·다른 창을 누르면 꺼지고 편집기는 글쇠를 받지 않는다
+    active: bool,
+    /// 편집기 창의 층 (어디를 눌렀는지 가린다) · 지난 프레임에 열려 있었나
+    win_layer: Option<egui::LayerId>,
+    was_open: bool,
+    /// 글 바로 고치는 글칸에 지난 프레임까지 초점이 있었다 (그때만 Esc 를 가져간다. egui 는 Esc 가 오면 프레임 첫머리에 초점을 지우므로 따로 적어 둔다)
+    inline_focus: bool,
     /// 요소 끌기 (옮기기·크기 조절 손잡이)
     drag: Option<ElDrag>,
     /// 복사한 요소와 그때 클립보드에 쓴 글 (붙여 넣는 글이 이것과 같으면 요소를 붙인다)
@@ -153,6 +160,7 @@ impl SlideEditUi {
     /// 편집기를 열고 그 슬라이드(ekey)를 고른다 (격자 ✎ · ＋)
     pub fn open_at(&mut self, key: &str) {
         self.open = true;
+        self.active = true;
         self.common = false;
         self.pending_key = Some(key.to_string());
         self.multi.clear();
@@ -172,15 +180,35 @@ impl SlideEditUi {
         self.open && self.inline.is_some()
     }
     /// 전역 단축키보다 먼저: 글을 바로 고치는 중의 Esc 는 그만두기다 (예배당 화면 끄기 등으로 새지 않게)
+    /// 편집기가 글쇠를 받는 중인가: 열려 있고, 마지막으로 누른 곳이 편집기 창 안
+    pub fn keys_active(&self) -> bool {
+        self.open && self.active
+    }
+    /// 누른 곳에 따라 편집기 글쇠 켜고 끄기 (지난 프레임의 창 배치로 가린다. 포인터 사건은 건드리지 않는다)
+    fn track_focus(&mut self, ctx: &egui::Context) {
+        if !self.open {
+            self.active = false;
+            return;
+        }
+        let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { i.pointer.interact_pos() } else { None }) else { return };
+        match ctx.layer_id_at(p) {
+            Some(l) if Some(l) == self.win_layer => self.active = true,
+            // 메뉴·팝업(편집기 오른쪽 클릭 메뉴 등)을 누른 것은 그대로 둔다
+            Some(l) if matches!(l.order, egui::Order::Foreground | egui::Order::Tooltip) => {}
+            _ => self.active = false,
+        }
+    }
     pub fn pre_keys(&mut self, ctx: &egui::Context) {
+        self.track_focus(ctx);
         if self.inline_active() {
-            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            // 글칸에 초점이 있을 때만 (메인 창을 누른 뒤의 Esc 는 전역 것)
+            if self.inline_focus && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                 self.inline_esc = true;
             }
             return;
         }
         // 편집기 글쇠 (slideedit.js el keydown): 글 쓰는 칸에 있을 때는 그 칸이 받는다
-        if !self.open || !self.live || ctx.egui_wants_keyboard_input() {
+        if !self.open || !self.active || !self.live || ctx.egui_wants_keyboard_input() {
             return;
         }
         let got = canvas::collect(ctx, !self.sel.is_empty(), self.multi.len() > 1);
@@ -200,6 +228,9 @@ impl SlideEditUi {
     /// 편집기 목록 키: Esc = 한 장만 (여러 장을 고른 중) · Ctrl+A = 모두 (slideedit.js 키 처리)
     pub fn list_keys(&mut self, ctx: &egui::Context) {
         use egui::{Key, Modifiers};
+        if !self.keys_active() {
+            return;
+        }
         if self.multi.len() > 1 && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
             self.multi.clear();
         }
@@ -212,17 +243,23 @@ impl SlideEditUi {
         #[cfg(test)]
         self.observed.clear();
         self.live = false;
+        if self.inline.is_none() { self.inline_focus = false; }
         let mut keys = std::mem::take(&mut self.keys);
         if !self.open {
             self.drag = None;
             self.lasso = None;
+            self.active = false;
+            self.was_open = false;
             return;
+        }
+        if !std::mem::replace(&mut self.was_open, true) {
+            self.active = true; // 막 열었다 = 편집기를 쓰려는 것
         }
         if std::mem::take(&mut self.undo_break) {
             core.lock().b.typing = None;
         }
         let mut open = self.open;
-        crate::widgets::float_window(ctx, "slideedit", wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)"), [980.0, 640.0]).open(&mut open).show(ctx, |ui| {
+        let win = crate::widgets::float_window(ctx, "slideedit", wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)"), [980.0, 640.0]).open(&mut open).show(ctx, |ui| {
             let Some(i) = sel else {
                 ui.label(wp_core::i18n::tr("큐시트에서 순서를 먼저 고르세요."));
                 return;
@@ -721,6 +758,7 @@ impl SlideEditUi {
                     let fs = (inline_size * rect.height() / 1080.0).clamp(11.0, 40.0);
                     let resp = ui.put(r, egui::TextEdit::multiline(&mut n.text).id(tid).font(egui::FontId::proportional(fs)).desired_width(r.width()));
                     crate::widgets::mark("se-inline", r);
+                    self.inline_focus = resp.has_focus() || n.step < 2; // 막 열어 초점을 주는 중에도 편집기 것
                     let (esc, ctrl_enter) = ui.input(|i| (i.key_pressed(egui::Key::Escape), i.modifiers.command && i.key_pressed(egui::Key::Enter)));
                     let esc = esc | std::mem::take(&mut self.inline_esc);
                     let mut done: Option<bool> = None; // Some(true) = 저장
@@ -917,6 +955,7 @@ impl SlideEditUi {
                 acts.push(Act::AddItem(ty, Some(b)));
             }
         });
+        if let Some(w) = win { self.win_layer = Some(w.response.layer_id); }
         self.open = open;
     }
 }

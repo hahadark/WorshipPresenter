@@ -582,7 +582,7 @@ impl App {
                 if on("previewNextSlide", "PageDown") { acts.push(Act::PreviewStep(1)) }
                 if on("previewPrevSlide", "PageUp") { acts.push(Act::PreviewStep(-1)) }
                 // control.js: ← → = 미리보기 앞뒤 슬라이드, Enter = 미리보기 송출 (글 쓰는 칸·창이 열려 있을 때·본문 목록에 키보드가 있을 때 Enter 는 빼고)
-                if !self.tc.slideedit.open {
+                if !self.tc.slideedit.keys_active() {
                     // 장 격자·송출 기록 창이 키보드를 갖고 있으면 ←→ 는 그쪽 것, 순서 목록까지 포함해 Enter 도 그쪽 것 (control.js:1654·1660 의 #chapterGrid · #cueList · 모달 제외)
                     let (nav_arrows, nav_enter) = (crate::cue_ui::nav_takes_arrows(ctx), crate::cue_ui::nav_takes_enter(ctx));
                     if !nav_arrows && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowLeft)) { acts.push(Act::PreviewStep(-1)) }
@@ -595,7 +595,7 @@ impl App {
             }
             if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Space)) { acts.push(Act::Step(1)) }
             // [갈래 C] control.js jumpKey: 송출 중인 찬양에서 1~9 = 그 절, C = 후렴, B = 브릿지, E = 엔딩, P = 전주 의 첫 슬라이드로
-            if !self.tc.slideedit.open {
+            if !self.tc.slideedit.keys_active() {
                 let typed: Option<String> = ctx.input(|i| if i.modifiers.ctrl || i.modifiers.alt || i.modifiers.command { None } else { i.events.iter().find_map(|e| if let egui::Event::Text(t) = e { Some(t.clone()) } else { None }) });
                 if let Some(t) = typed.filter(|t| t.chars().count() == 1) {
                     let live = self.core.lock().pres.live.as_ref().map(|l| (wp_core::groups::live_labels(&l.deck.slides), l.deck.index));
@@ -1798,6 +1798,9 @@ mod auditd_tests;
 #[cfg(test)]
 #[path = "audite_tests.rs"]
 mod audite_tests;
+#[cfg(test)]
+#[path = "slideedit_focus_tests.rs"]
+mod slideedit_focus_tests;
 #[cfg(test)]
 #[path = "nav_tests.rs"]
 mod nav_tests;
