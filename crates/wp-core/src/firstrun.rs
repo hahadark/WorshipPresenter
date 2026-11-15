@@ -3,7 +3,7 @@
 //! - 다시 가져오기 판단: 가져온 뒤 Electron 판(1.x) 자료가 또 바뀌었는데 이 판에서는 아직 쓰지 않았으면 저절로 다시 가져오고,
 //!   양쪽 다 바뀌었거나(표시 파일 없이) 예전 2.x 자료가 1.x 자료보다 낡았으면 첫 화면에서 묻는다. 지금 자료는 pre-reimport\ 에 보관.
 //! - DB 복사는 SQLite 온라인 백업(쪽 단위 복사)으로: VACUUM INTO 는 실제 자료(163MB)에서 11초 걸렸다. 진행률을 시작 안내 창에 보인다
-//! - 시작 안내 창: 창이 0.6초 안에 안 뜨면 작은 '켜는 중…' 창을 띄워 더블클릭 뒤 아무것도 안 보이는 일이 없게
+//! - 시작 안내 창: 자료를 옮기는 중이면 0.3초, 아니면 1.2초 안에 창이 안 뜨면 작은 '켜는 중…' 창을 띄워 더블클릭 뒤 아무것도 안 보이는 일이 없게
 //! - 두 번 실행: 먼저 켜진 프로세스 번호(instance.pid)의 창을 앞으로 (같은 제목의 Electron 판 창을 잘못 올리지 않게)
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -60,6 +60,41 @@ fn count_of(stamp: &str, table: &str) -> i64 {
     stamp.split(';').find_map(|p| p.strip_prefix(&format!("{table}:"))).and_then(|v| v.split('|').next()).and_then(|n| n.parse().ok()).unwrap_or(0)
 }
 
+/// 지문 안의 가장 늦은 만든/고친/지운 시각 (ISO 문자열이라 글자 순서로 견줄 수 있다)
+fn last_edit(stamp: &str) -> String {
+    stamp.split(';').flat_map(|p| p.split_once(':').map(|x| x.1).unwrap_or("").split('|').skip(1)).max().unwrap_or("").to_string()
+}
+
+fn info_of(reason: &str, old: &Path, data_dir: &Path, e_now: &str, r_now: &str) -> Value {
+    json!({
+        "reason": reason, "from": old.to_string_lossy(), "dataDir": data_dir.to_string_lossy(),
+        "electronCues": count_of(e_now, "Cuesheets"), "electronSongs": count_of(e_now, "Songs"),
+        "rustCues": count_of(r_now, "Cuesheets"), "rustSongs": count_of(r_now, "Songs"),
+        "electronChanged": latest_mtime(old), "rustChanged": latest_mtime(data_dir),
+    })
+}
+
+/// 밀리초 시각 → 이 PC 시간대의 "2026-11-15 18:59" (날짜 크레이트 없이 SQLite 로)
+pub fn local_time(ms: i64) -> String {
+    if ms <= 0 {
+        return String::new();
+    }
+    rusqlite::Connection::open_in_memory()
+        .and_then(|c| c.query_row("SELECT strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', 'localtime')", [ms / 1000], |r| r.get::<_, String>(0)))
+        .unwrap_or_default()
+}
+
+/// 메뉴 '1.x 자료 다시 가져오기…': 같은 묻는 창을 연다. 1.x 자료가 없으면 reason 이 "none"
+pub fn menu_ask() {
+    let Some(data_dir) = CUR_DIR.lock().clone() else { return };
+    let old = crate::core::legacy_data_dir().filter(|o| o.join("bible.db").is_file() && !same_dir(o, &data_dir));
+    let v = match old {
+        Some(old) => info_of("menu", &old, &data_dir, &content_stamp(&old.join("bible.db")), &content_stamp(&data_dir.join("bible.db"))),
+        None => json!({ "reason": "none", "dataDir": data_dir.to_string_lossy() }),
+    };
+    set_ask(Some(v));
+}
+
 pub fn read_marker(data_dir: &Path) -> Option<Value> {
     serde_json::from_str(&std::fs::read_to_string(data_dir.join(MARKER)).ok()?).ok()
 }
@@ -102,14 +137,7 @@ pub fn recheck(data_dir: &Path, old: Option<&Path>) -> Recheck {
         return Recheck::Nothing;
     }
     let r_now = content_stamp(&data_dir.join("bible.db"));
-    let info = |reason: &str| {
-        json!({
-            "reason": reason, "from": old.to_string_lossy(), "dataDir": data_dir.to_string_lossy(),
-            "electronCues": count_of(&e_now, "Cuesheets"), "electronSongs": count_of(&e_now, "Songs"),
-            "rustCues": count_of(&r_now, "Cuesheets"), "rustSongs": count_of(&r_now, "Songs"),
-            "electronChanged": latest_mtime(old), "rustChanged": latest_mtime(data_dir),
-        })
-    };
+    let info = |reason: &str| info_of(reason, old, data_dir, &e_now, &r_now);
     match read_marker(data_dir) {
         Some(m) => {
             let e_changed = m["electron"].as_str() != Some(e_now.as_str())
@@ -125,7 +153,10 @@ pub fn recheck(data_dir: &Path, old: Option<&Path>) -> Recheck {
         }
         None => {
             // 표시 파일이 없는 예전 2.x 자료 (2.0.1 전 개발·시험 실행이 남긴 것 등)
-            if e_now == r_now || latest_mtime(old) <= latest_mtime(data_dir) {
+            // 파일 시각만 보면 안 된다: 낡은 2.x 자료로 한 번 켜기만 해도 설정·WAL 시각이 새로워진다.
+            // 내용(큐시트·찬양의 마지막 고친 시각·개수)으로도 견준다
+            let newer = latest_mtime(old) > latest_mtime(data_dir) || last_edit(&e_now) > last_edit(&r_now) || count_of(&e_now, "Cuesheets") > count_of(&r_now, "Cuesheets");
+            if e_now == r_now || !newer {
                 write_marker(data_dir, old, "existing");
                 Recheck::Nothing
             } else {
@@ -183,6 +214,7 @@ pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
 }
 
 // ---------------- 첫 화면에서 묻기 ----------------
+static CUR_DIR: once_cell::sync::Lazy<parking_lot::Mutex<Option<PathBuf>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(None));
 pub fn set_ask(v: Option<Value>) {
     *ASK.lock() = v;
 }
@@ -192,7 +224,7 @@ pub fn ask() -> Option<Value> {
 
 /// '지금 자료 그대로 쓰기': 지금 상태를 표시해 두어 1.x 자료가 또 바뀌기 전까지는 묻지 않는다
 pub fn keep_current(data_dir: &Path) {
-    if let Some(a) = ask() {
+    if let Some(a) = ask().filter(|a| a["reason"] != "menu" && a["reason"] != "none") {
         if let Some(from) = a["from"].as_str() {
             write_marker(data_dir, Path::new(from), "kept");
         }
@@ -238,6 +270,7 @@ pub fn wait_for_pid(pid: u32) {
 
 // ---------------- 두 번 실행 ----------------
 pub fn write_instance_pid(data_dir: &Path) {
+    *CUR_DIR.lock() = Some(data_dir.to_path_buf());
     let _ = std::fs::write(data_dir.join("instance.pid"), std::process::id().to_string());
 }
 
@@ -291,7 +324,7 @@ pub fn focus_instance(data_dir: &Path) -> bool {
 }
 
 // ---------------- 시작 안내 창 ----------------
-/// 0.6초 안에 조작 화면이 안 뜨면 작은 안내 창을 띄운다 (첫 실행 자료 복사 · 느린 디스크). splash_done() 으로 닫힘
+/// 조작 화면이 늦게 뜨면(자료 옮기는 중 0.3초 · 그 밖 1.2초) 작은 안내 창을 띄운다 (첫 실행 자료 복사 · 느린 디스크). splash_done() 으로 닫힘
 pub fn start_splash() {
     SPLASH_DONE.store(false, Ordering::SeqCst);
     #[cfg(windows)]
@@ -300,9 +333,14 @@ pub fn start_splash() {
         .spawn(|| unsafe {
             use windows_sys::Win32::Graphics::Gdi::*;
             use windows_sys::Win32::UI::WindowsAndMessaging::*;
-            for _ in 0..12 {
+            // 보통은 1초쯤이면 조작 화면이 뜬다(측정: 1.0초) → 그때는 안내 창이 번쩍였다 사라지지 않게 1.2초까지 기다린다.
+            // 자료 옮기기가 시작됐으면(PROGRESS > 0) 오래 걸릴 것이므로 0.3초 뒤 바로 보인다
+            for i in 0..24 {
                 if SPLASH_DONE.load(Ordering::SeqCst) {
                     return;
+                }
+                if i >= 6 && PROGRESS.load(Ordering::Relaxed) > 0 {
+                    break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
@@ -436,6 +474,22 @@ mod tests {
         assert_eq!(recheck(&new3, Some(&old3)), Recheck::Nothing);
         assert!(read_marker(&new3).is_some());
         for d in [old, new, old3, new3] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn stale_rust_data_opened_once_still_asks() {
+        // 낡은 2.x 자료로 이미 한 번 켜서 파일 시각은 2.x 쪽이 더 새롭지만, 내용은 1.x 가 더 최근
+        let (old, new) = (tmp("o4"), tmp("n4"));
+        db_with(&old, &[("a", "2026-11-12"), ("b", "2026-11-15")]);
+        std::fs::write(old.join("settings.json"), "{}").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        db_with(&new, &[("a", "2026-11-12")]);
+        std::fs::write(new.join("settings.json"), "{}").unwrap();
+        assert!(matches!(recheck(&new, Some(&old)), Recheck::Ask(_)));
+        assert_eq!(last_edit("Cuesheets:2|2026-11-15|2026-11-01;Songs:-"), "2026-11-15");
+        for d in [old, new] {
             let _ = std::fs::remove_dir_all(d);
         }
     }

@@ -87,6 +87,7 @@ pub fn menus() -> Vec<Menu> {
             it("a:help-issue", "문제 알리기 · 건의", ""), // [트랙 A]
             it("c:about", "정보 · 라이선스", ""),
             it("d:update", "새 버전 확인", ""), // [트랙 D]
+            it("d:reimport", "1.x 자료 다시 가져오기…", ""), // [갈래 D]
         ] },
     ]
 }
@@ -140,6 +141,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "a:help-issue" => "bug",
         "c:about" => "info",
         "d:update" => "download",
+        "d:reimport" => "download",
         _ => return None,
     })
 }
