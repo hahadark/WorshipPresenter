@@ -3958,5 +3958,7 @@
  "고른 {1}장 지우기": "Delete {1} selected",
  "고른 {1}장 건너뛰기": "Skip {1} selected",
  "고른 {1}장 편집": "Edit {1} selected",
- "한 장만 (Esc)": "Just one (Esc)"
+ "한 장만 (Esc)": "Just one (Esc)",
+ "예배당 화면에서 Esc 를 눌러 예배당 화면을 껐습니다.": "Turned off the sanctuary screen (Esc pressed on the sanctuary screen).",
+ "예배당 화면 창이 닫혔습니다.": "The sanctuary screen window closed."
 }

@@ -1370,6 +1370,13 @@ impl App {
             if let Some(q) = search { self.search = q.clone(); acts.push(Act::Search(q)); }
             if let Some(i) = std::env::args().position(|x| x == "--item").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()) { self.sel = Some(i); acts.push(Act::PreviewItem(i)); }
             if send { acts.push(Act::SendPreview); }
+            // 점검용 --outwin-esc-test: 예배당 창(wp-output)을 작은 창으로 실제로 띄우고, 창 안 페이지에서 Esc keydown 을 흉내 낸다 → 창이 꺼지고 상태가 '꺼짐' 으로
+            if std::env::args().any(|x| x == "--outwin-esc-test") {
+                let port = self.core.lock().port;
+                self.out.extra_args = vec!["--selftest-esc".into()];
+                self.out.open(port, self.monitor, true);
+                log::info!("점검: 예배당 창 띄움 (running={})", self.out.running());
+            }
             // 점검용 --edit-actions: 큐시트가 없으면 새로 만들고 제목 순서를 넣어 '⚡ 송출할 때 자동으로' 편집칸을 펼친다
             if std::env::args().any(|x| x == "--edit-actions") {
                 if self.core.lock().cue.is_none() { acts.push(Act::NewCue); }
@@ -1379,7 +1386,7 @@ impl App {
                 crate::actions_ui::set_open(true);
             }
             self.test.as_mut().unwrap().4 = 1;
-        } else if stage == 1 && el > 3.5 {
+        } else if stage == 1 && el > if std::env::args().any(|x| x == "--outwin-esc-test") { 10.0 } else { 3.5 } {
             if let Some(path) = shot.clone() {
                 let c2 = ctx.clone();
                 ctx.request_screenshot(move |img| {
@@ -1534,6 +1541,9 @@ mod ui_integration_tests;
 #[cfg(test)]
 #[path = "ux_a_tests.rs"]
 mod ux_a_tests;
+#[cfg(test)]
+#[path = "fix3_tests.rs"]
+mod fix3_tests;
 #[cfg(test)]
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)

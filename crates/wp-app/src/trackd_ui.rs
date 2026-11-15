@@ -99,6 +99,7 @@ pub fn handle_menu(id: &str) -> bool {
 
 /// 매 프레임: 예배당 창 자동 켜기 · 상태 알리기 · 창 그리기
 pub fn frame(app: &mut App, ctx: &egui::Context) {
+    output_exit(app, ctx);
     let running = app.out.running();
     // 점검 실행(--shot)에서는 사용자 모니터에 전체 화면 창을 띄우지 않는다
     let testing = std::env::args().any(|x| x == "--shot");
@@ -156,6 +157,25 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
 }
 
 /// 예배당 창을 켜고 끈 뒤 부를 것 (끄면 OBS 도 숨김)
+/// 예배당 창이 스스로 닫혔을 때 (창을 눌러 고른 뒤 Esc · 오류):
+/// Electron main.js onOutputKey — `setOutput({ enabled: false })` (끄면 OBS 화면도 숨김 = outputToggled) + 조작 화면에 초점.
+/// 상태 줄·아래 줄 단추는 out.running() 을 보므로 자동으로 '꺼짐' 이 되고, 알림의 [예배당 화면 켜기] 로 다시 켬다.
+pub(crate) fn output_exit(app: &mut App, ctx: &egui::Context) {
+    use wp_core::i18n::tr;
+    let Some(code) = app.out.take_exit() else { return };
+    toggled(&app.core, true, false);
+    let mut c = app.core.lock();
+    if code == Some(crate::outwin::EXIT_ESC) {
+        log::info!("예배당 화면 창에서 Esc → 예배당 화면 끔");
+        c.notify_act(tr("예배당 화면에서 Esc 를 눌러 예배당 화면을 껐습니다."), "info", "output-on");
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    } else {
+        log::warn!("예배당 화면 창이 닫혔습니다 (종료 코드 {code:?})");
+        c.notify_act(tr("예배당 화면 창이 닫혔습니다."), "warn", "output-on");
+    }
+    ctx.request_repaint();
+}
+
 pub fn toggled(core: &Shared, before: bool, after: bool) {
     wp_core::trackd::output_toggled(&mut core.lock(), before, after);
 }
