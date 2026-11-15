@@ -580,6 +580,134 @@ pub fn translate_item(item: &mut Value, dx: f64, dy: f64) {
     }
 }
 
+// ---------------- 캔버스에서 요소 다루기 (control/slideedit.js onPointerMove · 키 처리 · dupSelected · pasteText) ----------------
+
+/// 소수 첫째 자리까지 (slideedit.js r1)
+pub fn r1(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
+}
+/// 붙는 거리 (%) — slideedit.js SNAP
+pub const SNAP: f64 = 1.2;
+
+/// 화면 백분율 네모 (본문 글상자 · 덧붙인 요소)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PRect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+impl PRect {
+    pub fn of(v: &Value, d: PRect) -> PRect {
+        let f = |k: &str, d: f64| v[k].as_f64().filter(|x| x.is_finite()).unwrap_or(d);
+        PRect { x: f("x", d.x), y: f("y", d.y), w: f("w", d.w), h: f("h", d.h) }
+    }
+    /// 자리·크기만 바꾼다 (나머지 속성은 그대로)
+    pub fn put(&self, v: &mut Value) {
+        if !v.is_object() {
+            *v = json!({});
+        }
+        for (k, n) in [("x", self.x), ("y", self.y), ("w", self.w), ("h", self.h)] {
+            v[k] = json!(r1(n));
+        }
+    }
+}
+
+/// 한 축 붙이기: 왼쪽·가운데·오른쪽 가장자리가 0·50·100 에 가까우면 붙는다 → (새 자리, 안내선)
+fn snap_axis(p: f64, size: f64) -> (f64, Option<f64>) {
+    let near = |v: f64, gs: &[f64]| gs.iter().copied().find(|g| (v - g).abs() < SNAP);
+    let g = near(p, &[0.0, 50.0]).or_else(|| near(p + size / 2.0, &[50.0])).or_else(|| near(p + size, &[50.0, 100.0]));
+    match g {
+        Some(g) => {
+            let np = if g == 50.0 && (p + size / 2.0 - 50.0).abs() < SNAP {
+                50.0 - size / 2.0
+            } else if (p - g).abs() < SNAP {
+                g
+            } else {
+                g - size
+            };
+            (np, Some(g))
+        }
+        None => (p, None),
+    }
+}
+
+/// 끌어 옮기기: 처음 자리에서 (dx, dy)% 만큼. snap 이면 가운데·가장자리에 붙는다 (원본은 Alt 를 누르면 안 붙음)
+/// → (새 네모, 세로 안내선 x%, 가로 안내선 y%)
+pub fn drag_move(start: PRect, dx: f64, dy: f64, snap: bool) -> (PRect, Option<f64>, Option<f64>) {
+    let (mut x, mut y) = (start.x + dx, start.y + dy);
+    let (mut gv, mut gh) = (None, None);
+    if snap {
+        (x, gv) = snap_axis(x, start.w);
+        (y, gh) = snap_axis(y, start.h);
+    }
+    (PRect { x: r1(x), y: r1(y), w: r1(start.w), h: r1(start.h) }, gv, gh)
+}
+
+/// 손잡이(nw·n·ne·e·se·s·sw·w)로 크기 바꾸기: 가장 작게 2%, keep_ratio(Shift) 면 처음 비율을 지킨다
+pub fn drag_resize(start: PRect, handle: &str, dx: f64, dy: f64, keep_ratio: bool) -> PRect {
+    let PRect { mut x, mut y, mut w, mut h } = start;
+    if handle.contains('e') {
+        w = (w + dx).max(2.0);
+    }
+    if handle.contains('s') {
+        h = (h + dy).max(2.0);
+    }
+    if handle.contains('w') {
+        let nw = (w - dx).max(2.0);
+        x += w - nw;
+        w = nw;
+    }
+    if handle.contains('n') {
+        let nh = (h - dy).max(2.0);
+        y += h - nh;
+        h = nh;
+    }
+    if keep_ratio && start.w > 0.0 && start.h > 0.0 {
+        h = w / (start.w / start.h);
+    }
+    PRect { x: r1(x), y: r1(y), w: r1(w), h: r1(h) }
+}
+
+/// 방향키로 조금 옮기기 (자리만)
+pub fn nudge(v: &mut Value, dx: f64, dy: f64) {
+    for (k, d) in [("x", dx), ("y", dy)] {
+        let n = v[k].as_f64().unwrap_or(0.0) + d;
+        if n.is_finite() {
+            v[k] = json!(r1(n).clamp(-50.0, 150.0));
+        }
+    }
+}
+
+fn new_item_id() -> String {
+    format!("u{}", crate::util::to36(rand::random::<u32>() as u64))
+}
+
+/// 요소 복제 (dupSelected): 새 id, 2% 씩 비켜서
+pub fn dup_item(x: &Value) -> Value {
+    let mut c = x.clone();
+    c["id"] = json!(new_item_id());
+    c["x"] = json!(r1(x["x"].as_f64().unwrap_or(0.0) + 2.0));
+    c["y"] = json!(r1(x["y"].as_f64().unwrap_or(0.0) + 2.0));
+    c
+}
+
+/// 클립보드 글 → 새 글상자 (slideedit.js pasteText). 빈 글이면 None
+pub fn paste_text_item(text: &str) -> Option<Value> {
+    let t: String = text.replace("\r\n", "\n").replace('\r', "\n").trim().chars().take(2000).collect();
+    if t.is_empty() {
+        return None;
+    }
+    let lines = t.split('\n').count() as i64;
+    Some(json!({
+        "id": new_item_id(), "type": "text", "text": t,
+        "x": 10, "y": 30, "w": 80, "h": (lines * 9 + 6).clamp(16, 60),
+        "size": if lines > 3 { 48 } else { 60 }, "fit": true,
+        "opacity": 1, "radius": 0, "below": false,
+        "color": "#ffffff", "fill": "", "bold": true, "italic": false, "align": "center", "valign": "middle", "padding": 12
+    }))
+}
+
 /// 원래 슬라이드 차례 바꾸기 (그 밖 종류): 보이는 차례에서 from → to
 pub fn move_order(it: &mut Value, n: usize, from: usize, to: usize) {
     let mut ord = order_of(it, n);
@@ -1024,6 +1152,37 @@ mod tests {
         assert_eq!(edit["items"][0]["crop"]["l"],0.1);
         assert_eq!(edit["items"][1]["font"],"맑은 고딕");
         assert_eq!(edit["items"][1]["opacity"],0.5);
+    }
+    #[test]
+    fn canvas_move_snaps_resize_keeps_min_and_ratio_dup_and_paste_like_electron() {
+        let s = PRect { x: 20.0, y: 20.0, w: 20.0, h: 10.0 };
+        // 옮기기: 붙지 않는 곳은 그대로, 가운데(50)에 가까우면 가운데 맞춤 + 안내선
+        assert_eq!(drag_move(s, 3.0, 4.0, true), (PRect { x: 23.0, y: 24.0, w: 20.0, h: 10.0 }, None, None));
+        let (r, gv, gh) = drag_move(s, 20.6, 0.0, true); // 가운데 x = 50.6 → 50
+        assert_eq!((r.x, gv, gh), (40.0, Some(50.0), None));
+        assert_eq!(drag_move(s, 20.6, 0.0, false).0.x, 40.6, "Alt = 안 붙음");
+        assert_eq!(drag_move(s, -19.5, -20.9, true).0, PRect { x: 0.0, y: 0.0, w: 20.0, h: 10.0 }, "왼쪽·위 가장자리 0 에 붙는다");
+        let (r, gv, _) = drag_move(s, 59.3, 0.0, true); // 오른쪽 끝 99.3 → 100
+        assert_eq!((r.x, gv), (80.0, Some(100.0)));
+        // 크기: 오른쪽 아래 = 너비·높이, 왼쪽 위 = 자리도 같이, 가장 작게 2
+        assert_eq!(drag_resize(s, "se", 5.0, 3.0, false), PRect { x: 20.0, y: 20.0, w: 25.0, h: 13.0 });
+        assert_eq!(drag_resize(s, "nw", 5.0, 3.0, false), PRect { x: 25.0, y: 23.0, w: 15.0, h: 7.0 });
+        assert_eq!(drag_resize(s, "e", -100.0, 50.0, false), PRect { x: 20.0, y: 20.0, w: 2.0, h: 10.0 });
+        assert_eq!(drag_resize(s, "w", 100.0, 0.0, false), PRect { x: 38.0, y: 20.0, w: 2.0, h: 10.0 }, "왼쪽 손잡이는 오른쪽 끝을 지킨다");
+        assert_eq!(drag_resize(s, "e", 10.0, 0.0, true), PRect { x: 20.0, y: 20.0, w: 30.0, h: 15.0 }, "Shift = 비율 유지");
+        // 방향키 · 복제 · 붙여 넣기
+        let mut x = json!({ "id": "a1", "type": "shape", "x": 10, "y": 20, "w": 30, "h": 40, "fill": "#112233" });
+        nudge(&mut x, 0.5, -5.0);
+        assert_eq!((x["x"].as_f64(), x["y"].as_f64(), x["w"].as_f64()), (Some(10.5), Some(15.0), Some(30.0)));
+        let d = dup_item(&x);
+        assert_ne!(d["id"], x["id"]);
+        assert_eq!((d["x"].as_f64(), d["y"].as_f64(), d["fill"].as_str()), (Some(12.5), Some(17.0), Some("#112233")));
+        assert!(paste_text_item("  \r\n ").is_none());
+        let p = paste_text_item("하나\r\n둘\r\n셋\r\n넷").unwrap();
+        assert_eq!((p["text"].as_str(), p["size"].as_i64(), p["h"].as_i64(), p["fit"].as_bool()), (Some("하나\n둘\n셋\n넷"), Some(48), Some(42), Some(true)));
+        let n = normalize_edit(&json!({ "items": [p, d] })).unwrap();
+        assert_eq!(n["items"].as_array().unwrap().len(), 2, "붙여 넣은 글상자·복제한 요소 모두 정리(normalize)를 통과한다");
+        assert_eq!(n["items"][0]["text"], "하나\n둘\n셋\n넷");
     }
     #[test]
     fn title_drag_and_ppt_missing_regression() {
