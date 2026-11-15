@@ -1,0 +1,75 @@
+// 머리 없는(headless) 엣지/크롬을 띄워 CDP 로 다루는 작은 도구 (외부 모듈 없이, Node 22+ 의 WebSocket·fetch).
+// open(url, w, h) → { eval(식), shot(파일), close() }
+'use strict';
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const CANDIDATES = [
+  process.env.FLOW_BROWSER,
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+].filter(Boolean);
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function launch(profileDir, port = 9400 + Math.floor(Math.random() * 400)) {
+  const exe = CANDIDATES.find(p => fs.existsSync(p));
+  if (!exe) throw new Error('엣지/크롬을 찾지 못했습니다 (FLOW_BROWSER 로 지정)');
+  fs.mkdirSync(profileDir, { recursive: true });
+  const proc = spawn(exe, [`--remote-debugging-port=${port}`, `--user-data-dir=${path.resolve(profileDir)}`, '--headless=new', '--no-first-run',
+    '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: 'ignore' });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 100; i++) {
+    try { const r = await fetch(base + '/json/version'); if (r.ok) break; } catch {}
+    await sleep(150);
+  }
+  const browser = {
+    proc,
+    async open(url, w = 1920, h = 1080) {
+      const t = await (await fetch(`${base}/json/new?about:blank`, { method: 'PUT' })).json();
+      const ws = new WebSocket(t.webSocketDebuggerUrl);
+      await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+      let id = 0; const wait = new Map(); const logs = [];
+      ws.onmessage = ev => {
+        const m = JSON.parse(ev.data);
+        if (m.id && wait.has(m.id)) { const { res, rej } = wait.get(m.id); wait.delete(m.id); m.error ? rej(new Error(m.error.message)) : res(m.result); }
+        else if (m.method === 'Runtime.consoleAPICalled') logs.push(m.params.args.map(a => a.value).join(' '));
+      };
+      const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; wait.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })); });
+      await send('Page.enable'); await send('Runtime.enable');
+      await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+      await send('Page.navigate', { url });
+      const page = {
+        id: t.id, logs,
+        async eval(expr, timeout = 30000) {
+          const r = await Promise.race([
+            send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }),
+            sleep(timeout).then(() => { throw new Error('eval 시간 초과: ' + expr.slice(0, 80)); }),
+          ]);
+          if (r.exceptionDetails) throw new Error('페이지 오류: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
+          return r.result.value;
+        },
+        async waitFor(expr, timeout = 15000) {
+          const t0 = Date.now();
+          while (Date.now() - t0 < timeout) { try { if (await page.eval(expr)) return true; } catch {} await sleep(200); }
+          return false;
+        },
+        async shot(file) {
+          const r = await send('Page.captureScreenshot', { format: 'png' });
+          const buf = Buffer.from(r.data, 'base64');
+          if (file) fs.writeFileSync(file, buf);
+          return buf;
+        },
+        async close() { try { await fetch(`${base}/json/close/${t.id}`); } catch {} try { ws.close(); } catch {} },
+      };
+      await sleep(300);
+      return page;
+    },
+    close() { try { proc.kill(); } catch {} },
+  };
+  return browser;
+}
+
+module.exports = { launch, sleep };
