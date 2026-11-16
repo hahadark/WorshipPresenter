@@ -168,6 +168,9 @@ pub struct ApplyUndo {
     pub theme_name: String,
     pub active: Vec<(String, Value)>,
     pub templates: Vec<(String, Option<Value>)>,
+    /// 적용 직후 상태. 그 뒤 편집한 디자인을 되돌리기로 덮어쓰지 않는다.
+    pub expected_active: Vec<(String, Value)>,
+    pub expected_templates: Vec<(String, Option<Value>)>,
 }
 
 /// 적용 방식
@@ -233,6 +236,7 @@ pub fn apply_theme_ex(c: &mut Core, id: &str, slots: &[&str], mode: ApplyMode) -
             d["activeTemplates"][*o] = json!(tid);
         }
     });
+    capture_undo_expected(c, &mut undo);
     c.emit(Ev::Live);
     c.emit(Ev::Ui);
     Ok((plan.iter().map(|p| p.0.to_string()).collect(), undo))
@@ -265,13 +269,26 @@ pub fn restore_original(c: &mut Core, id: &str, slots: &[&str]) -> Result<ApplyU
             }
         }
     });
+    capture_undo_expected(c, &mut undo);
     c.emit(Ev::Live);
     c.emit(Ev::Ui);
     Ok(undo)
 }
 
+fn capture_undo_expected(c: &Core, undo: &mut ApplyUndo) {
+    let s = c.settings.get();
+    undo.expected_active = undo.active.iter().map(|(slot, _)| (slot.clone(), s["activeTemplates"][slot].clone())).collect();
+    undo.expected_templates = undo.templates.iter().map(|(id, _)| (id.clone(), stored(s, id).cloned())).collect();
+}
+
 /// 적용·원복 되돌리기: 기록된 출력 칸과 템플릿만 전 상태로 (다른 설정은 건드리지 않는다)
-pub fn undo_apply(c: &mut Core, u: &ApplyUndo) {
+pub fn undo_apply(c: &mut Core, u: &ApplyUndo) -> Result<(), String> {
+    let s = c.settings.get();
+    let changed = u.expected_active.iter().any(|(slot, v)| s["activeTemplates"][slot] != *v)
+        || u.expected_templates.iter().any(|(id, v)| stored(s, id).cloned() != *v);
+    if changed {
+        return Err(crate::i18n::tr("테마 적용 뒤 디자인이나 출력이 바뀌어 되돌리지 않았습니다. 지금 디자인을 먼저 내 테마로 저장하세요."));
+    }
     c.settings.update(|d| {
         for (o, prev) in &u.active {
             d["activeTemplates"][o.as_str()] = prev.clone();
@@ -294,6 +311,7 @@ pub fn undo_apply(c: &mut Core, u: &ApplyUndo) {
     });
     c.emit(Ev::Live);
     c.emit(Ev::Ui);
+    Ok(())
 }
 
 fn clean_text(s: &str, max: usize) -> String {
@@ -616,7 +634,7 @@ mod manage_tests {
         assert_ne!(tpl(&c, RM)["font"]["size"], json!(99));
         assert_eq!(c.settings.get()["activeTemplates"], before_active, "원복은 출력 지정을 바꾸지 않는다");
         assert!(restore_original(&mut c, "sa-redshield", &["main", "overlay"]).is_err(), "바뀐 것이 없으면 할 일 없음");
-        undo_apply(&mut c, &u);
+        undo_apply(&mut c, &u).unwrap();
         assert_eq!(tpl(&c, RM)["font"]["size"], json!(99), "원복도 되돌릴 수 있다");
         // 예전 계약: apply_theme 은 원본처럼 main+overlay 를 덮어쓰고 찬송가 칸은 건드리지 않는다
         let ly = c.settings.get()["activeTemplates"]["overlayLyrics"].clone();
@@ -636,7 +654,7 @@ mod manage_tests {
         assert_eq!(c.settings.get()["activeTemplates"]["overlay"], json!("theme-sa-redshield-overlay"));
         // 적용 뒤 다른 설정을 바꿨다 — 되돌리기가 이것을 덮으면 안 된다
         c.settings.update(|d| d["uiLang"] = json!("en"));
-        undo_apply(&mut c, &u);
+        undo_apply(&mut c, &u).unwrap();
         let mut want = s0.clone();
         want["uiLang"] = json!("en");
         assert_eq!(c.settings.get(), &want, "출력 칸과 새로 넣은 템플릿만 되돌린다");
@@ -645,7 +663,7 @@ mod manage_tests {
         edit(&mut c, RM, |t| t["align"] = json!("left"));
         let (_, u2) = apply_theme_ex(&mut c, "sa-redshield", &["main"], ApplyMode::Reset).unwrap();
         assert_ne!(tpl(&c, RM)["align"], json!("left"));
-        undo_apply(&mut c, &u2);
+        undo_apply(&mut c, &u2).unwrap();
         assert_eq!(tpl(&c, RM)["align"], json!("left"));
         // 기본 테마에는 찬송가 칸이 없다: 그 칸만 고르면 실패하고 설정 불변, 셋 다 고르면 둘만 바뀐다
         let snap = c.settings.get().clone();
@@ -656,6 +674,22 @@ mod manage_tests {
         assert_eq!(outs, vec!["main", "overlay"]);
         assert_eq!(c.settings.get()["activeTemplates"]["overlayLyrics"], snap["activeTemplates"]["overlayLyrics"]);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn undo_after_intervening_design_edit_keeps_the_edit_and_all_settings() {
+        let (mut c, dir) = core();
+        let (_, undo) = apply_theme_ex(&mut c, "sa-redshield", &["main"], ApplyMode::Keep).unwrap();
+        edit(&mut c, RM, |t| t["font"]["size"] = json!(99));
+        let edited = c.settings.get().clone();
+        assert!(undo_apply(&mut c, &undo).is_err());
+        assert_eq!(c.settings.get(), &edited, "적용 뒤 고친 새 템플릿을 지우면 안 됨");
+        let (_, reset) = apply_theme_ex(&mut c, "sa-redshield", &["main"], ApplyMode::Reset).unwrap();
+        edit(&mut c, RM, |t| t["font"]["size"] = json!(88));
+        let edited = c.settings.get().clone();
+        assert!(undo_apply(&mut c, &reset).is_err());
+        assert_eq!(c.settings.get(), &edited, "원복 뒤 다시 고친 것을 덮으면 안 됨");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
@@ -702,7 +736,7 @@ mod manage_tests {
         assert_eq!(delete_theme(&mut c, &id).unwrap(), n_slots);
         assert!(c.settings.template(&my_main).is_some(), "쓰고 있을 수 있는 템플릿은 지우지 않는다");
         assert!(list_all(c.settings.get()).iter().all(|t| t["id"] != id.as_str()));
-        undo_apply(&mut c, &u);
+        undo_apply(&mut c, &u).unwrap();
         assert_eq!(c.settings.get()["activeTemplates"], active0);
         assert_eq!(tpl(&c, &src_id), src0, "삭제가 다른 템플릿을 건드리지 않는다");
         assert_eq!(c.settings.get()["futureKey"], json!({ "x": 1 }), "모르는 설정 칸 보존");

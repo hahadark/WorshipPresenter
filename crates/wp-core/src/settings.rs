@@ -77,6 +77,7 @@ const BG_RETRY_MS: i64 = 10_000;
 /// 백그라운드 저장 상태 (설정 하나마다)
 #[derive(Default)]
 struct BgState {
+    pending: std::sync::atomic::AtomicUsize,
     failed: std::sync::atomic::AtomicBool,
     /// 실패한 뒤 다시 해 볼 시각 (ms)
     retry_at: std::sync::atomic::AtomicI64,
@@ -109,10 +110,15 @@ static BG: Lazy<parking_lot::Mutex<std::sync::mpsc::Sender<BgJob>>> = Lazy::new(
                         }
                         st.retry_at.store(crate::util::now_ms() + BG_RETRY_MS, std::sync::atomic::Ordering::Relaxed);
                         st.failed.store(true, std::sync::atomic::Ordering::Relaxed);
-                    } else if last.0.take().is_some() {
-                        last.1 = None;
-                        log::info!("설정 저장이 다시 됩니다 ({})", file.display());
+                    } else {
+                        st.failed.store(false, std::sync::atomic::Ordering::Relaxed);
+                        st.retry_at.store(0, std::sync::atomic::Ordering::Relaxed);
+                        if last.0.take().is_some() {
+                            last.1 = None;
+                            log::info!("설정 저장이 다시 됩니다 ({})", file.display());
+                        }
                     }
+                    st.pending.fetch_sub(1, std::sync::atomic::Ordering::Release);
                 }
                 #[cfg(test)]
                 BgJob::HoldForTest(release, ready) => {
@@ -136,6 +142,14 @@ fn bg_wait() -> Result<()> {
     BG.lock().send(BgJob::Sync(tx)).map_err(|_| anyhow::anyhow!("설정 저장 작업자가 응답하지 않습니다."))?;
     rx.recv_timeout(std::time::Duration::from_secs(5)).map_err(|e| anyhow::anyhow!("설정 저장 완료를 확인하지 못했습니다: {e}"))?;
     Ok(())
+}
+
+/// 디스크 저장 상태. 알림을 읽어도 오류 표시가 사라지지 않는다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SaveStatus {
+    Clean,
+    Pending,
+    Error(String),
 }
 
 pub struct Settings {
@@ -255,10 +269,29 @@ impl Settings {
             return;
         }
         let Ok(txt) = serde_json::to_string_pretty(&self.data) else { return };
+        self.bg.pending.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if BG.lock().send(BgJob::Write(self.file.clone(), txt, self.bg.clone())).is_ok() {
             self.dirty = false;
-        } else if let Err(e) = self.save_now() {
-            log::error!("설정 저장 실패: {e}");
+        } else {
+            self.bg.pending.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            if let Err(e) = self.save_now() {
+                log::error!("설정 저장 실패: {e}");
+            }
+        }
+    }
+
+    /// 설정 센터가 보여 줄 상태: 화면에 적용된 것과 파일 저장 완료를 구분한다.
+    pub fn save_status(&self) -> SaveStatus {
+        if self.bg.pending.load(std::sync::atomic::Ordering::Acquire) > 0 {
+            return SaveStatus::Pending;
+        }
+        if let Some(e) = self.bg.err.lock().0.clone() {
+            return SaveStatus::Error(e);
+        }
+        if self.dirty {
+            SaveStatus::Pending
+        } else {
+            SaveStatus::Clean
         }
     }
 
@@ -278,6 +311,7 @@ impl Settings {
         fs::rename(&tmp, &self.file)?;
         self.dirty = false;
         self.bg.failed.store(false, std::sync::atomic::Ordering::Relaxed);
+        *self.bg.err.lock() = (None, None);
         Ok(())
     }
 
@@ -365,6 +399,31 @@ mod broken_tests {
 #[cfg(test)]
 mod bg_save_tests {
     use super::*;
+    #[test]
+    fn save_status_distinguishes_pending_saved_and_persistent_error() {
+        let dir = std::env::temp_dir().join(format!("wp-status-{}", rand::random::<u64>()));
+        fs::create_dir_all(&dir).unwrap();
+        let mut s = Settings::load(&dir);
+        assert_eq!(s.save_status(), SaveStatus::Clean);
+        s.update(|d| d["x"] = json!(1));
+        assert_eq!(s.save_status(), SaveStatus::Pending);
+        s.save_bg();
+        bg_wait().unwrap();
+        assert_eq!(s.save_status(), SaveStatus::Clean);
+        fs::write(dir.join("blocked"), "file").unwrap();
+        s.file = dir.join("blocked/settings.json");
+        s.update(|d| d["x"] = json!(2));
+        s.save_bg();
+        bg_wait().unwrap();
+        assert!(matches!(s.save_status(), SaveStatus::Error(_)));
+        assert!(s.take_save_error().is_some());
+        assert!(matches!(s.save_status(), SaveStatus::Error(_)), "알림을 소비해도 설정 창 오류는 남아야 함");
+        s.file = dir.join("settings.json");
+        s.save_now().unwrap();
+        assert_eq!(s.save_status(), SaveStatus::Clean);
+        fs::remove_dir_all(dir).ok();
+    }
+
     /// 저장을 맡긴 즉시 종료하면 실패 표시가 아직 도착하지 않았어도 기다린 뒤 실패를 돌려줘야 한다.
     #[test]
     fn shutdown_waits_then_reports_pending_background_failure() {
