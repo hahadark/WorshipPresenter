@@ -40,6 +40,12 @@ pub fn open(t: Tool) {
     }
 }
 
+/// 그 도구 창이 열려 있는지 (설정 센터의 '… 열기' 단추 시험용)
+#[cfg(test)]
+pub fn is_open(t: Tool) -> bool {
+    ST.lock().open.contains(&t)
+}
+
 /// 임시: 기존 상단 줄에 두는 '도구' 단추 (상단 메뉴 줄이 생기면 그쪽으로)
 pub fn menu_button(ui: &mut egui::Ui) {
     ui.menu_button(wp_core::i18n::tr("도구"), |ui| {
