@@ -29,6 +29,7 @@ fn set<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, k: &str, v: T) {
 /// 어느 탭이든 늘 (Ctrl+V 붙여 넣기 받기)
 pub fn global(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     paste(app, ui, acts);
+    offer_big_ppt(app, ui);
 }
 
 /// 왼쪽 '찬송가' 탭: 찬송가·교독문 PPT · 베들레헴 찾기, 붙여 넣기, 온라인에서 찾기
@@ -123,6 +124,21 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
         }
     });
     let folders = hymns::folders(&app.core.lock());
+    let mut folder: String = get(ui, "hymn-folder-filter");
+    if !folder.is_empty() && !folders.iter().any(|f| f["path"].as_str() == Some(&folder)) {
+        folder.clear();
+        refresh = true;
+    }
+    if src == "ppt" {
+        let label = folders.iter().find(|f| f["path"].as_str() == Some(&folder)).and_then(|f| f["name"].as_str()).map(String::from).unwrap_or_else(|| wp_core::i18n::tr("전체 폴더"));
+        egui::ComboBox::from_id_salt("hymn-folder-filter").selected_text(label).show_ui(ui, |ui| {
+            refresh |= ui.selectable_value(&mut folder, String::new(), wp_core::i18n::tr("전체 폴더")).changed();
+            for f in &folders {
+                refresh |= ui.selectable_value(&mut folder, f["path"].as_str().unwrap_or("").to_string(), f["name"].as_str().unwrap_or("")).on_hover_text(f["path"].as_str().unwrap_or("")).changed();
+            }
+        });
+    }
+    set(ui, "hymn-folder-filter", folder.clone());
     ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if src == "ppt" && ui.button(wp_core::i18n::tr("폴더 추가…")).clicked() {
             if let Some(dir) = rfd::FileDialog::new().set_title("찬송가·교독문 PPT 폴더").pick_folder() {
@@ -161,7 +177,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     if refresh {
         let c = app.core.lock();
         res = if src == "ppt" {
-            hymns::search(&c, &q).into_iter().take(80).map(|h| json!({ "file": h.file.to_string_lossy(), "number": h.number, "title": h.title, "folder": h.folder })).collect()
+            hymns::search_in_folder(&c, &q, &folder).into_iter().take(80).map(|h| json!({ "file": h.file.to_string_lossy(), "number": h.number, "title": h.title, "folder": h.folder })).collect()
         } else {
             hymnal::search(&c, &q, 60)
         };
@@ -202,6 +218,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             });
         }
         default_bg_row(app, ui);
+        online_settings(app, ui);
     } else {
         let books = hymnal::books(&app.core.lock());
         if books.is_empty() {
@@ -658,5 +675,86 @@ mod cue_ppt_menu_tests {
         let ctx = egui::Context::default();
         open_ppt_tools(&ctx, &json!({"id":"ppt-target"}));
         assert_eq!(ctx.data(|d| d.get_temp::<String>(id("ppt-tools-request"))), Some("ppt-target".into()));
+    }
+}
+
+/// 온라인 찾기의 주소와 감시·보관 폴더는 한 칸씩 저장한다.
+fn online_settings(app: &mut App, ui: &mut egui::Ui) {
+    egui::CollapsingHeader::new(wp_core::i18n::tr("온라인에서 찾기 (찬양 PPT)")).show(ui, |ui| {
+        for (key, label, hint) in [
+            ("songSearchUrl", "찬양 PPT 검색 주소", "{q} 자리에 검색어가 들어갑니다. 로그인과 다운로드는 브라우저에서 직접 합니다."),
+            ("songDownloadDir", "찬양 PPT 다운로드 폴더", "비우면 기본 다운로드 폴더를 지켜봅니다."),
+            ("songInboxDir", "받은 PPT 모으는 곳", "비우면 기본 찬양 PPT 폴더로 옮깁니다."),
+        ] {
+            ui.label(wp_core::i18n::tr(label));
+            let mut value = app.core.lock().settings.str(&[key]);
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                let r = ui.add(egui::TextEdit::singleline(&mut value).desired_width((ui.available_width() - 80.0).max(40.0)));
+                crate::widgets::mark(key, r.rect);
+                changed |= r.changed();
+                if key != "songSearchUrl" && ui.button(wp_core::i18n::tr("폴더 고르기…")).clicked() {
+                    if let Some(dir) = rfd::FileDialog::new().set_title(wp_core::i18n::tr(label)).pick_folder() {
+                        value = dir.to_string_lossy().to_string();
+                        changed = true;
+                    }
+                }
+            });
+            ui.label(RichText::new(wp_core::i18n::tr(hint)).small().color(Color32::GRAY));
+            if changed { app.core.lock().settings.update(|d| d[key] = json!(value.trim())); }
+        }
+    });
+}
+
+/// 원본처럼 20장부터 제안하며, 메타데이터가 준비될 때까지 기다린다.
+fn offer_big_ppt(app: &mut App, ui: &mut egui::Ui) {
+    let mut pending = { let mut c = app.core.lock(); std::mem::take(&mut c.split_offers) };
+    let mut offer: Option<(Value, usize)> = get(ui, "big-ppt-offer");
+    let mut retry = Vec::new();
+    for id in pending.drain(..) {
+        let c = app.core.lock();
+        let Some(it) = c.cue.as_ref().and_then(|q| q.items.iter().find(|it| it["id"].as_str() == Some(&id))).cloned() else { continue };
+        if !can_open_ppt_tools(&it) || !it["range"].as_str().unwrap_or("").is_empty() { continue; }
+        if offer.is_some() { retry.push(id); continue; }
+        match hymns::load(&c, it["file"].as_str().unwrap_or("")) {
+            Ok(meta) => {
+                let n = big_ppt_count(&meta);
+                if n >= 20 { offer = Some((it, n)); }
+            }
+            Err(e) if e == hymns::BUILDING => retry.push(id),
+            Err(_) => {}
+        }
+    }
+    app.core.lock().split_offers.extend(retry);
+    if let Some((it, n)) = offer.clone() {
+        let exists = app.core.lock().cue.as_ref().is_some_and(|c| c.items.iter().any(|x| x["id"] == it["id"]));
+        if !exists { offer = None; } else {
+            let mut visible = true;
+            crate::widgets::float_window(ui.ctx(), "big-ppt-offer", wp_core::i18n::tr("여러 순서로 나눌까요?"), [420.0, 120.0]).open(&mut visible).keep_on_outside().show(ui.ctx(), |ui| {
+                ui.label(wp_core::i18n::tr_args("'{1}' PPT 는 슬라이드가 {2}장입니다.", &[&it["title"].as_str().unwrap_or(""), &n]));
+                if ui.button(wp_core::i18n::tr("PPT 나누기 창 열기…")).clicked() {
+                    crate::pptsplit_ui::open(app, ui.ctx(), &it);
+                    offer = None;
+                }
+                if ui.button(wp_core::i18n::tr("그대로 한 순서로")).clicked() { offer = None; }
+            });
+            if !visible { offer = None; }
+        }
+    }
+    set(ui, "big-ppt-offer", offer);
+}
+fn big_ppt_count(meta: &Value) -> usize {
+    if let Some(v) = meta["slides"].as_array() { return v.len(); }
+    let scores = meta["scores"].as_array().map_or(0, Vec::len);
+    if scores > 0 { scores } else { meta["texts"].as_array().map_or(0, Vec::len) }
+}
+#[cfg(test)]
+mod small_big_ppt_tests {
+    use super::*;
+    #[test]
+    fn small_big_ppt_count_matches_original_sources() {
+        assert_eq!(big_ppt_count(&json!({"slides": vec![json!({});20]})),20);
+        assert_eq!(big_ppt_count(&json!({"scores": vec!["a";19], "texts":vec!["b";30]})),19);
+        assert_eq!(big_ppt_count(&json!({"texts":vec!["b";20]})),20);
     }
 }

@@ -122,6 +122,9 @@ const LANGS: Opts = &[("ko", "한국어"), ("en", "English")];
 
 pub static ITEMS: &[Item] = &[
     // ---------------- 송출 · 검색 · 분할 (원본 '기본' 탭) ----------------
+    keep("songSearchUrl", Cat::Send, &["songSearchUrl"], "찬양 PPT 검색 주소", "{q} 자리에 검색어가 들어갑니다. 로그인과 다운로드는 브라우저에서 직접 합니다.", "찬양 PPT 온라인 검색 폴더 다운로드", Kind::Text),
+    keep("songDownloadDir", Cat::Send, &["songDownloadDir"], "찬양 PPT 다운로드 폴더", "비우면 기본 다운로드 폴더를 지켜봅니다.", "찬양 PPT 온라인 검색 폴더 다운로드", Kind::Text),
+    keep("songInboxDir", Cat::Send, &["songInboxDir"], "받은 PPT 모으는 곳", "비우면 기본 찬양 PPT 폴더로 옮깁니다.", "찬양 PPT 온라인 검색 폴더 다운로드", Kind::Text),
     val("previewMode", Cat::Send, &["previewMode"], "미리보기를 거쳐 송출", "켜면 누른 것이 먼저 미리보기에 올라가고 F9 로 송출합니다. 끄면 누른 것을 바로 송출합니다.", "프리뷰 바로 송출 즉시 preview", Kind::Toggle),
     val("searchMode", Cat::Send, &["searchMode"], "기본 검색 방식", "검색창에 쓴 글을 장절로 볼지, 본문 낱말로 볼지 정합니다.", "성경 찾기 장절 본문 낱말 search", Kind::Choice(SEARCH_MODES)),
     val("split.mode", Cat::Send, &["split", "mode"], "분할 방식", "성경 본문을 슬라이드 여러 장으로 나누는 방법입니다.", "슬라이드 나누기 절 묶기 split", Kind::Choice(SPLIT_MODES)),
@@ -327,5 +330,20 @@ mod tests {
         assert_eq!(patch(&core, &["output", "cursorHidden"], json!(false)), json!(false), "같은 값이면 아무것도 안 함");
         drop(core);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod small_song_settings_tests {
+    use super::*;
+    #[test]
+    fn small_song_settings_registered_in_search_category() {
+        for key in ["songSearchUrl", "songDownloadDir", "songInboxDir"] {
+            let it = ITEMS.iter().find(|it| it.id == key).unwrap();
+            assert_eq!(it.cat, Cat::Send);
+            assert_eq!(it.path, &[key]);
+            assert!(matches!(it.kind, Kind::Text));
+            assert!(!it.reset);
+        }
     }
 }

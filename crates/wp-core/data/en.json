@@ -4442,5 +4442,14 @@
  "메뉴와 송출 단추에는 현재 설정한 키가 표시됩니다. Space(다음) · ← → · Enter · Alt+1~9(매크로)는 고정 키라 여기서 바꾸지 않습니다.": "Menus and output buttons show your current shortcut settings. Space (next), arrow keys, Enter, and Alt+1–9 (macros) are fixed shortcuts and cannot be changed here.",
  "지금 템플릿을 복사해 이 출력에 겁니다. 원래 템플릿은 그대로 남습니다": "Copy the current template and use it for this output. The original stays unchanged.",
  "'{1}' 을(를) 만들어 이 출력에 걸었습니다. 자세히 ▸ 로 고치세요.": "Created '{1}' and set it for this output. Use More ▸ to edit it.",
- "맥판은 스스로 바꾸지 않습니다. 릴리스 페이지에서 새 mac-arm64.dmg 를 받아 응용 프로그램 폴더에 덮어 넣으세요.": "The Mac version does not update itself. Download the new mac-arm64.dmg from the releases page and replace the app in Applications."
+ "맥판은 스스로 바꾸지 않습니다. 릴리스 페이지에서 새 mac-arm64.dmg 를 받아 응용 프로그램 폴더에 덮어 넣으세요.": "The Mac version does not update itself. Download the new mac-arm64.dmg from the releases page and replace the app in Applications.",
+ "'{1}' PPT 는 슬라이드가 {2}장입니다.": "'{1}' PPT has {2} slides.",
+ "PPT 나누기 창 열기…": "Open PPT splitter…",
+ "왼쪽으로 이동": "Move left",
+ "이 그림을 앞 그림과 바꿉니다": "Swap this image with the previous image",
+ "찬양 PPT 검색 주소": "Song PPT search URL",
+ "찬양 PPT 다운로드 폴더": "Song PPT download folder",
+ "{q} 자리에 검색어가 들어갑니다. 로그인과 다운로드는 브라우저에서 직접 합니다.": "{q} is replaced with your search. Sign in and download in your browser.",
+ "비우면 기본 다운로드 폴더를 지켜봅니다.": "Leave empty to watch the default Downloads folder.",
+ "비우면 기본 찬양 PPT 폴더로 옮깁니다.": "Leave empty to use the default song PPT folder."
 }
