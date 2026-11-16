@@ -29,6 +29,7 @@ fn set<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, k: &str, v: T) {
 /// 어느 탭이든 늘 (Ctrl+V 붙여 넣기 받기)
 pub fn global(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     paste(app, ui, acts);
+    offer_big_ppt(app, ui);
 }
 
 /// 왼쪽 '찬송가' 탭: 찬송가·교독문 PPT · 베들레헴 찾기, 붙여 넣기, 온라인에서 찾기
@@ -703,4 +704,57 @@ fn online_settings(app: &mut App, ui: &mut egui::Ui) {
             if changed { app.core.lock().settings.update(|d| d[key] = json!(value.trim())); }
         }
     });
+}
+
+/// 원본처럼 20장부터 제안하며, 메타데이터가 준비될 때까지 기다린다.
+fn offer_big_ppt(app: &mut App, ui: &mut egui::Ui) {
+    let mut pending = { let mut c = app.core.lock(); std::mem::take(&mut c.split_offers) };
+    let mut offer: Option<(Value, usize)> = get(ui, "big-ppt-offer");
+    let mut retry = Vec::new();
+    for id in pending.drain(..) {
+        let c = app.core.lock();
+        let Some(it) = c.cue.as_ref().and_then(|q| q.items.iter().find(|it| it["id"].as_str() == Some(&id))).cloned() else { continue };
+        if !can_open_ppt_tools(&it) || !it["range"].as_str().unwrap_or("").is_empty() { continue; }
+        if offer.is_some() { retry.push(id); continue; }
+        match hymns::load(&c, it["file"].as_str().unwrap_or("")) {
+            Ok(meta) => {
+                let n = big_ppt_count(&meta);
+                if n >= 20 { offer = Some((it, n)); }
+            }
+            Err(e) if e == hymns::BUILDING => retry.push(id),
+            Err(_) => {}
+        }
+    }
+    app.core.lock().split_offers.extend(retry);
+    if let Some((it, n)) = offer.clone() {
+        let exists = app.core.lock().cue.as_ref().is_some_and(|c| c.items.iter().any(|x| x["id"] == it["id"]));
+        if !exists { offer = None; } else {
+            let mut visible = true;
+            crate::widgets::float_window(ui.ctx(), "big-ppt-offer", wp_core::i18n::tr("여러 순서로 나눌까요?"), [420.0, 120.0]).open(&mut visible).keep_on_outside().show(ui.ctx(), |ui| {
+                ui.label(wp_core::i18n::tr_args("'{1}' PPT 는 슬라이드가 {2}장입니다.", &[&it["title"].as_str().unwrap_or(""), &n]));
+                if ui.button(wp_core::i18n::tr("PPT 나누기 창 열기…")).clicked() {
+                    crate::pptsplit_ui::open(app, ui.ctx(), &it);
+                    offer = None;
+                }
+                if ui.button(wp_core::i18n::tr("그대로 한 순서로")).clicked() { offer = None; }
+            });
+            if !visible { offer = None; }
+        }
+    }
+    set(ui, "big-ppt-offer", offer);
+}
+fn big_ppt_count(meta: &Value) -> usize {
+    if let Some(v) = meta["slides"].as_array() { return v.len(); }
+    let scores = meta["scores"].as_array().map_or(0, Vec::len);
+    if scores > 0 { scores } else { meta["texts"].as_array().map_or(0, Vec::len) }
+}
+#[cfg(test)]
+mod small_big_ppt_tests {
+    use super::*;
+    #[test]
+    fn small_big_ppt_count_matches_original_sources() {
+        assert_eq!(big_ppt_count(&json!({"slides": vec![json!({});20]})),20);
+        assert_eq!(big_ppt_count(&json!({"scores": vec!["a";19], "texts":vec!["b";30]})),19);
+        assert_eq!(big_ppt_count(&json!({"texts":vec!["b";20]})),20);
+    }
 }
