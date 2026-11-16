@@ -173,6 +173,7 @@ pub fn cache_in_use() -> bool {
     let state = UPDATE.lock()["state"].as_str().unwrap_or("").to_string();
     matches!(state.as_str(), "downloading" | "verifying" | "ready" | "installing") || READY.lock().is_some()
 }
+pub const MAC_NOTE: &str = "맥판은 스스로 바꾸지 않습니다. 릴리스 페이지에서 새 mac-arm64.dmg 를 받아 응용 프로그램 폴더에 덮어 넣으세요.";
 pub const PORTABLE_NOTE: &str = "설치 없이 쓰는 판(포터블)은 스스로 바꾸지 않습니다. 릴리스 페이지에서 새 Portable.zip 을 받거나 설치 파일로 설치하세요.";
 pub fn status(settings: &Value) -> Value {
     let mut u = UPDATE.lock().clone();
@@ -397,6 +398,9 @@ fn cache_stream(
 }
 pub fn download(core: &Shared) -> Result<(), String> {
     gate()?;
+    if cfg!(target_os = "macos") {
+        return Err(crate::i18n::tr(MAC_NOTE).into());
+    }
     if !cfg!(windows) {
         return Err(crate::i18n::tr("Windows 설치판에서만 지원합니다.").into());
     }

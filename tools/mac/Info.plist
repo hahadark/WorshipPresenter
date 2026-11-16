@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>WorshipPresenter</string>
+  <key>CFBundleDisplayName</key><string>워십프리젠터</string>
+  <key>CFBundleIdentifier</key><string>org.worshipcue.app</string>
+  <key>CFBundleExecutable</key><string>WorshipPresenter</string>
+  <key>CFBundleIconFile</key><string>WorshipPresenter</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>__VERSION__</string>
+  <key>CFBundleVersion</key><string>__VERSION__</string>
+  <key>CFBundleDevelopmentRegion</key><string>ko</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSCameraUsageDescription</key><string>예배당 화면과 방송에 카메라 화면을 내보낼 때 씁니다.</string>
+  <key>NSMicrophoneUsageDescription</key><string>카메라 화면과 함께 소리를 받을 때 씁니다.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>휴대폰 리모컨, 내부망 출력, OBS 원격 조작에 같은 네트워크를 씁니다.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict><key>NSAllowsLocalNetworking</key><true/></dict>
+</dict>
+</plist>

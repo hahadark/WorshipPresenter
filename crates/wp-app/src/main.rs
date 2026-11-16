@@ -63,7 +63,8 @@ fn arg(name: &str) -> Option<String> {
 /// 출력 화면 웹 파일: 실행 파일 옆 web\ (설치판) → 개발 중이면 저장소의 web\
 fn web_dir() -> PathBuf {
     let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())).unwrap_or_default();
-    for c in [exe_dir.join("web"), PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("web")] {
+    // 맥 앱 묶음: Contents/MacOS/(실행 파일) 옆이 아니라 Contents/Resources/web
+    for c in [exe_dir.join("web"), exe_dir.join("..").join("Resources").join("web"), PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("web")] {
         if c.join("output").join("index.html").exists() {
             return normalize(&c);
         }
@@ -86,7 +87,7 @@ fn normalize(p: &std::path::Path) -> PathBuf {
 
 fn seed_db() -> Option<PathBuf> {
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-    [exe_dir.join("bible.db"), PathBuf::from(r"F:\aside\WorshipCue\data\bible.db")].into_iter().find(|p| p.exists())
+    [exe_dir.join("bible.db"), exe_dir.join("..").join("Resources").join("bible.db"), PathBuf::from(r"F:\aside\WorshipCue\data\bible.db")].into_iter().find(|p| p.exists())
 }
 
 /// 점검용(디버그 빌드만): WP_DEBUG_ALLOC=1 이면 8MB 넘는 할당이 어디서 나왔는지 로그에 남긴다.
@@ -406,5 +407,5 @@ fn prepare_gfx() -> Option<eframe::egui_wgpu::WgpuSetupExisting> {
 }
 
 fn dirs_data() -> PathBuf {
-    std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
+    wp_core::core::user_data_root()
 }

@@ -368,6 +368,21 @@ pub fn font_definitions() -> egui::FontDefinitions {
         defs.font_data.insert("malgun-bold".into(), Arc::new(egui::FontData::from_static(b)));
         malgun_bold.push("malgun-bold".to_string());
     }
+    // 맥: 맑은 고딕이 없으므로 Apple SD Gothic Neo (웹 출력이 쓰는 다음 글꼴과 같게)
+    if malgun.is_empty() {
+        if let Some((bytes, r, b)) = wp_core::measure::mac_korean_faces() {
+            let mut fd = egui::FontData::from_static(bytes);
+            fd.index = r;
+            defs.font_data.insert("malgun".into(), Arc::new(fd));
+            malgun.push("malgun".to_string());
+            if let Some(bi) = b {
+                let mut fb = egui::FontData::from_static(bytes);
+                fb.index = bi;
+                defs.font_data.insert("malgun-bold".into(), Arc::new(fb));
+                malgun_bold.push("malgun-bold".to_string());
+            }
+        }
+    }
     if malgun_bold.is_empty() {
         malgun_bold = malgun.clone();
     }

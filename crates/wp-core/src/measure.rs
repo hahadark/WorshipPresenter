@@ -51,9 +51,39 @@ fn load(paths: &[&str]) -> Option<FontArc> {
     None
 }
 
+/// 맥: 맑은 고딕 대신 Apple SD Gothic Neo(웹 출력 CSS 의 다음 글꼴). (.ttc 내용, Regular 면 번호, Bold 면 번호)
+#[cfg(target_os = "macos")]
+pub fn mac_korean_faces() -> Option<(&'static [u8], u32, Option<u32>)> {
+    let bytes = font_file("/System/Library/Fonts/AppleSDGothicNeo.ttc")?;
+    let n = ttf_parser::fonts_in_collection(bytes).unwrap_or(1);
+    let (mut reg, mut bold) = (None, None);
+    for i in 0..n {
+        let Ok(f) = ttf_parser::Face::parse(bytes, i) else { continue };
+        let name = f.names().into_iter().filter(|x| x.name_id == ttf_parser::name_id::FULL_NAME).find_map(|x| x.to_string()).unwrap_or_default();
+        if reg.is_none() && name.ends_with(" Regular") {
+            reg = Some(i);
+        }
+        if bold.is_none() && name.ends_with(" Bold") {
+            bold = Some(i);
+        }
+    }
+    Some((bytes, reg.unwrap_or(0), bold))
+}
+#[cfg(not(target_os = "macos"))]
+pub fn mac_korean_faces() -> Option<(&'static [u8], u32, Option<u32>)> {
+    None
+}
+
+fn load_face(bytes: &'static [u8], index: u32) -> Option<FontArc> {
+    ab_glyph::FontRef::try_from_slice_and_index(bytes, index).ok().map(FontArc::from)
+}
+
 pub static FONTS: Lazy<Fonts> = Lazy::new(|| Fonts {
-    regular: load(&[r"C:\Windows\Fonts\malgun.ttf", "/System/Library/Fonts/AppleSDGothicNeo.ttc", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"]),
-    bold: load(&[r"C:\Windows\Fonts\malgunbd.ttf", r"C:\Windows\Fonts\malgun.ttf"]),
+    regular: load(&[r"C:\Windows\Fonts\malgun.ttf"])
+        .or_else(|| mac_korean_faces().and_then(|(b, r, _)| load_face(b, r)))
+        .or_else(|| load(&["/usr/share/fonts/truetype/nanum/NanumGothic.ttf"])),
+    bold: load(&[r"C:\Windows\Fonts\malgunbd.ttf", r"C:\Windows\Fonts\malgun.ttf"])
+        .or_else(|| mac_korean_faces().and_then(|(b, _, bi)| bi.and_then(|i| load_face(b, i)))),
     light: load(&[r"C:\Windows\Fonts\malgunsl.ttf"]),
     fallback: [r"C:\Windows\Fonts\segoeui.ttf", r"C:\Windows\Fonts\seguisym.ttf"].iter().filter_map(|p| load(&[p])).collect(),
 });
