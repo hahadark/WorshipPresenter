@@ -102,6 +102,11 @@ pub fn remove_folder(core: &mut Core, dir: &str) {
 
 /// 번호(10, 010) 또는 제목 일부로 찾기. 번호가 정확히 같은 것이 맨 앞
 pub fn search(core: &Core, query: &str) -> Vec<HymnFile> {
+    search_in_folder(core, query, "")
+}
+
+/// 등록 경로가 같은 폴더만 검색한다. 빈 경로는 전체 폴더다.
+pub fn search_in_folder(core: &Core, query: &str, folder: &str) -> Vec<HymnFile> {
     // '3장' · '찬송 3장' 처럼 치면 번호로 (Electron 은 숫자만 번호로 보고 '3장' 은 제목에서 찾아 하나도 안 나왔다)
     static JANG: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(?:찬송가?\s*)?(\d{1,4})\s*장$").unwrap());
     // '교독문 3' · '교독 3' 은 교독문 파일 가운데 번호가 꼭 같은 것만 (제목 '교독문3' 이 30~39·300번대까지 걸리지 않게)
@@ -109,7 +114,7 @@ pub fn search(core: &Core, query: &str) -> Vec<HymnFile> {
     let raw = query.trim();
     if let Some(n) = READ_Q.captures(raw).and_then(|m| m[1].parse::<i64>().ok()) {
         let mut out = vec![];
-        for f in core.settings.get()["hymnFolders"].as_array().into_iter().flatten() {
+        for f in core.settings.get()["hymnFolders"].as_array().into_iter().flatten().filter(|f| folder.is_empty() || f["path"].as_str() == Some(folder)) {
             let name = f["name"].as_str().unwrap_or("");
             out.extend(list_folder(Path::new(f["path"].as_str().unwrap_or("")), name).into_iter().filter(|h| h.number == Some(n) && h.title.starts_with("교독")));
         }
@@ -122,7 +127,7 @@ pub fn search(core: &Core, query: &str) -> Vec<HymnFile> {
     let num: Option<i64> = if !q.is_empty() && q.len() <= 4 && q.chars().all(|c| c.is_ascii_digit()) { q.parse().ok() } else { None };
     let key: String = q.chars().filter(|c| !c.is_whitespace()).collect();
     let mut out = vec![];
-    for f in core.settings.get()["hymnFolders"].as_array().into_iter().flatten() {
+    for f in core.settings.get()["hymnFolders"].as_array().into_iter().flatten().filter(|f| folder.is_empty() || f["path"].as_str() == Some(folder)) {
         let name = f["name"].as_str().unwrap_or("");
         for h in list_folder(Path::new(f["path"].as_str().unwrap_or("")), name) {
             let hit = q.is_empty()
@@ -1578,6 +1583,30 @@ mod async_build_tests {
             assert_eq!(c.pres.live.as_ref().unwrap().deck.passage["cueIndex"], json!(0));
         }
         drop(shared);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod small_folder_tests {
+    use super::*;
+    #[test]
+    fn small_folder_filter_before_limit_and_duplicate_name() {
+        let dir = std::env::temp_dir().join(format!("wp-small-folder-{}", crate::util::short_id("t")));
+        let a = dir.join("a");
+        let b = dir.join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        for n in 0..305 { std::fs::write(a.join(format!("{n} 찬양.pptx")), []).unwrap(); }
+        std::fs::write(b.join("10 찬양.pptx"), []).unwrap();
+        let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
+        add_folder(&mut c, &a, Some("같은 이름")).unwrap();
+        add_folder(&mut c, &b, Some("같은 이름")).unwrap();
+        assert_eq!(search(&c, "").len(), 300);
+        assert_eq!(search_in_folder(&c, "", &b.to_string_lossy()).len(), 1);
+        assert_eq!(search_in_folder(&c, "10", &b.to_string_lossy()).len(), 1);
+        assert!(search_in_folder(&c, "", "없는 폴더").is_empty());
+        drop(c);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

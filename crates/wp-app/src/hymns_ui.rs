@@ -123,6 +123,21 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
         }
     });
     let folders = hymns::folders(&app.core.lock());
+    let mut folder: String = get(ui, "hymn-folder-filter");
+    if !folder.is_empty() && !folders.iter().any(|f| f["path"].as_str() == Some(&folder)) {
+        folder.clear();
+        refresh = true;
+    }
+    if src == "ppt" {
+        let label = folders.iter().find(|f| f["path"].as_str() == Some(&folder)).and_then(|f| f["name"].as_str()).map(String::from).unwrap_or_else(|| wp_core::i18n::tr("전체 폴더"));
+        egui::ComboBox::from_id_salt("hymn-folder-filter").selected_text(label).show_ui(ui, |ui| {
+            refresh |= ui.selectable_value(&mut folder, String::new(), wp_core::i18n::tr("전체 폴더")).changed();
+            for f in &folders {
+                refresh |= ui.selectable_value(&mut folder, f["path"].as_str().unwrap_or("").to_string(), f["name"].as_str().unwrap_or("")).on_hover_text(f["path"].as_str().unwrap_or("")).changed();
+            }
+        });
+    }
+    set(ui, "hymn-folder-filter", folder.clone());
     ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if src == "ppt" && ui.button(wp_core::i18n::tr("폴더 추가…")).clicked() {
             if let Some(dir) = rfd::FileDialog::new().set_title("찬송가·교독문 PPT 폴더").pick_folder() {
@@ -161,7 +176,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     if refresh {
         let c = app.core.lock();
         res = if src == "ppt" {
-            hymns::search(&c, &q).into_iter().take(80).map(|h| json!({ "file": h.file.to_string_lossy(), "number": h.number, "title": h.title, "folder": h.folder })).collect()
+            hymns::search_in_folder(&c, &q, &folder).into_iter().take(80).map(|h| json!({ "file": h.file.to_string_lossy(), "number": h.number, "title": h.title, "folder": h.folder })).collect()
         } else {
             hymnal::search(&c, &q, 60)
         };
