@@ -34,6 +34,9 @@ jobs:
       - name: 시험
         continue-on-error: true
         run: cargo test --workspace 2>&1 | tee /tmp/test.log; grep -E "^test result|FAILED|panicked" /tmp/test.log | head -60
+      - name: 맥 키체인 보관 확인
+        continue-on-error: true
+        run: cargo test -p wp-core keychain -- --nocapture 2>&1 | grep -E "키체인|test result|FAILED"
       - name: 빌드
         run: cargo build --release -p wp-app -p wp-output
       - name: 묶기
