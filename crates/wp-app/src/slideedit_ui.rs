@@ -276,7 +276,11 @@ impl SlideEditUi {
             self.k = self.k.min(slides.len() - 1);
             // 방향키 (고른 요소 없음) = 앞·뒤 슬라이드 (slideedit.js: ←↑ 이전 · →↓ 다음)
             keys.retain(|k| {
-                let EdKey::Nav(d) = k else { return true };
+                let n = match k {
+                    EdKey::Nav(d) => (self.k as i64 + *d as i64).clamp(0, slides.len() as i64 - 1) as usize,
+                    EdKey::Edge(last) => if *last { slides.len() - 1 } else { 0 },
+                    _ => return true,
+                };
                 if self.inline.is_none() {
                     let n = (self.k as i64 + *d as i64).clamp(0, slides.len() as i64 - 1) as usize;
                     if n != self.k {
@@ -693,7 +697,7 @@ impl SlideEditUi {
                                 None => core.lock().notify(wp_core::i18n::tr("클립보드에 붙여 넣을 글·그림이 없습니다."), "info"),
                             }
                         }
-                        EdKey::Nav(_) | EdKey::Close => {}
+                        EdKey::Nav(_) | EdKey::Edge(_) | EdKey::Close => {}
                     }
                     if changed {
                         core.lock().b.typing = None; // 글쇠 한 번 = 실행 취소 한 번 (begin)

@@ -15,6 +15,8 @@ pub(super) enum EdKey {
     Nudge(f64, f64),
     /// 방향키 (고른 요소 없음): 앞·뒤 슬라이드
     Nav(i32),
+    /// Home·End: 첫 장·마지막 장으로
+    Edge(bool),
     /// Ctrl+D: 복제
     Dup,
     Copy,
@@ -53,6 +55,9 @@ pub(super) fn collect(ctx: &egui::Context, has_sel: bool, multi_on: bool) -> Vec
         });
         if i.consume_key(Modifiers::COMMAND, Key::D) {
             v.push(EdKey::Dup);
+        }
+        for (key, action) in [(Key::PageUp, EdKey::Nav(-1)), (Key::PageDown, EdKey::Nav(1)), (Key::Home, EdKey::Edge(false)), (Key::End, EdKey::Edge(true))] {
+            if i.consume_key(Modifiers::NONE, key) { v.push(action); }
         }
         if alt {
             return; // Alt+방향키 등은 전역 단축키(앞뒤 절) 그대로
@@ -99,5 +104,18 @@ pub(super) fn handle_cursor(name: &str) -> egui::CursorIcon {
         "ne" | "sw" => egui::CursorIcon::ResizeNeSw,
         "n" | "s" => egui::CursorIcon::ResizeVertical,
         _ => egui::CursorIcon::ResizeHorizontal,
+    }
+}
+
+#[cfg(test)]
+mod small_nav_tests {
+    use super::*;
+    #[test]
+    fn small_page_and_edge_keys_with_selected_element() {
+        let ctx = egui::Context::default();
+        for (key, expected) in [(Key::PageUp, EdKey::Nav(-1)), (Key::PageDown, EdKey::Nav(1)), (Key::Home, EdKey::Edge(false)), (Key::End, EdKey::Edge(true))] {
+            let input = egui::RawInput { events: vec![Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }], ..Default::default() };
+            let _ = ctx.run_pass(input, |ctx| { assert_eq!(collect(ctx, true, false), vec![expected.clone()]); });
+        }
     }
 }
