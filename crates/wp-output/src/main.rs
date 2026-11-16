@@ -4,6 +4,7 @@
 //!   wp-output --windowed    시험용 (작은 창) · 카메라 미리보기 (/helper/camera)
 //!   wp-output --helper      숨은 창: 카메라 찾기 도우미 (/helper/cameras). 페이지가 ipc 'close' 를 보내면 끝난다
 //!   wp-output --title 글    창 제목
+//! 창은 숨긴 채 띄우고 첫 화면이 준비되면(최대 5초) 한 번에 보인다 (흰 화면 깜빡임 없음)
 //!   wp-output --esc-close   예배당 창: 마우스로 눌러 고른 뒤 Esc 를 누르면 창을 닫고 종료 코드 3 (조작 화면이 '예배당 화면 꺼짐' 으로)
 //!                           Electron main.js onOutputKey 의 `Escape → setOutput({ enabled: false })` 와 같은 동작
 //!   wp-output --selftest-esc 점검용: 페이지를 연 뒤 페이지 안에서 Esc 키 입력(keydown)을 흉내 낸다 (--esc-close 경로 확인)
@@ -24,7 +25,41 @@ enum UserEv {
     Escape,
     /// 점검용 Esc 흉내 시각
     SelfTest,
+    /// 첫 화면을 다 그렸으니 창을 보인다 (페이지의 'ready' 또는 시간 초과)
+    Show,
 }
+
+/// 창을 숨긴 채 페이지를 불러오고, 첫 화면(글꼴·무대·그림)이 준비되면 'ready' 를 보낸다.
+/// 흰 빈 창 → 검은 바탕 → 슬라이드 순서로 깜빡이며 켜지지 않고 완성된 화면이 한 번에 보이게 한다.
+/// 무대(#screen)가 없는 페이지(카메라 미리보기 등)는 불러오기가 끝나면 바로 보낸다.
+const READY_SCRIPT: &str = r#"(function () {
+  // 창이 보이기 전 첫 화면은 서서히 나타나기(디졸브) 없이 바로 완성된 모습으로 그린다
+  var boot = document.createElement('style');
+  boot.textContent = '*,*::before,*::after{transition:none!important;animation-duration:0s!important;animation-delay:0s!important}';
+  (function put() { var r = document.head || document.documentElement; if (r) r.appendChild(boot); else setTimeout(put, 0); })();
+  var sent = false;
+  function send() {
+    if (sent) return; sent = true;
+    try { window.ipc.postMessage('ready'); } catch (_) {}
+    setTimeout(function () { boot.remove(); }, 200); // 보인 뒤부터는 템플릿의 전환 효과대로
+  }
+  function settle() { requestAnimationFrame(function () { requestAnimationFrame(send); }); }
+  function check(start) {
+    var s = document.getElementById('screen');
+    var stage = !s || !!s.firstChild;
+    var imgs = Array.prototype.every.call(document.images, function (i) { return i.complete; });
+    var areas = s ? s.querySelectorAll('.bc-area') : [];
+    var shown = Array.prototype.every.call(areas, function (el) { return getComputedStyle(el).opacity === '1'; });
+    if ((stage && imgs && shown) || Date.now() - start > 4000) settle(); else setTimeout(function () { check(start); }, 30);
+  }
+  window.addEventListener('load', function () {
+    var go = function () { setTimeout(function () { check(Date.now()); }, 60); };
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(go, go); else go();
+  });
+})();"#;
+
+/// 페이지가 'ready' 를 못 보내도(오류·느린 장비) 이 시간이 지나면 창을 보인다
+const SHOW_FALLBACK: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Esc 로 닫았을 때 종료 코드 (조작 화면 outwin.rs 가 이 값을 보고 '예배당 화면을 Esc 로 껐습니다' 를 알린다)
 const EXIT_ESC: i32 = 3;
@@ -72,7 +107,9 @@ fn main() -> anyhow::Result<()> {
     let window = WindowBuilder::new()
         .with_title(arg("--title").unwrap_or_else(|| "워십프리젠터 출력".into()))
         .with_decorations(windowed)
-        .with_visible(!helper)
+        // 처음에는 숨겨 둔다: 첫 화면이 준비되면 Show 로 보인다 (도우미는 끝까지 숨김)
+        .with_visible(false)
+        .with_background_color((0, 0, 0, 255))
         .with_inner_size(tao::dpi::LogicalSize::new(960.0, 540.0))
         .build(&event_loop)?;
     if !windowed {
@@ -86,6 +123,14 @@ fn main() -> anyhow::Result<()> {
     let esc_close = flag("--esc-close");
     let selftest = flag("--selftest-esc");
     let mut builder = WebViewBuilder::new();
+    if !helper {
+        builder = builder.with_initialization_script(READY_SCRIPT);
+        let p = proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(SHOW_FALLBACK);
+            let _ = p.send_event(UserEv::Show);
+        });
+    }
     if esc_close {
         builder = builder.with_initialization_script(ESC_SCRIPT);
     }
@@ -111,6 +156,9 @@ fn main() -> anyhow::Result<()> {
                 "close" => {
                     let _ = proxy.send_event(UserEv::Close);
                 }
+                "ready" if !helper => {
+                    let _ = proxy.send_event(UserEv::Show);
+                }
                 "escape" if esc_close => {
                     let _ = proxy.send_event(UserEv::Escape);
                 }
@@ -119,6 +167,7 @@ fn main() -> anyhow::Result<()> {
         })
         .build(&window)?;
     let started = std::time::Instant::now();
+    let mut shown = false;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = if helper { ControlFlow::WaitUntil(started + HELPER_TIMEOUT) } else { ControlFlow::Wait };
         match event {
@@ -126,6 +175,11 @@ fn main() -> anyhow::Result<()> {
             Event::UserEvent(UserEv::Escape) => {
                 println!("esc-close");
                 *control_flow = ControlFlow::ExitWithCode(EXIT_ESC);
+            }
+            Event::UserEvent(UserEv::Show) if !shown && !helper => {
+                shown = true;
+                window.set_visible(true);
+                println!("shown {}ms", started.elapsed().as_millis());
             }
             Event::UserEvent(UserEv::SelfTest) => {
                 println!("selftest-esc: keydown Escape");
