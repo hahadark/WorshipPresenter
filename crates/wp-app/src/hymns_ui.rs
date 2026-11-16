@@ -546,6 +546,7 @@ fn replace_with_parts(c: &mut wp_core::core::Core, i: usize, it: &Value, parts: 
 /// 클립보드의 PowerPoint 슬라이드 · 그림 → 새 순서 (백그라운드)
 fn grab_clipboard(app: &mut App) {
     let dd = app.core.lock().data_dir.clone();
+    let owner = dd.clone();
     // 슬라이드 편집기가 글쇠를 받는 중이면 그 슬라이드에 그림 요소로 (paste.js:112-116)
     let editor = app.tc.slideedit.keys_active();
     app.core.lock().notify(wp_core::i18n::tr("클립보드를 읽는 중…"), "info");
@@ -574,10 +575,10 @@ fn grab_clipboard(app: &mut App) {
         },
         move |c, r| match r {
             Ok(("files", list)) => {
-                crate::dnd::push_pasted(crate::dnd::Pasted::Files(list.lines().map(std::path::PathBuf::from).collect(), editor));
+                crate::dnd::push_pasted(owner.clone(), crate::dnd::Pasted::Files(list.lines().map(std::path::PathBuf::from).collect(), editor));
             }
             Ok(("editor-image", url)) => {
-                crate::dnd::push_pasted(crate::dnd::Pasted::EditorImage(url));
+                crate::dnd::push_pasted(owner.clone(), crate::dnd::Pasted::EditorImage(url));
                 c.notify(wp_core::i18n::tr("그림을 슬라이드에 넣었습니다."), "ok");
             }
             Ok(("slides", f)) => {

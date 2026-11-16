@@ -158,17 +158,17 @@ fn bg_slideedit_and_slideshow_zones_follow_dropfiles_js() {
     frame_files(&mut h, Pos2::new(100.0, 100.0), &[d.join("a.png"), d.join("b.png")], false, ss);
     assert_eq!(dnd::take_slideshow().len(), 2);
     // 복사한 파일 붙여 넣기 (편집기가 열린 채): 같은 규칙으로 요소 대기열에
-    dnd::push_pasted(dnd::Pasted::Files(vec![d.join("b.png")], true));
+    dnd::push_pasted(h.app.core.lock().data_dir.clone(), dnd::Pasted::Files(vec![d.join("b.png")], true));
     h.frame(vec![], se);
     assert_eq!(dnd::take_se_images().len(), 1);
     // 복사한 파일 붙여 넣기 (큐시트): 고른 순서 다음에
     let m = types(&h).len();
-    dnd::push_pasted(dnd::Pasted::Files(vec![d.join("c.mp3")], false));
+    dnd::push_pasted(h.app.core.lock().data_dir.clone(), dnd::Pasted::Files(vec![d.join("c.mp3")], false));
     h.frame(vec![], draw);
     assert_eq!(types(&h).len(), m + 1);
     assert_eq!(types(&h).iter().filter(|t| *t == "audio").count(), 1);
     // 편집기 캡처 그림 붙여 넣기
-    dnd::push_pasted(dnd::Pasted::EditorImage("/media/clip-1.png".into()));
+    dnd::push_pasted(h.app.core.lock().data_dir.clone(), dnd::Pasted::EditorImage("/media/clip-1.png".into()));
     h.frame(vec![], se);
     assert_eq!(dnd::take_se_images(), vec![("/media/clip-1.png".to_string(), None)]);
     let _ = json!(null);

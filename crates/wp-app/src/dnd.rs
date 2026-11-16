@@ -37,9 +37,18 @@ struct Pending {
     bg: Option<String>,
     slideshow: Vec<String>,
     se_images: Vec<(String, Option<Pos2>)>,
-    pasted: Vec<Pasted>,
+    /// (요청한 앱의 자료 폴더, 결과) — 여러 앱(시험)이 한 프로세스에 있어도 자기 것만 꺼낸다
+    pasted: Vec<(PathBuf, Pasted)>,
 }
+/// 백그라운드 스레드가 넣는 Ctrl+V 결과만 전역 (pasted). 나머지는 화면 스레드에서만 넣고 빼므로 스레드마다 따로
+/// (시험이 여러 스레드에서 동시에 돌 때 다른 시험의 편집기가 그림을 가져가지 않게)
 static PENDING: parking_lot::Mutex<Pending> = parking_lot::Mutex::new(Pending { bg: None, slideshow: Vec::new(), se_images: Vec::new(), pasted: Vec::new() });
+thread_local! {
+    static LOCAL: RefCell<Pending> = const { RefCell::new(Pending { bg: None, slideshow: Vec::new(), se_images: Vec::new(), pasted: Vec::new() }) };
+}
+fn local<R>(f: impl FnOnce(&mut Pending) -> R) -> R {
+    LOCAL.with(|l| f(&mut l.borrow_mut()))
+}
 
 /// Ctrl+V 로 읽어 온 것 (백그라운드 스레드가 넣는다)
 pub enum Pasted {
@@ -52,25 +61,25 @@ pub enum Pasted {
 pub fn zone(z: Zone, r: Rect) {
     CUR.with(|c| c.borrow_mut().push((z, r)));
 }
-pub fn push_pasted(p: Pasted) {
-    PENDING.lock().pasted.push(p);
+pub fn push_pasted(data_dir: PathBuf, p: Pasted) {
+    PENDING.lock().pasted.push((data_dir, p));
 }
 /// 시험용: 편집기가 받을 그림을 직접 넣는다
 #[cfg(test)]
 pub fn push_se_image(url: &str, at: Option<Pos2>) {
-    PENDING.lock().se_images.push((url.to_string(), at));
+    local(|p| p.se_images.push((url.to_string(), at)));
 }
 /// 시험용: PENDING 은 전역이라 그것을 보는 시험은 차례로 돌린다
 #[cfg(test)]
 pub static TEST_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 pub fn take_bg() -> Option<String> {
-    PENDING.lock().bg.take()
+    local(|p| p.bg.take())
 }
 pub fn take_slideshow() -> Vec<String> {
-    std::mem::take(&mut PENDING.lock().slideshow)
+    local(|p| std::mem::take(&mut p.slideshow))
 }
 pub fn take_se_images() -> Vec<(String, Option<Pos2>)> {
-    std::mem::take(&mut PENDING.lock().se_images)
+    local(|p| std::mem::take(&mut p.se_images))
 }
 
 /// 이 자리에 걸치는 칸들 (위에 그려진 것부터)
@@ -112,11 +121,17 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
     if !dropped.is_empty() {
         handle(app, dropped, pos, false);
     }
-    let pasted = std::mem::take(&mut PENDING.lock().pasted);
+    let mine = app.core.lock().data_dir.clone();
+    let pasted: Vec<Pasted> = {
+        let mut g = PENDING.lock();
+        let (take, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut g.pasted).into_iter().partition(|(d, _)| *d == mine);
+        g.pasted = keep;
+        take.into_iter().map(|(_, p)| p).collect()
+    };
     for p in pasted {
         match p {
             Pasted::Files(paths, editor) => handle(app, paths, None, editor),
-            Pasted::EditorImage(url) => PENDING.lock().se_images.push((url, None)),
+            Pasted::EditorImage(url) => local(|p| p.se_images.push((url, None))),
         }
     }
 }
@@ -162,11 +177,12 @@ pub fn handle(app: &mut App, paths: Vec<PathBuf>, pos: Option<Pos2>, editor: boo
         if media.is_empty() {
             return note(app, "슬라이드 편집기에는 그림·영상을 놓을 수 있습니다.".into(), "info");
         }
-        let mut p = PENDING.lock();
-        for (k, m) in media.iter().enumerate() {
-            let at = pos.map(|p| p + egui::vec2(20.0, 20.0) * k as f32);
-            p.se_images.push((df::url_of(m), at));
-        }
+        local(|p| {
+            for (k, m) in media.iter().enumerate() {
+                let at = pos.map(|q| q + egui::vec2(20.0, 20.0) * k as f32);
+                p.se_images.push((df::url_of(m), at));
+            }
+        });
         return;
     }
     // 찬양 라이브러리: 찬양 파일·폴더 가져오기
@@ -206,7 +222,7 @@ pub fn handle(app: &mut App, paths: Vec<PathBuf>, pos: Option<Pos2>, editor: boo
         let imgs: Vec<String> = files.iter().filter(|d| d.kind == Kind::Image).map(|d| df::url_of(d)).collect();
         if !imgs.is_empty() {
             note(app, format!("슬라이드쇼에 그림 {}장을 넣었습니다.", imgs.len()), "ok");
-            PENDING.lock().slideshow.extend(imgs);
+            local(|p| p.slideshow.extend(imgs));
             files.retain(|d| d.kind != Kind::Image);
             if files.is_empty() {
                 return;
@@ -215,7 +231,7 @@ pub fn handle(app: &mut App, paths: Vec<PathBuf>, pos: Option<Pos2>, editor: boo
     }
     // 순서 편집칸에 그림·영상 하나: 그 순서 배경
     if zs.contains(&Zone::CueBg) && files.len() == 1 && df::is_media(files[0].kind) {
-        PENDING.lock().bg = Some(df::url_of(files[0]));
+        local(|p| p.bg = Some(df::url_of(files[0])));
         note(app, format!("배경: {}", files[0].name), "ok");
         return;
     }
