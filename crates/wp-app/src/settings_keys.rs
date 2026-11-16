@@ -252,7 +252,7 @@ impl SettingsUi {
             }
         }
         ui.add_space(4.0);
-        ui.label(RichText::new(tr("메뉴 옆에 적힌 키와 '단축키 보기' 표는 기본 키를 보여 줍니다. Space(다음) · ← → · Enter · Alt+1~9(매크로)는 고정 키라 여기서 바꾸지 않습니다.")).small().color(p.muted2));
+        ui.label(RichText::new(tr("메뉴와 송출 단추에는 현재 설정한 키가 표시됩니다. Space(다음) · ← → · Enter · Alt+1~9(매크로)는 고정 키라 여기서 바꾸지 않습니다.")).small().color(p.muted2));
     }
 }
 

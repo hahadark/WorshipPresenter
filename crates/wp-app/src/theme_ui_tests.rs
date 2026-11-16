@@ -282,3 +282,19 @@ fn fits_small_screens() {
         }
     }
 }
+
+#[test]
+fn quick_apply_and_manage_controls_stay_visible_without_scrolling() {
+    for size in [Vec2::new(1280.0, 720.0), Vec2::new(900.0, 640.0)] {
+        let mut h = H::sized(size);
+        for key in ["theme-quick-apply", "theme-quick-dup", "theme-quick-export", "theme-quick-slot-main"] {
+            let r = h.seen(key).unwrap_or_else(|| panic!("{size:?}: 그린 자리 없음 {key}"));
+            assert!(r.top() >= 0.0 && r.bottom() <= size.y && r.left() >= 0.0 && r.right() <= size.x, "{size:?}: {key} 이 화면 밖 {r:?}");
+        }
+        let b = second_builtin();
+        h.ui.sel = b;
+        h.frame(vec![]);
+        h.click("theme-quick-apply");
+        assert!(h.ui.undo.is_some(), "스크롤 없이 실제 적용되어야 함");
+    }
+}

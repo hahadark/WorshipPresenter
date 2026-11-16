@@ -213,9 +213,14 @@ impl ThemeUi {
             }
             Do::Undo => {
                 if let Some(u) = self.undo.take() {
-                    themes::undo_apply(&mut core.lock(), &u);
-                    self.say(tr("방금 한 적용을 되돌렸습니다. 출력이 전 디자인으로 돌아갔습니다."), false);
-                    core.lock().notify(tr("출력 테마 적용을 되돌렸습니다."), "ok");
+                    let result = themes::undo_apply(&mut core.lock(), &u);
+                    match result {
+                        Ok(()) => {
+                            self.say(tr("방금 한 적용을 되돌렸습니다. 출력이 전 디자인으로 돌아갔습니다."), false);
+                            core.lock().notify(tr("출력 테마 적용을 되돌렸습니다."), "ok");
+                        }
+                        Err(e) => self.fail(core, e),
+                    }
                 }
             }
             Do::OpenForm(kind) => {
@@ -378,6 +383,11 @@ impl ThemeUi {
                     acts.push(Do::Import);
                 }
             });
+            // 자주 쓰는 적용·관리는 미리보기 스크롤 밖에도 둔다.
+            if let Some(t) = all.iter().find(|t| s(t, "id") == self.sel) {
+                let enabled = self.form.is_none() && self.confirm.is_none();
+                ui.add_enabled_ui(enabled, |ui| self.quick_actions(ui, t, &used, &mut acts));
+            }
             // ---- 이름 입력
             if self.form.is_some() {
                 ui.add_space(6.0);
@@ -443,6 +453,47 @@ impl ThemeUi {
         for d in acts {
             self.run(core, d);
         }
+    }
+
+    /// 미리보기 아래를 찾지 않아도 적용·편집할 수 있는 고정 작업 줄.
+    fn quick_actions(&mut self, ui: &mut egui::Ui, t: &Value, used: &dyn Fn(&Value) -> Vec<&'static str>, acts: &mut Vec<Do>) {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+            ui.label(tr("출력에 적용"));
+            for (i, slot) in SLOTS.iter().enumerate() {
+                let has = t["slots"][*slot].is_object();
+                let mut on = self.slots[i] && has;
+                let r = ui.add_enabled(has, egui::Checkbox::new(&mut on, tr(themes::slot_label(slot))));
+                widgets::mark(&format!("theme-quick-slot-{slot}"), r.rect);
+                if has { self.slots[i] = on; } else { r.on_disabled_hover_text(tr("이 테마에는 이 출력에 쓸 디자인이 없습니다")); }
+            }
+            let chosen = self.chosen_slots(t);
+            let using = used(t);
+            let already = !chosen.is_empty() && chosen.iter().all(|o| using.contains(o));
+            let b = Btn::new(tr(if already { "고른 출력에 이미 쓰는 중" } else { "고른 출력에 적용" })).kind(Kind::Primary).icon("check").size(Size::Sm).enabled(!chosen.is_empty() && !already);
+            if btn(ui, "theme-quick-apply", b.tooltip(tr("고른 출력만 이 테마로 바꿉니다. 고르지 않은 출력은 그대로입니다"))) { acts.push(Do::Apply); }
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+            let builtin = t["builtin"] == true;
+            let id = s(t, "id").to_string();
+            if btn(ui, "theme-quick-dup", Btn::new(tr(if builtin { "복제해서 수정" } else { "복제" })).icon("copy").size(Size::Sm)) {
+                acts.push(Do::OpenForm(FormKind::Duplicate(id.clone())));
+            }
+            if !builtin {
+                ui.menu_button(tr("디자인 편집"), |ui| {
+                    for slot in SLOTS {
+                        if let Some(tid) = t["slots"][slot]["id"].as_str() {
+                            if btn(ui, &format!("theme-quick-edit-{slot}"), Btn::new(tr(themes::slot_label(slot))).icon("pencil").size(Size::Sm)) {
+                                acts.push(Do::Edit(tid.to_string())); ui.close();
+                            }
+                        }
+                    }
+                });
+                if btn(ui, "theme-quick-rename", Btn::new(tr("이름·설명 바꾸기")).icon("pencil").size(Size::Sm)) { acts.push(Do::OpenForm(FormKind::Rename(id))); }
+            }
+            if btn(ui, "theme-quick-export", Btn::new(tr("내보내기…")).icon("download").size(Size::Sm)) { acts.push(Do::Export); }
+        });
     }
 
     /// 이름·설명 입력 줄

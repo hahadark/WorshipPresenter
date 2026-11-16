@@ -183,7 +183,7 @@ impl SettingsUi {
             Some(u) if u.entries.len() == 1 && u.entries[0].0 == p => u.label = label.to_string(),
             _ => self.undo = Some(Undo { label: label.to_string(), entries: vec![(p, old)] }),
         }
-        self.status = Some((tr_args("적용됨 · 자동 저장: {1}", &[&label]), false));
+        self.status = Some((tr_args("적용됨: {1}", &[&label]), false));
     }
 
     /// 여러 칸을 한 번에 바꾼다 (기본값 복원). 되돌리기는 이 묶음 전체
@@ -278,12 +278,18 @@ impl SettingsUi {
                         self.do_undo(core);
                     }
                 }
-                let (txt, color) = match &self.status {
-                    Some((t, true)) => (t.clone(), p.danger_text),
-                    Some((t, false)) => (format!("✓ {t}"), p.ok_text),
-                    None => (tr("바꾸면 바로 적용되고 자동으로 저장됩니다"), p.muted),
+                let disk = core.lock().settings.save_status();
+                let (txt, color) = match disk {
+                    wp_core::settings::SaveStatus::Error(e) => (tr_args("설정 저장 실패: {1}", &[&e]), p.danger_text),
+                    wp_core::settings::SaveStatus::Pending => (tr("화면에 적용됨 · 저장 중…"), p.warn),
+                    wp_core::settings::SaveStatus::Clean => match &self.status {
+                        Some((t, true)) => (t.clone(), p.danger_text),
+                        Some((t, false)) => (format!("✓ {t} · {}", tr("저장됨")), p.ok_text),
+                        None => (tr("변경 사항 없음 · 바꾸면 자동 저장"), p.muted),
+                    },
                 };
-                ui.add(egui::Label::new(RichText::new(txt).small().color(color)).truncate());
+                let r = ui.add(egui::Label::new(RichText::new(&txt).small().color(color)).truncate()).on_hover_text(&txt);
+                mark("set-save-status", r.rect);
             });
         });
     }

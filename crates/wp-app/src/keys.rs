@@ -23,6 +23,11 @@ pub fn parse(s: &str) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(m, Key::from_name(key)?))
 }
 
+/// 현재 쓰는 단축키를 화면에도 같은 값으로 보인다. 빈 값은 꺼진 단축키다.
+pub fn label(settings: &Value, id: &str, default: &str) -> String {
+    settings["shortcuts"][id].as_str().unwrap_or(default).trim().to_string()
+}
+
 /// 설정 shortcuts[id] (없으면 기본값)이 이번 프레임에 눌렸으면 true (눌림은 먹는다)
 pub fn pressed(ctx: &egui::Context, settings: &Value, id: &str, default: &str) -> bool {
     let txt = settings["shortcuts"][id].as_str().unwrap_or(default);

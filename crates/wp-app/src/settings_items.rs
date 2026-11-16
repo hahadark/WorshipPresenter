@@ -144,6 +144,7 @@ pub static ITEMS: &[Item] = &[
     keep("url-main", Cat::Obs, &[], "예배당 화면 그대로", "OBS 브라우저 소스에 넣는 주소입니다. 예배당 화면과 똑같은 전체 화면이 나옵니다.", "주소 복사 브라우저 소스 URL 전체 화면", Kind::Copy("/outputs/main")),
     keep("url-overlay", Cat::Obs, &[], "투명 자막", "카메라 화면 위에 얹는 투명 자막 주소입니다.", "주소 복사 브라우저 소스 URL 자막 오버레이", Kind::Copy("/outputs/overlay")),
     keep("url-stage", Cat::Obs, &[], "무대 화면", "인도자·설교자가 보는 무대 화면 주소입니다.", "주소 복사 URL 스테이지 모니터", Kind::Copy("/outputs/stage")),
+    keep("url-dock", Cat::Obs, &[], "OBS 조작 도킹", "OBS 사용자 지정 브라우저 독에 넣으면 송출을 조작할 수 있습니다.", "도킹 독 dock 조작 OBS 주소 URL", Kind::Copy("/dock")),
     keep("tpl-overlay", Cat::Obs, &["activeTemplates", "overlay"], "OBS 자막 템플릿 — 성경·공지", "투명 자막에서 성경과 공지에 쓰는 템플릿입니다.", "자막 모양 테마", Kind::Template("overlay")),
     keep("tpl-overlayLyrics", Cat::Obs, &["activeTemplates", "overlayLyrics"], "OBS 자막 템플릿 — 찬송가·찬양", "투명 자막에서 찬송가와 찬양 가사에 쓰는 템플릿입니다.", "자막 모양 테마 가사", Kind::Template("overlayLyrics")),
     keep("obsfull", Cat::Obs, &[], "OBS 자막: 슬라이드 그대로 (예배당 화면 모양)", "켜면 투명 자막 주소에도 자막 템플릿 대신 예배당 화면과 같은 슬라이드가 나갑니다. 프로그램을 다시 켜면 꺼집니다.", "자막 전체 슬라이드 그대로", Kind::Special),

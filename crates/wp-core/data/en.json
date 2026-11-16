@@ -4419,5 +4419,19 @@
  "테마 파일의 버전을 알 수 없습니다.": "The theme file has no recognizable version.",
  "테마 파일에 이름이 없습니다.": "The theme file has no name.",
  "테마 파일에 출력 디자인이 없습니다.": "The theme file has no output designs.",
- "테마 파일의 '{1}' 디자인이 올바르지 않습니다.": "The '{1}' design in the theme file is not valid."
+ "테마 파일의 '{1}' 디자인이 올바르지 않습니다.": "The '{1}' design in the theme file is not valid.",
+ "적용됨: {1}": "Applied: {1}",
+ "설정 저장 실패: {1}": "Could not save settings: {1}",
+ "화면에 적용됨 · 저장 중…": "Applied on screen · Saving…",
+ "변경 사항 없음 · 바꾸면 자동 저장": "No pending changes · Changes are saved automatically",
+ "테마 적용 뒤 디자인이나 출력이 바뀌어 되돌리지 않았습니다. 지금 디자인을 먼저 내 테마로 저장하세요.": "The design or output changed after applying the theme, so nothing was undone. Save the current design as your own theme first.",
+ "OBS 조작 도킹": "OBS control dock",
+ "OBS 사용자 지정 브라우저 독에 넣으면 송출을 조작할 수 있습니다.": "Add this URL as a custom browser dock in OBS to control the presentation.",
+ "즉석 자막: 글을 써서 바로 송출": "Quick text: type and send immediately",
+ "예배당 모니터의 전체 화면 출력을 켜고 끕니다": "Turn the sanctuary full-screen output on or off",
+ "클릭하면 미리보기에만 놓이고, 송출 단추를 눌러야 회중 화면에 나갑니다": "Click to preview only. Press Send to show it to the congregation.",
+ "클릭하면 미리보기에 놓고 송출 단추로 내보내는 방식으로": "Preview first, then use Send to show it.",
+ "디자인 편집": "Edit design",
+ "주소를 복사했습니다. OBS → 독 → 사용자 지정 브라우저 독에 붙여 넣으세요.": "URL copied. Paste it in OBS → Docks → Custom Browser Docks.",
+ "메뉴와 송출 단추에는 현재 설정한 키가 표시됩니다. Space(다음) · ← → · Enter · Alt+1~9(매크로)는 고정 키라 여기서 바꾸지 않습니다.": "Menus and output buttons show your current shortcut settings. Space (next), arrow keys, Enter, and Alt+1–9 (macros) are fixed shortcuts and cannot be changed here."
 }

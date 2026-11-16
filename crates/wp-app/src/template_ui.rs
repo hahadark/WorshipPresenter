@@ -103,6 +103,9 @@ fn dashed_rect(pt: &egui::Painter, r: Rect, stroke: Stroke) {
 }
 
 impl TemplateUi {
+    #[cfg(test)]
+    pub(crate) fn selected_id(&self) -> &str { &self.sel }
+
     /// 이 템플릿을 골라 연다 (빠른 설정 '자세히 ▸')
     pub fn open_with(&mut self, id: &str) {
         if !self.open || self.sel != id {

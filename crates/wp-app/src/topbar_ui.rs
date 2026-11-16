@@ -305,6 +305,7 @@ impl App {
 
     /// 아래 송출 줄 (footer.bottom) — 창 맨 아래 전체 폭 고정
     pub(super) fn bottom_bar(&mut self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) {
+        let shortcut_settings = serde_json::json!({"shortcuts": self.core.lock().settings.get()["shortcuts"].clone()});
         self.video_bar(ui); // [트랙 B] 영상·음악 조작 줄 (재생 중일 때만 내용이 생김)
         // [갈래 C] 아래 줄 빈 자리 오른쪽 클릭 = 화면 지우기 메뉴 (ctxmenu.js footer.bottom) — 단추보다 먼저 놓는다
         let bar = ui.interact(ui.available_rect_before_wrap(), ui.id().with("footer-menu"), egui::Sense::click());
@@ -316,7 +317,7 @@ impl App {
             self.workspace_controls(ui, s, acts);
             // 즉석 자막 (.quick-btn: 34px, 열려 있으면 accent 테두리·글자)
             let qon = self.tb.quick;
-            let mut q = Btn::new(tr("즉석 자막")).icon("text").kbd("Ctrl+T").tooltip(tr("즉석 자막: 글을 써서 바로 송출 (Ctrl+T)"));
+            let mut q = Btn::new(tr("즉석 자막")).icon("text").kbd(crate::keys::label(&shortcut_settings, "quickText", "Ctrl+T")).tooltip(tr("즉석 자막: 글을 써서 바로 송출"));
             if qon {
                 q = q.text_color(pal().accent).icon_color(pal().accent).selected(true);
             }
@@ -327,10 +328,10 @@ impl App {
             // 원본은 '보조 화면 꺼짐' 이지만 상태 줄('예배당 화면 꺼짐')과 이름을 하나로 맞춘다.
             let running = self.out.running();
             let b = Btn::new(if running { tr("예배당 화면: 켜짐 · 끄기") } else { tr("예배당 화면: 꺼짐 · 켜기") })
-                .kbd("Ctrl+Shift+F")
+                .kbd(crate::keys::label(&shortcut_settings, "toggleOutputWindow", "Ctrl+Shift+F"))
                 .size(Size::Big)
                 .kind(if running { Kind::Pv } else { Kind::Default })
-                .tooltip(tr("예배당 모니터의 전체 화면 출력을 켜고 끕니다 (Ctrl+Shift+F)"));
+                .tooltip(tr("예배당 모니터의 전체 화면 출력을 켜고 끕니다"));
             if egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 4)).show(ui, |ui| ui.add(b)).inner.clicked() {
                 acts.push(Act::OutputToggle);
             }
@@ -478,7 +479,7 @@ impl App {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 icons::show(ui, "monitor-off", 16.0, p.warn);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let b = ui.add(Btn::new(tr("지금 켜기")).icon("monitor").kind(Kind::Warn).height(28.0).kbd("Ctrl+Shift+F").tooltip(tr("예배당 모니터에 전체 화면 출력을 켭니다")));
+                    let b = ui.add(Btn::new(tr("지금 켜기")).icon("monitor").kind(Kind::Warn).height(28.0).kbd(crate::keys::label(self.core.lock().settings.get(), "toggleOutputWindow", "Ctrl+Shift+F")).tooltip(tr("예배당 모니터에 전체 화면 출력을 켭니다")));
                     widgets::mark("live-output-on", b.rect);
                     if b.clicked() {
                         acts.push(Act::OutputToggle);
@@ -525,7 +526,7 @@ fn studio_split(ui: &mut Ui, preview: bool) -> Option<bool> {
         }
         let pv = Btn::new(tr("미리보기"))
             .kind(if preview { Kind::Pv } else { Kind::Default })
-            .tooltip(tr("클릭하면 미리보기에만 놓이고, F9(송출)를 눌러야 회중 화면에 나갑니다"));
+            .tooltip(tr("클릭하면 미리보기에만 놓이고, 송출 단추를 눌러야 회중 화면에 나갑니다"));
         let r = ui.add(pv);
         widgets::mark("studio-preview", r.rect);
         if r.clicked() {
@@ -546,7 +547,7 @@ impl App {
             ui.add(egui::Label::new(theme::rich(tr("클릭하면 바로 송출됩니다"), 13.0, Weight::Bold, p.text)).selectable(false));
             ui.add(egui::Label::new(theme::rich(tr("큐시트 순서·본문·슬라이드를 누르는 즉시 회중 화면에 나갑니다"), 13.0, Weight::Regular, p.text2)).truncate().selectable(false));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let b = ui.add(Btn::new(tr("미리보기로 돌아가기")).size(Size::Sm).height(24.0).tooltip(tr("클릭하면 미리보기에 놓고 F9 로 송출하는 방식으로")));
+                let b = ui.add(Btn::new(tr("미리보기로 돌아가기")).size(Size::Sm).height(24.0).tooltip(tr("클릭하면 미리보기에 놓고 송출 단추로 내보내는 방식으로")));
                 widgets::mark("direct-band-back", b.rect);
                 if b.clicked() {
                     acts.push(Act::TogglePreviewMode);

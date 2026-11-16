@@ -9,7 +9,7 @@ use eframe::egui::{self, Align2, CornerRadius, Pos2, Rect, Response, Sense, Stro
 pub struct Item {
     pub id: &'static str,
     pub label: &'static str,
-    pub key: &'static str,
+    pub key: String,
 }
 
 pub struct Menu {
@@ -17,8 +17,8 @@ pub struct Menu {
     pub items: Vec<Item>,
 }
 
-const fn it(id: &'static str, label: &'static str, key: &'static str) -> Item {
-    Item { id, label, key }
+fn it(id: &'static str, label: &'static str, key: &'static str) -> Item {
+    Item { id, label, key: key.to_string() }
 }
 
 /// 메뉴 목록. 빈 label("-") 은 구분선
@@ -53,7 +53,7 @@ pub fn menus() -> Vec<Menu> {
             it("w:workspaces", "작업공간 · 패널 배치", ""),
             it("c:commentary", "주석 보기 · 가져오기", ""),
             it("c:templates", "출력 템플릿 편집", ""),
-            it("c:themes", "테마 고르기 (구세군 · 방송 스타일)", ""),
+            it("c:themes", "출력 테마 관리", ""),
             // Electron menubar.js 보기 > Language · 언어 (화면 언어 바꾸기)
             it("c:lang-ko", "Language · 언어: 한국어", ""),
             it("c:lang-en", "Language · 언어: English", ""),
@@ -95,6 +95,39 @@ pub fn menus() -> Vec<Menu> {
     ]
 }
 
+
+/// 설정에서 바꾼 키와 메뉴 안내가 어긋나지 않게 한다.
+pub fn menus_with_shortcuts(settings: &serde_json::Value) -> Vec<Menu> {
+    let mut list = menus();
+    for menu in &mut list {
+        for item in &mut menu.items {
+            let id = match item.id {
+                "c:history" => Some("openHistory"),
+                "b:quick" => Some("quickText"),
+                "b:message" => Some("messages"),
+                "b:print" => Some("printCue"),
+                _ => None,
+            };
+            if let Some(id) = id { item.key = crate::keys::label(settings, id, &item.key); }
+        }
+    }
+    list
+}
+
+#[cfg(test)]
+mod configured_key_tests {
+    #[test]
+    fn menus_show_configured_keys_and_leave_fixed_keys_alone() {
+        let settings = serde_json::json!({"shortcuts":{"openHistory":"Ctrl+J","quickText":"F8","messages":"","printCue":"Ctrl+Shift+P"}});
+        let list = super::menus_with_shortcuts(&settings);
+        let key = |id: &str| list.iter().flat_map(|m| &m.items).find(|i| i.id == id).unwrap().key.as_str();
+        assert_eq!(key("c:history"), "Ctrl+J");
+        assert_eq!(key("b:quick"), "F8");
+        assert_eq!(key("b:message"), "");
+        assert_eq!(key("b:print"), "Ctrl+Shift+P");
+        assert_eq!(key("c:settings"), "Ctrl+,");
+    }
+}
 
 /// 메뉴 항목 아이콘 (Electron menubar.js 의 `ic` 와 같은 Lucide 이름). 원본에 없는 항목은 가까운 것으로
 pub fn icon_of(id: &str) -> Option<&'static str> {
@@ -284,7 +317,7 @@ pub fn show_with(ui: &mut Ui, menus: &[Menu], mut extra: impl FnMut(&str, &mut U
                     // 화면 언어 항목은 지금 고른 것에 체크
                     let check = match i.id { "c:lang-ko" => Some(!wp_core::i18n::is_en()), "c:lang-en" => Some(wp_core::i18n::is_en()), _ => None };
                     let label = if i.id.starts_with("c:lang-") { i.label.to_string() } else { wp_core::i18n::tr(i.label) };
-                    let row = item_row(ui, icon_of(i.id), &label, i.key, check);
+                    let row = item_row(ui, icon_of(i.id), &label, &i.key, check);
                     crate::widgets::mark(&format!("menuitem-{}", i.id), row.rect);
                     // 이름은 원본 menubar.js 그대로('실행 취소'), 무엇을 되돌리는지는 툴팁으로 (글 입력 되돌리기와 구분)
                     let row = match i.id {

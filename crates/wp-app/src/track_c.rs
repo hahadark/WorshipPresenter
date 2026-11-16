@@ -80,14 +80,15 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
         let tpls: Vec<(String, String)> = c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect();
         (s["previewMode"].as_bool() == Some(false), tpls, s["activeTemplates"]["main"].as_str().unwrap_or("").to_string(), s["activeTemplates"]["overlay"].as_str().unwrap_or("").to_string(), c.port)
     };
+    let shortcuts = serde_json::json!({"shortcuts": app.core.lock().settings.get()["shortcuts"].clone()});
     let frame = egui::Frame::new().fill(p.menubar).inner_margin(egui::Margin::symmetric(6, 3));
     let picked = egui::Panel::top("menubar").frame(frame).show(ui, |ui| {
-        menubar::show_with(ui, &menubar::menus(), |m, ui| match m {
+        menubar::show_with(ui, &menubar::menus_with_shortcuts(&shortcuts), |m, ui| match m {
             "송출" => {
                 menubar::sep(ui);
                 // 원본 송출 메뉴: '미리보기 끄기 (클릭하면 바로 송출)' ✓ · '보조 화면(예배당) 켜기·끄기' (Rust 판은 '예배당 화면' 으로 통일)
                 if menubar::item_row(ui, None, &tr("미리보기 끄기 (클릭하면 바로 송출)"), "", Some(preview_off)).clicked() { acts.push(Act::TogglePreviewMode); ui.close(); }
-                if menubar::item_row(ui, Some("monitor"), &tr("예배당 화면 켜기·끄기"), "Ctrl+Shift+F", None).clicked() { acts.push(Act::OutputToggle); ui.close(); }
+                if menubar::item_row(ui, Some("monitor"), &tr("예배당 화면 켜기·끄기"), &crate::keys::label(&shortcuts, "toggleOutputWindow", "Ctrl+Shift+F"), None).clicked() { acts.push(Act::OutputToggle); ui.close(); }
             }
             "보기" => {
                 // Rust 판 머리 줄에 있던 출력 템플릿 고르기 · OBS 주소 (원본은 빠른 설정 · 설정 → 출력)
@@ -117,6 +118,9 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
 
 /// OBS 주소를 복사한 뒤 알림 (보기 메뉴 · 출력 설정 창 공용)
 pub fn obs_copied_msg(label: &str) -> String {
+    if label == "OBS 조작 도킹" {
+        return wp_core::i18n::tr("주소를 복사했습니다. OBS → 독 → 사용자 지정 브라우저 독에 붙여 넣으세요.");
+    }
     wp_core::i18n::tr_args("'{1}' 주소를 복사했습니다. OBS 브라우저 소스의 주소 칸에 붙여 넣으세요.", &[&wp_core::i18n::tr(label)])
 }
 
@@ -149,6 +153,11 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     let (sel, wd, dd) = (app.sel, app.web_dir.clone(), app.data_dir.clone());
     app.tc.slideedit.show(ctx, &core, sel, &wd, &dd, acts);
     app.tc.themes.show(ctx, &core, &app.web_dir, &app.data_dir);
+    if let Some(id) = app.tc.themes.take_edit_request() {
+        app.tc.themes.open = false; // 디자인을 편집할 때는 관리 창이 편집 창을 가리지 않게 한다
+        app.tc.templates.open_with(&id);
+        ctx.request_repaint();
+    }
     app.tc.import.show(ctx, &core);
     app.tc.commentary.show(ctx, &core);
     // 점검용: --open-c settings|templates|history|usage|about
