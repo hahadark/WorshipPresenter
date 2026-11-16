@@ -622,6 +622,10 @@ impl SlideEditUi {
                         self.drag = Some(d);
                     }
                 }
+                // 끌어다 놓은·붙여 넣은 그림 → 그림 요소 (slideedit.js dropImage)
+                if !editing {
+                    keys.extend(crate::dnd::take_se_images().into_iter().map(|(u, p)| EdKey::Image(u, p)));
+                }
                 // 편집기 글쇠 (slideedit.js el keydown): 고른 요소에
                 for kx in keys.drain(..) {
                     if editing { break; }
@@ -692,6 +696,25 @@ impl SlideEditUi {
                                 }
                                 None => core.lock().notify(wp_core::i18n::tr("클립보드에 붙여 넣을 글·그림이 없습니다."), "info"),
                             }
+                        }
+                        // 놓은 자리(없으면 가운데)에 30%x30% 그림 요소 (dropImage)
+                        EdKey::Image(url, at) => {
+                            let (w, h) = (30.0f64, 30.0f64);
+                            let (x, y) = match at.filter(|p| rect.contains(*p)) {
+                                Some(p) => ((((p.x - rect.left()) / rect.width() * 100.0) as f64 - w / 2.0).clamp(0.0, 100.0 - w), (((p.y - rect.top()) / rect.height() * 100.0) as f64 - h / 2.0).clamp(0.0, 100.0 - h)),
+                                None => (35.0, 35.0),
+                            };
+                            let mut c = se::new_item("image");
+                            c["src"] = json!(url);
+                            c["x"] = json!((x * 10.0).round() / 10.0);
+                            c["y"] = json!((y * 10.0).round() / 10.0);
+                            c["w"] = json!(w);
+                            c["h"] = json!(h);
+                            self.sel = c["id"].as_str().unwrap_or("").to_string();
+                            let mut items = e["items"].as_array().cloned().unwrap_or_default();
+                            items.push(c);
+                            e["items"] = json!(items);
+                            changed = true;
                         }
                         EdKey::Nav(_) | EdKey::Close => {}
                     }
@@ -955,7 +978,10 @@ impl SlideEditUi {
                 acts.push(Act::AddItem(ty, Some(b)));
             }
         });
-        if let Some(w) = win { self.win_layer = Some(w.response.layer_id); }
+        if let Some(w) = win {
+            self.win_layer = Some(w.response.layer_id);
+            crate::dnd::zone(crate::dnd::Zone::SlideEdit, w.response.rect);
+        }
         self.open = open;
     }
 }

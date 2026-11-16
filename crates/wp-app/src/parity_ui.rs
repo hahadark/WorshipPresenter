@@ -257,6 +257,12 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
             });
         }
         "slideshow" => {
+            crate::dnd::zone(crate::dnd::Zone::Slideshow, ui.available_rect_before_wrap());
+            for u in crate::dnd::take_slideshow() {
+                if !e["images"].is_array() { e["images"] = json!([]); }
+                e["images"].as_array_mut().unwrap().push(json!(u));
+                changed = true;
+            }
             let imgs: Vec<String> = e["images"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
             ui.label(RichText::new(wp_core::i18n::tr_args("그림 {1}장", &[&(imgs.len())])).small());
             let mut del = None;

@@ -21,6 +21,8 @@ pub(super) enum EdKey {
     Cut,
     /// Ctrl+V 로 들어온 글
     Paste(String),
+    /// 끌어다 놓은·붙여 넣은 그림 (주소 · 놓은 자리)
+    Image(String, Option<Pos2>),
     /// Esc: 요소 고르기 풀기
     Deselect,
     /// Esc (고른 것이 없을 때): 편집기 닫기

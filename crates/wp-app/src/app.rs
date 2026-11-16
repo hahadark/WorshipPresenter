@@ -645,6 +645,7 @@ impl App {
                     ui.add_space(2.0); // .cue-item { margin-bottom: 2px }
                     let r = out.resp;
                     crate::widgets::mark(&format!("cue-row-{i}"), r.rect);
+                    crate::dnd::zone(crate::dnd::Zone::CueRow(i), r.rect);
                     if key_scroll && self.sel == Some(i) { r.scroll_to_me(None); }
                     self.cue_row_dnd(ui, &r, i); // [트랙 B] 끌어서 옮기기
                     crate::parity_ui::cue_row_menu(self, &r, i, it, s.items.len(), acts); // [트랙 A] 오른쪽 클릭 메뉴
@@ -914,6 +915,9 @@ impl App {
                         let mut ch = false;
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
+                            let zr = ui.available_rect_before_wrap();
+                            crate::dnd::zone(crate::dnd::Zone::CueBg, egui::Rect::from_min_size(zr.min, egui::vec2(zr.width(), 30.0)));
+                            if let Some(u) = crate::dnd::take_bg() { e["bg"] = json!(u); ch = true; } // 끌어다 놓은 그림·영상
                             let bg = e["bg"].as_str().unwrap_or("").to_string();
                             let name = percent_encoding::percent_decode_str(bg.rsplit('=').next().unwrap_or("")).decode_utf8_lossy().rsplit(['\\', '/']).next().unwrap_or("").to_string();
                             ui.label(crate::theme::rich(if bg.is_empty() { tr("템플릿 배경") } else { name }, 14.0, crate::theme::Weight::Regular, p.muted));
@@ -1638,6 +1642,7 @@ impl eframe::App for App {
 impl App {
     fn ui_body(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        crate::dnd::frame(self, &ctx); // 끌어다 놓은 파일 · 붙여 넣은 파일 처리와 안내
         // 점검용 --panic-test ui|relock : 60번째 프레임 뒤에 한 번, 일부러 오류를 낸다.
         // (logs\ 에 남는지 · 조작 화면이 계속 도는지 · 예배당 출력이 유지되는지 확인)
         {
@@ -1790,6 +1795,9 @@ mod fix3_tests;
 #[cfg(test)]
 #[path = "auditc_tests.rs"]
 mod auditc_tests;
+#[cfg(test)]
+#[path = "dnd_tests.rs"]
+mod dnd_tests;
 #[cfg(test)]
 #[path = "dbl_tests.rs"]
 mod dbl_tests;
