@@ -1,4 +1,4 @@
-> This page describes **WorshipPresenter 1.x (Electron, macOS/English 1.14.1)**. For Windows 2.x see the [current README](../../README.en.md).
+> This page describes **WorshipPresenter 1.x (Electron, English 1.14.1)**. For 2.x (Windows and Mac) see the [current README](../../README.en.md).
 
 # Worship Presenter
 

@@ -4,13 +4,14 @@
 
 [한국어](README.md) | **English**
 
-A **worship cue-sheet presentation app** for churches, for Windows 10 and 11.
+A **worship cue-sheet presentation app** for churches, for Windows 10/11 and Apple-silicon Macs.
 
 Build the order of service ahead of time. During the service you just press **F9 to go live and F6 for the next slide**: Bible passages, song lyrics, hymn PowerPoints, announcements, images and videos go out in order to the sanctuary screen (second monitor) and to OBS.
 Based on the Bible presentation app [BibleCast](https://github.com/hahadark/BibleCast).
 
 - **Download**: [latest 2.x](https://github.com/hahadark/WorshipPresenter/releases/latest) — `WorshipPresenter-X.Y.Z-Setup.exe` (installer, recommended) or `WorshipPresenter-X.Y.Z-Portable.zip` (unzip and run).
-- **macOS and the English edition**: there is no 2.x build yet. Keep using [1.14.1](https://github.com/hahadark/WorshipPresenter/releases/tag/v1.14.1) (`…-mac-arm64.dmg`, `…-English-Setup.exe`, `…-English-Portable.exe`). The 1.x guide is in [docs/v1](docs/v1/README.en.md).
+- **macOS**: `WorshipPresenter-X.Y.Z-mac-arm64.dmg` (Apple silicon only, macOS 11+). Drag it to Applications. It is not signed with an Apple developer certificate, so the first time Control-click the app → Open → Open (macOS 15+: System Settings → Privacy & Security → Open Anyway). Ctrl shortcuts are ⌘ on the Mac. Updates are manual (download the new dmg). On the Mac, AI keys and the OBS password are stored without encryption, and global shortcuts and PowerPoint-based features are not available.
+- **English edition**: there is no English-only 2.x build yet; switch the 2.x interface with **View → Language**. English 1.x: [1.14.1](https://github.com/hahadark/WorshipPresenter/releases/tag/v1.14.1). The 1.x guide is in [docs/v1](docs/v1/README.en.md).
 - 2.x can show its interface in English (**View → Language · 언어 → English**), but it ships only with the Korean Revised Version (개역한글). Import an English translation via **File → Import Bible translation…** (JSON, CSV/TSV, Zefania XML, Bethlehem .bdb).
 
 ![Worship Presenter control screen (English UI)](docs/images/v2/readme-main-en.png)
@@ -80,7 +81,7 @@ If port 37528 is busy the app uses the next free port; copy the exact URL from *
 
 ## Not yet
 
-- No macOS or English-edition 2.x build (use 1.14.1).
+- No English-only 2.x build yet (use 1.14.1 or switch the interface language). The macOS 2.x build is new in 2.0.2 and has not yet had long real-world use.
 - Testing with real OBS setups, cameras, Companion/audio gear and multi-monitor rigs is still limited. Do a rehearsal before an important service.
 - The control-screen preview shows video/camera backgrounds by name only (they play on the sanctuary screen and in OBS).
 

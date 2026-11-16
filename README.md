@@ -4,14 +4,15 @@
 
 **한국어** | [English](README.en.md)
 
-교회 **예배 순서(큐시트) 통합 송출 프로그램**입니다. Windows 10·11에서 씁니다.
+교회 **예배 순서(큐시트) 통합 송출 프로그램**입니다. Windows 10·11과 맥(애플 실리콘)에서 씁니다.
 
 예배 순서를 미리 만들어 두면, 예배 중에는 **F9로 송출하고 F6으로 넘기기만** 하면 됩니다. 성경, 찬양 가사, 찬송가 PPT, 광고, 그림, 영상이 차례대로 예배당 화면(보조 모니터)과 OBS 방송에 나갑니다.
 성경 송출 프로그램 [BibleCast](https://github.com/hahadark/BibleCast)를 바탕으로 만들었습니다.
 
 - **받기**: [최신판 2.x](https://github.com/hahadark/WorshipPresenter/releases/latest) — `WorshipPresenter-X.Y.Z-Setup.exe`(설치판, 추천) 또는 `WorshipPresenter-X.Y.Z-Portable.zip`(설치 없이 압축만 풀어 쓰기). 개역한글 성경이 들어 있습니다.
 - **설명서**: [사용자 설명서](docs/사용자설명서.md) · [OBS 설정 가이드](docs/OBS설정가이드.md)
-- **맥·영어판**: 아직 2.x가 없습니다. [1.14.1](https://github.com/hahadark/WorshipPresenter/releases/tag/v1.14.1)을 쓰세요. ([1.x 설명서](docs/v1/README.md))
+- **맥**: `WorshipPresenter-X.Y.Z-mac-arm64.dmg` (애플 실리콘 전용, [맥에서 쓰기](#맥macos) 참고)
+- **영어판**: 2.x 영어 전용판은 아직 없습니다. 2.x도 **보기 → Language·언어**에서 화면을 영어로 바꿀 수 있습니다. 영어판 1.x는 [1.14.1](https://github.com/hahadark/WorshipPresenter/releases/tag/v1.14.1) ([1.x 설명서](docs/v1/README.md))
 
 ![워십프리젠터 조작 화면](docs/images/v2/readme-main.png)
 
@@ -65,6 +66,21 @@
 3. **[지금 설치 요청]**: 프로그램이 닫히고 새 버전이 설치됩니다.
 
 예배 중에 저절로 다시 시작하지 않습니다. 큐시트·성경·설정은 업데이트해도 그대로입니다.
+
+### 맥(macOS)
+
+1. [Releases](https://github.com/hahadark/WorshipPresenter/releases/latest)에서 `WorshipPresenter-X.Y.Z-mac-arm64.dmg`를 받습니다. **애플 실리콘(M1 이상) 맥 전용**이고 macOS 11 이상에서 씁니다. 인텔 맥은 지원하지 않습니다.
+2. dmg를 열고 **워십프리젠터**를 `응용 프로그램` 폴더로 끌어다 놓습니다. 1.x 맥판이 있으면 바꿔 넣습니다.
+3. **처음 열 때**: 애플 개발자 인증서로 서명하지 않은 프로그램이라 경고가 나옵니다. `응용 프로그램`에서 워십프리젠터를 **Control+클릭 → 열기 → 열기**. macOS 15 이상은 한 번 열어 본 뒤 `시스템 설정 → 개인정보 보호 및 보안` 맨 아래 **그래도 열기**를 누릅니다. "손상되었기 때문에 열 수 없습니다"가 나오면 터미널에서 `xattr -cr /Applications/WorshipPresenter.app`을 한 번 실행하세요.
+4. 자료는 `~/Library/Application Support/WorshipPresenter-rs/data`에 둡니다. 처음 켤 때 1.x 맥판 자료(`~/Library/Application Support/WorshipCue/data`)를 복사해 오고, 원본은 바꾸지 않습니다.
+
+맥에서 알아 둘 것:
+
+- 단축키의 **Ctrl은 맥에서 ⌘(Command)**입니다(예: ⌘K 검색, ⌘⇧F 예배당 화면). 화면에는 Ctrl로 표시됩니다. 맥북에서 F5·F6·F9·F10은 **fn**을 같이 누르거나, `시스템 설정 → 키보드`에서 'F1, F2 등의 키를 표준 기능 키로 사용'을 켜세요.
+- **업데이트는 자동이 아닙니다.** 도움말 → 새 버전 확인은 새 버전을 알려 주기만 합니다. 새 dmg를 받아 `응용 프로그램`에 덮어 넣으세요.
+- **AI 키·OBS 비밀번호는 맥에서 암호화하지 않고** 사용자 폴더의 설정 파일에 저장합니다(Windows는 계정 암호화로 보관). 여러 사람이 같은 계정으로 쓰는 맥이라면 넣지 마세요. 1.x 맥판에 저장했던 키는 이어받지 못하니 다시 넣어야 합니다.
+- 맥에서 안 되는 것: 전역 단축키, 한글 입력 자동 전환, 찬송가 PPT '화면 그대로' 읽기(PowerPoint 필요, 맥에서는 .pptx 글을 꺼내 보여 줌), PowerPoint 슬라이드·그림 붙여 넣기.
+- 카메라는 처음 쓸 때 허용 창이 뜹니다. 거절했다면 `시스템 설정 → 개인정보 보호 및 보안 → 카메라`에서 켜세요.
 
 ### 익명 사용 통계
 
@@ -211,7 +227,8 @@ OBS에 **브라우저 소스**를 추가하고 아래 주소를 넣습니다. �
 
 ## 아직 안 된 것
 
-- **맥(macOS)과 영어판 2.x는 아직 없습니다.** [1.14.1](https://github.com/hahadark/WorshipPresenter/releases/tag/v1.14.1)(`…-mac-arm64.dmg`, `…-English-…`)을 계속 쓰세요. 1.x 설명은 [docs/v1](docs/v1/README.md)에 있습니다. 2.x도 **보기 → Language·언어**에서 화면을 영어로 바꿀 수 있지만, 영어 성경은 들어 있지 않아 따로 가져와야 합니다.
+- **영어 전용판 2.x는 아직 없습니다.** 2.x도 **보기 → Language·언어**에서 화면을 영어로 바꿀 수 있지만, 영어 성경은 들어 있지 않아 따로 가져와야 합니다. 영어판 1.x는 [1.14.1](https://github.com/hahadark/WorshipPresenter/releases/tag/v1.14.1), 설명은 [docs/v1](docs/v1/README.md)에 있습니다.
+- **맥판 2.x는 2.0.2부터** 나왔습니다. 맥 빌드 서버에서 자동 시험·실행 시험을 했지만, 실제 교회 맥에서 오래 써 본 시험은 아직입니다. 맥에서 안 되는 기능은 [맥에서 쓰기](#맥macos)를 보세요.
 - 실제 OBS·카메라·Companion·조명/음향 장비, 여러 모니터 환경에서의 시험은 아직 충분하지 않습니다. 중요한 예배 전에는 한 번 미리 맞춰 보세요.
 - 조작 화면의 미리보기에서는 영상·카메라 배경을 재생하지 않고 이름만 보여 줍니다(예배당 화면·OBS에서는 재생됩니다).
 
