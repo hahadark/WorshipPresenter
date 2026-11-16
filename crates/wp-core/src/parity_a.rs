@@ -108,7 +108,7 @@ pub fn single_instance(data_dir: &std::path::Path) -> (bool, Option<isize>) {
         match std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path) {
             Ok(f) => match f.try_lock() {
                 Ok(()) => {
-                    INSTANCE_LOCKS.lock().push(f);
+                    if let Ok(mut v) = INSTANCE_LOCKS.lock() { v.push(f); }
                     (false, Some(1))
                 }
                 Err(std::fs::TryLockError::WouldBlock) => (true, None),
@@ -120,7 +120,7 @@ pub fn single_instance(data_dir: &std::path::Path) -> (bool, Option<isize>) {
 }
 
 #[cfg(not(windows))]
-static INSTANCE_LOCKS: parking_lot::Mutex<Vec<std::fs::File>> = parking_lot::const_mutex(Vec::new());
+static INSTANCE_LOCKS: std::sync::Mutex<Vec<std::fs::File>> = std::sync::Mutex::new(Vec::new());
 
 /// `single_instance` 가 돌려준 핸들을 놓는다 (다시 확인하기 전에 — 쥐고 있으면 앞 프로그램이 꺼져도 이름이 남는다)
 pub fn release_instance(h: Option<isize>) {
@@ -132,7 +132,7 @@ pub fn release_instance(h: Option<isize>) {
     }
     #[cfg(not(windows))]
     if h.is_some() {
-        INSTANCE_LOCKS.lock().clear();
+        if let Ok(mut v) = INSTANCE_LOCKS.lock() { v.clear(); }
     }
 }
 

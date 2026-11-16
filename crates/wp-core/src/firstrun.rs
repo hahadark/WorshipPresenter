@@ -953,6 +953,13 @@ pub fn error_box(msg: &str) {
     }
     #[cfg(not(windows))]
     eprintln!("{msg}");
+    // 맥: 시스템 알림 창 (osascript). 큰따옴표·역슬래시는 AppleScript 문자열에 맞게
+    #[cfg(target_os = "macos")]
+    {
+        let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!("display alert \"워십프리젠터\" message \"{}\" as critical", esc(msg));
+        let _ = std::process::Command::new("osascript").arg("-e").arg(script).status();
+    }
 }
 
 pub fn splash_done() {

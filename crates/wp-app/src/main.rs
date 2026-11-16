@@ -217,7 +217,11 @@ fn main() -> anyhow::Result<()> {
         if waiting.elapsed() > std::time::Duration::from_secs(15) {
             log::warn!("두 번 실행: 먼저 켜진 것(instance.pid {:?})이 15초 동안 끝나지도 창을 보이지도 않았습니다", std::fs::read_to_string(data_dir.join("instance.pid")).ok());
             wp_core::firstrun::splash_done();
-            wp_core::firstrun::error_box("워십프리젠터가 이미 켜져 있는데 창을 찾지 못했습니다.\n\n작업 관리자(Ctrl+Shift+Esc)에서 WorshipPresenter 를 끝낸 뒤 다시 켜 주세요.");
+            wp_core::firstrun::error_box(if cfg!(target_os = "macos") {
+                "워십프리젠터가 이미 켜져 있습니다.\n\n창이 보이지 않으면 강제 종료(⌘+Option+Esc)에서 WorshipPresenter 를 끝낸 뒤 다시 켜 주세요."
+            } else {
+                "워십프리젠터가 이미 켜져 있는데 창을 찾지 못했습니다.\n\n작업 관리자(Ctrl+Shift+Esc)에서 WorshipPresenter 를 끝낸 뒤 다시 켜 주세요."
+            });
             return Ok(());
         }
         // 강제 종료된 앞 프로세스가 다 정리되기까지 몇 초 걸릴 때가 있다(실측 2.6~8.2초). 그동안 아무것도 안 보이면 안 켜진 줄 안다 → 시작 창을 먼저
