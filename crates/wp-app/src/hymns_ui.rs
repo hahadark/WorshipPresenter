@@ -217,6 +217,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             });
         }
         default_bg_row(app, ui);
+        online_settings(app, ui);
     } else {
         let books = hymnal::books(&app.core.lock());
         if books.is_empty() {
@@ -674,4 +675,32 @@ mod cue_ppt_menu_tests {
         open_ppt_tools(&ctx, &json!({"id":"ppt-target"}));
         assert_eq!(ctx.data(|d| d.get_temp::<String>(id("ppt-tools-request"))), Some("ppt-target".into()));
     }
+}
+
+/// 온라인 찾기의 주소와 감시·보관 폴더는 한 칸씩 저장한다.
+fn online_settings(app: &mut App, ui: &mut egui::Ui) {
+    egui::CollapsingHeader::new(wp_core::i18n::tr("온라인에서 찾기 (찬양 PPT)")).show(ui, |ui| {
+        for (key, label, hint) in [
+            ("songSearchUrl", "찬양 PPT 검색 주소", "{q} 자리에 검색어가 들어갑니다. 로그인과 다운로드는 브라우저에서 직접 합니다."),
+            ("songDownloadDir", "찬양 PPT 다운로드 폴더", "비우면 기본 다운로드 폴더를 지켜봅니다."),
+            ("songInboxDir", "받은 PPT 모으는 곳", "비우면 기본 찬양 PPT 폴더로 옮깁니다."),
+        ] {
+            ui.label(wp_core::i18n::tr(label));
+            let mut value = app.core.lock().settings.str(&[key]);
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                let r = ui.add(egui::TextEdit::singleline(&mut value).desired_width((ui.available_width() - 80.0).max(40.0)));
+                crate::widgets::mark(key, r.rect);
+                changed |= r.changed();
+                if key != "songSearchUrl" && ui.button(wp_core::i18n::tr("폴더 고르기…")).clicked() {
+                    if let Some(dir) = rfd::FileDialog::new().set_title(wp_core::i18n::tr(label)).pick_folder() {
+                        value = dir.to_string_lossy().to_string();
+                        changed = true;
+                    }
+                }
+            });
+            ui.label(RichText::new(wp_core::i18n::tr(hint)).small().color(Color32::GRAY));
+            if changed { app.core.lock().settings.update(|d| d[key] = json!(value.trim())); }
+        }
+    });
 }
