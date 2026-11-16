@@ -282,8 +282,7 @@ impl SlideEditUi {
                     _ => return true,
                 };
                 if self.inline.is_none() {
-                    let n = (self.k as i64 + *d as i64).clamp(0, slides.len() as i64 - 1) as usize;
-                    if n != self.k {
+                                        if n != self.k {
                         self.k = n;
                         self.multi.clear();
                         self.sel.clear();

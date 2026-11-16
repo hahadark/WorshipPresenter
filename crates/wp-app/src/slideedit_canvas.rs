@@ -115,7 +115,7 @@ mod small_nav_tests {
         let ctx = egui::Context::default();
         for (key, expected) in [(Key::PageUp, EdKey::Nav(-1)), (Key::PageDown, EdKey::Nav(1)), (Key::Home, EdKey::Edge(false)), (Key::End, EdKey::Edge(true))] {
             let input = egui::RawInput { events: vec![Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }], ..Default::default() };
-            let _ = ctx.run_pass(input, |ctx| { assert_eq!(collect(ctx, true, false), vec![expected.clone()]); });
+            let mut out = ctx.run_pass(input, |ctx| { assert_eq!(collect(ctx, true, false), vec![expected.clone()]); }); out.textures_delta.clear();
         }
     }
 }
