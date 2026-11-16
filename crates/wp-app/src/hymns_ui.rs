@@ -110,6 +110,9 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     if src.is_empty() {
         src = "ppt".into();
     }
+    if src == "ppt" {
+        crate::dnd::zone(crate::dnd::Zone::Hymns, ui.available_rect_before_wrap()); // 폴더를 놓으면 찬송가·PPT 폴더로 등록
+    }
     let mut q: String = get(ui, Q);
     let mut res: Vec<Value> = get(ui, RES);
     let mut refresh = false;
@@ -543,10 +546,24 @@ fn replace_with_parts(c: &mut wp_core::core::Core, i: usize, it: &Value, parts: 
 /// 클립보드의 PowerPoint 슬라이드 · 그림 → 새 순서 (백그라운드)
 fn grab_clipboard(app: &mut App) {
     let dd = app.core.lock().data_dir.clone();
+    // 슬라이드 편집기가 글쇠를 받는 중이면 그 슬라이드에 그림 요소로 (paste.js:112-116)
+    let editor = app.tc.slideedit.keys_active();
     app.core.lock().notify(wp_core::i18n::tr("클립보드를 읽는 중…"), "info");
     hymns::run_bg(
         move || {
+            // 탐색기에서 복사한 파일·폴더 (paste.js:100-115 의 paths) 가 먼저
+            let files = clippaste::clipboard_files();
+            if !files.is_empty() {
+                return Ok(("files", files.iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>().join("\n")));
+            }
             let (slides, image, _) = clippaste::clipboard_info();
+            if editor {
+                return if image {
+                    clippaste::grab_image(&dd).map(|u| ("editor-image", u))
+                } else {
+                    Err(wp_core::i18n::tr("클립보드에 붙여 넣을 글·그림이 없습니다.").to_string())
+                };
+            }
             if slides {
                 clippaste::grab_slides(&dd, false).map(|(f, _)| ("slides", f.to_string_lossy().to_string()))
             } else if image {
@@ -555,7 +572,14 @@ fn grab_clipboard(app: &mut App) {
                 Err(wp_core::i18n::tr("클립보드에 PowerPoint 슬라이드나 그림이 없습니다. (글은 Ctrl+V)").to_string())
             }
         },
-        |c, r| match r {
+        move |c, r| match r {
+            Ok(("files", list)) => {
+                crate::dnd::push_pasted(crate::dnd::Pasted::Files(list.lines().map(std::path::PathBuf::from).collect(), editor));
+            }
+            Ok(("editor-image", url)) => {
+                crate::dnd::push_pasted(crate::dnd::Pasted::EditorImage(url));
+                c.notify(wp_core::i18n::tr("그림을 슬라이드에 넣었습니다."), "ok");
+            }
             Ok(("slides", f)) => {
                 let h = hymns::HymnFile { number: None, title: "붙여 넣은 슬라이드".into(), name: String::new(), folder: String::new(), file: std::path::PathBuf::from(&f) };
                 c.add_item(hymns::new_hymn_item(&h), None);

@@ -156,7 +156,7 @@ impl App {
         self.system_windows(ctx);
     }
 
-    fn add_to_cue(&mut self, it: Value) {
+    pub(crate) fn add_to_cue(&mut self, it: Value) {
         // 넣고 곧바로 미리보기(바로 송출이면 송출) · 같은 것이 이미 있으면 그 순서를 고름 · 연타 무시 (wp_core::pick)
         let at = self.sel.map(|s| s + 1);
         let r = self.core.lock().add_picked_item(it, at, false);
@@ -180,6 +180,7 @@ impl App {
 
     // ---------------- 왼쪽 탭에도 쓰는 패널 ----------------
     pub(crate) fn songs_panel(&mut self, ui: &mut egui::Ui) {
+        crate::dnd::zone(crate::dnd::Zone::Songs, ui.available_rect_before_wrap());
         // Electron library.js drawSongs: 검색칸 · + 새 찬양 · 가사 찾기 · 가져오기 ▾ / 목록 줄(🎵 · 굵은 제목 · 흐린 첫 줄 · 고치기)
         use crate::theme::{pal, rich, Weight};
         use crate::widgets::Btn;
@@ -317,7 +318,7 @@ impl App {
     }
 
     /// 찬양 파일 여러 개 가져오기 (결과는 tb.note)
-    fn import_song_paths(&mut self, fs: &[std::path::PathBuf]) {
+    pub(crate) fn import_song_paths(&mut self, fs: &[std::path::PathBuf]) {
         let r = self.core.lock().import_song_files(fs);
         self.tb.note = match r {
             Ok(v) => {
@@ -329,6 +330,7 @@ impl App {
     }
 
     pub(crate) fn library_panel(&mut self, ui: &mut egui::Ui) {
+        crate::dnd::zone(crate::dnd::Zone::Lib(if self.tb.lib_kind == "audio" { "audio".into() } else { "image".into() }), ui.available_rect_before_wrap());
 
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.tb.lib_kind, "image".to_string(), wp_core::i18n::tr("그림·영상"));

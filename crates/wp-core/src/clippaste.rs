@@ -313,6 +313,13 @@ pub fn grab_image(data_dir: &Path) -> Result<String, String> {
 mod tests {
     use super::*;
     #[test]
+    fn file_list_parses_base64_utf8_lines() {
+        let enc = |s: &str| crate::hymns::b64(s.as_bytes());
+        let out = format!("{}\r\n{}\r\n\r\n", enc(r"C:\\찬양\\a 곡.png"), enc("D:\\폴더"));
+        assert_eq!(parse_file_list(&out), vec![PathBuf::from(r"C:\\찬양\\a 곡.png"), PathBuf::from("D:\\폴더")]);
+        assert!(parse_file_list("").is_empty());
+    }
+    #[test]
     fn plan() {
         let is_ref = |l: &str| crate::parser::looks_like_reference(l);
         let (k, it) = plan_text("요3:16\n롬8:28", "", &is_ref).unwrap();
@@ -344,6 +351,42 @@ mod tests {
     }
 }
 
+const PS_CLIP_FILES: &str = r#"
+Add-Type -AssemblyName System.Windows.Forms
+$l = [System.Windows.Forms.Clipboard]::GetFileDropList()
+if ($l) { foreach ($p in $l) { Write-Output ([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($p))) } }
+"#;
+
+/// PowerShell 출력(경로를 UTF-8 base64 로 한 줄씩) → 경로들
+pub fn parse_file_list(out: &str) -> Vec<PathBuf> {
+    out.lines()
+        .filter_map(|l| crate::dpapi::unb64(l.trim()))
+        .filter_map(|b| String::from_utf8(b).ok())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// 탐색기에서 복사한 파일·폴더 목록 (CF_HDROP = .NET Clipboard.GetFileDropList). Windows 만, 그 밖은 빈 목록.
+/// 다른 프로그램이 클립보드를 쥐고 있으면 잠깐 실패하므로 몇 번 다시 해 본다. 오래 걸릴 수 있으니 다른 스레드에서
+pub fn clipboard_files() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        for k in 0..3 {
+            if let Ok(o) = run_ps(PS_CLIP_FILES, &[]) {
+                let v = parse_file_list(&o);
+                if !v.is_empty() {
+                    return v;
+                }
+                if k > 0 {
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200 * (k + 1)));
+        }
+    }
+    vec![]
+}
 #[cfg(test)]
 mod real_clipboard_tests {
     //! 실제 윈도우 클립보드로 시험 (사용자 클립보드를 덮어쓰니 따로 실행): cargo test -p wp-core real_clipboard -- --ignored --nocapture --test-threads=1

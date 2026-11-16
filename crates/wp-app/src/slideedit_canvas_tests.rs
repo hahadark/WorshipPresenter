@@ -471,3 +471,29 @@ fn editor_element_keys_apply_to_all_selected_slides_together() {
     assert!(h.item().get("edits").is_none(), "지우기도 함께 (빈 편집은 없어진다): {}", h.item());
     assert!(h.items("2").is_empty());
 }
+
+/// 끌어다 놓은·붙여 넣은 그림은 놓은 자리(없으면 가운데)에 그림 요소로 들어가고 저장된다 (slideedit.js dropImage)
+#[test]
+fn dropped_and_pasted_images_become_image_elements() {
+    let _g = crate::dnd::TEST_LOCK.lock();
+    let _ = crate::dnd::take_se_images();
+    let mut h = H::new(notice(json!({})));
+    let c = h.seen("se-canvas");
+    // 캔버스 한가운데에 놓기: 30% 그림의 중심이 놓은 자리 → x·y = 35
+    crate::dnd::push_se_image("/lib/file?p=a.png", Some(c.center()));
+    h.idle(2);
+    // 자리 없음(붙여 넣기)도 35
+    crate::dnd::push_se_image("/media/clip-1.png", None);
+    h.idle(2);
+    // 왼쪽 위 모서리 바깥쪽에 놓으면 캔버스 밖이라 35
+    let all: Vec<Value> = h.item()["edits"].as_object().unwrap().values().flat_map(|e| e["items"].as_array().cloned().unwrap_or_default()).collect();
+    let imgs: Vec<&Value> = all.iter().filter(|x| x["type"] == "image").collect();
+    assert_eq!(imgs.len(), 2, "{all:?}");
+    assert_eq!(imgs[0]["src"], "/lib/file?p=a.png");
+    assert!(near(n(&imgs[0]["x"]), 35.0) && near(n(&imgs[0]["y"]), 35.0) && near(n(&imgs[0]["w"]), 30.0), "{:?}", imgs[0]);
+    assert_eq!(imgs[1]["src"], "/media/clip-1.png");
+    assert!(near(n(&imgs[1]["x"]), 35.0));
+    h.assert_saved();
+    // 실행 취소 한 번에 하나씩
+    assert!(h.undo());
+}
