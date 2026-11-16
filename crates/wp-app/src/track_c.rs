@@ -166,6 +166,16 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             handle_menu(app, &format!("c:{w}"));
         }
     }
+    // 점검용: --open-menu d:bulletin 처럼 메뉴 항목 id 로 아무 창이나 연다
+    if let Some(id) = std::env::args().position(|x| x == "--open-menu").and_then(|i| std::env::args().nth(i + 1)) {
+        if !MENU_OPENED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            if id.starts_with("d:") {
+                crate::trackd_ui::handle_menu(&id);
+            } else {
+                handle_menu(app, &id);
+            }
+        }
+    }
     // 점검용: --settings-cat send|output|obs|ui|keys|data|backup|remote|about · --settings-q "찾을 글"
     if !SET_ARGS.swap(true, std::sync::atomic::Ordering::SeqCst) {
         let arg = |n: &str| std::env::args().position(|x| x == n).and_then(|i| std::env::args().nth(i + 1));
@@ -179,5 +189,6 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     }
 }
 
+static MENU_OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static SET_ARGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
