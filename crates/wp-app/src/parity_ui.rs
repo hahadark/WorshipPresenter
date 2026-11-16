@@ -260,15 +260,18 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
             let imgs: Vec<String> = e["images"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
             ui.label(RichText::new(wp_core::i18n::tr_args("그림 {1}장", &[&(imgs.len())])).small());
             let mut del = None;
+            let mut left = None;
             for (k, u) in imgs.iter().enumerate() {
                 ui.horizontal(|ui| {
                     let name = percent_encoding::percent_decode_str(u).decode_utf8_lossy().rsplit(['\\', '/']).next().unwrap_or("").to_string();
                     ui.label(RichText::new(format!("{}. {}", k + 1, name)).small());
+                    if ui.add_enabled(k > 0, egui::Button::new(wp_core::i18n::tr("왼쪽으로 이동"))).on_hover_text(wp_core::i18n::tr("이 그림을 앞 그림과 바꿉니다")).clicked() { left = Some(k); }
                     if ui.small_button(wp_core::i18n::tr("빼기")).clicked() {
                         del = Some(k);
                     }
                 });
             }
+            if let Some(k) = left { changed |= slideshow_left(e, k); }
             if let Some(k) = del {
                 e["images"].as_array_mut().unwrap().remove(k);
                 changed = true;
@@ -398,3 +401,24 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     *KEYS_OPEN.lock() = open;
 }
 
+
+/// 원본과 같이 바로 앞 그림과 맞바꾼다. 첫 그림·잘못된 번호는 그대로 둔다.
+fn slideshow_left(it: &mut Value, k: usize) -> bool {
+    let Some(images) = it["images"].as_array_mut() else { return false };
+    if k == 0 || k >= images.len() { return false; }
+    images.swap(k - 1, k);
+    true
+}
+#[cfg(test)]
+mod small_slideshow_tests {
+    use super::*;
+    #[test]
+    fn small_slideshow_left_preserves_images() {
+        let mut it = json!({"images":["a","b","c"]});
+        assert!(slideshow_left(&mut it, 2));
+        assert_eq!(it["images"], json!(["a","c","b"]));
+        assert!(!slideshow_left(&mut it, 0));
+        assert!(!slideshow_left(&mut it, 3));
+        assert_eq!(it["images"], json!(["a","c","b"]));
+    }
+}
