@@ -100,12 +100,27 @@ pub fn single_instance(data_dir: &std::path::Path) -> (bool, Option<isize>) {
         let exists = GetLastError() == ERROR_ALREADY_EXISTS;
         (exists, Some(h as isize))
     }
+    // 맥 등: 자료 폴더의 잠금 파일 (다른 프로그램이 쥐고 있으면 이미 떠 있는 것). 프로그램이 끝나면 운영체제가 푼다
     #[cfg(not(windows))]
     {
-        let _ = data_dir;
-        (false, None)
+        let _ = std::fs::create_dir_all(data_dir);
+        let path = data_dir.join(".wp-instance.lock");
+        match std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path) {
+            Ok(f) => match f.try_lock() {
+                Ok(()) => {
+                    INSTANCE_LOCKS.lock().push(f);
+                    (false, Some(1))
+                }
+                Err(std::fs::TryLockError::WouldBlock) => (true, None),
+                Err(_) => (false, None),
+            },
+            Err(_) => (false, None),
+        }
     }
 }
+
+#[cfg(not(windows))]
+static INSTANCE_LOCKS: parking_lot::Mutex<Vec<std::fs::File>> = parking_lot::const_mutex(Vec::new());
 
 /// `single_instance` 가 돌려준 핸들을 놓는다 (다시 확인하기 전에 — 쥐고 있으면 앞 프로그램이 꺼져도 이름이 남는다)
 pub fn release_instance(h: Option<isize>) {
@@ -116,7 +131,9 @@ pub fn release_instance(h: Option<isize>) {
         }
     }
     #[cfg(not(windows))]
-    let _ = h;
+    if h.is_some() {
+        INSTANCE_LOCKS.lock().clear();
+    }
 }
 
 /// 이미 떠 있는 창을 앞으로 (창 제목으로 찾기)

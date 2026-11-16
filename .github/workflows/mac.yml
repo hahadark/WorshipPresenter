@@ -50,8 +50,10 @@ jobs:
           ls -la /tmp/wpdata || true
           "$APP/Contents/MacOS/WorshipPresenter" --data /tmp/wpdata2 --win 1280x800 --open-c settings --shot /tmp/shots/settings.png &
           P=$!; for i in $(seq 1 90); do [ -f /tmp/shots/settings.png ] && break; sleep 1; done; sleep 2; kill $P 2>/dev/null || true
-          "$APP/Contents/MacOS/WorshipPresenter" --data /tmp/wpdata3 --win 1280x800 &
+          # 같은 자료 폴더로 두 번 켜면 두 번째는 막혀야 한다
+          "$APP/Contents/MacOS/WorshipPresenter" --data /tmp/wpdata3 --win 1280x800 --search "요3:16" --send &
           P=$!; sleep 15
+          ( "$APP/Contents/MacOS/WorshipPresenter" --data /tmp/wpdata3 --win 1280x800 > /tmp/shots/second.txt 2>&1 & S=$!; sleep 8; if kill -0 $S 2>/dev/null; then echo "second=RUNNING"; kill $S; else echo "second=EXITED"; fi )
           PORT=$(lsof -nP -iTCP -sTCP:LISTEN -a -p $P | awk 'NR>1{print $9}' | sed 's/.*://' | head -1); echo "port=$PORT"
           curl -s -o /dev/null -w "outputs/main %{http_code}\n" "http://127.0.0.1:$PORT/outputs/main"
           curl -s -o /dev/null -w "outputs/overlay %{http_code}\n" "http://127.0.0.1:$PORT/outputs/overlay"

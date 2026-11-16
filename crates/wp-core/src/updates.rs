@@ -666,7 +666,8 @@ mod updater_security_tests {
         assert!(api_url("evil/repo?x").is_none());
         let a = asset(b"fixture");
         let mut r = json!({"tag_name":"v1.0.0","assets":[{"name":a.name,"size":7,"digest":format!("sha256:{}",a.hash),"browser_download_url":format!("https://github.com/{}/releases/download/v1.0.0/{}",TRUSTED_REPO,a.name)}]});
-        assert!(asset_from_release(&r, TRUSTED_REPO).is_ok());
+        // 설치 파일은 x64 하나뿐이라 다른 아키텍처(Apple Silicon 맥 등)에서는 고르지 않는다
+        assert_eq!(asset_from_release(&r, TRUSTED_REPO).is_ok(), std::env::consts::ARCH == "x86_64");
         assert!(asset_from_release(&r, "evil/repo").is_err());
         r["assets"][0]["digest"] = Value::Null;
         assert!(

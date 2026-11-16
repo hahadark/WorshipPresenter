@@ -836,7 +836,8 @@ mod tests {
     fn em_width() {
         // 맑은 고딕 한글 한 글자 폭은 글꼴 크기(em)와 같다
         let w = text_width("가", 100.0, false, 0.0);
-        if FONTS.regular.is_some() { assert!((w - 100.0).abs() < 0.01, "가 폭 {w}"); }
+        // (맥은 Apple SD Gothic Neo 라 폭이 다르다: 0.865em)
+        if FONTS.regular.is_some() && cfg!(windows) { assert!((w - 100.0).abs() < 0.01, "가 폭 {w}"); }
     }
 
     /// 브라우저 실측값 (엣지, 맑은 고딕 굵게 64px): 커닝이 들어간 폭
