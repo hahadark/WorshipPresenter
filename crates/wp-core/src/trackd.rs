@@ -50,6 +50,12 @@ impl Core {
 
     /// 계획(AI·규칙·채팅 AI) → 찬송가 파일·장절 확인 → 새 큐시트로 저장하고 연다. 반환: { id, name, count, warnings }
     pub fn plan_to_saved_cue(&mut self, plan: &Value) -> Result<Value, String> {
+        self.plan_save(plan, true)
+    }
+
+    /// 위와 같되 `open=false` 면 저장만 하고 화면(열린 큐시트)은 바꾸지 않는다 — 결과 카드의 [이 큐시트 열기] 로 연다.
+    /// 반환에 순서 목록 `items`(제목·부제·장절)이 들어 있다.
+    pub fn plan_save(&mut self, plan: &Value, open: bool) -> Result<Value, String> {
         // 장절 확인은 DB 를 바꿔 쓰므로 먼저 해 둔다
         let v = self.version_id();
         let mut refs: HashMap<String, Option<String>> = HashMap::new();
@@ -97,26 +103,85 @@ impl Core {
         };
         self.store.save_cue(&c).map_err(|e| e.to_string())?;
         self.cues = self.store.list_cues();
-        self.open_cue(&c.id);
-        Ok(json!({ "id": c.id, "name": c.name, "count": c.items.len(), "warnings": warnings }))
+        if open {
+            self.open_cue(&c.id);
+        } else {
+            self.emit(Ev::Ui);
+        }
+        Ok(json!({ "id": c.id, "name": c.name, "count": c.items.len(), "warnings": warnings, "items": item_summary(&c.items) }))
+    }
+
+    /// 결과 카드의 [이 큐시트 열기]
+    pub fn open_saved_cue(&mut self, id: &str) -> bool {
+        if self.store.list_cues().iter().any(|c| c.id == id) {
+            self.open_cue(id);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 화면용: AI 갈래 설정 (mode: quick|api|chat, 키 없고 저장값 없으면 quick, 있으면 api)
+    pub fn ai_mode(&self) -> String {
+        let has_key = !self.ai_key().is_empty();
+        resolve_mode(self.settings.get()["ai"]["mode"].as_str().unwrap_or(""), has_key)
+    }
+
+    pub fn set_ai_mode(&mut self, mode: &str) {
+        let m = mode.to_string();
+        self.settings.update(|d| {
+            if !d["ai"].is_object() {
+                d["ai"] = json!({});
+            }
+            d["ai"]["mode"] = json!(m);
+        });
+    }
+
+    /// '순서 붙여 넣기' 초안 (재시작해도 남게): (큐시트 이름, 글)
+    pub fn quick_draft(&self) -> (String, String) {
+        let a = &self.settings.get()["ai"];
+        (a["quickName"].as_str().unwrap_or("").to_string(), a["quickDraft"].as_str().unwrap_or("").to_string())
+    }
+
+    pub fn set_quick_draft(&mut self, name: &str, text: &str) {
+        let (n, t) = (name.to_string(), text.to_string());
+        self.settings.update(|d| {
+            if !d["ai"].is_object() {
+                d["ai"] = json!({});
+            }
+            d["ai"]["quickName"] = json!(n);
+            d["ai"]["quickDraft"] = json!(t);
+        });
     }
 
     /// 붙여 넣은 예배 순서 글 → 큐시트 (AI 없이 규칙으로)
     pub fn quick_make_cue(&mut self, text: &str) -> Result<Value, String> {
+        self.quick_make_cue_ex(text, "", true)
+    }
+
+    /// name 이 비어 있지 않으면 큐시트 이름으로 쓴다
+    pub fn quick_make_cue_ex(&mut self, text: &str, name: &str, open: bool) -> Result<Value, String> {
         if text.trim().is_empty() {
             return Err(crate::i18n::tr("예배 순서를 붙여 넣으세요.").into());
         }
-        let plan = bulletin::parse_order_text(text, &|s| crate::parser::looks_like_reference(s));
-        self.plan_to_saved_cue(&plan)
+        let mut plan = bulletin::parse_order_text(text, &|s| crate::parser::looks_like_reference(s));
+        if !name.trim().is_empty() {
+            plan["name"] = json!(name.trim());
+        }
+        self.plan_save(&plan, open)
     }
 
     /// 채팅 AI 의 답 → 큐시트
     pub fn chat_ai_import(&mut self, answer: &str) -> Result<Value, String> {
+        self.chat_ai_import_ex(answer, true)
+    }
+
+    pub fn chat_ai_import_ex(&mut self, answer: &str, open: bool) -> Result<Value, String> {
         let (plan, is_sample) = bulletin::parse_chat_answer(answer)?;
         if is_sample {
             return Err(crate::i18n::tr("샘플 내용 그대로입니다. 주보를 첨부해 다시 만들어 달라고 하세요.").into());
         }
-        self.plan_to_saved_cue(&plan)
+        self.plan_save(&plan, open)
     }
 
     /// 주보 파일 → 글 (규칙 파서에 넣을 수 있게) 또는 AI 에 보낼 입력
@@ -126,7 +191,115 @@ impl Core {
     }
 }
 
-/// 백그라운드에서 AI 로 주보 → 큐시트 (끝나면 알림·큐시트 열기)
+/// 갈래 이름 정리: 저장값이 이상하면 키 유무로 (키 없음 → 순서 붙여 넣기, 있음 → API 키)
+pub fn resolve_mode(saved: &str, has_key: bool) -> String {
+    match saved {
+        "quick" | "api" | "chat" => saved.to_string(),
+        _ => if has_key { "api" } else { "quick" }.to_string(),
+    }
+}
+
+/// 큐시트 순서 목록 요약 (결과 카드용): [{ title, subtitle, ref }]
+pub fn item_summary(items: &[Value]) -> Vec<Value> {
+    items.iter().map(|x| json!({ "title": x["title"].as_str().unwrap_or(""), "subtitle": x["subtitle"].as_str().unwrap_or(""), "ref": x["ref"].as_str().unwrap_or("") })).collect()
+}
+
+/// 채팅 AI 결과 파일(.json/.txt/.md) 바이트 → 글 (UTF-8 머리표 제거, 너무 크면 거절)
+pub fn read_answer_bytes(buf: &[u8]) -> Result<String, String> {
+    if buf.len() > 2_000_000 {
+        return Err(crate::i18n::tr("결과 파일이 너무 큽니다.").into());
+    }
+    let b = buf.strip_prefix(&[0xEF, 0xBB, 0xBF][..]).unwrap_or(buf);
+    let t = String::from_utf8_lossy(b).to_string();
+    if t.trim().is_empty() {
+        return Err(crate::i18n::tr("결과 파일이 비어 있습니다.").into());
+    }
+    Ok(t)
+}
+
+/// AI API 호출 한 건의 진행 상태 (한 번에 하나만). 시험할 수 있게 시계를 밖에서 받는다.
+#[derive(Default, Debug)]
+pub struct AiJob {
+    pub started: Option<std::time::Instant>,
+    pub done: Option<Result<Value, String>>,
+}
+
+impl AiJob {
+    /// 시작 시도 — 이미 돌고 있으면 false (중복 방지)
+    pub fn try_begin(&mut self) -> bool {
+        if self.started.is_some() {
+            return false;
+        }
+        self.started = Some(std::time::Instant::now());
+        self.done = None;
+        true
+    }
+    pub fn running(&self) -> bool {
+        self.started.is_some()
+    }
+    pub fn elapsed_secs(&self) -> u64 {
+        self.started.map(|t| t.elapsed().as_secs()).unwrap_or(0)
+    }
+    /// 끝남: 결과에 걸린 시간을 붙이고 '돌고 있음' 을 푼다
+    pub fn finish(&mut self, r: Result<Value, String>) {
+        let secs = self.elapsed_secs();
+        self.started = None;
+        self.done = Some(r.map(|mut v| {
+            v["secs"] = json!(secs);
+            v
+        }));
+    }
+    pub fn take_done(&mut self) -> Option<Result<Value, String>> {
+        self.done.take()
+    }
+}
+
+static AI_JOB: once_cell::sync::Lazy<parking_lot::Mutex<AiJob>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(AiJob::default()));
+
+pub fn ai_job_running() -> bool {
+    AI_JOB.lock().running()
+}
+pub fn ai_job_secs() -> u64 {
+    AI_JOB.lock().elapsed_secs()
+}
+pub fn ai_job_take() -> Option<Result<Value, String>> {
+    AI_JOB.lock().take_done()
+}
+
+/// usage.cost(오픈라우터가 주는 달러 값)가 있으면 글로
+pub fn cost_text(usage: &Value) -> Option<String> {
+    let c = usage["cost"].as_f64().or_else(|| usage["cost"].as_str().and_then(|s| s.parse().ok()))?;
+    Some(format!("${c:.4}"))
+}
+
+/// 백그라운드에서 AI 로 주보 → 큐시트를 만들어 **저장만** 한다 (열지 않음). 결과는 `ai_job_take()` 로 가져가 카드로 보여 준다.
+/// 이미 돌고 있으면 false.
+pub fn ai_make_cue_job(shared: &crate::core::Shared, input: Input, extra: String) -> bool {
+    if !AI_JOB.lock().try_begin() {
+        return false;
+    }
+    let (key, model, endpoint) = {
+        let c = shared.lock();
+        let a = c.settings.get()["ai"].clone();
+        (c.ai_key(), a["model"].as_str().unwrap_or("").to_string(), a["endpoint"].as_str().unwrap_or("").to_string())
+    };
+    let sh = shared.clone();
+    std::thread::spawn(move || {
+        let r = bulletin::ask_ai(&key, &model, &endpoint, &input, &extra);
+        let out = r.and_then(|(plan, usage, m)| {
+            let mut v = sh.lock().plan_save(&plan, false)?;
+            v["model"] = json!(m);
+            if let Some(c) = cost_text(&usage) {
+                v["cost"] = json!(c);
+            }
+            Ok(v)
+        });
+        AI_JOB.lock().finish(out);
+    });
+    true
+}
+
+/// (예전 방식) 백그라운드에서 AI 로 주보 → 큐시트 (끝나면 알림·큐시트 열기)
 pub fn ai_make_cue(shared: &crate::core::Shared, input: Input, extra: String) {
     let (key, model, endpoint) = {
         let c = shared.lock();
@@ -411,5 +584,85 @@ mod actions_tests {
         run_item_actions(&mut c, &json!({ "stagePin": "live" }), 0);
         assert!(c.b.stage.pin.is_none());
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod ai_card_tests {
+    use super::*;
+
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-aicard-{}-{}", crate::util::now_ms(), crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        drop(rusqlite::Connection::open(dir.join("bible.db")).unwrap());
+        Core::open(dir.clone(), dir.join("web"), None).unwrap()
+    }
+
+    #[test]
+    fn mode_defaults_and_is_remembered() {
+        assert_eq!(resolve_mode("", false), "quick");
+        assert_eq!(resolve_mode("", true), "api");
+        assert_eq!(resolve_mode("chat", true), "chat");
+        assert_eq!(resolve_mode("zzz", false), "quick");
+        let mut c = core();
+        assert_eq!(c.ai_mode(), "quick");
+        c.set_ai_mode("chat");
+        assert_eq!(c.ai_mode(), "chat");
+    }
+
+    #[test]
+    fn custom_model_and_draft_are_saved() {
+        let mut c = core();
+        c.set_ai(None, Some("vendor/my-model:free"), None);
+        assert_eq!(c.ai_settings()["model"], "vendor/my-model:free");
+        c.set_quick_draft("11월 15일", "찬송 8장\n광고");
+        assert_eq!(c.quick_draft(), ("11월 15일".to_string(), "찬송 8장\n광고".to_string()));
+    }
+
+    #[test]
+    fn duplicate_ai_run_is_blocked() {
+        let mut j = AiJob::default();
+        assert!(j.try_begin());
+        assert!(j.running());
+        assert!(!j.try_begin(), "실행 중에는 다시 시작할 수 없다");
+        j.finish(Ok(json!({ "name": "x" })));
+        assert!(!j.running());
+        let r = j.take_done().unwrap().unwrap();
+        assert!(r["secs"].is_u64());
+        assert!(j.take_done().is_none());
+        assert!(j.try_begin(), "끝나면 다시 가능");
+    }
+
+    #[test]
+    fn card_save_does_not_open_cue() {
+        let mut c = core();
+        assert!(c.cue.is_none());
+        let r = c.quick_make_cue_ex("2026-11-15 주일 예배\n대표기도  김철수\n광고", "내 큐시트", false).unwrap();
+        assert!(c.cue.is_none(), "카드 단계에서는 화면의 큐시트가 바뀌지 않아야 한다");
+        assert_eq!(r["name"], "내 큐시트");
+        assert_eq!(r["items"].as_array().unwrap().len(), r["count"].as_u64().unwrap() as usize);
+        let id = r["id"].as_str().unwrap().to_string();
+        assert!(!c.open_saved_cue("없는-id"));
+        assert!(c.open_saved_cue(&id));
+        assert_eq!(c.cue.as_ref().unwrap().id, id);
+    }
+
+    #[test]
+    fn answer_file_parsing() {
+        let t = read_answer_bytes(b"\xEF\xBB\xBF{\"items\":[]}").unwrap();
+        assert!(t.starts_with('{'));
+        assert!(read_answer_bytes(b"  \n").is_err());
+        assert!(read_answer_bytes(&vec![b'a'; 2_000_001]).is_err());
+        let mut c = core();
+        let ans = "```json\n{\"name\":\"파일 큐시트\",\"items\":[{\"type\":\"title\",\"title\":\"예배 후\"}]}\n```";
+        let r = c.chat_ai_import_ex(&read_answer_bytes(ans.as_bytes()).unwrap(), false).unwrap();
+        assert_eq!(r["name"], "파일 큐시트");
+        assert!(c.cue.is_none());
+    }
+
+    #[test]
+    fn cost_text_only_with_cost() {
+        assert_eq!(cost_text(&json!({ "cost": 0.01234 })).unwrap(), "$0.0123");
+        assert!(cost_text(&json!({ "total_tokens": 10 })).is_none());
     }
 }
