@@ -7,7 +7,7 @@
 - OBS: 브라우저 소스 주소는 1.x와 같습니다 — `http://127.0.0.1:37528/outputs/main`(예배당 화면 그대로), `/outputs/overlay`(투명 자막), `/outputs/stage`(무대 화면). 포트가 쓰이면 다음 번호를 씁니다.
 - 자료: `%APPDATA%\WorshipPresenter-rs\data`. 처음 켤 때 1.x 자료(`%APPDATA%\WorshipCue\data`)를 복사해 오고, 1.x 원본은 바꾸지 않습니다.
 
-사용법은 [README(main 가지)](https://github.com/hahadark/WorshipPresenter#readme)와 [사용자 설명서](https://github.com/hahadark/WorshipPresenter/blob/main/docs/%EC%82%AC%EC%9A%A9%EC%9E%90%EC%84%A4%EB%AA%85%EC%84%9C.md)를 보세요. 1.x(Electron) 기능과의 대조·검증 범위는 `PARITY.md`, 작업 규칙은 `CLAUDE.md`에 있습니다. 맥과 영어판 2.x는 아직 없습니다(1.14.1 사용).
+사용법은 [README(main 가지)](https://github.com/hahadark/WorshipPresenter#readme)와 [사용자 설명서](https://github.com/hahadark/WorshipPresenter/blob/main/docs/%EC%82%AC%EC%9A%A9%EC%9E%90%EC%84%A4%EB%AA%85%EC%84%9C.md)를 보세요. 1.x(Electron) 기능과의 대조·검증 범위는 `PARITY.md`, 작업 규칙은 `CLAUDE.md`에 있습니다. 맥(애플 실리콘)판은 2.0.2부터 `.github/workflows/mac.yml`(GitHub 맥 빌드 서버)로 빌드합니다(`tools/mac/package.sh`). 영어 전용판 2.x는 아직 없습니다.
 
 ## 설치·업데이트
 
