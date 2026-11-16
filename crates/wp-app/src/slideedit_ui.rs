@@ -321,6 +321,16 @@ impl SlideEditUi {
             ui.separator();
             egui::Panel::left("se-list").default_size(300.0).show(ui, |ui| {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    let clip = ui.clip_rect();
+                    if self.lasso.is_some() && ui.input(|i| i.pointer.primary_down()) {
+                        if let Some(p) = ui.input(|i| i.pointer.interact_pos()) {
+                            let delta = lasso_scroll(clip, p);
+                            if delta != 0.0 {
+                                ui.scroll_with_delta(Vec2::new(0.0, delta));
+                                ui.ctx().request_repaint();
+                            }
+                        }
+                    }
                     for (k, s) in slides.iter().enumerate() {
                         let skipped = s["skipped"].as_bool().unwrap_or(false);
                         let lb = s["label"].as_str().filter(|x| !x.is_empty()).map(|x| format!("¶{x}")).or_else(|| s["ref"].as_str().map(String::from)).unwrap_or_default();
@@ -361,7 +371,9 @@ impl SlideEditUi {
                         if r.drag_started() {
                             if ui.input(|i| i.modifiers.shift) && !self.common { self.lasso = Some(edit_key(s)); } else { self.drag_slide = Some(k); }
                         }
-                        if let Some(from) = self.lasso.clone().filter(|_| r.contains_pointer() && ui.input(|i| i.pointer.primary_down())) {
+                        if let Some(from) = self.lasso.clone().filter(|_| ui.input(|i| i.pointer.primary_down() && i.pointer.interact_pos().is_some_and(|p| {
+                            p.x >= clip.left() && p.x <= clip.right() && r.rect.contains(egui::pos2(p.x, p.y.clamp(clip.top() + 1.0, clip.bottom() - 1.0)))
+                        }))) {
                             let keys: Vec<String> = slides.iter().map(edit_key).collect();
                             if let Some(a) = keys.iter().position(|x| x == &from) {
                                 if a != k || self.multi.len() > 1 {
@@ -961,5 +973,24 @@ impl SlideEditUi {
         });
         if let Some(w) = win { self.win_layer = Some(w.response.layer_id); }
         self.open = open;
+    }
+}
+
+/// 중앙 목록처럼 가장자리 30px 에서 한 프레임에 18px 씩 넘긴다.
+fn lasso_scroll(clip: egui::Rect, p: egui::Pos2) -> f32 {
+    if p.x < clip.left() || p.x > clip.right() { return 0.0; }
+    if p.y > clip.bottom() - 30.0 { -18.0 } else if p.y < clip.top() + 30.0 { 18.0 } else { 0.0 }
+}
+#[cfg(test)]
+mod small_lasso_tests {
+    use super::*;
+    #[test]
+    fn small_lasso_edge_scroll_both_directions() {
+        let clip = egui::Rect::from_min_max(egui::pos2(10.0, 10.0), egui::pos2(300.0, 400.0));
+        assert_eq!(lasso_scroll(clip, egui::pos2(100.0, 20.0)), 18.0);
+        assert_eq!(lasso_scroll(clip, egui::pos2(100.0, 390.0)), -18.0);
+        assert_eq!(lasso_scroll(clip, egui::pos2(100.0, 500.0)), -18.0);
+        assert_eq!(lasso_scroll(clip, egui::pos2(100.0, 200.0)), 0.0);
+        assert_eq!(lasso_scroll(clip, egui::pos2(500.0, 390.0)), 0.0);
     }
 }
