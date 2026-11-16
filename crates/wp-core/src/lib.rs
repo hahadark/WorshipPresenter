@@ -17,6 +17,7 @@ pub mod preservice; // [트랙 A] 예배 전 화면
 pub mod homefeed; // [트랙 A] 홈페이지 주보
 pub mod parity_a; // [트랙 A] 기능 대조에서 빠진 작은 것들
 pub mod clippaste; // [트랙 A]
+pub mod dropfiles; // 끌어다 놓기·파일 붙여 넣기 분류
 pub mod songinbox; // [트랙 A]
 pub mod measure;
 pub mod parser;
@@ -72,3 +73,4 @@ pub mod pick; // 라이브러리에서 고른 것 넣기 (중복·연타 막기)
 
 #[cfg(test)]
 mod ui_fix_tests; // 조작 화면 결함 수정(검토 1113) 회귀 테스트
+
