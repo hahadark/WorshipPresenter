@@ -17,6 +17,7 @@ pub struct TbState {
     pub stage: bool,
     pub macros: bool,
     pub cues: bool,
+    print_options: Option<wp_core::cues::PrintOptions>,
     song_q: String,
     song_edit: Option<Value>,
     import_text: String,
@@ -77,12 +78,48 @@ impl App {
         c.check_schedule(now.0, &now.1, &now.2);
     }
 
-    pub(crate) fn print_cue(&mut self) { // [트랙 C] 메뉴에서 부름
-        let r = self.core.lock().print_cue_file();
-        match r {
-            Ok(p) => { let _ = Command::new("explorer").arg(p).spawn(); }
-            Err(e) => self.tb.note = e.to_string(),
+    pub(crate) fn print_cue(&mut self) {
+        let mut c = self.core.lock();
+        if c.cue.is_none() {
+            c.notify(wp_core::i18n::tr("먼저 큐시트를 여세요."), "warn");
+            return;
         }
+        self.tb.print_options = Some(serde_json::from_value(c.settings.get()["printCueOptions"].clone()).unwrap_or_default());
+    }
+
+    fn print_options_window(&mut self, ctx: &egui::Context) {
+        use wp_core::i18n::tr;
+        let Some(mut options) = self.tb.print_options.take() else { return };
+        let before = serde_json::to_value(&options).unwrap();
+        let mut open = true;
+        let mut preview = false;
+        crate::widgets::float_window(ctx, "print-options", tr("큐시트 인쇄"), [390.0, 280.0]).open(&mut open).show(ctx, |ui| {
+            ui.label(tr("인쇄할 내용을 고르세요."));
+            ui.separator();
+            ui.checkbox(&mut options.lyrics, tr("가사·공지 글"));
+            ui.checkbox(&mut options.bible, tr("성경 본문"));
+            ui.checkbox(&mut options.notes, tr("메모"));
+            ui.checkbox(&mut options.chords, tr("코드 (찬양팀)"));
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut options.big, tr("큰 글씨"));
+                ui.checkbox(&mut options.cols, tr("두 단"));
+            });
+            ui.separator();
+            preview = ui.button(tr("인쇄 미리보기 열기…")).clicked();
+            ui.weak(tr("브라우저에서 인쇄하거나 PDF로 저장할 수 있습니다."));
+        });
+        let after = serde_json::to_value(&options).unwrap();
+        if before != after {
+            let mut c = self.core.lock();
+            c.settings.update(|s| s["printCueOptions"] = after);
+            if let Err(e) = c.settings.save_if_dirty() { c.notify(e.to_string(), "error"); }
+        }
+        if preview {
+            let r = self.core.lock().print_cue_file();
+            let r = r.map_err(|e| e.to_string()).and_then(|p| wp_core::trackd::open_path(&p));
+            if let Err(e) = r { self.core.lock().notify(format!("{}: {}", tr("인쇄 미리보기를 열지 못했습니다."), e), "error"); }
+        }
+        if open { self.tb.print_options = Some(options); }
     }
 
     pub(crate) fn trackb_windows(&mut self, ctx: &egui::Context) {
@@ -96,6 +133,15 @@ impl App {
                 }
             }
         });
+        // 메뉴 동작을 지정해 옵션 창을 격리 촬영한다.
+        static PRINT_OPENED: std::sync::Once = std::sync::Once::new();
+        PRINT_OPENED.call_once(|| {
+            let args: Vec<String> = std::env::args().collect();
+            if args.iter().position(|x| x == "--open-menu").and_then(|i| args.get(i + 1)).is_some_and(|s| s == "b:print") {
+                self.tb.print_options = Some(serde_json::from_value(self.core.lock().settings.get()["printCueOptions"].clone()).unwrap_or_default());
+            }
+        });
+        self.print_options_window(ctx);
         self.songs_window(ctx);
         self.lib_window(ctx);
         self.overlays_window(ctx);

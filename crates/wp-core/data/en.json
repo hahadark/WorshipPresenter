@@ -1,4 +1,10 @@
 {
+ "인쇄할 내용을 고르세요.": "Choose what to include in the printout.",
+ "인쇄 미리보기 열기…": "Open print preview…",
+ "브라우저에서 인쇄하거나 PDF로 저장할 수 있습니다.": "Print or save as PDF in your browser.",
+ "인쇄 미리보기를 열지 못했습니다.": "Could not open print preview.",
+ "성경 본문을 불러오지 못했습니다.": "Could not load Bible passage.",
+ "인쇄…": "Print…",
  "이 묶음을 다시 프로그램 배치 안으로 넣습니다": "Put this group back into the main layout",
  "메시지 내리기": "Clear message",
  "무대 화면에 떠 있는 메시지를 없앱니다": "Removes the message shown on the stage display",

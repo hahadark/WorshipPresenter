@@ -116,24 +116,85 @@ pub fn planned_times(start: &str, items: &[Value]) -> Vec<String> {
         .collect()
 }
 
-/// 인쇄용 HTML (브라우저로 열어 인쇄·PDF 저장)
+/// Electron 인쇄 창과 같은 여섯 옵션. 누락된 설정은 원본 기본값을 따른다.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct PrintOptions {
+    pub lyrics: bool,
+    pub bible: bool,
+    pub notes: bool,
+    pub chords: bool,
+    pub big: bool,
+    pub cols: bool,
+}
+impl Default for PrintOptions {
+    fn default() -> Self { Self { lyrics: true, bible: false, notes: true, chords: false, big: false, cols: false } }
+}
+
+/// 기본 옵션으로 인쇄한다. 기존 호출자와의 호환용이다.
 pub fn print_html(c: &Cue) -> String {
-    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    print_html_with(c, &PrintOptions::default(), |_| Ok(Vec::new()))
+}
+
+/// 순서 자료와 성경 조회 결과를 합친다. 조회를 분리해 격리된 DB로도 시험할 수 있다.
+pub fn print_html_with(c: &Cue, o: &PrintOptions, mut bible: impl FnMut(&Value) -> Result<Vec<Value>>) -> String {
+    use crate::{groups, slides};
+    use crate::i18n::{tr, tr_args};
+    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let clean = |s: &str| {
+        let s = groups::strip_fmt(s);
+        let s = if o.chords { s } else { groups::strip_chords(&s) };
+        s.lines().map(|l| l.trim_start().strip_prefix('>').map(|x| x.strip_prefix(' ').unwrap_or(x)).unwrap_or(l)).collect::<Vec<_>>().join("\n")
+    };
     let times = planned_times(&c.start_time, &c.items);
-    let rows: String = c
-        .items
-        .iter()
-        .enumerate()
-        .map(|(i, it)| {
-            let sub = it["ref"].as_str().filter(|x| !x.is_empty()).map(String::from).or_else(|| it["number"].as_i64().filter(|n| *n > 0).map(|n| format!("{n}장"))).unwrap_or_default();
-            let dur = it["duration"].as_f64().filter(|d| *d > 0.0).map(|d| format!("{d}분")).unwrap_or_default();
-            format!("<tr><td>{}</td><td>{}</td><td><b>{}</b> {}</td><td>{}</td><td>{}</td></tr>", i + 1, times[i], esc(it["title"].as_str().unwrap_or("")), esc(&sub), esc(it["note"].as_str().unwrap_or("")), dur)
-        })
-        .collect();
-    format!(
-        "<!doctype html><html lang=\"ko\"><meta charset=\"utf-8\"><title>{0}</title><style>body{{font-family:'Malgun Gothic',sans-serif;margin:24px}}table{{border-collapse:collapse;width:100%}}td,th{{border-bottom:1px solid #ccc;padding:6px 8px;text-align:left}}</style><body onload=\"print()\"><h1>{0}</h1><p>{1} {2}</p><p>{3}</p><table><tr><th>#</th><th>시각</th><th>순서</th><th>메모</th><th>시간</th></tr>{4}</table></body></html>",
-        esc(&c.name), esc(&c.service_date), esc(&c.start_time), esc(&c.memo), rows
-    )
+    let mut rows = String::new();
+    for (i, it) in c.items.iter().enumerate() {
+        let s = |k: &str| it[k].as_str().unwrap_or("");
+        let mut body = String::new();
+        match s("type") {
+            "song" if o.lyrics => {
+                let order = s("order");
+                if !order.trim().is_empty() { body.push_str(&format!("<div class=\"ord\">{}: {}</div>", esc(&tr("부를 순서")), esc(order))); }
+                let mut last = String::new();
+                for chunk in slides::arrange(slides::lyrics_chunks(s("lyrics")), order) {
+                    if !chunk.label.is_empty() && chunk.label != last {
+                        body.push_str(&format!("<div class=\"lab\">{}</div>", esc(&chunk.label)));
+                        last = chunk.label;
+                    }
+                    body.push_str(&format!("<p>{}</p>", esc(&clean(&chunk.text)).replace('\n', "<br>")));
+                }
+            }
+            "text" if o.lyrics => {
+                for chunk in slides::text_chunks(s("body"), 1) {
+                    body.push_str(&format!("<p>{}</p>", esc(&clean(&chunk.text)).replace('\n', "<br>")));
+                }
+            }
+            "bible" if o.bible => match bible(it) {
+                Ok(verses) => {
+                    body.push_str("<p class=\"bib\">");
+                    for v in verses {
+                        body.push_str(&format!("<sup>{}</sup>{} ", v["verse"], esc(v["text"].as_str().unwrap_or(""))));
+                    }
+                    body.push_str("</p>");
+                }
+                Err(e) => body.push_str(&format!("<p class=\"note\">{}</p>", esc(&e.to_string()))),
+            },
+            _ => {}
+        }
+        let sub = match s("type") { "bible" => s("ref").to_string(), "title" => s("subtitle").to_string(), "hymn" if !s("range").is_empty() => format!("{} {}", tr("슬라이드"), s("range")), _ => String::new() };
+        let kind = match s("type") { "song" => "찬양", "text" => "공지", "bible" => "성경", "title" => "제목", "hymn" => "찬송가", _ => "" };
+        rows.push_str(&format!("<section class=\"it{}\"><div class=\"hd\"><span class=\"no\">{}</span><span class=\"tm\">{}</span><b>{}</b><span class=\"sub\">{}</span><span class=\"ty\">{}</span></div>", if body.is_empty() { "" } else { " hasbody" }, i+1, times[i], esc(s("title")), esc(&sub), esc(&tr(kind))));
+        if o.notes && !s("note").is_empty() { rows.push_str(&format!("<div class=\"note\">{}: {}</div>", esc(&tr("메모")), esc(s("note")))); }
+        rows.push_str(&body);
+        rows.push_str("</section>");
+    }
+    let columns = if o.cols { ".it.hasbody p,.it.hasbody .lab{margin-left:0}.hasbody{column-count:2;column-gap:8mm}.hasbody .hd,.hasbody .note,.hasbody .ord{column-span:all}" } else { "" };
+    format!(r#"<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>{}</title><style>
+@page{{size:A4;margin:14mm 12mm}}body{{font-family:'Malgun Gothic',sans-serif;color:#111;font-size:{}pt;line-height:1.45;margin:0}}@media screen{{body{{padding:10mm 12mm}}}}
+h1{{font-size:16pt;margin:0 0 2px}}.meta{{color:#555;margin-bottom:10px;font-size:10pt}}.it{{border-top:1px solid #ccc;padding:6px 0}}.hd{{display:flex;gap:8px;align-items:baseline;break-after:avoid}}.no{{font-weight:800;min-width:1.6em}}.tm{{color:#0a58ca;font-variant-numeric:tabular-nums}}.sub{{color:#444}}.ty{{margin-left:auto;color:#888;font-size:9pt}}.note{{color:#a33;font-size:10pt;margin:2px 0 0 2.2em}}p{{margin:3px 0 6px 2.2em;break-inside:avoid}}.lab{{margin:6px 0 0 2.2em;font-weight:700;color:#555;font-size:9.5pt}}.ord{{margin:2px 0 0 2.2em;color:#555;font-size:9.5pt}}.bib sup{{color:#888;margin-right:2px}}{}
+@media print{{.print-button{{display:none}}}}</style></head><body><button class="print-button" onclick="window.print()">{}</button><h1>{}</h1><div class="meta">{} {} · {} · {}</div>{}{}</body></html>"#,
+        esc(&c.name), if o.big {13} else {11}, columns, esc(&tr("인쇄…")), esc(&c.name), esc(&c.service_date), esc(&c.start_time), esc(&tr_args("순서 {1}개", &[&c.items.len()])), esc(&tr("워십프리젠터")),
+        if o.notes && !c.memo.is_empty() {format!("<p class=\"note\">{}</p>",esc(&c.memo))} else {String::new()}, rows)
 }
 
 /// 실행 취소 (순서 목록 사본, 큐시트별)
@@ -236,6 +297,64 @@ mod tests {
         assert_eq!(u.depth("c", false), 0);
         assert_eq!(u.depth("c", true), 1);
         assert!(u.peek("c", true).unwrap().is_empty());
+    }
+    fn print_fixture() -> Cue {
+        Cue { id: "인쇄시험".into(), name: "주일 <예배>".into(), service_date: "2026-11-15".into(), start_time: "11:00".into(),
+            items: vec![json!({"type":"song","title":"찬양","lyrics":"[1절]\n[G]첫가사\n\n[후렴]\n[Am7]후렴가사", "order":"1 C 1", "note":"찬양메모", "duration":3}),
+                json!({"type":"text","title":"광고","body":"공지본문 <script>위험</script>\n---\n**다음공지**"}),
+                json!({"type":"bible","title":"봉독","ref":"요3:16","versionId":"인쇄시험본"})],
+            memo:"전체메모".into(), pinned:false, template:false }
+    }
+    #[test]
+    fn print_content_options_and_escaping() {
+        let c = print_fixture();
+        let mut o = PrintOptions::default();
+        let h = print_html_with(&c, &o, |_| panic!("성경 옵션을 끄면 DB를 조회하지 않는다"));
+        assert_eq!(h.matches("첫가사").count(), 2);
+        assert!(h.contains("후렴가사") && h.contains("공지본문"));
+        assert!(h.contains("찬양메모") && h.contains("전체메모"));
+        assert!(!h.contains("[G]") && !h.contains("[Am7]"));
+        assert!(h.contains("&lt;script&gt;") && !h.contains("<script>"));
+        assert!(h.contains("주일 &lt;예배&gt;") && h.contains("2026-11-15") && h.contains("11:03"));
+        o.chords = true;
+        let h = print_html_with(&c, &o, |_| Ok(vec![]));
+        assert!(h.contains("[G]") && h.contains("[Am7]"));
+        o.lyrics = false;
+        o.notes = false;
+        let h = print_html_with(&c, &o, |_| Ok(vec![]));
+        for absent in ["첫가사", "후렴가사", "공지본문", "다음공지", "찬양메모", "전체메모"] { assert!(!h.contains(absent), "{absent}"); }
+        assert!(h.contains("찬양") && h.contains("요3:16"));
+    }
+    #[test]
+    fn print_layout_and_defaults() {
+        let c = print_fixture();
+        let mut o: PrintOptions = serde_json::from_value(json!({})).unwrap();
+        assert!(o.lyrics && o.notes && !o.bible && !o.chords && !o.big && !o.cols);
+        let h = print_html_with(&c, &o, |_| Ok(vec![]));
+        assert!(h.contains("font-size:11pt") && !h.contains("column-count:2"));
+        o.big = true; o.cols = true;
+        let h = print_html_with(&c, &o, |_| Ok(vec![]));
+        assert!(h.contains("font-size:13pt") && h.contains("column-count:2"));
+        let saved = serde_json::to_value(&o).unwrap();
+        let restored: PrintOptions = serde_json::from_value(saved).unwrap();
+        assert!(restored.big && restored.cols);
+    }
+    #[test]
+    fn print_bible_reads_isolated_database() {
+        let mut store = store();
+        let data = crate::importer::Data { verses: vec![crate::importer::Row { book:43, chapter:3, verse:16, text:"인쇄시험 성경본문 <본문>".into() }], ..Default::default() };
+        crate::importer::replace_version(&store.db, &json!({"id":"인쇄시험본","name":"시험"}), &data).unwrap();
+        store.reload_structure().unwrap();
+        let c = print_fixture();
+        let mut o = PrintOptions::default(); o.bible = true;
+        let h = print_html_with(&c, &o, |it| {
+            let r = store.resolve_reference(it["versionId"].as_str().unwrap(), it["ref"].as_str().unwrap());
+            assert_eq!(r["ok"], true);
+            Ok(r["passage"]["verses"].as_array().unwrap().clone())
+        });
+        assert!(h.contains("<sup>16</sup>인쇄시험 성경본문 &lt;본문&gt;"));
+        o.bible = false;
+        assert!(!print_html_with(&c, &o, |_| panic!("조회 금지")).contains("성경본문"));
     }
     fn store() -> BibleStore {
         let p = std::env::temp_dir().join(format!("wp-cues-{}.db", short_id("t")));

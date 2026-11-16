@@ -420,10 +420,32 @@ impl Core {
         self.refresh_cues();
         Ok(n)
     }
-    pub fn print_cue_file(&self) -> Result<PathBuf> {
-        let Some(c) = &self.cue else { bail!("열린 큐시트가 없습니다.") };
+    pub fn print_cue_file(&mut self) -> Result<PathBuf> {
+        let Some(mut cue) = self.cue.clone() else { bail!("열린 큐시트가 없습니다.") };
+        let options: cues::PrintOptions = serde_json::from_value(self.settings.get()["printCueOptions"].clone()).unwrap_or_default();
+        // 부를 순서가 비어 있으면 연결된 찬양의 기본 순서를 따른다.
+        for it in &mut cue.items {
+            if it["type"] == "song" && it["order"].as_str().unwrap_or("").trim().is_empty() {
+                if let Some(song) = it["songId"].as_str().and_then(|id| songs::get_song(&self.store.db, id)) {
+                    it["order"] = song["arrangement"].clone();
+                }
+            }
+        }
+        let version = self.settings.get()["versionId"].as_str().unwrap_or("").to_string();
+        let mut errors = Vec::new();
+        let html = cues::print_html_with(&cue, &options, |it| {
+            let v = it["versionId"].as_str().filter(|s| !s.is_empty()).unwrap_or(&version);
+            let r = self.store.resolve_reference(v, it["ref"].as_str().unwrap_or(""));
+            if r["ok"] != true {
+                let e = r["error"].as_str().unwrap_or("성경 본문을 불러오지 못했습니다.").to_string();
+                errors.push(e.clone());
+                bail!("{e}");
+            }
+            Ok(r["passage"]["verses"].as_array().cloned().unwrap_or_default())
+        });
+        for e in errors { self.notify(e, "warn"); }
         let p = self.data_dir.join("print-cue.html");
-        std::fs::write(&p, cues::print_html(c))?;
+        std::fs::write(&p, html)?;
         Ok(p)
     }
     pub fn planned_times(&self) -> Vec<String> {
