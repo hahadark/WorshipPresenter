@@ -270,15 +270,16 @@ async fn command(State(core): State<Shared>, headers: HeaderMap, local: Option<a
     if headers.get("x-worshipcue").and_then(|v| v.to_str().ok()) != Some("1") {
         return status(StatusCode::FORBIDDEN);
     }
-    // 출력 화면이 부르는 명령: 영상 끝남
+    // 출력 화면이 부르는 명령: 영상 메타데이터·끝남
     match b["cmd"].as_str() {
+        Some("videoMeta") => { core.lock().video_meta(b["args"]["key"].as_str().unwrap_or(""), b["args"]["duration"].as_f64()); Json(json!({ "ok": true, "result": null })).into_response() }
         Some("videoEnded") => { core.lock().video_ended(b["args"]["key"].as_str().unwrap_or(""), b["args"]["duration"].as_f64()); Json(json!({ "ok": true, "result": null })).into_response() } // [트랙 B]
         // 카메라 도우미(/helper/cameras)가 보낸 장치 목록: 일회용 토큰·개수·길이를 검사한다 (cameras::parse_devices)
         Some("cameraDevices") => match core.lock().receive_camera_devices(&b["args"]) {
             Ok(n) => Json(json!({ "ok": true, "result": { "count": n } })).into_response(),
             Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": e }))).into_response(),
         },
-        // [점검 A] 외부 연동 명령 (Electron 판과 같은 이름·응답): 조작 서버에서만. 내부망 출력에서는 위의 '영상 끝남' 만 (Electron: req.lan → 403)
+        // [점검 A] 외부 연동 명령 (Electron 판과 같은 이름·응답): 조작 서버에서만. 내부망 출력에서는 위의 영상 메타데이터·끝남 알림만 (Electron: req.lan → 403)
         Some(cmd) if local.is_some() => {
             let t0 = std::time::Instant::now();
             let mut r = crate::extcmd::respond(&mut core.lock(), cmd, &b["args"]);
@@ -569,6 +570,8 @@ mod extcmd_http_tests {
         assert_eq!(post(lanu.clone(), json!({ "cmd": "saveCue", "args": { "cue": { "name": "x", "items": [] } } }), true).await.0, 403);
         assert_eq!(core.lock().b.stage.message, "설교 5분 남음");
         // 내부망 출력 서버: 출력 화면이 알리는 '영상 끝남' 은 받는다
+        assert_eq!(post(lanu.clone(), json!({ "cmd": "videoMeta", "args": {} }), false).await.0, 403);
+        assert_eq!(post(lanu.clone(), json!({ "cmd": "videoMeta", "args": {} }), true).await.0, 200);
         assert_eq!(post(lanu, json!({ "cmd": "videoEnded", "args": {} }), true).await.0, 200);
         // 상태: 조작 서버는 Electron 모양, 내부망에서는 막힘
         let get = |url: String| async move { tokio::task::spawn_blocking(move || { let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).build().into(); let mut res = agent.get(&url).call().unwrap(); (res.status().as_u16(), res.body_mut().read_to_string().unwrap_or_default()) }).await.unwrap() };

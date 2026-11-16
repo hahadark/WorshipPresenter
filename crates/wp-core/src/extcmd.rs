@@ -18,7 +18,7 @@ const ELECTRON_COMMANDS: &str = "drawStroke drawUndo drawClear drawSpot parallel
 pub const SUPPORTED: &[&str] = &[
     "nextSlide", "previousSlide", "gotoSlide", "setPreview", "previewReference", "sendLive", "clearLive", "restoreLive", "toggleLive", "getLiveState", "getState", "clearAll", "toggleBackground", "toggleLogoScreen",
     "toggleOverlaysOff", "listOverlays", "toggleOverlay", "stageMessage", "stageTimer", "stagePinSet", "showMessage", "clearMessage", "setObsView", "setTemplate", "runMacro", "videoControl",
-    "drawClear", "searchReference", "triggerInfo", "remoteStatus", "listCues", "getCue", "saveCue", "videoEnded", "cameraDevices",
+    "drawClear", "searchReference", "triggerInfo", "remoteStatus", "listCues", "getCue", "saveCue", "videoEnded", "videoMeta", "cameraDevices",
 ];
 
 /// Electron `command()` 이 내는 결과: Ok(result) → `{ok:true,result,liveVersion}`, Raw(v) → v 그대로(명령이 `{ok:false,…}` 를 돌려준 것), Err → `{ok:false,error,liveVersion}`
@@ -207,6 +207,11 @@ pub fn run(c: &mut Core, cmd: &str, a: &Value) -> Result<Out, String> {
             c.video_control(a["action"].as_str().unwrap_or(""), a["value"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?;
             c.video_payload()
         }
+        // 출력 화면의 메타데이터: key 는 현재 재생 키, duration 은 양수 초 단위 길이.
+        "videoMeta" => {
+            c.video_meta(a["key"].as_str().unwrap_or(""), a["duration"].as_f64());
+            Value::Null
+        }
         "videoEnded" => {
             c.video_ended(a["key"].as_str().unwrap_or(""), a["duration"].as_f64());
             Value::Null
@@ -368,7 +373,7 @@ fn deck_of(a: &Value) -> Result<crate::presentation::Deck, String> {
 
 /// 응답 봉투 (Electron command(): ok · result · liveVersion · error)
 pub fn respond(c: &mut Core, cmd: &str, args: &Value) -> Value {
-    if cmd != "cameraDevices" && !ELECTRON_COMMANDS.split(' ').any(|n| n == cmd) {
+    if !matches!(cmd, "cameraDevices" | "videoMeta") && !ELECTRON_COMMANDS.split(' ').any(|n| n == cmd) {
         return json!({ "ok": false, "error": crate::i18n::tr_args("알 수 없는 명령: {1}", &[&cmd]) }); // Electron: liveVersion 없이
     }
     let out = run(c, cmd, args);
@@ -405,7 +410,7 @@ mod tests {
             assert!(!SUPPORTED.contains(&n), "{n} 은 바깥에서 받지 않는다");
             assert_eq!(respond(&mut c, n, &json!({}))["ok"], false);
         }
-        for n in SUPPORTED.iter().filter(|n| **n != "cameraDevices") {
+        for n in SUPPORTED.iter().filter(|n| !matches!(**n, "cameraDevices" | "videoMeta")) {
             assert!(ELECTRON_COMMANDS.split(' ').any(|x| x == *n), "{n} 은 Electron 에 없는 이름");
         }
         // 송출 중이 아닐 때: Electron 처럼 결과가 그대로 {ok:false, reason}
@@ -467,6 +472,26 @@ mod tests {
         assert_eq!(respond(&mut c, "sendLive", &json!({ "passage": {}, "slides": [{ "kind": "title", "parts": [] }] }))["ok"], true);
     }
 
+    #[test]
+    fn video_metadata_remembers_duration_and_rejects_stale_or_invalid() {
+        let mut c = core();
+        respond(&mut c, "sendLive", &json!({ "passage": {}, "slides": [{ "kind": "video", "image": "/media/test.mp4", "parts": [] }] }));
+        c.sync_video_state();
+        let key = c.b.video.as_ref().unwrap().key.clone();
+        assert_eq!(c.video_duration("/media/test.mp4"), None);
+        respond(&mut c, "videoMeta", &json!({ "key": "old", "duration": 90.0 }));
+        assert_eq!(c.video_duration("/media/test.mp4"), None);
+        respond(&mut c, "videoMeta", &json!({ "key": key, "duration": 125.5 }));
+        assert_eq!(c.video_duration("/media/test.mp4"), Some(125.5));
+        for d in [None, Some(0.0), Some(-1.0), Some(f64::NAN), Some(f64::INFINITY)] {
+            c.video_meta(&key, d);
+        }
+        assert_eq!(c.video_duration("/media/test.mp4"), Some(125.5));
+        c.b.video = None;
+        c.video_meta(&key, Some(30.0));
+        assert_eq!(c.video_duration("/media/test.mp4"), Some(125.5));
+        assert_eq!(c.video_duration("/media/other.mp4"), None);
+    }
     #[test]
     fn stage_overlay_commands() {
         let mut c = core();

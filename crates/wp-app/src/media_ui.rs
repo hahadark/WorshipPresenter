@@ -155,6 +155,15 @@ mod tests {
         assert!(it.get("image").is_none());
     }
     #[test]
+    fn duration_falls_back_without_ffprobe_and_prefers_probe() {
+        assert_eq!(video_duration(&egui::Context::default(), "/media/no-probe.mp4", Some(125.5)), Some(125.5));
+        assert_eq!(preferred_video_duration(Some(120.0), Some(125.5)), Some(120.0));
+        for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(preferred_video_duration(None, Some(invalid)), None);
+        }
+        assert_eq!(preferred_video_duration(None, None), None);
+    }
+    #[test]
     fn direct_video_has_no_cue_binding() {
         let d = video_deck(&json!({"name":"영상","url":"/lib/file?p=test.mp4"}));
         assert_eq!(d.passage["cueId"], "");
@@ -163,8 +172,16 @@ mod tests {
     }
 }
 
-/// 파일마다 한 번만 백그라운드 메타데이터 조회. 도구가 없으면 길이를 추측하지 않는다.
-pub fn video_duration(ctx: &egui::Context, url: &str) -> Option<f64> {
+/// ffprobe 결과를 우선하고, 없거나 조회 중이면 출력 화면이 확인한 길이를 쓴다.
+pub fn video_duration(ctx: &egui::Context, url: &str, reported: Option<f64>) -> Option<f64> {
+    preferred_video_duration(probe_video_duration(ctx, url), reported)
+}
+fn preferred_video_duration(probed: Option<f64>, reported: Option<f64>) -> Option<f64> {
+    probed.filter(|d| d.is_finite() && *d > 0.0)
+        .or_else(|| reported.filter(|d| d.is_finite() && *d > 0.0))
+}
+/// 파일마다 한 번만 백그라운드 메타데이터를 조회한다.
+fn probe_video_duration(ctx: &egui::Context, url: &str) -> Option<f64> {
     use once_cell::sync::Lazy;
     use parking_lot::Mutex;
     use std::collections::HashMap;

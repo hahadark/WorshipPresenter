@@ -45,7 +45,7 @@ pub fn shortcuts(app: &mut App, ctx: &egui::Context) {
 
 /// 클립보드 글을 읽어 '종류 골라 붙여 넣기' 창을 연다
 pub fn open_paste() {
-    let t = wp_core::clippaste::run_ps("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw", &[]).unwrap_or_default();
+    let t = wp_core::clippaste::clipboard_text().unwrap_or_default();
     let mut s = ST.lock();
     s.paste_text = t.trim_end().to_string();
     if s.paste_as.is_empty() {
@@ -98,7 +98,7 @@ fn paste_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
         });
         ui.horizontal(|ui| {
             if ui.button(wp_core::i18n::tr("다시 읽기")).on_hover_text(wp_core::i18n::tr("클립보드 글을 다시 가져옵니다")).clicked() {
-                st.paste_text = wp_core::clippaste::run_ps("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw", &[]).unwrap_or_default().trim_end().to_string();
+                st.paste_text = wp_core::clippaste::clipboard_text().unwrap_or_default().trim_end().to_string();
             }
             if ui.button(RichText::new(wp_core::i18n::tr("글로 넣기")).strong()).clicked() {
                 let as_ = if st.paste_as == "auto" { "" } else { st.paste_as.as_str() };

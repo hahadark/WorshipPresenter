@@ -16,6 +16,8 @@ pub struct TrackB {
     pub message: Option<Message>,
     pub saved_overlays: Vec<String>,
     pub video: Option<Video>,
+    /// 출력 화면이 확인한 파일별 길이(초). 사용자 자료에는 저장하지 않는다.
+    pub video_lengths: std::collections::HashMap<String, f64>,
     pub undo: Undo,
     pub fired: Vec<String>,
     /// 영상 키를 만든 LIVE version (같은 슬라이드면 이어서)
@@ -177,6 +179,18 @@ impl Core {
             }
             payload
         }).unwrap_or(Value::Null)
+    }
+    /// 현재 영상 키와 일치하는 유한한 양수 길이만 기억한다. 늦게 도착한 이전 영상 알림은 무시한다.
+    pub fn video_meta(&mut self, key: &str, duration: Option<f64>) {
+        let Some(duration) = duration.filter(|d| d.is_finite() && *d > 0.0) else { return };
+        if !self.b.video.as_ref().is_some_and(|v| v.key == key) { return; }
+        let Some(url) = self.pres.live.as_ref().and_then(|l| l.deck.slides.get(l.deck.index))
+            .filter(|s| s["kind"] == "video").and_then(|s| s["image"].as_str()).filter(|s| !s.is_empty()) else { return };
+        self.b.video_lengths.insert(url.to_owned(), duration);
+        self.emit(Ev::Ui);
+    }
+    pub fn video_duration(&self, url: &str) -> Option<f64> {
+        self.b.video_lengths.get(url).copied()
     }
     pub fn video_control(&mut self, act: &str, arg: f64) -> Result<()> {
         let Some(v) = self.b.video.as_mut() else { bail!("송출 중인 영상이 없습니다.") };

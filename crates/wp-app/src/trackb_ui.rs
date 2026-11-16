@@ -945,7 +945,8 @@ impl App {
             if ui.checkbox(&mut lp, wp_core::i18n::tr("반복")).changed() { act = Some(("loop", if lp { 1.0 } else { 0.0 })); }
         });
         let url = self.core.lock().pres.live.as_ref().and_then(|l| l.deck.slides.get(l.deck.index)).and_then(|s| s["image"].as_str()).unwrap_or("").to_owned();
-        if let Some(dur) = crate::media_ui::video_duration(ui.ctx(), &url) {
+        let reported = self.core.lock().video_duration(&url);
+        if let Some(dur) = crate::media_ui::video_duration(ui.ctx(), &url, reported) {
             let mut pos = if v.looped == Some(true) { v.position() % dur } else { v.position().min(dur) };
             if ui.add(egui::Slider::new(&mut pos, 0.0..=dur).text(wp_core::i18n::tr("재생 위치"))).changed() { act = Some(("seek", pos)); }
             ui.label(wp_core::i18n::tr_args("전체 {1}초 · 남은 {2}초", &[&format!("{dur:.0}"), &format!("{:.0}", (dur-pos).max(0.0))]));

@@ -231,6 +231,7 @@ pub fn run_ps(script: &str, env: &[(&str, &str)]) -> Result<String, String> {
 }
 
 /// 클립보드에 무엇이 있나: (슬라이드, 그림, 글)
+#[cfg(not(target_os = "macos"))]
 pub fn clipboard_info() -> (bool, bool, bool) {
     // 다른 프로그램(PowerPoint)이 클립보드를 쥐고 있으면 잠깐 실패한다 → 몇 번 다시
     let mut o = String::new();
@@ -241,6 +242,33 @@ pub fn clipboard_info() -> (bool, bool, bool) {
         }
     }
     (o.contains("SLIDES"), o.contains("IMAGE"), o.contains("TEXT"))
+}
+
+/// 맥은 슬라이드 묶음을 지원하지 않으며 PNG 변환 가능 여부와 글을 따로 확인한다.
+#[cfg(target_os = "macos")]
+pub fn clipboard_info() -> (bool, bool, bool) {
+    let script = r#"try
+set imageData to the clipboard as «class PNGf»
+return "IMAGE"
+on error
+return ""
+end try"#;
+    let image = std::process::Command::new("osascript").args(["-e", script])
+        .output().ok().is_some_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("IMAGE"));
+    (false, image, !clipboard_text().unwrap_or_default().is_empty())
+}
+
+/// 메뉴에서 클립보드 글을 다시 읽는다. Windows의 기존 PowerShell 호출은 그대로 둔다.
+pub fn clipboard_text() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let o = std::process::Command::new("pbpaste").output()
+            .map_err(|e| format!("{}: {e}", crate::i18n::tr("클립보드 글 읽기 실패")))?;
+        if !o.status.success() { return Err(crate::i18n::tr("클립보드 글 읽기 실패")); }
+        Ok(String::from_utf8_lossy(&o.stdout).into_owned())
+    }
+    #[cfg(not(target_os = "macos"))]
+    { run_ps("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw", &[]) }
 }
 
 pub fn pasted_dir(data_dir: &Path) -> PathBuf {
@@ -302,6 +330,34 @@ pub fn grab_image(data_dir: &Path) -> Result<String, String> {
     let dir = data_dir.join("media");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let file = next_file(&dir, &format!("clip-{}", stamp()), "png");
+    #[cfg(target_os = "macos")]
+    let out = {
+        // 경로는 인자로 넘겨 따옴표·역슬래시·공백이 AppleScript 코드가 되지 않게 한다.
+        let script = r#"on run argv
+set imageData to the clipboard as «class PNGf»
+set f to open for access POSIX file (item 1 of argv) with write permission
+try
+set eof f to 0
+write imageData to f
+close access f
+on error messageText number messageNumber
+try
+close access f
+end try
+error messageText number messageNumber
+end try
+return "OK"
+end run"#;
+        let output = std::process::Command::new("osascript").args(["-e", script]).arg(&file).output();
+        match output {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+            _ => {
+                let _ = std::fs::remove_file(&file);
+                return Err(crate::i18n::tr("클립보드에 그림이 없습니다."));
+            }
+        }
+    };
+    #[cfg(not(target_os = "macos"))]
     let out = run_ps(PS_CLIP_IMAGE, &[("WC_CLIP_OUT", &file.to_string_lossy())])?;
     if !out.contains("OK") || !file.exists() {
         return Err(crate::i18n::tr("클립보드에 그림이 없습니다.").into());

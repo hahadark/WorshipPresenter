@@ -138,7 +138,18 @@
     } else if (current) current.style.opacity = '';
     if (!v.dataset.bound) {
       v.dataset.bound = '1';
-      v.addEventListener('loadedmetadata', () => { if (lastPayload) R.syncVideo(v, lastPayload.video, { sound: soundHere && o.sound, volume: o.volume ?? 1, loop: !!o.loop }); });
+      const reportMeta = () => {
+        if (!current || current.querySelector('video.bc-play') !== v) return;
+        const key = lastPayload && lastPayload.video && lastPayload.video.key;
+        if (!key || !Number.isFinite(v.duration) || v.duration <= 0) return;
+        fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WorshipCue': '1' }, body: JSON.stringify({ cmd: 'videoMeta', args: { key, duration: v.duration } }) }).catch(() => {});
+      };
+      v.addEventListener('loadedmetadata', () => {
+        if (lastPayload) R.syncVideo(v, lastPayload.video, { sound: soundHere && o.sound, volume: o.volume ?? 1, loop: !!o.loop });
+        reportMeta();
+      });
+      // 메타데이터가 이벤트 연결 전에 캐시에서 읽힌 경우도 알린다.
+      if (v.readyState >= 1) reportMeta();
       v.addEventListener('ended', () => {
         const key = lastPayload && lastPayload.video && lastPayload.video.key;
         if (!key || key === endedKey) return;
