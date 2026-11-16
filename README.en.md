@@ -1,164 +1,94 @@
-# Worship Presenter
+# Worship Presenter (WorshipPresenter)
 
-> Formerly WorshipCue. Your cue sheets, settings and data carry over.
+> Formerly WorshipCue. Cue sheets, settings and data from 1.x carry over.
 
 [한국어](README.md) | **English**
 
-A **worship presentation program for churches** (Windows).
+A **worship cue-sheet presentation app** for churches, for Windows 10 and 11.
 
-Build your order of service ahead of time, and during the service you just press **F6**: Bible passages, song lyrics, hymn scores, announcements and videos go out in order to the sanctuary screen (second monitor) and to OBS for streaming.
+Build the order of service ahead of time. During the service you just press **F9 to go live and F6 for the next slide**: Bible passages, song lyrics, hymn PowerPoints, announcements, images and videos go out in order to the sanctuary screen (second monitor) and to OBS.
+Based on the Bible presentation app [BibleCast](https://github.com/hahadark/BibleCast).
 
-**⬇ Download**: [Latest release](https://github.com/hahadark/WorshipPresenter/releases/latest) — Windows `WorshipPresenter-…-English-Portable.exe` (no install) · Mac `WorshipPresenter-…-English-mac-arm64.dmg` (Apple Silicon) ([macOS notes](#macos)) — includes the **World English Bible (WEB, public domain)** and starts in English.
-The Korean build (`WorshipPresenter-…-Portable.exe`) includes the Korean Revised Version. Both builds contain the same program; switch the language any time in `View → 🌐 Language`.
+- **Download**: [latest 2.x](https://github.com/hahadark/WorshipPresenter/releases/latest) — `WorshipPresenter-X.Y.Z-Setup.exe` (installer, recommended) or `WorshipPresenter-X.Y.Z-Portable.zip` (unzip and run).
+- **macOS and the English edition**: there is no 2.x build yet. Keep using [1.14.1](https://github.com/hahadark/WorshipPresenter/releases/tag/v1.14.1) (`…-mac-arm64.dmg`, `…-English-Setup.exe`, `…-English-Portable.exe`). The 1.x guide is in [docs/v1](docs/v1/README.en.md).
+- 2.x can show its interface in English (**View → Language · 언어 → English**), but it ships only with the Korean Revised Version (개역한글). Import an English translation via **File → Import Bible translation…** (JSON, CSV/TSV, Zefania XML, Bethlehem .bdb).
 
-![Worship Presenter control screen](docs/images/main-en.png)
+![Worship Presenter control screen (English UI)](docs/images/v2/readme-main-en.png)
 
-<sub>Left: cue sheet (order of service) · center: the selected item's editor and slides · right: Preview (green) and LIVE (red). All names and lyrics are examples.</sub>
+<sub>Left: cue sheet · middle: editor for the selected item · top right: Preview (green) · bottom right: LIVE (red) · bottom: go-live bar. The cue sheet shown is an example.</sub>
 
-## Contents
+## What's new in 2.x
 
-- [Get started in 5 minutes](#get-started-in-5-minutes)
-- [Features](#features)
-- [Menus](#menus)
-- [Running a service](#running-a-service)
-- [Slide editor](#slide-editor)
-- [Stage display and phone remote](#stage-display-and-phone-remote)
-- [OBS dock](#obs-dock-control-panel-inside-obs) · [macOS](#macos)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-- [Bible data and copyright](#bible-data-and-copyright)
-- [Development](#development)
+- The control screen was rebuilt in Rust (no Electron), so it starts quickly and uses less memory. The sanctuary screen and OBS pages are the same web output as 1.x.
+- On first launch it copies your 1.x data (Bibles, cue sheets, settings) to `%APPDATA%\WorshipPresenter-rs\data`. The 1.x folder is left untouched. **Help → Re-import 1.x data…** copies it again.
+- OBS browser-source URLs are unchanged.
+- 2.0.2 adds a **Settings center** (9 categories, search, current/default values, reset per item or category, save status, shortcut conflict check), **Output themes** manager (save current design as your own theme, duplicate, rename, delete, import/export, apply to selected outputs and undo), **template duplicate** in the Quick settings bar, and the sanctuary screen now appears **all at once** when turned on instead of flashing white first.
 
-## Get started in 5 minutes
+![Output themes (English UI)](docs/images/v2/readme-themes-en.png)
 
-1. **Download and run** `WorshipPresenter-…-English-Setup.exe` (installer — **notifies you of new versions**; download the new English-Setup from the release page) or `…-English-Portable.exe` (no install, USB — notifies you of new versions) from [Releases](https://github.com/hahadark/WorshipPresenter/releases/latest). Updates keep your cue sheets, Bible data and settings; see `Settings → About`.
-   - 📊 **Anonymous usage count**: once a day the app sends only a **random install ID, version, UI language and OS** so we can count how many installs are in use (no names, church, Bible or cue sheet content). Turn it off in `Settings → About → Send anonymous usage statistics`. If Windows SmartScreen warns you, click "More info → Run anyway".
-2. **Sanctuary screen**: connect a second monitor and click `Second screen` at the bottom (Ctrl+Shift+F). Choose the monitor in `File → ⚙ Settings → Output`.
-3. **OBS** (when streaming): add a Browser source with `http://127.0.0.1:37528/outputs/main` (full screen) or `/outputs/overlay` (transparent lower third), 1920×1080.
-4. **Make a cue sheet**: add items with the buttons at the bottom left (Hymn·PPT · Bible · Song · Announcement · Title · ＋ More).
-5. **During the service**: `F6` next · `F5` previous · `F9` go live · `F10` hide text.
+## Install and update
 
-## Features
+1. Download and run `WorshipPresenter-X.Y.Z-Setup.exe` from [Releases](https://github.com/hahadark/WorshipPresenter/releases/latest).
+2. A 1.x installation is replaced in place when you close 1.x; shortcuts are kept.
+3. To update 2.x: **Help → Check for a new version → [Download and verify] → [Request installation now (close application)]**. The app closes and the new version is installed. It never restarts on its own during a service.
 
-| | |
-|---|---|
-| Cue sheet | Bible · songs · hymns/song PPTs · announcements · titles · images · videos · audio · slideshow (pre-service loop) · camera · blank screen, in one list. F6 at the end of an item moves on to the next item. Clicking an item only previews it. |
-| Running | **Pick the preview slide with ← → and press Enter to go live** (at the end of an item → moves to the next item). 🗂 **All · grid / All · list** (ProPresenter style): every slide of every item on one screen, clicking an item in the cue sheet jumps to its row. Thumbnails: ＋ add · ✕ delete · ✎ edit. LIVE slide numbers go live with one click. |
-| Bible | Search by reference (`John 3:16`, `Jn 3:16-18`, `Ps 23`, `Rom 8:1,28`) or by words. Automatic slide splitting so text never overflows. Parallel translation (two translations at once). |
-| Songs | Song library, `[Verse 1]` `[Chorus]` labels with group colors, arrangement (`1 C 2 C C`), number/C/B/E keys to jump to a verse/chorus/bridge/ending while live, chords for the worship team, song credits. Import from OpenLP · ChordPro · ProPresenter 6 · PPT · txt. |
-| ✏ Slide editor | FreeShow-style: drag text boxes, add text/images/shapes/camera boxes, per-slide or common styling, insert/duplicate/delete/move slides, ← → to change slides. Works on every item type. |
-| ✍ Text formatting | **Ctrl+B bold**, font size and text color right in the lyrics/announcement box. |
-| Output | Sanctuary full screen + OBS full + OBS transparent lower third, each with its own template. Dissolve/cut transitions, logo, overlays (clock · countdown · banner), live background (camera · image · video), drawing/highlighting on the live screen. Turning off the second screen also hides OBS. |
-| 🌐 LAN output | When presentation and streaming run on different PCs, the streaming PC's OBS opens only the output screens (key required). |
-| 🎛 OBS dock | A control panel inside OBS: current/next slide, prev · next · hide, send cue items (fixed button positions), 🖼 image/score slides top-right, 🖥 full slide. |
-| 🎬 Media panel | Play videos/audio from the library straight to the screen without adding them to the cue sheet, with one playback bar: play/pause · restart · stop · position · time remaining · volume · loop · fade-out. |
-| ✏ Edit PPT elements | Extract each text box, picture and shape of a .pptx, then move them and change size, text, color and font in the slide editor — reads the file directly, no PowerPoint needed (Mac too); the background (tables, charts, SmartArt, decorations) stays as in the PPT. On PCs without PowerPoint, .pptx files show as real slides too — the IeumOffice PPTX engine (Apache-2.0) lays text out with the installed fonts' metrics so line breaks match PowerPoint, and draws charts, styled tables and auto-numbering. |
-| ✂ Split here (section) | Like PowerPoint sections: right-click a slide in the list or grid → the item is split and this slide onward becomes a new item right after it (hymn/PPT, song, announcement, title; styling comes along). |
-| ↕ Reorder slides | Drag slides in the list, grid or full grid and drop them before or after another slide (Shift/Ctrl+click to move several, Ctrl+Z to undo). Works for songs, announcements, titles, PPTs, images and slideshows; Bible text keeps its order. |
-| ✂ Split a PPT | A PPT that holds a whole service or event becomes several cue items (hymn · prayer · reading · sermon · announcements · benediction) — **with AI** (OpenRouter key; slide text plus contact-sheet images when the text is part of the picture), with a chat AI (no key: copy prompt → paste answer) or by rules (no AI). Review names and boundaries before splitting; PPTs over 20 slides ask when added. |
-| 📷 Camera | Resolution (720p–4K), frame rate, brightness/contrast/saturation, mirror, live quality readout. |
-| Stage display | Current/next slide, clock, sermon timer, messages, item notes for the preacher and worship team. |
-| Phone remote | Next · previous · hide, jump to verses, send cue items, stage messages — from any phone on the same Wi-Fi (PIN). |
-| More | ⬆ **Update notifications** (new versions are announced in the app) · 🌐 Korean / English UI · 🍎 Mac (Apple Silicon) · Stream Deck / Companion buttons (HTTP), workspaces (saved panel layouts), 5 control-screen themes, drag-and-drop files (including PPT), 📋 **paste from the clipboard (Ctrl+V)** — copied text (a reference → Bible, lyrics → Song, anything else → Announcement), a screenshot or picture, slides copied in PowerPoint (Windows) or files copied in Explorer become new cue items; Ctrl+Shift+V lets you choose the item type, Ctrl+wheel resizes slide thumbnails, cue sheet manager (pin · templates · duplicate for next week · trash). |
+The app sends an anonymous daily ping (random install ID, version, UI language, OS) to count installations. Turn it off in **Settings → About · Updates**.
 
-## Menus
+## Quick start
 
-| Menu | Contents |
-|---|---|
-| File | Manage cue sheets · cue sheet from bulletin (AI) · **Import ▸** (songs · Bible translations) · live history · **⚙ Settings (Ctrl+,)** |
-| Cue sheet | **＋ Add item ▸** · **Paste from clipboard Ctrl+V** (text · picture · slides → new item) · Paste as… Ctrl+Shift+V · selected item (edit F2 · slide editor Ctrl+E · move · duplicate · delete) · show editor · ⏰ service clock |
-| Go live | Go live F9 · next/previous slide · next/previous item · **Clear screen ▸** · **Live background ▸** · draw · preview off · second screen |
-| View | **Panels ▸** · slides as grid · **Workspaces ▸** · stage display window · control theme · **🌐 Language** |
-| Tools | **Library ▸** · stage/sermon timer · Stream Deck · **📱 Phone remote ▸** |
-| Help | User guide · OBS guide · shortcuts · about |
+1. Connect the projector/TV and press **[Main screen: off · turn on]** in the bottom bar (Ctrl+Shift+F). Choose the monitor in **View → Output settings**.
+2. Add items with the buttons at the bottom left (Hymn·PPT, Bible, Song, Lyrics, Announcement, Title).
+3. During the service: click an item to preview it, press **F9** to go live, then **F6** for each next slide. **F5** goes back, **F10** hides the text.
+4. Unplanned verse: type `John 3:16` in the search box (Ctrl+K) and press **Ctrl+Enter**.
+5. One-off line (announcement fix, parking notice): **Ctrl+T** quick text.
 
-Right-click anywhere for the actions that make sense there.
-
-## Running a service
-
-- Click an item in the cue sheet to put it in **Preview** (it does **not** go to the screen). Send it live with `Go live` (F9) or `Next` (F6).
-- ← → move through preview slides; the slide grid (`Grid`) shows thumbnails — hover a thumbnail for **＋** (new slide after it) and **✕** (delete / skip).
-- `Clear ▾` at the bottom: clear background · overlays off · logo screen · stop audio. `Clear all` clears everything.
-- Click the second-screen window itself and press **Esc** to turn it off.
-
-## Slide editor
-
-![Slide editor](docs/images/slide-editor-en.png)
-
-Open it with `✎ Slide editor` in the item editor, the ✎ on a thumbnail, or **Ctrl+E**.
-
-- Drag text boxes, resize from the corners, double-click to edit text (changes go straight into the lyrics/announcement).
-- `＋ Text box` `＋ Image` `＋ Shape` `＋ Camera`; **Common** applies to all slides, a single slide's styling wins.
-- Songs/announcements/titles: `＋ Slide` (Ctrl+Shift+N), ▲ ▼ ⧉ ✕ to move, duplicate, delete.
-- Bible/hymn/image items: the original text stays; add title-card slides in between, or ⊘ skip slides you don't need.
-- ← → ↑ ↓ change slides (they nudge the selected box instead when a box is selected; Esc deselects).
-
-## Stage display and phone remote
-
-![Stage display](docs/images/stage-en.png)
-
-- `View → 🖥 Open stage display` and drag the window to the preacher's monitor, or open `http://127.0.0.1:37528/outputs/stage` in a browser/OBS on this PC.
-- `Tools → 📱 Phone remote` → turn on → scan the QR code and enter the PIN (same Wi-Fi). If Windows Firewall asks, allow "Private networks".
-
-## OBS dock (control panel inside OBS)
-
-1. Copy the **OBS dock** URL `http://127.0.0.1:37528/dock` from `Settings → Output`.
-2. In OBS: `Docks → Custom Browser Docks` → name `Worship Presenter`, paste the URL → Apply.
-3. You get the current/next slide, ◀ Prev · Next ▶ · hide text, verse/chorus jumps, the cue sheet (tap to go live) and stage messages right inside OBS.
-
-It only works on this PC, so no PIN is needed. Turning off the second screen also hides the slide in OBS browser sources (can be turned off in `Settings → Output`).
-
-## macOS
-
-- Download `WorshipPresenter-…-English-mac-arm64.dmg` (Apple Silicon M1/M2/M3… only — Intel Macs are not supported) from [Releases](https://github.com/hahadark/WorshipPresenter/releases/latest), open it and drag Worship Presenter to `Applications`.
-- **First launch**: the app isn't signed with an Apple Developer certificate, so macOS warns about an unidentified developer. Right-click (Control-click) Worship Presenter in `Applications` → **Open** → **Open**. (macOS 15+: try opening once, then `System Settings → Privacy & Security` → **Open Anyway**.) If it says the app "is damaged", run `xattr -cr /Applications/WorshipPresenter.app` once in Terminal.
-- **Shortcuts**: Ctrl on Windows is **⌘ (Command)** on Mac (⌘K search · ⌘E slide editor · ⌘B bold · ⌘⇧F second screen), and the app shows ⌘. On MacBooks press **fn** with F5/F6/F9/F10, or turn on "Use F1, F2, etc. keys as standard function keys" in `System Settings → Keyboard → Keyboard Shortcuts → Function Keys`. All shortcuts can be changed in `Settings → Shortcuts`.
-- **Camera**: macOS asks for camera permission the first time. If you denied it, enable Worship Presenter in `System Settings → Privacy & Security → Camera`.
-- Not available on Mac: reading hymn PPTs "as shown" (needs PowerPoint on Windows; Mac uses the Auto mode).
-
-## Keyboard shortcuts
+## Default shortcuts
 
 | Key | Action |
 |---|---|
-| F6 / F5 | Next / previous slide (at the end of an item: next item) |
-| **Enter** · F9 · double-click a slide | Go live (pick the preview slide with ← → then Enter) |
-| F10 | Hide / show text |
-| ← / → · PageUp / PageDown | Previous / next preview slide |
-| Ctrl+↓ / Ctrl+↑ | Preview next / previous cue item |
-| 1–9 · C · B · E (song live) | Jump to verse · chorus · bridge · ending |
-| Ctrl+K | Search (Bible · songs · hymns · media) |
-| F2 · Ctrl+E | Edit item · slide editor |
-| Ctrl+V · Ctrl+Shift+V | Paste from the clipboard as a new item · choose the item type (outside text fields) |
-| Ctrl+wheel | Thumbnail size in the slide grid |
-| Ctrl+B (in a lyrics/announcement box) | Bold |
-| Ctrl+Shift+F | Second screen on/off |
+| F5 / F6 | Previous / next slide (LIVE) |
+| F9 | Send preview live |
+| Ctrl+Enter | Send the searched passage live immediately |
+| F10 | Hide / restore output text |
+| Ctrl+K | Focus search |
+| Ctrl+B | Bible book list |
+| PageUp / PageDown | Previous / next preview slide |
+| Alt+← / Alt+→ | Previous / next verse in preview |
+| Ctrl+Home | Preview: start of current chapter |
+| Ctrl+↑ / Ctrl+↓ | Preview previous / next cue item |
+| F2 | Edit selected item |
+| Ctrl+Shift+E | Show / hide editor |
+| Ctrl+Shift+F | Turn sanctuary screen on / off |
+| Esc | Turn sanctuary screen off |
+| Ctrl+T / Ctrl+M | Quick text / congregation message |
+| Ctrl+L | Find lyrics on the web |
+| Ctrl+H / Ctrl+P | Go-live history / print cue sheet |
 
-All shortcuts can be changed in `Settings → Shortcuts`.
+All of these can be changed in **Settings → Shortcuts**. Fixed keys: Space, ← →, Enter, Alt+1–9 (macros), Ctrl+Z / Ctrl+Y, Ctrl+E, Ctrl+,.
+
+## OBS
+
+Add a **Browser source** (1920×1080) with:
+
+| URL | Output |
+|---|---|
+| `http://127.0.0.1:37528/outputs/main` | Same as the sanctuary screen |
+| `http://127.0.0.1:37528/outputs/overlay` | Transparent lower-third captions |
+| `http://127.0.0.1:37528/outputs/stage` | Stage / preacher screen |
+
+If port 37528 is busy the app uses the next free port; copy the exact URL from **Settings → OBS · Broadcast captions**. For a separate streaming PC, turn on **Tools → LAN output (OBS on another PC)** and use the address it shows (`http://192.168.x.x:37550/outputs/overlay?key=…`).
+
+## Not yet
+
+- No macOS or English-edition 2.x build (use 1.14.1).
+- Testing with real OBS setups, cameras, Companion/audio gear and multi-monitor rigs is still limited. Do a rehearsal before an important service.
+- The control-screen preview shows video/camera backgrounds by name only (they play on the sanctuary screen and in OBS).
 
 ## Bible data and copyright
 
-- The English build includes the **World English Bible (WEB)**, which is in the **public domain** ("World English Bible" is a trademark of eBible.org). Source: [eBible.org](https://ebible.org/web/).
-- The Korean build includes the Korean Revised Version (out of copyright).
-- You can import other translations you have permission to use (`File → ⚙ Settings → Bible data`: JSON · CSV · Zefania XML). Copyrighted translations (NIV, ESV, …) require permission from the rights holder.
+Only the Korean Revised Version (개역한글, public domain) is included. Other Bible texts, commentaries, hymnals, scores, lyrics and song PowerPoints are not included; use them within the permission of their rights holders. The Salvation Army Red Shield and Crest logos are trademarks of The Salvation Army, included for worship presentation by Salvation Army corps and centres.
 
 ## License
 
-Worship Presenter's source code is licensed under the **GNU GPL v3 or later** (GPL-3.0-or-later) — see [LICENSE](LICENSE).
-Anyone may use, modify and redistribute it; modified versions you distribute must also be released as source under the same license.
-Bundled third-party code, fonts, logos and Bible data keep their own terms — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## Development
-
-```bash
-npm install
-npm start            # run
-npm test             # core tests
-npm run dist         # Korean portable (data/bible.db)
-npm run dist:en      # English portable (data-en/bible.db, starts in English)
-npm run i18n         # list untranslated UI strings and rebuild the English dictionary
-```
-
-The UI is written in Korean; `src/web/shared/i18n.js` translates it at runtime from the dictionary `i18n/en.json` (generated into `src/web/shared/i18n-en.js` by `tools/i18n-build.js`). To translate new UI text, run `node tools/i18n-extract.js`, add the strings from `tools/i18n-missing.json` to `i18n/en.json`, then `node tools/i18n-build.js`.
-
----
-
-🤖 Built with [Claude Code](https://claude.com/claude-code)
+GPL-3.0-or-later — [LICENSE](LICENSE). Third-party code, fonts, logos and Bible data follow their own terms — [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The 2.x (Rust) source is on the [`rust` branch](https://github.com/hahadark/WorshipPresenter/tree/rust); this `main` branch keeps the 1.x (Electron) source.
