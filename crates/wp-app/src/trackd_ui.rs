@@ -30,6 +30,15 @@ struct St {
     /// OBS 창에서 누른 동작(장면·방송·녹화)이 실패한 글. 상태 자체는 `wp_core::obs::cached()` 가 한 출처
     obs_err: String,
     obs_busy: bool,
+    /// AI 큐시트 창: 갈래(quick|api|chat) · 이름 · 주보 글(API) · 직접 입력 모델 · 확인 카드 · 초안 저장 시각
+    ai_loaded: bool,
+    mode: String,
+    qname: String,
+    api_text: String,
+    custom_model: String,
+    card: Option<Value>,
+    draft_saved: (String, String),
+    draft_t: Option<std::time::Instant>,
 }
 
 static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
@@ -148,7 +157,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
     for w in open {
         let mut keep = true;
         let title = match w {
-            Win::Bulletin => "주보 → 큐시트",
+            Win::Bulletin => "주보로 큐시트 만들기 (AI)",
             Win::Output => "출력 설정 (예배당 화면 · OBS)",
             Win::Obs => "OBS 원격 조작",
             Win::Update => "새 버전",
@@ -156,7 +165,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
         // 떠 있는 창 기본 자리: 큐시트·메뉴줄을 가리지 않게 (widgets::float_pos)
         let wid = egui::Id::unique(("wp-float", title));
         crate::widgets::close_on_outside(ctx, wid, &mut keep);
-        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
+        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).default_height(if w == Win::Bulletin { (ctx.content_rect().height() - 150.0).clamp(300.0, 760.0) } else { 0.0 }).collapsible(false).vscroll(w == Win::Bulletin).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),
@@ -199,112 +208,343 @@ fn note(ui: &mut egui::Ui, s: &St) {
     }
 }
 
-fn result_msg(r: Result<Value, String>) -> String {
-    match r {
-        Ok(v) => {
-            let w: Vec<String> = v["warnings"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
-            format!("✓ '{}' 큐시트를 만들어 열었습니다 ({}개 순서){}", v["name"].as_str().unwrap_or(""), v["count"], if w.is_empty() { String::new() } else { format!("\n확인할 것: {}", w.join(" · ")) })
+const EXAMPLE_ORDER: &str = "2026-11-15 주일 예배 (11:00)\n예배로 부름 - 홍길동 목사\n찬송 8장 *\n대표기도  김철수 장로\n성경봉독 요 3:16-18\n설교 “선한 목자” 홍길동 목사\n광고\n축도\n예배 후";
+const OPENROUTER_KEYS: &str = "https://openrouter.ai/settings/keys";
+
+/// 열기 전 확인 카드 한 줄 (제목 · 부제 · 장절)
+pub(crate) fn card_line(it: &Value) -> String {
+    let g = |k: &str| it[k].as_str().unwrap_or("").trim();
+    let mut parts = vec![g("title").to_string()];
+    for k in ["subtitle", "ref"] {
+        if !g(k).is_empty() {
+            parts.push(g(k).to_string());
         }
-        Err(e) => format!("✗ {e}"),
     }
+    parts.join(" · ")
 }
 
-fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
-    let mut s = ST.lock();
-    ui.label(RichText::new(wp_core::i18n::tr("① 주보 파일(hwp · hwpx · docx · txt)을 고르거나 예배 순서를 붙여 넣으세요. PDF·사진은 AI 로만 읽습니다.")).small());
+/// AI 호출 결과(저장은 끝났고 아직 열지 않음) → 카드 값. 오류면 Err(✗ 글)
+pub(crate) fn take_card(r: Result<Value, String>) -> Result<Value, String> {
+    r.map_err(|e| format!("✗ {e}"))
+}
+
+fn card_ui(ui: &mut egui::Ui, core: &Shared, s: &mut St) {
+    use crate::widgets::{Btn, Kind};
+    use wp_core::i18n::{tr, tr_args};
+    let Some(card) = s.card.clone() else { return };
+    ui.separator();
+    crate::widgets::card_frame().show(ui, |ui| {
+        ui.label(RichText::new(tr_args("✓ '{1}' 큐시트를 만들었습니다 ({2}개 순서)", &[&card["name"].as_str().unwrap_or(""), &card["count"]])).strong().color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+        let mut meta = vec![];
+        if let Some(m) = card["model"].as_str() {
+            meta.push(tr_args("모델 {1}", &[&m]));
+        }
+        if let Some(c) = card["cost"].as_str() {
+            meta.push(tr_args("비용 {1}", &[&c]));
+        }
+        if let Some(t) = card["secs"].as_u64() {
+            meta.push(tr_args("{1}초 걸림", &[&t]));
+        }
+        if !meta.is_empty() {
+            ui.label(RichText::new(meta.join(" · ")).small());
+        }
+        ui.label(RichText::new(tr("아직 열지 않았습니다. 순서를 확인한 뒤 아래 단추로 여세요.")).small());
+        egui::ScrollArea::vertical().id_salt("ai-card-items").max_height(170.0).auto_shrink([false, true]).show(ui, |ui| {
+            for (i, it) in card["items"].as_array().into_iter().flatten().enumerate() {
+                ui.add(egui::Label::new(format!("{}. {}", i + 1, card_line(it))).wrap());
+            }
+        });
+        let warns: Vec<String> = card["warnings"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+        if !warns.is_empty() {
+            ui.add_space(4.0);
+            let wc = Color32::from_rgb(0xf0, 0xc0, 0x60);
+            ui.label(RichText::new(tr("확인할 것")).strong().color(wc));
+            for w in warns {
+                ui.add(egui::Label::new(RichText::new(format!("• {w}")).color(wc)).wrap());
+            }
+        }
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui.add(Btn::new(tr("이 큐시트 열기")).kind(Kind::Primary).icon("folder-open")).clicked() {
+                let id = card["id"].as_str().unwrap_or("").to_string();
+                if core.lock().open_saved_cue(&id) {
+                    s.card = None;
+                    s.msg = tr("✓ 큐시트를 열었습니다.");
+                } else {
+                    s.msg = format!("✗ {}", tr("큐시트를 찾지 못했습니다."));
+                }
+            }
+            if ui.add(Btn::new(tr("닫기 (저장은 되어 있습니다)"))).clicked() {
+                s.card = None;
+            }
+        });
+    });
+}
+
+fn file_row(ui: &mut egui::Ui, s: &mut St, into_quick: bool) {
+    use crate::widgets::Btn;
+    use wp_core::i18n::{tr, tr_args};
     ui.horizontal(|ui| {
-        if ui.button(wp_core::i18n::tr("주보 파일 고르기…")).clicked() {
+        if ui.add(Btn::new(tr("주보 파일 고르기…")).icon("file-text")).clicked() {
             if let Some(p) = rfd::FileDialog::new().add_filter("주보", &["hwp", "hwpx", "docx", "txt", "md", "pdf", "png", "jpg", "jpeg", "webp"]).pick_file() {
                 match wp_core::core::Core::read_bulletin_file(&p) {
                     Ok(bulletin::Input::Text(t)) => {
-                        s.text = t;
+                        if into_quick {
+                            s.text = t
+                        } else {
+                            s.api_text = t
+                        }
                         s.file = None;
-                        s.msg = wp_core::i18n::tr_args("✓ {1} 에서 글을 꺼냈습니다.", &[&(p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default())]);
+                        s.msg = tr_args("✓ {1} 에서 글을 꺼냈습니다.", &[&(p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default())]);
                     }
                     Ok(bulletin::Input::File { .. }) => {
-                        s.file = Some(p.clone());
-                        s.msg = wp_core::i18n::tr_args("{1} 은(는) 글을 꺼낼 수 없어 AI 로 읽습니다.", &[&(p.display())]);
+                        if into_quick {
+                            s.msg = format!("✗ {}", tr("PDF·사진은 AI 로만 읽을 수 있습니다. 'API 키로 자동' 갈래를 쓰세요."));
+                        } else {
+                            s.file = Some(p.clone());
+                            s.msg = tr_args("{1} 은(는) 글을 꺼낼 수 없어 AI 로 읽습니다.", &[&(p.display())]);
+                        }
                     }
                     Err(e) => s.msg = format!("✗ {e}"),
                 }
             }
         }
-        if let Some(f) = &s.file {
+        if let (false, Some(f)) = (into_quick, &s.file) {
             ui.label(RichText::new(f.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default()).small().color(Color32::LIGHT_BLUE));
         }
     });
-    ui.add(egui::TextEdit::multiline(&mut s.text).desired_rows(10).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("예)\n2026-11-15 주일 예배 (11:00)\n예배로 부름 - 홍길동 목사\n찬송 8장 *\n대표기도  김철수 장로\n성경봉독 요 3:16-18\n설교 “선한 목자” 홍길동 목사\n광고\n축도")));
-    ui.separator();
-    ui.label(RichText::new(wp_core::i18n::tr("② 만드는 방법")).strong());
-    ui.horizontal(|ui| {
-        if ui.button(wp_core::i18n::tr("규칙으로 바로 (AI 없이, 무료)")).clicked() {
-            let t = s.text.clone();
-            s.msg = result_msg(core.lock().quick_make_cue(&t));
+}
+
+fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
+    use crate::widgets::{Btn, Kind};
+    use wp_core::i18n::tr;
+    let mut guard = ST.lock();
+    let s = &mut *guard;
+    // 처음 열 때: 갈래·초안 불러오기
+    if !s.ai_loaded {
+        let c = core.lock();
+        s.mode = c.ai_mode();
+        let (n, t) = c.quick_draft();
+        s.draft_saved = (n.clone(), t.clone());
+        s.qname = n;
+        s.text = t;
+        s.ai_loaded = true;
+    }
+    // AI 호출 결과 받기 (카드로만 보여 주고 큐시트는 열지 않는다)
+    if let Some(r) = wp_core::trackd::ai_job_take() {
+        match take_card(r) {
+            Ok(v) => {
+                s.card = Some(v);
+                s.msg.clear();
+            }
+            Err(e) => s.msg = e,
         }
-        let has_key = core.lock().ai_settings()["hasKey"].as_bool().unwrap_or(false);
-        if ui.add_enabled(has_key, egui::Button::new(wp_core::i18n::tr("AI 로 (오픈라우터, 유료)"))).on_disabled_hover_text(wp_core::i18n::tr("아래에 오픈라우터 키를 넣으세요")).clicked() {
-            let input = match &s.file {
-                Some(f) => wp_core::core::Core::read_bulletin_file(f),
-                None => Ok(bulletin::Input::Text(s.text.clone())),
-            };
-            match input {
-                Ok(i) => wp_core::trackd::ai_make_cue(core, i, s.extra.clone()),
+    }
+    let running = wp_core::trackd::ai_job_running();
+    if running {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+    }
+    {
+        let tabs = [("quick", "순서 붙여 넣기 (AI 없이)", "clipboard-paste"), ("api", "API 키로 자동 (오픈라우터)", "sparkles"), ("chat", "채팅 AI 로 (키 없이)", "copy")];
+        ui.horizontal_wrapped(|ui| {
+            for (id, label, icon) in tabs {
+                let on = s.mode == id;
+                if ui.add(Btn::new(tr(label)).icon(icon).selected(on).kind(if on { Kind::Primary } else { Kind::Default })).clicked() && !on {
+                    s.mode = id.to_string();
+                    core.lock().set_ai_mode(id);
+                }
+            }
+        });
+        ui.add_space(4.0);
+        match s.mode.as_str() {
+            "api" => api_tab(ui, core, s, running),
+            "chat" => chat_tab(ui, core, s),
+            _ => quick_tab(ui, core, s),
+        }
+        card_ui(ui, core, s);
+        note(ui, s);
+    }
+    // 초안 저장 (0.7초에 한 번만 쓴다)
+    if (s.qname.clone(), s.text.clone()) != s.draft_saved {
+        let due = s.draft_t.map(|t| t.elapsed() >= std::time::Duration::from_millis(700)).unwrap_or(true);
+        if due {
+            core.lock().set_quick_draft(&s.qname, &s.text);
+            s.draft_saved = (s.qname.clone(), s.text.clone());
+            s.draft_t = Some(std::time::Instant::now());
+        } else {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(750));
+        }
+    }
+}
+
+fn quick_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St) {
+    use crate::widgets::{Btn, Kind};
+    use wp_core::i18n::tr;
+    ui.label(RichText::new(tr("예배 순서를 한 줄에 하나씩 붙여 넣으면 규칙으로 큐시트를 만듭니다. AI 를 쓰지 않아 무료입니다.")).small());
+    ui.horizontal(|ui| {
+        ui.label(tr("큐시트 이름"));
+        ui.add(egui::TextEdit::singleline(&mut s.qname).desired_width(260.0).hint_text(tr("비우면 본문의 날짜·예배 이름")));
+    });
+    file_row(ui, s, true);
+    ui.add(egui::TextEdit::multiline(&mut s.text).desired_rows(8).desired_width(f32::INFINITY).hint_text(tr("예)\n2026-11-15 주일 예배 (11:00)\n예배로 부름 - 홍길동 목사\n찬송 8장 *\n대표기도  김철수 장로\n성경봉독 요 3:16-18\n설교 “선한 목자” 홍길동 목사\n광고\n축도")));
+    ui.horizontal(|ui| {
+        if ui.add(Btn::new(tr("예시 넣기")).icon("file-text")).clicked() {
+            s.text = EXAMPLE_ORDER.to_string();
+        }
+        let empty = s.text.trim().is_empty();
+        if ui.add(Btn::new(tr("큐시트 만들기 (AI 없이, 무료)")).kind(Kind::Primary).enabled(!empty).tooltip(if empty { tr("예배 순서를 먼저 붙여 넣으세요") } else { String::new() })).clicked() {
+            let (t, n) = (s.text.clone(), s.qname.clone());
+            let r = core.lock().quick_make_cue_ex(&t, &n, false);
+            match r {
+                Ok(v) => {
+                    s.card = Some(v);
+                    s.msg.clear();
+                }
                 Err(e) => s.msg = format!("✗ {e}"),
             }
         }
     });
-    ui.horizontal(|ui| {
-        ui.label(wp_core::i18n::tr("AI 추가 요청"));
-        ui.text_edit_singleline(&mut s.extra);
-    });
-    ui.collapsing(wp_core::i18n::tr("채팅 AI 로 (키 없이 · 챗GPT·클로드·제미나이)"), |ui| {
-        ui.label(RichText::new(wp_core::i18n::tr("프롬프트를 복사해 채팅 AI 에 주보와 함께 붙여 넣고, 받은 답(JSON)을 아래에 붙여 넣으세요.")).small());
-        ui.horizontal(|ui| {
-            if ui.button(wp_core::i18n::tr("프롬프트 복사")).clicked() {
-                crate::widgets::copy_notice(ui.ctx(), bulletin::chat_prompt(&s.extra), wp_core::i18n::tr("프롬프트를 복사했습니다."));
-                s.msg = wp_core::i18n::tr("✓ 프롬프트를 복사했습니다.").into();
-            }
-            if ui.button(wp_core::i18n::tr("샘플 파일 저장…")).clicked() {
-                if let Some(p) = rfd::FileDialog::new().set_file_name(bulletin::SAMPLE_NAME).save_file() {
-                    let _ = std::fs::write(&p, serde_json::to_string_pretty(&bulletin::sample()).unwrap_or_default());
-                }
-            }
-            for (n, url) in bulletin::CHAT_LINKS {
-                if ui.small_button(n).clicked() {
-                    let _ = wp_core::trackd::open_link(url);
-                }
-            }
-        });
-        ui.add(egui::TextEdit::multiline(&mut s.answer).desired_rows(5).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("채팅 AI 의 답을 여기에 붙여 넣기")));
-        if ui.button(wp_core::i18n::tr("답으로 큐시트 만들기")).clicked() {
-            let a = s.answer.clone();
-            s.msg = result_msg(core.lock().chat_ai_import(&a));
-        }
-    });
-    ui.collapsing(wp_core::i18n::tr("AI 설정 (오픈라우터)"), |ui| {
-        let st = core.lock().ai_settings();
-        ui.label(if st["hasKey"] == true { wp_core::i18n::tr_s("키: 저장됨 (Windows 보호 기능으로 암호화)") } else { wp_core::i18n::tr_s("키: 없음") });
-        ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut s.key).password(true).hint_text("sk-or-…"));
-            if ui.button(wp_core::i18n::tr("키 저장")).clicked() {
+}
+
+fn api_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St, running: bool) {
+    use crate::widgets::{Btn, Kind, Size};
+    use wp_core::i18n::{tr, tr_args};
+    let st = core.lock().ai_settings();
+    let has_key = st["hasKey"].as_bool().unwrap_or(false);
+    if !has_key {
+        ui.label(RichText::new(tr("오픈라우터 API 키가 필요합니다. 키를 발급받아 아래에 넣으세요 (쓴 만큼만 유료).")).small());
+        ui.horizontal_wrapped(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut s.key).password(true).desired_width(280.0).hint_text("sk-or-…"));
+            if ui.add(Btn::new(tr("키 저장")).kind(Kind::Primary).enabled(!s.key.trim().is_empty())).clicked() {
                 let k = s.key.clone();
                 core.lock().set_ai(Some(&k), None, None);
                 s.key.clear();
             }
-            if ui.button(wp_core::i18n::tr("키 지우기")).clicked() {
+            if ui.add(Btn::new(tr("키 발급 페이지 열기")).icon("external-link")).clicked() {
+                let _ = wp_core::trackd::open_link(OPENROUTER_KEYS);
+            }
+        });
+    } else {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(tr("키: 저장됨 (Windows 보호 기능으로 암호화)")).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+            if ui.add(Btn::new(tr("키 지우기")).size(Size::Sm)).clicked() {
                 core.lock().set_ai(Some(""), None, None);
             }
-        });
-        let cur = st["model"].as_str().unwrap_or("").to_string();
-        egui::ComboBox::from_id_salt("ai-model").selected_text(&cur).width(380.0).show_ui(ui, |ui| {
-            for (id, name) in bulletin::RECOMMENDED {
-                if ui.selectable_label(cur == id, name).clicked() {
-                    core.lock().set_ai(None, Some(id), None);
-                }
+            if ui.add(Btn::new(tr("키 발급 페이지 열기")).size(Size::Sm).icon("external-link")).clicked() {
+                let _ = wp_core::trackd::open_link(OPENROUTER_KEYS);
             }
         });
+    }
+    ui.add_space(2.0);
+    ui.label(RichText::new(tr("모델")).strong());
+    let cur = st["model"].as_str().unwrap_or("").to_string();
+    ui.horizontal_wrapped(|ui| {
+        for (id, name) in bulletin::RECOMMENDED {
+            if ui.add(Btn::new(name).selected(cur == id).tooltip(id)).clicked() {
+                core.lock().set_ai(None, Some(id), None);
+                s.custom_model.clear();
+            }
+        }
     });
-    note(ui, &s);
+    ui.horizontal(|ui| {
+        ui.label(tr("직접 입력"));
+        ui.add(egui::TextEdit::singleline(&mut s.custom_model).desired_width(260.0).hint_text(tr("모델 ID 예) vendor/model-name")));
+        let ok = !s.custom_model.trim().is_empty();
+        if ui.add(Btn::new(tr("적용")).enabled(ok)).clicked() {
+            let m = s.custom_model.trim().to_string();
+            core.lock().set_ai(None, Some(&m), None);
+        }
+    });
+    ui.label(RichText::new(tr_args("지금 모델: {1}", &[&cur])).small());
+    ui.separator();
+    ui.label(RichText::new(tr("주보 파일(hwp · hwpx · docx · pdf · 사진)을 고르거나 주보 글을 붙여 넣으세요.")).small());
+    file_row(ui, s, false);
+    ui.add(egui::TextEdit::multiline(&mut s.api_text).desired_rows(5).desired_width(f32::INFINITY).hint_text(tr("주보 글 붙여 넣기")));
+    ui.horizontal(|ui| {
+        ui.label(tr("AI 추가 요청"));
+        ui.add(egui::TextEdit::singleline(&mut s.extra).desired_width(f32::INFINITY));
+    });
+    let has_input = s.file.is_some() || !s.api_text.trim().is_empty();
+    let can = has_key && has_input && !running;
+    let why = if running { tr("만드는 중입니다") } else if !has_key { tr("위에 오픈라우터 키를 넣으세요") } else if !has_input { tr("주보 파일을 고르거나 글을 붙여 넣으세요") } else { String::new() };
+    ui.horizontal(|ui| {
+        let label = if running { tr_args("만드는 중… {1}초", &[&wp_core::trackd::ai_job_secs()]) } else { tr("AI 로 큐시트 만들기 (유료)") };
+        if ui.add(Btn::new(label).kind(Kind::Primary).enabled(can).tooltip(why)).clicked() {
+            let input = match &s.file {
+                Some(f) => wp_core::core::Core::read_bulletin_file(f),
+                None => Ok(bulletin::Input::Text(s.api_text.clone())),
+            };
+            match input {
+                Ok(i) => {
+                    s.card = None;
+                    s.msg.clear();
+                    if !wp_core::trackd::ai_make_cue_job(core, i, s.extra.clone()) {
+                        s.msg = format!("✗ {}", tr("이미 만드는 중입니다."));
+                    }
+                }
+                Err(e) => s.msg = format!("✗ {e}"),
+            }
+        }
+        if running {
+            ui.spinner();
+        }
+    });
+}
+
+fn chat_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St) {
+    use crate::widgets::{Btn, Kind, Size};
+    use wp_core::i18n::tr;
+    ui.label(RichText::new(tr("프롬프트를 복사해 채팅 AI 에 주보와 함께 붙여 넣고, 받은 답(JSON)을 아래에 붙여 넣거나 결과 파일을 불러오세요.")).small());
+    ui.horizontal(|ui| {
+        ui.label(tr("AI 추가 요청"));
+        ui.add(egui::TextEdit::singleline(&mut s.extra).desired_width(f32::INFINITY));
+    });
+    ui.horizontal_wrapped(|ui| {
+        if ui.add(Btn::new(tr("프롬프트 복사")).icon("copy")).clicked() {
+            crate::widgets::copy_notice(ui.ctx(), bulletin::chat_prompt(&s.extra), tr("프롬프트를 복사했습니다."));
+            s.msg = tr("✓ 프롬프트를 복사했습니다.");
+        }
+        if ui.add(Btn::new(tr("샘플 파일 저장…")).icon("download")).clicked() {
+            if let Some(p) = rfd::FileDialog::new().set_file_name(bulletin::SAMPLE_NAME).save_file() {
+                let _ = std::fs::write(&p, serde_json::to_string_pretty(&bulletin::sample()).unwrap_or_default());
+            }
+        }
+        for (n, url) in bulletin::CHAT_LINKS {
+            if ui.add(Btn::new(n).size(Size::Sm).icon("external-link")).clicked() {
+                let _ = wp_core::trackd::open_link(url);
+            }
+        }
+    });
+    ui.add(egui::TextEdit::multiline(&mut s.answer).desired_rows(5).desired_width(f32::INFINITY).hint_text(tr("채팅 AI 의 답을 여기에 붙여 넣기")));
+    ui.horizontal_wrapped(|ui| {
+        let empty = s.answer.trim().is_empty();
+        if ui.add(Btn::new(tr("답으로 큐시트 만들기")).kind(Kind::Primary).enabled(!empty)).clicked() {
+            let a = s.answer.clone();
+            chat_import(core, s, &a);
+        }
+        if ui.add(Btn::new(tr("결과 파일 불러오기…")).icon("folder-open")).clicked() {
+            if let Some(p) = rfd::FileDialog::new().add_filter("결과", &["json", "txt", "md"]).pick_file() {
+                match std::fs::read(&p).map_err(|e| e.to_string()).and_then(|b| wp_core::trackd::read_answer_bytes(&b)) {
+                    Ok(t) => {
+                        s.answer = t.clone();
+                        chat_import(core, s, &t);
+                    }
+                    Err(e) => s.msg = format!("✗ {e}"),
+                }
+            }
+        }
+    });
+}
+
+fn chat_import(core: &Shared, s: &mut St, answer: &str) {
+    let r = core.lock().chat_ai_import_ex(answer, false);
+    match r {
+        Ok(v) => {
+            s.card = Some(v);
+            s.msg.clear();
+        }
+        Err(e) => s.msg = format!("✗ {e}"),
+    }
 }
 
 fn output_ui(ui: &mut egui::Ui, app: &mut App) {
@@ -789,4 +1029,27 @@ fn start_warning(ctx: &egui::Context, data_dir: &std::path::Path) {
             }
         });
     });
+}
+#[cfg(test)]
+mod ai_card_ui_tests {
+    use super::*;
+    #[test]
+    fn card_line_shows_title_subtitle_ref() {
+        assert_eq!(card_line(&json!({ "title": "성경봉독", "subtitle": "", "ref": "요 3:16" })), "성경봉독 · 요 3:16");
+        assert_eq!(card_line(&json!({ "title": "설교", "subtitle": "선한 목자" })), "설교 · 선한 목자");
+        assert_eq!(card_line(&json!({ "title": "광고" })), "광고");
+    }
+    #[test]
+    fn ai_result_error_keeps_marker_and_ok_passes_through() {
+        assert_eq!(take_card(Err("키 오류".into())).unwrap_err(), "✗ 키 오류");
+        assert_eq!(take_card(Ok(json!({ "id": "c1" }))).unwrap()["id"], "c1");
+    }
+    #[test]
+    fn menu_has_ai_entries() {
+        let m = crate::menubar::menus();
+        let file = m.iter().find(|x| x.label == "파일").unwrap();
+        assert!(file.items.iter().any(|i| i.id == "d:bulletin" && i.label.contains("(AI)")));
+        assert!(m.iter().flat_map(|x| &x.items).any(|i| i.id == "d:bulletin" && i.label == "주보 → 큐시트 (AI)"));
+        assert!(handle_menu("d:bulletin"));
+    }
 }

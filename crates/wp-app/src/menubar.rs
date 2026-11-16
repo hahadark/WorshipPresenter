@@ -27,6 +27,7 @@ pub fn menus() -> Vec<Menu> {
         Menu { label: "파일", items: vec![
             it("c:import-bible", "성경 번역본 가져오기…", ""),
             it("c:usage", "사용 기록 (저작권 보고)", ""),
+            it("d:bulletin", "주보로 큐시트 만들기 (AI)…", ""),
             it("b:sync", "여러 PC 동기화 · 백업", ""), // [트랙 B]
             it("-", "-", ""),
             it("c:settings", "설정", "Ctrl+,"),
@@ -72,7 +73,7 @@ pub fn menus() -> Vec<Menu> {
             it("d:devices", "Companion · 장비 (X32 · PTZ)", ""),
             it("d:lan", "내부망 출력 (다른 PC 의 OBS)", ""),
             it("d:obs", "OBS 원격 조작", ""), // [트랙 D]
-            it("d:bulletin", "주보 → 큐시트", ""), // [트랙 D]
+            it("d:bulletin", "주보 → 큐시트 (AI)", ""), // [트랙 D]
             it("a:home", "홈페이지 주보 → 큐시트 · 광고", ""), // [트랙 A]
             it("a:points", "설교 포인트 슬라이드", ""), // [트랙 A]
             it("a:preservice", "예배 전 화면 만들기", ""), // [트랙 A]
