@@ -4237,7 +4237,7 @@
  "모든 단축키가 기본값입니다": "All shortcuts are at their defaults",
  "모든 단축키를 기본값으로…": "Restore all shortcuts to defaults…",
  "메뉴 옆에 적힌 키와 '단축키 보기' 표는 기본 키를 보여 줍니다. Space(다음) · ← → · Enter · Alt+1~9(매크로)는 고정 키라 여기서 바꾸지 않습니다.": "The keys printed beside menu items and in the 'Keyboard shortcuts' sheet show the default keys. Space (next), ← →, Enter and Alt+1–9 (macros) are fixed and cannot be changed here.",
- "송출 · 검색 · 분할": "Sending · Search · Splitting",
+ "송출 · 검색 · 분할": "Send · Search · Split",
  "예배당 출력": "Sanctuary output",
  "OBS · 방송 자막": "OBS · Broadcast captions",
  "성경 · 주석 데이터": "Bible · Commentary data",

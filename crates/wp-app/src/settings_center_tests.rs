@@ -23,9 +23,15 @@ fn open(cat: Cat) -> H {
 fn names() -> Vec<String> {
     widgets::HOVER_SEEN.with(|m| m.borrow().keys().filter(|k| k.starts_with("set-")).cloned().collect())
 }
+/// 설정 창을 맨 앞으로. 도구·출력·업데이트 창의 열림 상태는 프로그램 전체가 함께 써서, 같은 프로세스에서 함께 도는
+/// 다른 시험이 연 창이 이 화면에도 떠서 설정 창을 가릴 수 있다 (그 창을 닫으면 그쪽 시험이 깨지므로 앞으로만 올린다)
+fn front(h: &H) {
+    h.ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, egui::Id::unique(("wp-float", "settings-center"))));
+}
 /// 그 위젯이 설정 창 안에 보일 때까지 마우스 휠로 스크롤하고, 누를 자리를 돌려준다
 fn visible(h: &mut H, name: &str) -> Pos2 {
     for _ in 0..60 {
+        front(h);
         idle(h, 1);
         let r = seen(name).unwrap_or_else(|| panic!("그린 자리 없음: {name} (있는 것: {:?})", names()));
         let win = seen("set-window").expect("설정 창");
@@ -44,12 +50,14 @@ fn visible(h: &mut H, name: &str) -> Pos2 {
         }
         let dy = if c.y >= bottom { -(c.y - bottom + 80.0).min(260.0) } else { (top - c.y + 80.0).min(260.0) };
         let p = Pos2::new(win.center().x + 120.0, win.center().y);
+        front(h);
         full(h, vec![Event::PointerMoved(p), Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, dy), phase: egui::TouchPhase::Move, source: egui::MouseWheelSource::Wheel, modifiers: Default::default() }]);
     }
     panic!("스크롤해도 보이지 않음: {name}");
 }
 fn press(h: &mut H, name: &str) {
     let p = visible(h, name);
+    front(h);
     click_at(h, p);
     idle(h, 1);
 }
@@ -341,6 +349,7 @@ fn 센터의_열기_단추가_실제_창을_연다() {
         }
         let p = visible(&mut h, &format!("set-open-{id}"));
         // 단추를 누르는 프레임에 창이 열린다. 다른 창이 설정 창을 가리지 않게 확인한 뒤 바로 닫는다
+        front(&h);
         click_at(&mut h, p);
         let ok = opened(&mut h);
         assert!(ok, "'{id}' 단추가 그 창을 열지 않았다 (누른 곳 {p:?} · 보이는 것 {:?})", names());

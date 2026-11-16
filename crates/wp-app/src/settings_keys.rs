@@ -181,7 +181,7 @@ impl SettingsUi {
                 let (label, def) = (label_of(id), default_of(id));
                 ui.label(&label);
                 let mut draft = self.keys.drafts.get(id).cloned().unwrap_or_else(|| cur.clone());
-                let r = ui.add(egui::TextEdit::singleline(&mut draft).desired_width(150.0).hint_text(tr("없음 (끔)")));
+                let r = ui.add_sized([150.0, 26.0], egui::TextEdit::singleline(&mut draft).hint_text(tr("없음 (끔)")));
                 mark(&format!("set-key-{id}"), r.rect);
                 if r.changed() {
                     self.keys.drafts.insert(id.clone(), draft.clone());
