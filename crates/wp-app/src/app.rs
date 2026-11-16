@@ -941,7 +941,8 @@ impl App {
                         if custom {
                             opts.push(("custom".into(), tr("직접 고른 템플릿 (아래)")));
                         }
-                        opts.extend(wp_core::themes::list_themes().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())));
+                        // 기본 테마 + 내 테마 (theme_ui: 테마 관리)
+                        opts.extend(wp_core::themes::list_all(core.lock().settings.get()).iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), t["name"].as_str().unwrap_or("").to_string())));
                         if ce_select(ui, "ce-theme", &mut cur, &opts, 220.0) {
                             if cur.is_empty() {
                                 e["tplMain"] = json!("");
@@ -949,9 +950,7 @@ impl App {
                                 return true;
                             }
                             if cur != "custom" {
-                                if let Ok(ids) = wp_core::themes::ensure_theme(&mut core.lock(), &cur) {
-                                    e["tplMain"] = ids["main"].clone();
-                                    e["tplOverlay"] = ids["overlay"].clone();
+                                if crate::theme_ui::apply_item_theme(e, core, &cur) {
                                     return true;
                                 }
                             }
