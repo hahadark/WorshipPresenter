@@ -4433,5 +4433,7 @@
  "클릭하면 미리보기에 놓고 송출 단추로 내보내는 방식으로": "Preview first, then use Send to show it.",
  "디자인 편집": "Edit design",
  "주소를 복사했습니다. OBS → 독 → 사용자 지정 브라우저 독에 붙여 넣으세요.": "URL copied. Paste it in OBS → Docks → Custom Browser Docks.",
- "메뉴와 송출 단추에는 현재 설정한 키가 표시됩니다. Space(다음) · ← → · Enter · Alt+1~9(매크로)는 고정 키라 여기서 바꾸지 않습니다.": "Menus and output buttons show your current shortcut settings. Space (next), arrow keys, Enter, and Alt+1–9 (macros) are fixed shortcuts and cannot be changed here."
+ "메뉴와 송출 단추에는 현재 설정한 키가 표시됩니다. Space(다음) · ← → · Enter · Alt+1~9(매크로)는 고정 키라 여기서 바꾸지 않습니다.": "Menus and output buttons show your current shortcut settings. Space (next), arrow keys, Enter, and Alt+1–9 (macros) are fixed shortcuts and cannot be changed here.",
+ "지금 템플릿을 복사해 이 출력에 겁니다. 원래 템플릿은 그대로 남습니다": "Copy the current template and use it for this output. The original stays unchanged.",
+ "'{1}' 을(를) 만들어 이 출력에 걸었습니다. 자세히 ▸ 로 고치세요.": "Created '{1}' and set it for this output. Use More ▸ to edit it."
 }

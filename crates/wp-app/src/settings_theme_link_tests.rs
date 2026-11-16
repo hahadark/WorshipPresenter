@@ -31,3 +31,28 @@ fn theme_design_edit_opens_the_requested_template_without_changing_outputs() {
     assert_eq!(h.app.tc.templates.selected_id(), template_id);
     assert_eq!(h.app.core.lock().settings.get()["activeTemplates"], active, "편집 창을 연 것만으로 출력 적용은 바뀌면 안 됨");
 }
+
+#[test]
+fn quick_duplicate_makes_a_copy_and_uses_it_for_that_output_only() {
+    let mut h = H::new(vec![json!({"id":"a","type":"title","title":"예배"})]);
+    let (src, before_count, obs_before, src_tpl) = {
+        let c = h.app.core.lock();
+        let s = c.settings.get();
+        let src = s["activeTemplates"]["main"].as_str().unwrap().to_string();
+        let tpl = s["templates"].as_array().unwrap().iter().find(|t| t["id"] == src.as_str()).unwrap().clone();
+        (src, s["templates"].as_array().unwrap().len(), s["activeTemplates"]["obs"].clone(), tpl)
+    };
+    let copy = h.app.quick_duplicate("main", &src).expect("복제 결과");
+    let new_id = copy["id"].as_str().unwrap().to_string();
+    assert_ne!(new_id, src, "새 id 여야 함");
+    let c = h.app.core.lock();
+    let s = c.settings.get();
+    assert_eq!(s["templates"].as_array().unwrap().len(), before_count + 1);
+    assert_eq!(s["activeTemplates"]["main"], new_id.as_str(), "복사본이 이 출력에 걸려야 함");
+    assert_eq!(s["activeTemplates"]["obs"], obs_before, "다른 출력은 그대로");
+    let kept = s["templates"].as_array().unwrap().iter().find(|t| t["id"] == src.as_str()).unwrap();
+    assert_eq!(kept, &src_tpl, "원래 템플릿은 바뀌지 않아야 함");
+    assert_eq!(copy["font"], src_tpl["font"], "모양은 같게 복사");
+    assert!(copy["name"].as_str().unwrap().contains("복사본"));
+    assert!(h.app.tb.note.contains("이 출력에 걸었습니다"), "알림: {}", h.app.tb.note);
+}

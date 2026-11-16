@@ -86,6 +86,27 @@ fn lib_tab_row(ui: &mut egui::Ui, tab: &mut String) {
 }
 
 impl App {
+    /// 빠른 설정 '복제': 이 출력의 템플릿 복사본을 만들어 같은 출력에 건다.
+    /// 모양이 같으므로 송출 화면은 바뀌지 않고, 원래 템플릿(다른 출력·순서가 쓰는 것)은 그대로 남는다.
+    pub(crate) fn quick_duplicate(&mut self, slot: &str, id: &str) -> Option<Value> {
+        let r = templates::duplicate_template(&mut self.core.lock().settings, id, None);
+        let out = match r {
+            Ok(copy) => {
+                let new_id = copy["id"].as_str().unwrap_or("").to_string();
+                self.core.lock().set_template(slot, &new_id);
+                let name = wp_core::i18n::tr_name(copy["name"].as_str().unwrap_or(""));
+                self.tb.note = wp_core::i18n::tr_args("'{1}' 을(를) 만들어 이 출력에 걸었습니다. 자세히 ▸ 로 고치세요.", &[&name]);
+                Some(copy)
+            }
+            Err(e) => {
+                self.tb.note = e;
+                None
+            }
+        };
+        self.panel_rebuild();
+        out
+    }
+
     pub(crate) fn quick_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         let mut slot = selection(ui, "quick-target", "main");
         let (list, mut tpl, settings) = {
@@ -107,6 +128,7 @@ impl App {
         let old_nav = nav.clone();
         let collapsed_id = egui::Id::new("quick-collapsed");
         let mut collapsed = ui.data(|d| d.get_temp::<bool>(collapsed_id)).unwrap_or(false);
+        let mut dup = false;
         // .quick-head: 대상 분할 단추 · 템플릿 · 테마 · 분할 · 이동 · (빈 칸) · 자세히 ▸ · 접기 ▾
         egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 7)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -117,6 +139,9 @@ impl App {
                 crate::widgets::segmented_with(ui, &mut slot, &items, crate::widgets::SegStyle { font: 13.0, pad: egui::vec2(9.0, 4.0), fill: false, radius: 6 });
                 let tpl_opts: Vec<(String, String)> = list.iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect();
                 crate::quick_ui::select(ui, "quick-template", &mut selected, &tpl_opts, 170.0, "이 출력에 쓸 템플릿");
+                if ui.add(crate::widgets::Btn::new(tr("복제")).icon("copy").enabled(!old_id.is_empty()).tooltip(tr("지금 템플릿을 복사해 이 출력에 겁니다. 원래 템플릿은 그대로 남습니다"))).clicked() {
+                    dup = true;
+                }
                 if ui.add(crate::widgets::Btn::new(tr("테마")).tooltip(tr("구세군 테마 고르기"))).clicked() {
                     self.tc.themes.open = true;
                 }
@@ -138,7 +163,12 @@ impl App {
         crate::quick_ui::rule(ui);
         ui.data_mut(|d| d.insert_temp(collapsed_id, collapsed));
         remember(ui, "quick-target", slot.clone());
-        if selected != old_id {
+        if dup {
+            if let Some(copy) = self.quick_duplicate(&slot, &old_id) {
+                selected = copy["id"].as_str().unwrap_or("").to_string();
+                tpl = copy;
+            }
+        } else if selected != old_id {
             self.core.lock().set_template(&slot, &selected);
             if let Some(t) = list.iter().find(|t| t["id"] == selected) {
                 tpl = t.clone();
@@ -300,6 +330,7 @@ impl App {
     fn panel_templates(&mut self, ui: &mut egui::Ui) {
         let list = self.core.lock().settings.templates();
         let mut selected = selection(ui, "library-template", "");
+        let mut dup_sel: Option<String> = None;
         for tpl in list {
             let id = tpl["id"].as_str().unwrap_or("");
             if ui
@@ -327,7 +358,15 @@ impl App {
                     self.panel_rebuild();
                 }
                 if ui.button(tr("복제")).clicked() {
-                    let _ = templates::duplicate_template(&mut self.core.lock().settings, id, None);
+                    let r = templates::duplicate_template(&mut self.core.lock().settings, id, None);
+                    match r {
+                        Ok(copy) => {
+                            self.tb.note = tr("복제했습니다.");
+                            dup_sel = copy["id"].as_str().map(String::from);
+                        }
+                        Err(e) => self.tb.note = e,
+                    }
+                    self.panel_rebuild();
                 }
                 if ui.button(tr("삭제")).clicked() {
                     if let Err(e) = templates::delete_template(&mut self.core.lock().settings, id) {
@@ -335,6 +374,9 @@ impl App {
                     }
                 }
             }
+        }
+        if let Some(id) = dup_sel {
+            selected = id; // 방금 만든 복사본을 골라 둔다
         }
         remember(ui, "library-template", selected);
         if ui.button(tr("새 템플릿")).clicked() {
