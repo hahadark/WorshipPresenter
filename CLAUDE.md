@@ -81,3 +81,7 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 10. 실행 취소, 끌어서 놓기(파일·순서), 한글 입력 자동 전환
 
 조작 화면 미리보기·LIVE·썸네일·편집기 그림(paint.rs paint_slide)은 웹 출력(render.js) 규칙을 그대로 옮겨 그린다 — 자리·크기 맞춤·줄바꿈이 웹과 같다(docs/slide-parity.md, 점검 --parity). 영상·카메라는 재생하지 않는다. 글자 크기 맞춤은 `measure.rs` 근사라 Electron 과 슬라이드 나눔이 조금 다를 수 있다 — 실제 교회 자료로 비교 필요.
+
+## 점검 실행 격리 주의 (2026-11-16)
+
+`--data <빈 임시 폴더>`만으로는 격리되지 않는다. DB가 없으면 실제 Electron 자료와 설정을 복사해 미리 꺼둔 통계·업데이트·리모컨 설정을 덮을 수 있다. 점검 전에 빈 SQLite DB를 만들거나, `WP_LEGACY_DATA`를 bible.db가 없는 별도 빈 폴더로 지정한다. autoUpdate/telemetry/globalShortcuts/remote/lanOutput/output.autoOnSend와 syncDir를 다시 확인한다. 개발판 통계는 기본 차단되어 있지만 이것을 점검 격리 대신 믿지 말 것.
