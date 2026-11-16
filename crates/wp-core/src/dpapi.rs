@@ -1,4 +1,4 @@
-//! 비밀 글(AI 키 · OBS 비밀번호) 보관: Windows DPAPI (이 PC·이 사용자만 풀 수 있음) + base64
+//! 비밀 글(AI 키 · OBS 비밀번호) 보관: Windows DPAPI (이 PC·이 사용자만 풀 수 있음) · 맥 로그인 키체인 + base64
 //! 저장 모양: "dp1:<base64>". Electron 판 safeStorage 로 만든 값("v10"+AES-256-GCM, 열쇠는 Electron 의 Local State 에 DPAPI 로 보관)은
 //! 같은 PC·같은 사용자면 풀어서 dp1 로 바꿔 이어받는다 (adopt_electron_secrets). 못 풀면 그대로 두고 다시 입력받는다.
 
@@ -111,9 +111,70 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// 맥: 비밀 글은 로그인 키체인(서비스 "WorshipPresenter")에 두고, 설정에는 "kc1:<항목 이름>" 만 남긴다.
+/// - 항목 이름 = 비밀 글의 SHA-256 앞 16바이트(같은 글은 같은 항목, -U 로 덮어씀)
+/// - 비밀 글은 명령줄 인자가 아니라 `security -i` 의 표준 입력으로 넘긴다(다른 프로그램이 프로세스 목록에서 못 보게)
+/// - 키체인에 못 넣으면(잠김·거부) 예전처럼 보호 없이 둔다: 키를 잃는 것보다 낫다. 예전 값(접두어 없음)도 그대로 읽는다
+#[cfg(target_os = "macos")]
 mod imp {
-    // 윈도우가 아니면 보호 없이 (맥 키체인은 다음 단계)
+    use sha2::{Digest, Sha256};
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    const SERVICE: &str = "WorshipPresenter";
+    const TAG: &str = "kc1:";
+    fn hex(d: &[u8]) -> String {
+        d.iter().map(|b| format!("{b:02x}")).collect()
+    }
+    fn unhex(s: &str) -> Option<Vec<u8>> {
+        if s.len() % 2 != 0 {
+            return None;
+        }
+        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
+    }
+    fn add(account: &str, value_hex: &str) -> bool {
+        let Ok(mut ch) = Command::new("/usr/bin/security").arg("-i").stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { return false };
+        let ok = ch.stdin.take().is_some_and(|mut s| writeln!(s, "add-generic-password -U -s {SERVICE} -a {account} -w {value_hex}").is_ok());
+        ok && ch.wait().is_ok_and(|st| st.success())
+    }
+    pub fn protect(d: &[u8]) -> Option<Vec<u8>> {
+        let account = hex(&Sha256::digest(d)[..16]);
+        if add(&account, &hex(d)) && find(&account).as_deref() == Some(d) {
+            return Some(format!("{TAG}{account}").into_bytes());
+        }
+        log::warn!("맥 키체인에 비밀 글을 넣지 못해 보호 없이 저장합니다");
+        Some(d.to_vec())
+    }
+    fn find(account: &str) -> Option<Vec<u8>> {
+        let out = Command::new("/usr/bin/security").args(["find-generic-password", "-s", SERVICE, "-a", account, "-w"]).stderr(Stdio::null()).output().ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        unhex(String::from_utf8(out.stdout).ok()?.trim())
+    }
+    pub fn unprotect(d: &[u8]) -> Option<Vec<u8>> {
+        match std::str::from_utf8(d).ok().and_then(|s| s.strip_prefix(TAG)) {
+            Some(account) => find(account),
+            None => Some(d.to_vec()),
+        }
+    }
+    pub fn aes_gcm_decrypt(_key: &[u8], _nonce: &[u8], _ct: &[u8], _tag: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn keychain_round_trip_or_plain_fallback() {
+            let secret = format!("sk-or-시험-{}", std::process::id());
+            let enc = super::protect(secret.as_bytes()).unwrap();
+            assert_eq!(super::unprotect(&enc).unwrap(), secret.as_bytes(), "키체인에 넣었든 못 넣었든 되읽혀야 함");
+            println!("맥 키체인 사용: {}", enc.starts_with(b"kc1:"));
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+mod imp {
+    // 그 밖의 운영체제: 보호 없이
     pub fn protect(d: &[u8]) -> Option<Vec<u8>> { Some(d.to_vec()) }
     pub fn unprotect(d: &[u8]) -> Option<Vec<u8>> { Some(d.to_vec()) }
     pub fn aes_gcm_decrypt(_key: &[u8], _nonce: &[u8], _ct: &[u8], _tag: &[u8]) -> Option<Vec<u8>> { None }
