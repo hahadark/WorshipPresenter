@@ -165,7 +165,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
         // 떠 있는 창 기본 자리: 큐시트·메뉴줄을 가리지 않게 (widgets::float_pos)
         let wid = egui::Id::unique(("wp-float", title));
         crate::widgets::close_on_outside(ctx, wid, &mut keep);
-        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| match w {
+        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).default_height(if w == Win::Bulletin { (ctx.content_rect().height() - 150.0).clamp(300.0, 760.0) } else { 0.0 }).collapsible(false).vscroll(w == Win::Bulletin).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),
@@ -344,9 +344,8 @@ fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
     if running {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
     }
-    let max_h = (ui.ctx().content_rect().height() - 110.0).max(300.0);
-    egui::ScrollArea::vertical().id_salt("ai-bulletin-scroll").max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
-        let tabs = [("quick", "순서 붙여 넣기 (AI 없이)", "clipboard-paste"), ("api", "API 키로 자동 (오픈라우터)", "sparkles"), ("chat", "채팅 AI 로 (키 없이)", "message-square")];
+    {
+        let tabs = [("quick", "순서 붙여 넣기 (AI 없이)", "clipboard-paste"), ("api", "API 키로 자동 (오픈라우터)", "sparkles"), ("chat", "채팅 AI 로 (키 없이)", "copy")];
         ui.horizontal_wrapped(|ui| {
             for (id, label, icon) in tabs {
                 let on = s.mode == id;
@@ -364,7 +363,7 @@ fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
         }
         card_ui(ui, core, s);
         note(ui, s);
-    });
+    }
     // 초안 저장 (0.7초에 한 번만 쓴다)
     if (s.qname.clone(), s.text.clone()) != s.draft_saved {
         let due = s.draft_t.map(|t| t.elapsed() >= std::time::Duration::from_millis(700)).unwrap_or(true);
@@ -387,7 +386,7 @@ fn quick_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St) {
         ui.add(egui::TextEdit::singleline(&mut s.qname).desired_width(260.0).hint_text(tr("비우면 본문의 날짜·예배 이름")));
     });
     file_row(ui, s, true);
-    ui.add(egui::TextEdit::multiline(&mut s.text).desired_rows(10).desired_width(f32::INFINITY).hint_text(tr("예)\n2026-11-15 주일 예배 (11:00)\n예배로 부름 - 홍길동 목사\n찬송 8장 *\n대표기도  김철수 장로\n성경봉독 요 3:16-18\n설교 “선한 목자” 홍길동 목사\n광고\n축도")));
+    ui.add(egui::TextEdit::multiline(&mut s.text).desired_rows(8).desired_width(f32::INFINITY).hint_text(tr("예)\n2026-11-15 주일 예배 (11:00)\n예배로 부름 - 홍길동 목사\n찬송 8장 *\n대표기도  김철수 장로\n성경봉독 요 3:16-18\n설교 “선한 목자” 홍길동 목사\n광고\n축도")));
     ui.horizontal(|ui| {
         if ui.add(Btn::new(tr("예시 넣기")).icon("file-text")).clicked() {
             s.text = EXAMPLE_ORDER.to_string();
@@ -460,7 +459,7 @@ fn api_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St, running: bool) {
     ui.separator();
     ui.label(RichText::new(tr("주보 파일(hwp · hwpx · docx · pdf · 사진)을 고르거나 주보 글을 붙여 넣으세요.")).small());
     file_row(ui, s, false);
-    ui.add(egui::TextEdit::multiline(&mut s.api_text).desired_rows(7).desired_width(f32::INFINITY).hint_text(tr("주보 글 붙여 넣기")));
+    ui.add(egui::TextEdit::multiline(&mut s.api_text).desired_rows(5).desired_width(f32::INFINITY).hint_text(tr("주보 글 붙여 넣기")));
     ui.horizontal(|ui| {
         ui.label(tr("AI 추가 요청"));
         ui.add(egui::TextEdit::singleline(&mut s.extra).desired_width(f32::INFINITY));
@@ -505,7 +504,7 @@ fn chat_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St) {
             crate::widgets::copy_notice(ui.ctx(), bulletin::chat_prompt(&s.extra), tr("프롬프트를 복사했습니다."));
             s.msg = tr("✓ 프롬프트를 복사했습니다.");
         }
-        if ui.add(Btn::new(tr("샘플 파일 저장…")).icon("save")).clicked() {
+        if ui.add(Btn::new(tr("샘플 파일 저장…")).icon("download")).clicked() {
             if let Some(p) = rfd::FileDialog::new().set_file_name(bulletin::SAMPLE_NAME).save_file() {
                 let _ = std::fs::write(&p, serde_json::to_string_pretty(&bulletin::sample()).unwrap_or_default());
             }
@@ -516,7 +515,7 @@ fn chat_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St) {
             }
         }
     });
-    ui.add(egui::TextEdit::multiline(&mut s.answer).desired_rows(7).desired_width(f32::INFINITY).hint_text(tr("채팅 AI 의 답을 여기에 붙여 넣기")));
+    ui.add(egui::TextEdit::multiline(&mut s.answer).desired_rows(5).desired_width(f32::INFINITY).hint_text(tr("채팅 AI 의 답을 여기에 붙여 넣기")));
     ui.horizontal_wrapped(|ui| {
         let empty = s.answer.trim().is_empty();
         if ui.add(Btn::new(tr("답으로 큐시트 만들기")).kind(Kind::Primary).enabled(!empty)).clicked() {
