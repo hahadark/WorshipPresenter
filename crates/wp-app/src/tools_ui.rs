@@ -40,10 +40,13 @@ pub fn open(t: Tool) {
     }
 }
 
-/// 그 도구 창이 열려 있는지 (설정 센터의 '… 열기' 단추 시험용)
+/// 시험용: 그 도구 창이 열려 있었는지 돌려주고 닫는다 (설정 센터의 '… 열기' 단추 시험)
 #[cfg(test)]
-pub fn is_open(t: Tool) -> bool {
-    ST.lock().open.contains(&t)
+pub fn close_for_test(t: Tool) -> bool {
+    let mut s = ST.lock();
+    let was = s.open.contains(&t);
+    s.open.retain(|x| *x != t);
+    was
 }
 
 /// 임시: 기존 상단 줄에 두는 '도구' 단추 (상단 메뉴 줄이 생기면 그쪽으로)

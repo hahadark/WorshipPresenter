@@ -1805,6 +1805,9 @@ mod slideedit_focus_tests;
 #[path = "nav_tests.rs"]
 mod nav_tests;
 #[cfg(test)]
+#[path = "settings_center_tests.rs"]
+mod settings_center_tests; // 설정 센터: 검색 · 변경 · 열기 단추 · 기본값 복원 · 단축키
+#[cfg(test)]
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)
     pub(crate) fn for_test(core: Shared, dir: std::path::PathBuf) -> Self {
