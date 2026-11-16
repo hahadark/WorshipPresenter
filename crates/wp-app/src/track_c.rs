@@ -129,10 +129,20 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::Comma))) {
         app.tc.settings.open = true;
     }
-    let s = app.core.lock().settings.get().clone();
+    // 테마·글자 크기만 뜬다 (전에는 프레임마다 설정 전체 — 템플릿·송출 기록까지 — 를 복사했다)
+    let s = serde_json::json!({ "ui": app.core.lock().settings.get()["ui"].clone() });
     apply_ui_prefs(ctx, &s);
     let core = app.core.clone();
-    app.tc.settings.show(ctx, &core);
+    let env = crate::settings_ui::Env {
+        out_running: app.out.running(),
+        monitor: app.out.monitors.iter().find(|m| m.index == app.monitor).map(|m| m.name.clone()).unwrap_or_default(),
+        data_dir: app.data_dir.clone(),
+    };
+    app.tc.settings.show(ctx, &core, &env);
+    // 설정 센터의 '… 열기' 단추: 메뉴에서 고른 것과 같은 길로 그 창을 연다
+    for id in std::mem::take(&mut app.tc.settings.pending) {
+        handle_menu(app, id);
+    }
     app.tc.templates.show(ctx, &core, &app.web_dir, &app.data_dir);
     app.tc.history.show(ctx, &core, acts);
     if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::E))) { app.tc.slideedit.open = !app.tc.slideedit.open; }
@@ -147,6 +157,18 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             handle_menu(app, &format!("c:{w}"));
         }
     }
+    // 점검용: --settings-cat send|output|obs|ui|keys|data|backup|remote|about · --settings-q "찾을 글"
+    if !SET_ARGS.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        let arg = |n: &str| std::env::args().position(|x| x == n).and_then(|i| std::env::args().nth(i + 1));
+        if let Some(cat) = arg("--settings-cat").and_then(|k| crate::settings_ui::items::Cat::from_key(&k)) {
+            app.tc.settings.open_cat(cat);
+        }
+        if let Some(q) = arg("--settings-q") {
+            app.tc.settings.open = true;
+            app.tc.settings.query = q;
+        }
+    }
 }
 
 static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SET_ARGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
