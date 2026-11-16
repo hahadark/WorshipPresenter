@@ -426,7 +426,7 @@ fn api_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St, running: bool) {
         });
     } else {
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(tr("키: 저장됨 (Windows 보호 기능으로 암호화)")).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+            ui.label(RichText::new(tr(if cfg!(target_os = "macos") { "키: 저장됨 (맥 키체인에 보관)" } else { "키: 저장됨 (Windows 보호 기능으로 암호화)" })).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
             if ui.add(Btn::new(tr("키 지우기")).size(Size::Sm)).clicked() {
                 core.lock().set_ai(Some(""), None, None);
             }

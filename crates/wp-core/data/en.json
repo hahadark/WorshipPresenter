@@ -4487,5 +4487,6 @@
  "✓ 큐시트를 열었습니다.": "✓ Cue sheet opened.",
  "큐시트를 찾지 못했습니다.": "Could not find the cue sheet.",
  "결과 파일이 너무 큽니다.": "The result file is too large.",
- "결과 파일이 비어 있습니다.": "The result file is empty."
+ "결과 파일이 비어 있습니다.": "The result file is empty.",
+ "키: 저장됨 (맥 키체인에 보관)": "Key: saved (stored in the Mac Keychain)"
 }
