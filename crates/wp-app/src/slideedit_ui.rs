@@ -259,7 +259,7 @@ impl SlideEditUi {
             core.lock().b.typing = None;
         }
         let mut open = self.open;
-        let win = crate::widgets::float_window(ctx, "slideedit", wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)"), [980.0, 640.0]).open(&mut open).show(ctx, |ui| {
+        let win = crate::widgets::float_window(ctx, "slideedit", wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)"), [980.0, 640.0]).open(&mut open).keep_on_outside().show(ctx, |ui| {
             let Some(i) = sel else {
                 ui.label(wp_core::i18n::tr("큐시트에서 순서를 먼저 고르세요."));
                 return;

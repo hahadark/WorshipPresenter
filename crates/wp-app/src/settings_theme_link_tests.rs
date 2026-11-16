@@ -56,3 +56,39 @@ fn quick_duplicate_makes_a_copy_and_uses_it_for_that_output_only() {
     assert!(copy["name"].as_str().unwrap().contains("복사본"));
     assert!(h.app.tb.note.contains("이 출력에 걸었습니다"), "알림: {}", h.app.tb.note);
 }
+
+fn settings_rect(h: &H) -> egui::Rect {
+    h.ctx.memory(|m| m.area_rect(egui::Id::unique(("wp-float", "settings-center")))).expect("설정 창 자리")
+}
+
+#[test]
+fn clicking_main_window_outside_closes_settings_but_inside_keeps_it() {
+    let mut h = H::new(vec![json!({"id":"a","type":"title","title":"예배"})]);
+    h.app.tc.settings.open = true;
+    for _ in 0..3 {
+        h.frame(vec![], full);
+    }
+    let r = settings_rect(&h);
+    // 창 안을 누르면 그대로
+    h.click_at(r.center(), full);
+    h.frame(vec![], full);
+    assert!(h.app.tc.settings.open, "창 안 누름에는 닫히면 안 됨");
+    // 창 바깥의 조작 화면 바탕을 누르면 닫힘
+    let out = if r.left() > 60.0 { egui::pos2(r.left() - 40.0, r.center().y) } else { egui::pos2(r.right() + 40.0, r.center().y) };
+    h.click_at(out, full);
+    h.frame(vec![], full);
+    assert!(!h.app.tc.settings.open, "바깥 누름에 닫혀야 함 (누른 곳 {out:?}, 창 {r:?})");
+}
+
+#[test]
+fn window_opened_by_the_same_press_is_not_closed_and_slide_editor_stays() {
+    let mut h = H::new(vec![json!({"id":"a","type":"title","title":"예배"})]);
+    h.frame(vec![], full);
+    // 누르는 순간 창이 열려도(누름이 창 바깥이어도) 그 누름으로는 닫히지 않는다
+    h.app.tc.settings.open = true;
+    let p = egui::pos2(30.0, 900.0);
+    h.frame(vec![egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }], full);
+    h.frame(vec![egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }], full);
+    h.frame(vec![], full);
+    assert!(h.app.tc.settings.open, "연 그 누름에 닫히면 안 됨");
+}

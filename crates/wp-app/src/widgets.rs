@@ -945,10 +945,80 @@ pub fn float_pos(ctx: &egui::Context, id: egui::Id, width: f32) -> Pos2 {
 
 /// 떠 있는 창을 만든다: id 고정 · 기본 크기 · 기본 자리(위 규칙). `.open(&mut 열림)` 은 부르는 쪽에서.
 /// `key` 는 창마다 다른 고정 이름 (제목은 번역되어 바뀔 수 있으므로 따로 받는다).
-pub fn float_window<'a>(ctx: &egui::Context, key: &str, title: impl Into<String>, size: [f32; 2]) -> egui::Window<'a> {
+/// 열려 있는 동안 창 바깥의 조작 화면(메뉴·다른 창·팝업이 아닌 곳)을 누르면 닫힌다 (`keep_on_outside` 로 끌 수 있음).
+pub fn float_window<'a>(ctx: &egui::Context, key: &str, title: impl Into<String>, size: [f32; 2]) -> FloatWin<'a> {
     let id = egui::Id::unique(("wp-float", key));
     let pos = float_pos(ctx, id, size[0]);
-    egui::Window::new(title.into()).id(id).default_size(size).default_pos(pos)
+    FloatWin { win: egui::Window::new(title.into()).id(id).default_size(size).default_pos(pos), id, open: None, outside: true }
+}
+
+/// `float_window` 가 돌려주는 창: egui::Window 와 같은 방식으로 이어 쓰고, 마지막 `show` 에서 바깥 누름을 처리한다
+pub struct FloatWin<'a> {
+    win: egui::Window<'a>,
+    id: egui::Id,
+    open: Option<&'a mut bool>,
+    outside: bool,
+}
+
+impl<'a> FloatWin<'a> {
+    pub fn open(mut self, open: &'a mut bool) -> Self {
+        self.open = Some(open);
+        self
+    }
+    /// 바깥을 눌러도 닫지 않는다 (조작 화면을 함께 누르며 쓰는 편집기)
+    pub fn keep_on_outside(mut self) -> Self {
+        self.outside = false;
+        self
+    }
+    pub fn collapsible(mut self, v: bool) -> Self { self.win = self.win.collapsible(v); self }
+    pub fn resizable(mut self, v: bool) -> Self { self.win = self.win.resizable(v); self }
+    pub fn vscroll(mut self, v: bool) -> Self { self.win = self.win.vscroll(v); self }
+    pub fn hscroll(mut self, v: bool) -> Self { self.win = self.win.hscroll(v); self }
+    pub fn min_width(mut self, v: f32) -> Self { self.win = self.win.min_width(v); self }
+    pub fn min_height(mut self, v: f32) -> Self { self.win = self.win.min_height(v); self }
+    pub fn max_width(mut self, v: f32) -> Self { self.win = self.win.max_width(v); self }
+    pub fn max_height(mut self, v: f32) -> Self { self.win = self.win.max_height(v); self }
+    pub fn default_width(mut self, v: f32) -> Self { self.win = self.win.default_width(v); self }
+    pub fn default_height(mut self, v: f32) -> Self { self.win = self.win.default_height(v); self }
+    pub fn title_bar(mut self, v: bool) -> Self { self.win = self.win.title_bar(v); self }
+    pub fn show<R>(self, ctx: &egui::Context, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
+        let FloatWin { win, id, open, outside } = self;
+        match open {
+            Some(o) => {
+                if outside {
+                    close_on_outside(ctx, id, o);
+                }
+                win.open(o).show(ctx, add)
+            }
+            None => win.show(ctx, add),
+        }
+    }
+}
+
+/// 열려 있던 떠 있는 창 바깥의 조작 화면을 누르면 닫는다 (Electron 판 설정 창처럼).
+/// - 이번에 막 열린 창(바로 앞 화면에 없던 창)은 닫지 않는다: 창을 연 그 누름에 바로 닫히지 않게
+/// - 메뉴·펼침 목록·알림 같은 위 층, 다른 떠 있는 창을 누른 것은 바깥으로 치지 않는다 (조작 화면 바탕 층만)
+pub fn close_on_outside(ctx: &egui::Context, id: egui::Id, open: &mut bool) {
+    let key = egui::Id::new(("wp-float-seen", id));
+    let pass = ctx.cumulative_pass_nr();
+    if !*open {
+        ctx.data_mut(|d| d.remove::<u64>(key));
+        return;
+    }
+    let prev: Option<u64> = ctx.data(|d| d.get_temp(key));
+    ctx.data_mut(|d| d.insert_temp(key, pass));
+    if !prev.is_some_and(|p| p < pass && p + 2 >= pass) {
+        return;
+    }
+    let Some(at) = ctx.input(|i| if i.pointer.primary_pressed() { i.pointer.press_origin() } else { None }) else { return };
+    let Some(rect) = ctx.memory(|m| m.area_rect(id)) else { return };
+    // 크기 조절 손잡이는 창 테두리 조금 바깥에도 있다
+    if rect.expand(10.0).contains(at) {
+        return;
+    }
+    if ctx.layer_id_at(at).is_none_or(|l| l.order == egui::Order::Background) {
+        *open = false;
+    }
 }
 
 #[cfg(test)]
