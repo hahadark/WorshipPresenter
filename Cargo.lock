@@ -7124,7 +7124,7 @@ dependencies = [
 
 [[package]]
 name = "wp-app"
-version = "2.0.3"
+version = "2.0.4"
 dependencies = [
  "anyhow",
  "eframe",
@@ -7145,7 +7145,7 @@ dependencies = [
 
 [[package]]
 name = "wp-core"
-version = "2.0.3"
+version = "2.0.4"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -7180,7 +7180,7 @@ dependencies = [
 
 [[package]]
 name = "wp-output"
-version = "2.0.3"
+version = "2.0.4"
 dependencies = [
  "anyhow",
  "tao",
