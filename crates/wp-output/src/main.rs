@@ -15,7 +15,7 @@
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Fullscreen, WindowBuilder};
-use wry::{PermissionKind, PermissionResponse, WebViewBuilder};
+use wry::{PermissionKind, PermissionResponse, WebContext, WebViewBuilder};
 
 /// 페이지가 보내는 ipc 메시지로 창을 닫는다 (도우미 모드)
 #[derive(Debug, Clone, Copy)]
@@ -84,6 +84,27 @@ fn permission(kind: PermissionKind) -> PermissionResponse {
     }
 }
 
+/// WebView2 자료 폴더 (쿠키·캐시). 정하지 않으면 WebView2 가 실행 파일 옆(wp-output.exe.WebView2)에 만들려 하는데,
+/// '모든 사용자' 로 설치된 PC(Program Files)처럼 그 자리에 쓸 수 없으면 창을 만들다 '액세스가 거부되었습니다'(0x80070005)로
+/// 실패해 예배당 화면이 켜지자마자 꺼진다 (2026-11-18 교회 PC). 쓸 수 있는 사용자 폴더를 고른다: --webview-data → %LOCALAPPDATA% → 임시 폴더
+fn webview_data_dir() -> Option<std::path::PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let mut cands: Vec<std::path::PathBuf> = vec![];
+    if let Some(d) = arg("--webview-data") {
+        cands.push(d.into());
+    }
+    if let Some(l) = std::env::var_os("LOCALAPPDATA") {
+        cands.push(std::path::PathBuf::from(l).join("WorshipPresenter-rs").join("WebView2"));
+    }
+    cands.push(std::env::temp_dir().join("WorshipPresenter-WebView2"));
+    cands.into_iter().find(|d| {
+        let probe = d.join(".write-test");
+        std::fs::create_dir_all(d).is_ok() && std::fs::write(&probe, b"ok").is_ok() && std::fs::remove_file(&probe).is_ok()
+    })
+}
+
 fn arg(name: &str) -> Option<String> {
     let a: Vec<String> = std::env::args().collect();
     a.iter().position(|x| x == name).and_then(|i| a.get(i + 1).cloned())
@@ -122,7 +143,8 @@ fn main() -> anyhow::Result<()> {
     let proxy: EventLoopProxy<UserEv> = event_loop.create_proxy();
     let esc_close = flag("--esc-close");
     let selftest = flag("--selftest-esc");
-    let mut builder = WebViewBuilder::new();
+    let mut web_context = WebContext::new(webview_data_dir());
+    let mut builder = WebViewBuilder::new_with_web_context(&mut web_context);
     if !helper {
         builder = builder.with_initialization_script(READY_SCRIPT);
         let p = proxy.clone();
@@ -165,7 +187,12 @@ fn main() -> anyhow::Result<()> {
                 _ => {}
             }
         })
-        .build(&window)?;
+        .build(&window)
+        .map_err(|e| {
+            // 조작 화면(outwin.rs)이 이 줄을 읽어 이유를 알린다
+            eprintln!("wp-output: WebView2 창을 만들지 못했습니다: {e}");
+            e
+        })?;
     let started = std::time::Instant::now();
     let mut shown = false;
     event_loop.run(move |event, _, control_flow| {

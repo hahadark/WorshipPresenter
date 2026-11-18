@@ -191,8 +191,15 @@ pub(crate) fn output_exit(app: &mut App, ctx: &egui::Context) {
         c.notify_act(tr("예배당 화면에서 Esc 를 눌러 예배당 화면을 껐습니다."), "info", "output-on");
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     } else {
-        log::warn!("예배당 화면 창이 닫혔습니다 (종료 코드 {code:?})");
-        c.notify_act(tr("예배당 화면 창이 닫혔습니다."), "warn", "output-on");
+        let reason = app.out.take_exit_reason();
+        log::warn!("예배당 화면 창이 닫혔습니다 (종료 코드 {code:?}) {reason}");
+        let msg = if reason.is_empty() {
+            tr("예배당 화면 창이 닫혔습니다.").to_string()
+        } else {
+            let hint = crate::outwin::explain_exit(&reason).map(|h| format!(" {}", tr(h))).unwrap_or_default();
+            format!("{} ({reason}){hint}", tr("예배당 화면 창이 바로 닫혔습니다."))
+        };
+        c.notify_act(msg, "warn", "output-on");
     }
     ctx.request_repaint();
 }

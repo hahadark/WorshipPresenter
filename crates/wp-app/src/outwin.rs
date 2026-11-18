@@ -1,6 +1,7 @@
 //! 예배당 모니터 출력 창 (wp-output.exe 를 따로 띄운다)
 
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
 pub struct Monitor {
@@ -18,6 +19,10 @@ pub struct OutWin {
     exited: Option<Option<i32>>,
     /// 점검용으로 창에 더 넘길 인자 (--selftest-esc)
     pub extra_args: Vec<String>,
+    /// 창 프로그램이 오류 출력(stderr)에 남긴 글 (스스로 꺼졌을 때 이유를 알리려고)
+    stderr: Arc<Mutex<String>>,
+    /// 스스로 끝났을 때 오류 출력의 마지막 줄 (take_exit_reason 으로 한 번 가져간다)
+    exit_reason: String,
 }
 
 /// 조작 화면이 띄운 창(예배당·무대·카메라 도우미)을 조작 화면 프로세스와 묶는다.
@@ -75,10 +80,10 @@ pub(crate) fn no_window(c: &mut Command) -> &mut Command {
 impl OutWin {
     #[cfg(test)]
     pub(crate) fn for_test() -> Self {
-        Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![] }
+        Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![], stderr: Default::default(), exit_reason: String::new() }
     }
     pub fn new() -> Self {
-        let mut o = Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![] };
+        let mut o = Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![], stderr: Default::default(), exit_reason: String::new() };
         o.refresh_monitors();
         o
     }
@@ -116,7 +121,21 @@ impl OutWin {
                 r => {
                     // 스스로 끝남 (예배당 창에서 Esc · 오류): 조작 화면 상태는 '꺼짐' 으로, 알림은 take_exit 로
                     self.exited = Some(r.ok().flatten().and_then(|s| s.code()));
-                    self.child = None;
+                    if let Some(mut c) = self.child.take() {
+                        let _ = c.wait();
+                    }
+                    // 읽는 실이 마지막 글을 다 받도록 잠깐 기다린다 (프로세스가 끝나면 파이프가 닫혀 곧 끝남)
+                    for _ in 0..20 {
+                        if Arc::strong_count(&self.stderr) == 1 {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    let err = std::mem::take(&mut *self.stderr.lock().unwrap_or_else(|e| e.into_inner()));
+                    self.exit_reason = last_error_line(&err);
+                    if !err.trim().is_empty() {
+                        log::warn!("예배당 화면 창 오류 출력: {}", err.trim());
+                    }
                     false
                 }
             },
@@ -128,9 +147,31 @@ impl OutWin {
         self.close();
         let mut cmd = Command::new(exe());
         cmd.args(self.open_args(port, monitor, windowed));
+        cmd.stderr(Stdio::piped());
         match cmd.spawn() {
-            Ok(c) => {
+            Ok(mut c) => {
                 bind_to_app(&c);
+                self.stderr = Arc::new(Mutex::new(String::new()));
+                self.exit_reason.clear();
+                if let Some(mut pipe) = c.stderr.take() {
+                    let buf = self.stderr.clone();
+                    std::thread::spawn(move || {
+                        use std::io::Read;
+                        let mut chunk = [0u8; 4096];
+                        while let Ok(n) = pipe.read(&mut chunk) {
+                            if n == 0 {
+                                break;
+                            }
+                            let mut b = buf.lock().unwrap_or_else(|e| e.into_inner());
+                            b.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                            if b.len() > 16_000 {
+                                let cut = b.len() - 8_000;
+                                let cut = (cut..b.len()).find(|&i| b.is_char_boundary(i)).unwrap_or(b.len());
+                                b.drain(..cut);
+                            }
+                        }
+                    });
+                }
                 self.child = Some(c);
                 self.error.clear();
             }
@@ -156,6 +197,11 @@ impl OutWin {
         self.exited.take()
     }
 
+    /// 스스로 끝났을 때 창 프로그램이 남긴 오류 (없으면 빈 글). 한 번 가져가면 비워진다
+    pub fn take_exit_reason(&mut self) -> String {
+        std::mem::take(&mut self.exit_reason)
+    }
+
     /// 시험용: 창이 스스로 끝난 것처럼
     #[cfg(test)]
     pub(crate) fn fake_exit(&mut self, code: Option<i32>) {
@@ -172,8 +218,69 @@ impl OutWin {
     }
 }
 
+/// 오류 출력에서 사람이 읽을 마지막 줄 (빈 줄 제외, 너무 길면 자름)
+pub(crate) fn last_error_line(err: &str) -> String {
+    let line = err.lines().map(str::trim).filter(|l| !l.is_empty()).last().unwrap_or("");
+    let line = line.strip_prefix("Error: ").unwrap_or(line);
+    if line.chars().count() > 300 { line.chars().take(300).collect::<String>() + "…" } else { line.to_string() }
+}
+
+/// 창이 꺼진 이유를 사람이 알아들을 말로 (교회 PC 에서 바로 꺼지던 일, 2026-11-18)
+pub(crate) fn explain_exit(reason: &str) -> Option<&'static str> {
+    if reason.contains("0x80070005") || reason.contains("액세스가 거부") || reason.to_lowercase().contains("access is denied") {
+        Some("WebView2 자료 폴더에 쓸 권한이 없습니다. 새 버전으로 업데이트하거나 관리자에게 설치 폴더 권한을 확인해 달라고 하세요.")
+    } else if reason.to_lowercase().contains("webview2") && (reason.contains("0x80070002") || reason.to_lowercase().contains("not found") || reason.contains("찾을 수 없")) {
+        Some("Microsoft Edge WebView2 런타임이 없습니다. https://go.microsoft.com/fwlink/p/?LinkId=2124703 에서 설치하세요.")
+    } else {
+        None
+    }
+}
+
 impl Drop for OutWin {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+#[cfg(test)]
+mod exit_reason_tests {
+    use super::*;
+
+    #[test]
+    fn 오류_출력의_마지막_줄을_이유로() {
+        let err = "경고 한 줄\r\nError: WebView2 error: WindowsError(Error { code: HRESULT(0x80070005), message: \"액세스가 거부되었습니다.\" })\r\n\r\n";
+        let r = last_error_line(err);
+        assert!(r.starts_with("WebView2 error"), "{r}");
+        assert!(explain_exit(&r).unwrap().contains("권한"));
+        assert_eq!(last_error_line("  \n"), "");
+        assert!(explain_exit("알 수 없는 오류").is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn 스스로_꺼진_창의_오류를_가져간다() {
+        // 실제 자식 프로세스: 오류 출력에 쓰고 끝나는 cmd
+        let mut o = OutWin::for_test();
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/c", "echo Error: WebView2 error: 0x80070005 1>&2 & exit 1"]).stderr(Stdio::piped());
+        let mut ch = c.spawn().unwrap();
+        o.stderr = Arc::new(Mutex::new(String::new()));
+        let mut pipe = ch.stderr.take().unwrap();
+        let buf = o.stderr.clone();
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut s = String::new();
+            let _ = pipe.read_to_string(&mut s);
+            buf.lock().unwrap().push_str(&s);
+        });
+        o.child = Some(ch);
+        let t = std::time::Instant::now();
+        while o.running() && t.elapsed().as_secs() < 10 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(o.take_exit(), Some(Some(1)));
+        let r = o.take_exit_reason();
+        assert!(r.contains("0x80070005"), "{r}");
+        assert!(o.take_exit_reason().is_empty(), "한 번만 가져간다");
     }
 }
