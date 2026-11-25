@@ -35,6 +35,7 @@ pub fn menus() -> Vec<Menu> {
         Menu { label: "큐시트", items: vec![
             it("c:slideedit", "슬라이드 편집 (고른 순서)", "Ctrl+E"),
             it("b:cues", "큐시트 관리 (휴지통 · 복제 · 내보내기)", ""),
+            it("b:conti", "찬양 콘티 가져오기 (콘티 스튜디오 .worship)…", ""),
             it("b:undo", "실행 취소", "Ctrl+Z"),
             it("b:redo", "다시 실행", "Ctrl+Y"),
             it("-", "-", ""),
@@ -139,6 +140,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "c:settings" => "settings",
         "c:slideedit" => "square-pen",
         "b:cues" => "folder-open",
+        "b:conti" => "download",
         "b:undo" => "undo-2",
         "b:redo" => "redo-2",
         "b:print" => "file-text",

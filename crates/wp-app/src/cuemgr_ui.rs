@@ -51,6 +51,33 @@ fn fail(app: &App, e: impl std::fmt::Display) {
     app.core.lock().notify(e.to_string(), "error");
 }
 
+/// 가져오기 결과 알림: 못 읽은 파일은 오류로, 가져왔지만 확인할 것(가사 없는 곡 · 없는 PPT)이 있으면 한 알림에 모아 주의로
+fn import_report(app: &App, n: usize, errs: Vec<String>, warns: &[String]) {
+    for e in errs {
+        fail(app, e);
+    }
+    if n == 0 {
+        return;
+    }
+    let done = tr_args("큐시트 {1}개를 가져왔습니다.", &[&n]);
+    if warns.is_empty() {
+        ok(app, done);
+        return;
+    }
+    let more = if warns.len() > 3 { format!("\n… {}", tr_args("외 {1}건", &[&(warns.len() - 3)])) } else { String::new() };
+    app.core.lock().notify(format!("{done} {}\n{}{more}", tr("확인할 것:"), warns.iter().take(3).cloned().collect::<Vec<_>>().join("\n")), "warn");
+}
+
+/// 큐시트 메뉴 → 찬양 콘티 가져오기: 콘티 스튜디오의 .worship 파일을 골라 큐시트로 만들고 첫 큐시트를 연다
+pub fn import_conti_dialog(app: &mut App) {
+    let Some(fs) = rfd::FileDialog::new().add_filter(tr("찬양 콘티 스튜디오 콘티"), &["worship"]).add_filter(tr("큐시트 · 콘티"), &["json", "worship"]).pick_files() else { return };
+    let (n, first, errs, warns) = app.core.lock().import_cue_files_ex(&fs);
+    import_report(app, n, errs, &warns);
+    if !first.is_empty() {
+        app.core.lock().open_saved_cue(&first);
+        app.edit = None;
+    }
+}
 /// 파일 이름에 못 쓰는 글자 바꾸기 (cuemanager.js download)
 fn file_name(name: &str) -> String {
     name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect()
@@ -158,14 +185,11 @@ impl App {
                     *open = false;
                     crate::trackd_ui::handle_menu("d:bulletin");
                 }
-                if ui.add(Btn::new(tr("가져오기…")).icon("folder-open").tooltip(tr("내보낸 큐시트 파일(.json)을 가져옵니다 (여러 개 고를 수 있음)"))).clicked() {
-                    if let Some(fs) = rfd::FileDialog::new().add_filter(tr("큐시트"), &["json"]).pick_files() {
-                        let (n, first, errs) = self.core.lock().import_cue_files(&fs);
-                        for e in errs {
-                            fail(self, e);
-                        }
+                if ui.add(Btn::new(tr("가져오기…")).icon("folder-open").tooltip(tr("내보낸 큐시트 파일(.json)이나 찬양 콘티 스튜디오 콘티(.worship)를 가져옵니다 (여러 개 고를 수 있음)"))).clicked() {
+                    if let Some(fs) = rfd::FileDialog::new().add_filter(tr("큐시트 · 콘티"), &["json", "worship"]).add_filter(tr("찬양 콘티 스튜디오 콘티"), &["worship"]).pick_files() {
+                        let (n, first, errs, warns) = self.core.lock().import_cue_files_ex(&fs);
+                        import_report(self, n, errs, &warns);
                         if n > 0 {
-                            ok(self, tr_args("큐시트 {1}개를 가져왔습니다.", &[&n]));
                             st.view = "all".into();
                             st.sel = first;
                         }

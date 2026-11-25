@@ -53,27 +53,44 @@ pub fn strip_chords(l: &str) -> String {
 }
 
 fn squash(s: &str) -> String {
-    s.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase()
+    crate::textnorm::squash(s)
 }
 
+/// 찬양 찾기: 띄어쓰기 무시 · 제목·가사·태그. 검색어에 초성(ㅈㅁㅂㄹ · 주ㅁㅂㄹ)이 있으면 제목만 초성으로.
+/// 제목이 맞는 곡 → 그 가운데 제목이 검색어로 시작하는 곡이 앞
 pub fn list_songs(db: &Connection, query: &str) -> Vec<Value> {
     let q = squash(query);
+    let cho = crate::textnorm::has_choseong(query);
     let Ok(mut st) = db.prepare("SELECT id, title, lyrics, credit, tags, COALESCE(updated_at,'') FROM Songs ORDER BY title COLLATE NOCASE") else { return vec![] };
     let rows: Vec<(String, String, String, String, String, String)> = st
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
         .map(|it| it.filter_map(|x| x.ok()).collect())
         .unwrap_or_default();
-    let mut out: Vec<(bool, Value)> = vec![];
+    let mut out: Vec<(bool, bool, Value)> = vec![];
     for (id, title, lyrics, credit, tags, upd) in rows {
-        if !q.is_empty() && !squash(&format!("{title}{lyrics}{tags}")).contains(&q) {
+        let hit = q.is_empty() || crate::textnorm::fuzzy_contains(&title, query);
+        if !hit && (cho || !squash(&format!("{title}{lyrics}{tags}")).contains(&q)) {
             continue;
         }
         let first = lyrics.lines().map(strip_chords).find(|l| !l.is_empty() && !(l.starts_with('[') && l.ends_with(']'))).unwrap_or_default();
-        let hit = q.is_empty() || squash(&title).contains(&q);
-        out.push((hit, json!({ "id": id, "title": title, "first": first, "credit": credit, "tags": tags, "updatedAt": upd, "titleHit": hit })));
+        let start = !q.is_empty() && crate::textnorm::fuzzy_starts_with(&title, query);
+        out.push((hit, start, json!({ "id": id, "title": title, "first": first, "credit": credit, "tags": tags, "updatedAt": upd, "titleHit": hit })));
     }
-    out.sort_by_key(|x| !x.0);
-    out.into_iter().take(500).map(|x| x.1).collect()
+    out.sort_by_key(|x| (!x.0, !x.1));
+    out.into_iter().take(500).map(|x| x.2).collect()
+}
+
+/// 제목으로 한 곡 찾기 (띄어쓰기·대소문자 무시): 같은 제목 → 그 제목으로 시작 → 찾은 것이 하나뿐이면 그것
+/// (주보 → 큐시트의 찬양 찾기와 같은 규칙)
+pub fn find_by_title(db: &Connection, name: &str) -> Option<Value> {
+    let q = squash(name);
+    if q.is_empty() {
+        return None;
+    }
+    let hits = list_songs(db, name);
+    let t = |x: &Value| squash(x["title"].as_str().unwrap_or(""));
+    let s = hits.iter().find(|x| t(x) == q).or_else(|| hits.iter().find(|x| t(x).starts_with(&q))).or(if hits.len() == 1 { hits.first() } else { None });
+    s.and_then(|x| get_song(db, x["id"].as_str().unwrap_or("")))
 }
 
 pub fn get_song(db: &Connection, id: &str) -> Option<Value> {
@@ -189,6 +206,23 @@ pub fn save_imported(db: &Connection, songs: &[Value]) -> Result<Value> {
 mod tests {
     use super::*;
     #[test]
+    fn choseong_and_title_lookup() {
+        let db = Connection::open_in_memory().unwrap();
+        ensure_schema(&db).unwrap();
+        for (t, l) in [("주만 바라 볼지라", "하나님의 사랑을"), ("은혜", "내가 누려왔던 모든 것들이"), ("주님 마음 내게 주소서", "주만 바라")] {
+            save_song(&db, &json!({ "title": t, "lyrics": l })).unwrap();
+        }
+        let titles = |q: &str| list_songs(&db, q).iter().map(|x| x["title"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        assert_eq!(titles("ㅈㅁㅂㄹ"), ["주만 바라 볼지라"], "초성은 제목만");
+        assert_eq!(titles("주ㅁㅂㄹ"), ["주만 바라 볼지라"]);
+        assert_eq!(titles("ㅇㅎ"), ["은혜"]);
+        assert_eq!(titles("주만바라"), ["주만 바라 볼지라", "주님 마음 내게 주소서"], "글자 검색은 가사까지, 제목이 맞는 곡이 앞");
+        assert_eq!(titles("ㅈ").first().map(String::as_str), Some("주님 마음 내게 주소서"), "제목순 · 둘 다 ㅈ 으로 시작");
+        assert_eq!(find_by_title(&db, "주만바라볼지라").unwrap()["title"], "주만 바라 볼지라");
+        assert_eq!(find_by_title(&db, "은 혜").unwrap()["title"], "은혜");
+        assert!(find_by_title(&db, "없는 곡").is_none());
+        assert!(find_by_title(&db, "").is_none());
+    }    #[test]
     fn cue_save_keeps_default_order_and_named_arrangements() {
         let db = Connection::open_in_memory().unwrap();
         ensure_schema(&db).unwrap();

@@ -39,6 +39,14 @@ static EXTRA: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         ("오버레이 (시계 · 카운트다운 · 배너)", "Overlays (clock · countdown · banner)"),
         ("무대 화면", "Stage display"),
         ("매크로 · 예약 실행", "Macros · schedule"),
+        ("찬양 콘티 가져오기 (콘티 스튜디오 .worship)…", "Import worship set (Conti Studio .worship)…"),
+        ("찬양 콘티 스튜디오 콘티", "Worship Conti Studio set"),
+        ("큐시트 · 콘티", "Cue sheets · sets"),
+        ("내보낸 큐시트 파일(.json)이나 찬양 콘티 스튜디오 콘티(.worship)를 가져옵니다 (여러 개 고를 수 있음)", "Import exported cue sheet files (.json) or Worship Conti Studio sets (.worship) (you can pick several)"),
+        ("확인할 것:", "Please check:"),
+        ("외 {1}건", "and {1} more"),
+        ("찬양 콘티 스튜디오 파일(.worship)이 아닙니다.", "This is not a Worship Conti Studio file (.worship)."),
+        ("콘티에 곡이 없습니다.", "The set has no songs."),
     ])
 });
 

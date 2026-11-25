@@ -51,6 +51,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "b:stage" => app.tb.stage = true,
         "b:macros" => app.tb.macros = true,
         "b:cues" => app.tb.cues = true,
+        "b:conti" => crate::cuemgr_ui::import_conti_dialog(app),
         "b:print" => app.print_cue(),
         "b:undo" | "b:redo" => {
             app.core.lock().undo_items(id == "b:redo"); // 결과 알림은 코어가 띄운다

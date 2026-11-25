@@ -348,11 +348,27 @@ impl Core {
 
     /// 파일들에서 가져오기 → (가져온 수, 첫 큐시트 id, 못 읽은 파일 글)
     pub fn import_cue_files(&mut self, paths: &[std::path::PathBuf]) -> (usize, String, Vec<String>) {
+        let (n, first, errs, _) = self.import_cue_files_ex(paths);
+        (n, first, errs)
+    }
+
+    /// 워십프리젠터 큐시트 파일(.json)과 찬양 콘티 스튜디오 콘티(.worship)를 함께 받는다
+    /// → (가져온 수, 첫 큐시트 id, 못 읽은 파일 글, 가져왔지만 확인할 것)
+    pub fn import_cue_files_ex(&mut self, paths: &[std::path::PathBuf]) -> (usize, String, Vec<String>, Vec<String>) {
         let before: std::collections::HashSet<String> = self.store.list_cues().into_iter().map(|c| c.id).collect();
-        let (mut n, mut errs) = (0, vec![]);
+        let (mut n, mut errs, mut warns) = (0, vec![], vec![]);
         for p in paths {
             let name = p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
-            let r = std::fs::read_to_string(p).map_err(anyhow::Error::from).and_then(|t| Ok(serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}'))?)).and_then(|v| cues::import(&self.store, &v));
+            let stem = p.file_stem().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
+            let r = std::fs::read_to_string(p).map_err(anyhow::Error::from).and_then(|t| Ok(serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}'))?)).and_then(|v| {
+                if crate::contistudio::is_conti(&v) {
+                    let (k, w) = self.import_conti(&v, &stem)?;
+                    warns.extend(w.into_iter().map(|x| format!("{name}: {x}")));
+                    Ok(k)
+                } else {
+                    cues::import(&self.store, &v)
+                }
+            });
             match r {
                 Ok(k) => n += k,
                 Err(e) => errs.push(format!("{name}: {e}")),
@@ -360,7 +376,18 @@ impl Core {
         }
         self.cues_changed();
         let first = self.cues.iter().find(|c| !before.contains(&c.id)).map(|c| c.id.clone()).unwrap_or_default();
-        (n, first, errs)
+        (n, first, errs, warns)
+    }
+
+    /// 찬양 콘티 스튜디오 콘티 한 개 → 새 큐시트 (가사가 없는 곡은 찬양 라이브러리에서 찾는다)
+    fn import_conti(&mut self, v: &Value, fallback: &str) -> Result<(usize, Vec<String>)> {
+        let db = &self.store.db;
+        let find = |t: &str| crate::songs::find_by_title(db, t);
+        let (cue, warnings) = crate::contistudio::to_cue(v, fallback, &find).map_err(anyhow::Error::msg)?;
+        let s = |k: &str| cue[k].as_str().unwrap_or("").to_string();
+        let c = Cue { id: short_id("c"), name: s("name"), service_date: s("serviceDate"), start_time: s("startTime"), items: cue["items"].as_array().cloned().unwrap_or_default(), memo: s("memo"), pinned: false, template: false };
+        self.store.save_cue(&c)?;
+        Ok((1, warnings))
     }
 
     /// 순서지 (글) — 단톡방·문서에 붙이기 (Electron cueText)
@@ -521,6 +548,39 @@ mod tests {
         assert_eq!(errs.len(), 1);
         assert!(!first.is_empty() && first != id);
         assert_eq!(c.cue_text_of(&first).unwrap().lines().next().unwrap().starts_with("■ 내보낼 예배"), true);
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn import_conti_studio_worship_file() {
+        let (mut c, dir) = core();
+        // 라이브러리에 있는 곡은 가사를 끌어온다
+        c.save_song(&json!({ "title": "꽃들도", "lyrics": "[1절]\n꽃들도\n\n[후렴]\n주를" })).unwrap();
+        let f = dir.join("주일 콘티.worship");
+        std::fs::write(&f, "\u{feff}".to_string() + &json!({
+            "version": "1.0",
+            "service_info": { "date": "2026-11-29", "service_name": "주일 찬양예배", "worship_leader": "김택근" },
+            "items": [
+                { "order": 1, "item_type": "SONG", "title": "꽃 들도", "key": "A", "song_form": "V1 - C - V1 - C x2", "lyrics": "" },
+                { "order": 2, "item_type": "SONG", "title": "없는 곡", "key": "G" }
+            ]
+        }).to_string()).unwrap();
+        let (n, first, errs, warns) = c.import_cue_files_ex(&[f]);
+        assert_eq!((n, errs.len()), (1, 0), "{errs:?}");
+        assert_eq!(warns.len(), 1, "가사 없는 곡 하나: {warns:?}");
+        let cue = c.store.get_cue(&first).unwrap();
+        assert_eq!(cue.name, "주일 찬양예배");
+        assert_eq!(cue.service_date, "2026-11-29");
+        assert!(cue.memo.contains("인도: 김택근"));
+        assert_eq!(cue.items[0]["type"], "song");
+        assert_eq!(cue.items[0]["order"], "1절 후렴 1절 후렴 후렴");
+        assert!(cue.items[0]["lyrics"].as_str().unwrap().contains("꽃들도"));
+        assert!(!cue.items[0]["songId"].as_str().unwrap().is_empty());
+        assert_eq!(cue.items[1]["type"], "title");
+        // 슬라이드까지: 부를 순서대로 5장
+        let slides = crate::slides::arrange(crate::slides::lyrics_chunks(cue.items[0]["lyrics"].as_str().unwrap()), cue.items[0]["order"].as_str().unwrap());
+        assert_eq!(slides.len(), 5);
         drop(c);
         let _ = std::fs::remove_dir_all(dir);
     }

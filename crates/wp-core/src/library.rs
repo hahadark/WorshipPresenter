@@ -121,7 +121,7 @@ pub fn search_files(settings: &Value, kind: &str, query: &str, folder: &str) -> 
         }
         for p in list_files(kind, Path::new(fp)) {
             let name = p.file_stem().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
-            if !q.is_empty() && !sq(&name).contains(&q) {
+            if !q.is_empty() && !crate::textnorm::fuzzy_contains(&name, query) { // 띄어쓰기 무시 · 초성도
                 continue;
             }
             out.push(json!({ "path": p.to_string_lossy(), "name": name, "folder": f["name"], "url": file_url(&p), "video": is_video(&p) }));

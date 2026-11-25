@@ -134,7 +134,8 @@ pub fn search_in_folder(core: &Core, query: &str, folder: &str) -> Vec<HymnFile>
                 || match num {
                     // 번호가 친 글로 시작하는 것도 (Electron `String(h.number).startsWith(q)`): '45' → 45·450~459. '010' 처럼 0 을 붙여 치면 그 번호만
                     Some(n) => h.number == Some(n) || jang.is_none() && h.number.is_some_and(|x| x.to_string().starts_with(q)),
-                    None => h.title.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(&key),
+                    // 띄어쓰기 무시 · 초성(ㅈㅁㅂㄹ · 주ㅁㅂㄹ)도
+                    None => crate::textnorm::fuzzy_contains(&h.title, &key),
                 }
                 // '3장' 은 번호 3 뒤에 제목에 '3장' 이 든 것(교독문 '잠언 3장' — Electron 은 이것만 나왔다)도
                 || jang.is_some() && h.title.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(&raw.chars().filter(|c| !c.is_whitespace()).collect::<String>());
@@ -145,6 +146,8 @@ pub fn search_in_folder(core: &Core, query: &str, folder: &str) -> Vec<HymnFile>
     }
     if let Some(n) = num {
         out.sort_by_key(|h| h.number != Some(n));
+    } else if !key.is_empty() {
+        out.sort_by_key(|h| !crate::textnorm::fuzzy_starts_with(&h.title, &key)); // 제목이 검색어로 시작하는 것이 앞
     }
     out.truncate(300);
     out

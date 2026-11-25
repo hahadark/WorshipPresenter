@@ -1514,6 +1514,14 @@ impl App {
         let el = t0.elapsed().as_secs_f32();
         if stage == 0 && el > 1.0 {
             if let Some(q) = search { self.search = q.clone(); acts.push(Act::Search(q)); }
+            // 점검용 --import-cue <파일>: 큐시트(.json)·찬양 콘티(.worship)를 가져와 연다 (--item 과 함께 쓰면 그 순서 미리보기)
+            if let Some(p) = std::env::args().position(|x| x == "--import-cue").and_then(|i| std::env::args().nth(i + 1)) {
+                let (n, first, errs, warns) = self.core.lock().import_cue_files_ex(&[std::path::PathBuf::from(&p)]);
+                log::info!("점검: 큐시트 가져오기 {n}개, 오류 {errs:?}, 확인할 것 {warns:?}");
+                if !first.is_empty() {
+                    self.core.lock().open_saved_cue(&first);
+                }
+            }
             if let Some(i) = std::env::args().position(|x| x == "--item").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()) { self.sel = Some(i); acts.push(Act::PreviewItem(i)); }
             if send { acts.push(Act::SendPreview); }
             // 점검용 --outwin-esc-test: 예배당 창(wp-output)을 작은 창으로 실제로 띄우고, 창 안 페이지에서 Esc keydown 을 흉내 낸다 → 창이 꺼지고 상태가 '꺼짐' 으로
