@@ -35,7 +35,30 @@ fn pick(s: &str, re: &Regex) -> String {
     re.captures(s).map(|c| one(&c[1])).unwrap_or_default()
 }
 
-fn get(url: &str) -> Result<String, String> {
+/// 접속 실패 갈래: "blocked" = 사이트가 자동 검색을 막음(429·403·503) · "net" = 연결·응답 없음
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fail {
+    pub kind: &'static str,
+    pub msg: String,
+}
+
+impl std::fmt::Display for Fail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.msg)
+    }
+}
+
+fn fail_of(e: &ureq::Error) -> Fail {
+    match e {
+        ureq::Error::StatusCode(c @ (403 | 429 | 503)) => Fail { kind: "blocked", msg: format!("HTTP {c}") },
+        ureq::Error::StatusCode(c) => Fail { kind: "net", msg: format!("HTTP {c}") },
+        ureq::Error::Timeout(_) => Fail { kind: "net", msg: crate::i18n::tr("응답 없음") },
+        ureq::Error::HostNotFound | ureq::Error::ConnectionFailed => Fail { kind: "net", msg: crate::i18n::tr("인터넷 연결을 확인하세요") },
+        e => Fail { kind: "net", msg: e.to_string() },
+    }
+}
+
+fn get(url: &str) -> Result<String, Fail> {
     let resp = ureq::get(url)
         .header("User-Agent", UA)
         .header("Accept-Language", "ko-KR,ko;q=0.9")
@@ -43,8 +66,21 @@ fn get(url: &str) -> Result<String, String> {
         .timeout_global(Some(std::time::Duration::from_secs(12)))
         .build()
         .call()
-        .map_err(|e| e.to_string())?;
-    resp.into_body().read_to_string().map_err(|e| e.to_string())
+        .map_err(|e| fail_of(&e))?;
+    resp.into_body().read_to_string().map_err(|e| fail_of(&e))
+}
+
+/// 검색 화면을 받았는데 곡이 0개일 때 까닭: "none" 정말 없음 · "blocked" 봇 확인 화면 · "changed" 결과 화면을 못 읽음(사이트가 바뀜 듯)
+pub fn why_empty(html: &str) -> &'static str {
+    let low = html.to_lowercase();
+    if ["captcha", "자동입력 방지", "비정상적인 접근", "비정상적인 트래픽", "로봇이 아닙니다", "are you a robot", "too many requests"].iter().any(|m| low.contains(m)) {
+        return "blocked";
+    }
+    // 멜론 "검색 결과가 없습니다." · 지니 "검색어의 철자나 맞춤법 등을 확인" (2026-11-25 실제 화면에서 확인)
+    if re!(r"검색\s*결과가?\s*없|검색된\s*[^<>]{0,10}없|철자나\s*맞춤법|일치하는\s*[^<>]{0,10}없").is_match(html) {
+        return "none";
+    }
+    "changed"
 }
 
 fn enc(q: &str) -> String {
@@ -106,7 +142,8 @@ pub fn parse_search(site: &str, html: &str) -> Vec<Value> {
     out
 }
 
-fn search_url(site: &str, q: &str) -> String {
+/// 사이트 검색 화면 주소 (자동으로 못 읽을 때 브라우저로 열기)
+pub fn search_url(site: &str, q: &str) -> String {
     match site {
         "bugs" => format!("https://music.bugs.co.kr/search/track?q={}", enc(q)),
         "genie" => format!("https://www.genie.co.kr/search/searchSong?query={}", enc(q)),
@@ -114,36 +151,221 @@ fn search_url(site: &str, q: &str) -> String {
     }
 }
 
-/// 검색 → { results: [{site, siteName, id, title, artist, album}], errors } (사이트마다 앞 15곡, 반주(MR·Inst.) 곡은 뺌)
+/// 사이트 하나의 검색 결과 → (곡 목록, 갈래 ok|none|blocked|changed|net, 오류 글)
+fn site_outcome(site: &str, r: Result<String, Fail>) -> (Vec<Value>, &'static str, String) {
+    match r {
+        Ok(html) => {
+            let list = parse_search(site, &html);
+            if list.is_empty() { (list, why_empty(&html), String::new()) } else { (list, "ok", String::new()) }
+        }
+        Err(f) => (vec![], f.kind, f.msg),
+    }
+}
+
+/// 갈래별 알림 글 (none · ok 는 빈 글)
+fn status_text(name: &str, kind: &str, msg: &str) -> String {
+    match kind {
+        "blocked" => crate::i18n::tr_args("{1}: 자동 검색을 잠시 막았습니다 ({2}). 조금 뒤 다시 찾거나 사이트에서 열어 보세요.", &[&name, &if msg.is_empty() { "봇 확인" } else { msg }]),
+        "changed" => crate::i18n::tr_args("{1}: 결과 화면을 읽지 못했습니다 (사이트 화면이 바뀐 듯). 사이트에서 열어 가사를 복사해 붙여 넣으세요.", &[&name]),
+        "net" => crate::i18n::tr_args("{1}: 접속하지 못했습니다 ({2})", &[&name, &msg]),
+        _ => String::new(),
+    }
+}
+
+/// 검색 → { results: [{site, siteName, id, title, artist, album}], errors, status: [{site, siteName, kind, count, url}], summary }
+/// (사이트마다 앞 15곡, 반주 MR·Inst. 곡은 빼고). kind: ok · none(정말 없음) · blocked(자동 검색 막힘) · changed(화면을 못 읽음) · net(접속 실패)
 pub fn search(query: &str) -> Value {
     let q: String = query.trim().chars().take(100).collect();
     if q.is_empty() {
-        return json!({ "results": [], "errors": [] });
+        return json!({ "results": [], "errors": [], "status": [], "summary": "" });
     }
     let handles: Vec<_> = SITES
         .iter()
         .map(|(s, _)| {
             let (s, u) = (s.to_string(), search_url(s, &q));
             std::thread::spawn(move || {
-                let r = get(&u).map(|h| parse_search(&s, &h));
+                let r = get(&u);
                 (s, r)
             })
         })
         .collect();
+    let outs: Vec<(String, Result<String, Fail>)> = handles.into_iter().filter_map(|h| h.join().ok()).collect();
+    collect(&q, outs.into_iter().map(|(s, r)| {
+        let o = site_outcome(&s, r);
+        (s, o)
+    }).collect())
+}
+
+/// 사이트별 결과를 모아 응답 모양으로 (네트워크와 떼어 시험할 수 있게)
+fn collect(q: &str, outs: Vec<(String, (Vec<Value>, &'static str, String))>) -> Value {
     let mr = re!(r"(?i)[(\[]\s*(mr|inst\.?|instrumental|반주)\s*[)\]]");
-    let (mut results, mut errors) = (vec![], vec![]);
-    for h in handles {
-        let Ok((site, r)) = h.join() else { continue };
+    let (mut results, mut errors, mut status) = (vec![], vec![], vec![]);
+    for (site, (list, kind, msg)) in outs {
         let name = SITES.iter().find(|x| x.0 == site).map(|x| x.1).unwrap_or("");
-        match r {
-            Ok(list) => results.extend(list.into_iter().filter(|x| !mr.is_match(x["title"].as_str().unwrap_or(""))).take(15).map(|mut x| {
-                x["siteName"] = json!(name);
+        let n0 = results.len();
+        results.extend(list.into_iter().filter(|x| !mr.is_match(x["title"].as_str().unwrap_or(""))).take(15).map(|mut x| {
+            x["siteName"] = json!(name);
+            x
+        }));
+        let t = status_text(name, kind, &msg);
+        if !t.is_empty() {
+            errors.push(t);
+        }
+        status.push(json!({ "site": site, "siteName": name, "kind": kind, "count": results.len() - n0, "url": search_url(&site, q) }));
+    }
+    let summary = summary_of(&status, results.is_empty());
+    json!({ "results": results, "errors": errors, "status": status, "summary": summary })
+}
+
+/// 결과가 비었을 때 한 줄 까닭
+fn summary_of(status: &[Value], empty: bool) -> String {
+    if !empty {
+        return String::new();
+    }
+    let kinds: Vec<&str> = status.iter().filter_map(|s| s["kind"].as_str()).collect();
+    if !kinds.is_empty() && kinds.iter().all(|k| *k == "none") {
+        crate::i18n::tr("세 사이트 모두 찾은 곡이 없습니다. 제목을 줄이거나 띄어쓰기를 바꿔 보세요.")
+    } else if !kinds.is_empty() && kinds.iter().all(|k| *k == "net") {
+        crate::i18n::tr("가사 사이트에 접속하지 못했습니다. 인터넷 연결을 확인하세요.")
+    } else {
+        crate::i18n::tr("찾은 곡이 없습니다. 막히거나 못 읽은 사이트가 있어 결과가 빠졌을 수 있습니다.")
+    }
+}
+
+// ---------------- 찾은 결과 보관 (사이트가 막혀도 전에 찾은 곡은 보이게) ----------------
+static CACHE_LOCK: Lazy<parking_lot::Mutex<()>> = Lazy::new(|| parking_lot::Mutex::new(()));
+const CACHE_FILE: &str = "lyricsweb-cache.json";
+
+fn cache_load(dir: &std::path::Path) -> Value {
+    std::fs::read_to_string(dir.join(CACHE_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).filter(|v: &Value| v.is_object()).unwrap_or_else(|| json!({}))
+}
+
+fn cache_save(dir: &std::path::Path, v: &Value) {
+    let p = dir.join(CACHE_FILE);
+    let tmp = dir.join(format!("{CACHE_FILE}.tmp"));
+    if std::fs::write(&tmp, v.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &p);
+    }
+}
+
+/// 지역 날짜·시각 "2026-11-25 23:10"
+fn local_stamp() -> String {
+    let ms = crate::util::now_ms() + crate::localtime::local_offset_ms();
+    let (_, hm, _) = crate::localtime::split(ms);
+    // 날짜 (Howard Hinnant civil_from_days)
+    let z = ms.div_euclid(86_400_000) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02} {hm}")
+}
+
+/// 너무 커지지 않게: 오래된 것부터 버려 n 개만
+fn trim_map(m: &mut serde_json::Map<String, Value>, n: usize) {
+    while m.len() > n {
+        let Some(old) = m.iter().min_by(|a, b| a.1["at"].as_str().unwrap_or("").cmp(b.1["at"].as_str().unwrap_or(""))).map(|x| x.0.clone()) else { break };
+        m.remove(&old);
+    }
+}
+
+/// 찾은 결과를 보관하고, 못 찾은 사이트(막힘·못 읽음·접속 실패)는 지난번에 찾아 둔 그 사이트의 결과를 덧붙인다.
+/// 덧붙인 결과는 "cached": "날짜 시각", 응답에는 "cachedAt".
+pub fn with_cache(dir: &std::path::Path, query: &str, mut r: Value) -> Value {
+    let key = crate::textnorm::squash(query);
+    if key.is_empty() {
+        return r;
+    }
+    let _g = CACHE_LOCK.lock();
+    let mut all = cache_load(dir);
+    let failed: Vec<String> = r["status"].as_array().into_iter().flatten().filter(|s| matches!(s["kind"].as_str(), Some("blocked" | "changed" | "net"))).filter_map(|s| s["site"].as_str().map(String::from)).collect();
+    let old = all["search"][&key].clone();
+    let old_at = old["at"].as_str().unwrap_or("").to_string();
+    let mut fresh: Vec<Value> = r["results"].as_array().cloned().unwrap_or_default();
+    // 못 찾은 사이트의 지난 결과 (찾은 시각은 곡마다 그대로)
+    let keep: Vec<Value> = old["results"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|x| x["site"].as_str().is_some_and(|s| failed.iter().any(|f| f == s)))
+        .map(|x| {
+            let mut x = x.clone();
+            if x["at"].as_str().is_none_or(|s| s.is_empty()) {
+                x["at"] = json!(old_at.clone());
+            }
+            x
+        })
+        .collect();
+    if !fresh.is_empty() {
+        let now = local_stamp();
+        let mut save: Vec<Value> = fresh
+            .iter()
+            .map(|x| {
+                let mut x = x.clone();
+                x["at"] = json!(now.clone());
                 x
-            })),
-            Err(e) => errors.push(format!("{name}: {e}")),
+            })
+            .collect();
+        save.extend(keep.iter().cloned());
+        if !all["search"].is_object() {
+            all["search"] = json!({});
+        }
+        all["search"][&key] = json!({ "at": now, "results": save });
+        if let Some(m) = all["search"].as_object_mut() {
+            trim_map(m, 300);
+        }
+        cache_save(dir, &all);
+    }
+    if !keep.is_empty() {
+        let n = keep.len();
+        let latest = keep.iter().filter_map(|x| x["at"].as_str()).max().unwrap_or("").to_string();
+        for mut x in keep {
+            x["cached"] = x["at"].clone();
+            fresh.push(x);
+        }
+        r["results"] = json!(fresh);
+        r["cachedAt"] = json!(latest);
+        r["summary"] = json!(crate::i18n::tr_args("막히거나 못 읽은 사이트는 {1}에 찾아 둔 결과 {2}곡을 함께 보여 줍니다.", &[&latest, &n]));
+    }
+    r
+}
+
+/// 찾기 + 보관 (dir 이 없으면 보관하지 않음)
+pub fn search_cached(query: &str, dir: Option<&std::path::Path>) -> Value {
+    let r = search(query);
+    match dir {
+        Some(d) => with_cache(d, query, r),
+        None => r,
+    }
+}
+
+/// 고른 곡의 가사: 한 번 읽은 곡은 보관해 두었다가 다시 사이트에 묻지 않고 낸다 (가사는 바뀌지 않으므로)
+pub fn lyrics_cached(site: &str, id: &str, dir: Option<&std::path::Path>) -> Result<String, String> {
+    let key = format!("{site}:{id}");
+    if let Some(d) = dir {
+        let _g = CACHE_LOCK.lock();
+        if let Some(t) = cache_load(d)["lyrics"][&key]["text"].as_str().filter(|t| !t.is_empty()) {
+            return Ok(t.to_string());
         }
     }
-    json!({ "results": results, "errors": errors })
+    let t = lyrics(site, id)?;
+    if let (Some(d), false) = (dir, t.is_empty()) {
+        let _g = CACHE_LOCK.lock();
+        let mut all = cache_load(d);
+        if !all["lyrics"].is_object() {
+            all["lyrics"] = json!({});
+        }
+        all["lyrics"][&key] = json!({ "at": local_stamp(), "text": t });
+        if let Some(m) = all["lyrics"].as_object_mut() {
+            trim_map(m, 500);
+        }
+        cache_save(d, &all);
+    }
+    Ok(t)
 }
 
 /// 곡 페이지 HTML → 가사 원문
@@ -174,7 +396,8 @@ pub fn lyrics(site: &str, id: &str) -> Result<String, String> {
         "genie" => format!("https://www.genie.co.kr/detail/songInfo?xgnm={id}"),
         _ => format!("https://www.melon.com/song/detail.htm?songId={id}"),
     };
-    Ok(clean_lyrics(&parse_lyrics(site, &get(&url)?)))
+    let html = get(&url).map_err(|f| if f.kind == "blocked" { crate::i18n::tr_args("사이트가 자동 접속을 잠시 막았습니다 ({1}). 조금 뒤 다시 고르거나 다른 사이트 결과를 고르세요", &[&f.msg]) } else { f.msg })?;
+    Ok(clean_lyrics(&parse_lyrics(site, &html)))
 }
 
 // ---------------- 구간·슬라이드로 정리 ----------------
@@ -408,6 +631,79 @@ mod tests {
         assert_eq!(clean_lyrics("  가 \u{a0} 나\r\n\n\n\n다"), "가 나\n\n다");
         assert_eq!(clean_lyrics("가사 정보가 없습니다."), "");
     }
+
+    #[test]
+    fn empty_reasons() {
+        // 2026-11-25 실제 결과 없음 화면에서 가져온 글
+        assert_eq!(why_empty("<!-- 검색 결과 없음 --><p>검색 결과가 없습니다.</p>"), "none");
+        assert_eq!(why_empty("<li>검색어의 철자나 맞춤법 등을 확인하여 주세요.</li>"), "none");
+        assert_eq!(why_empty("<form>reCAPTCHA</form>"), "blocked");
+        assert_eq!(why_empty("<div>비정상적인 접근이 감지되었습니다</div>"), "blocked");
+        assert_eq!(why_empty("<html><table class='new-layout'></table></html>"), "changed");
+    }
+
+    fn fake() -> Value {
+        let row = |site: &str, id: &str| json!({ "site": site, "id": id, "title": "은혜", "artist": "손경민", "album": "" });
+        collect("은혜", vec![
+            ("bugs".into(), (vec![], "blocked", "HTTP 429".into())),
+            ("genie".into(), (vec![row("genie", "1"), json!({ "site": "genie", "id": "2", "title": "은혜 (MR)", "artist": "", "album": "" })], "ok", String::new())),
+            ("melon".into(), (vec![], "none", String::new())),
+        ])
+    }
+
+    #[test]
+    fn collect_reports_each_site() {
+        let r = fake();
+        assert_eq!(r["results"].as_array().unwrap().len(), 1, "MR 공은 빼고");
+        assert_eq!(r["status"][0]["kind"], "blocked");
+        assert!(r["status"][0]["url"].as_str().unwrap().starts_with("https://music.bugs.co.kr/search/track?q=%EC%9D%80"));
+        assert_eq!(r["status"][1]["count"], 1);
+        assert_eq!(r["errors"].as_array().unwrap().len(), 1, "결과 없음(none)은 오류가 아님");
+        assert!(r["errors"][0].as_str().unwrap().starts_with("벅스: 자동 검색을 잠시 막았습니다 (HTTP 429)"));
+        assert_eq!(r["summary"], "");
+        let none = collect("x", vec![("bugs".into(), (vec![], "none", String::new())), ("melon".into(), (vec![], "none", String::new()))]);
+        assert!(none["summary"].as_str().unwrap().starts_with("세 사이트 모두"));
+        let net = collect("x", vec![("bugs".into(), (vec![], "net", "x".into()))]);
+        assert!(net["summary"].as_str().unwrap().contains("인터넷 연결"));
+    }
+
+    #[test]
+    fn cache_fills_blocked_sites_and_lyrics() {
+        let dir = std::env::temp_dir().join(format!("wp-lyr-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 1) 벅스가 되던 때: 벅스·지니 결과 보관
+        let ok = collect("은혜", vec![
+            ("bugs".into(), (vec![json!({ "site": "bugs", "id": "9", "title": "은혜", "artist": "손경민", "album": "" })], "ok", String::new())),
+            ("genie".into(), (vec![json!({ "site": "genie", "id": "1", "title": "은혜", "artist": "", "album": "" })], "ok", String::new())),
+        ]);
+        let r1 = with_cache(&dir, "은혜", ok);
+        assert!(r1.get("cachedAt").is_none());
+        // 2) 벅스가 막혔을 때: 지니는 새 결과, 벅스는 보관한 결과를 덧붙임 (띄어쓰기가 달라도 같은 검색어)
+        let r2 = with_cache(&dir, "은 혜", fake());
+        let res = r2["results"].as_array().unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[1]["site"], "bugs");
+        assert!(res[1]["cached"].as_str().unwrap().len() >= 16, "찾은 날짜 시각");
+        assert!(r2["summary"].as_str().unwrap().contains("찾아 둔 결과 1곡"));
+        // 3) 또 막혀도 벅스 결과는 계속 남는다 (새로 찾은 지니와 함께 다시 저장됐으므로)
+        let r3 = with_cache(&dir, "은혜", fake());
+        assert_eq!(r3["results"].as_array().unwrap().len(), 2);
+        // 가사 보관: 한 번 읽은 곡은 네트워크 없이
+        {
+            let mut all = cache_load(&dir);
+            all["lyrics"] = json!({ "bugs:9": { "at": "2026-11-25 10:00", "text": "내가 누려왔던" } });
+            cache_save(&dir, &all);
+        }
+        assert_eq!(lyrics_cached("bugs", "9", Some(&dir)).unwrap(), "내가 누려왔던");
+        assert!(lyrics_cached("bugs", "x", Some(&dir)).is_err(), "잘못된 곡 번호는 네트워크 전에 거름");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn stamp_shape() {
+        let s = local_stamp();
+        assert!(re!(r"^20\d\d-\d\d-\d\d \d\d:\d\d$").is_match(&s), "{s}");
+    }
 }
 
 #[cfg(test)]
@@ -418,6 +714,10 @@ mod net_tests {
     fn live() {
         let r = super::search("은혜 손경민");
         println!("errors={} n={}", r["errors"], r["results"].as_array().map(|a| a.len()).unwrap_or(0));
+        for s in r["status"].as_array().unwrap() { println!("status {} {} {}", s["siteName"], s["kind"], s["count"]); }
+        let none = super::search("쀍쀍없는곡제목zzqx");
+        for s in none["status"].as_array().unwrap() { println!("없는 곡: {} {}", s["siteName"], s["kind"]); }
+        println!("없는 곡 summary: {}", none["summary"]);
         for x in r["results"].as_array().unwrap().iter().take(3) { println!("{} {} {} {}", x["siteName"], x["id"], x["title"], x["artist"]); }
         let first = r["results"].as_array().unwrap().iter().find(|x| x["site"] == "bugs").or(r["results"].get(0)).cloned().unwrap();
         let l = super::lyrics(first["site"].as_str().unwrap(), first["id"].as_str().unwrap()).unwrap();

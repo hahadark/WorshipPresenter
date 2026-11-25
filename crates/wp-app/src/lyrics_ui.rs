@@ -14,6 +14,8 @@ pub struct LyricsState {
     busy: String,
     results: Vec<Value>,
     errors: Vec<String>,
+    /// 자동으로 못 읽은 사이트 (이름, 검색 화면 주소) — [사이트에서 열기]
+    failed: Vec<(String, String)>,
     picked: Option<Value>,
     lyrics: String,
     order: String,
@@ -27,31 +29,41 @@ pub fn open() {
     ST.lock().open = true;
 }
 
-fn run_search(ctx: egui::Context, q: String) {
+/// 찾기 (백그라운드). dir: 찾은 결과·가사를 보관할 자료 폴더 — 사이트가 막혀도 지난번 결과를 보여 준다
+fn run_search(ctx: egui::Context, q: String, dir: std::path::PathBuf) {
     {
         let mut s = ST.lock();
         s.busy = format!("'{q}' 찾는 중…");
         s.results.clear();
         s.errors.clear();
+        s.failed.clear();
     }
     std::thread::spawn(move || {
-        let r = wp_core::lyricsweb::search(&q);
+        let r = wp_core::lyricsweb::search_cached(&q, Some(&dir));
         let mut s = ST.lock();
         s.results = r["results"].as_array().cloned().unwrap_or_default();
         s.errors = r["errors"].as_array().into_iter().flatten().filter_map(|e| e.as_str().map(String::from)).collect();
-        s.busy = if s.results.is_empty() { "찾은 곡이 없습니다.".into() } else { String::new() };
+        s.failed = r["status"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|x| matches!(x["kind"].as_str(), Some("blocked" | "changed")))
+            .map(|x| (x["siteName"].as_str().unwrap_or("").to_string(), x["url"].as_str().unwrap_or("").to_string()))
+            .collect();
+        let summary = r["summary"].as_str().unwrap_or("").to_string();
+        s.busy = if !summary.is_empty() { summary } else if s.results.is_empty() { "찾은 곡이 없습니다.".into() } else { String::new() };
         ctx.request_repaint();
     });
 }
 
-fn run_lyrics(ctx: egui::Context, item: Value) {
+fn run_lyrics(ctx: egui::Context, item: Value, dir: std::path::PathBuf) {
     {
         let mut s = ST.lock();
         s.busy = format!("'{}' 가사 읽는 중…", item["title"].as_str().unwrap_or(""));
         s.picked = Some(item.clone());
     }
     std::thread::spawn(move || {
-        let r = wp_core::lyricsweb::lyrics(item["site"].as_str().unwrap_or(""), item["id"].as_str().unwrap_or(""));
+        let r = wp_core::lyricsweb::lyrics_cached(item["site"].as_str().unwrap_or(""), item["id"].as_str().unwrap_or(""), Some(&dir));
         let mut s = ST.lock();
         match r {
             Ok(t) if !t.is_empty() => {
@@ -80,6 +92,7 @@ impl App {
             return;
         }
         let sel_song = self.sel.and_then(|i| self.core.lock().cue.as_ref().and_then(|c| c.items.get(i).cloned())).filter(|it| it["type"] == "song");
+        let data_dir = self.core.lock().data_dir.clone();
         crate::widgets::float_window(ctx, "lyrics", wp_core::i18n::tr("웹에서 가사 찾기 (Ctrl+L)"), [560.0, 620.0]).open(&mut open).show(ctx, |ui| {
             let mut st = ST.lock();
             let mut search = false;
@@ -92,22 +105,34 @@ impl App {
             if search && !st.query.trim().is_empty() {
                 let q = st.query.trim().to_string();
                 drop(st);
-                run_search(ctx.clone(), q);
+                run_search(ctx.clone(), q, data_dir.clone());
                 st = ST.lock();
             }
             if !st.busy.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&st.busy)).color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
             for e in &st.errors { ui.label(RichText::new(wp_core::i18n::tr_args("못 읽음 · {1}", &[&e])).small().color(Color32::GRAY)); }
+            if !st.failed.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    for (name, url) in &st.failed {
+                        if ui.small_button(wp_core::i18n::tr_args("{1} 사이트에서 열기", &[name])).on_hover_text(url.as_str()).clicked() {
+                            let _ = wp_core::trackd::open_link(url);
+                        }
+                    }
+                });
+            }
             let mut pick: Option<Value> = None;
             egui::ScrollArea::vertical().id_salt("lyr-res").max_height(180.0).show(ui, |ui| {
                 for x in &st.results {
                     let on = st.picked.as_ref().is_some_and(|p| p["site"] == x["site"] && p["id"] == x["id"]);
-                    let t = format!("[{}] {} — {}  · {}", x["siteName"].as_str().unwrap_or(""), x["title"].as_str().unwrap_or(""), x["artist"].as_str().unwrap_or(""), x["album"].as_str().unwrap_or(""));
+                    let mut t = format!("[{}] {} — {}  · {}", x["siteName"].as_str().unwrap_or(""), x["title"].as_str().unwrap_or(""), x["artist"].as_str().unwrap_or(""), x["album"].as_str().unwrap_or(""));
+                    if let Some(at) = x["cached"].as_str() {
+                        t.push_str(&format!("  ({})", wp_core::i18n::tr_args("{1}에 찾아 둔 결과", &[&at])));
+                    }
                     if ui.selectable_label(on, t).clicked() { pick = Some(x.clone()); }
                 }
             });
             if let Some(p) = pick {
                 drop(st);
-                run_lyrics(ctx.clone(), p);
+                run_lyrics(ctx.clone(), p, data_dir.clone());
                 st = ST.lock();
             }
             ui.separator();
