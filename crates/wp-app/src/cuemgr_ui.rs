@@ -68,6 +68,45 @@ fn import_report(app: &App, n: usize, errs: Vec<String>, warns: &[String]) {
     app.core.lock().notify(format!("{done} {}\n{}{more}", tr("확인할 것:"), warns.iter().take(3).cloned().collect::<Vec<_>>().join("\n")), "warn");
 }
 
+/// 큐시트 메뉴 → PPT 파일로 내보내기: 열린 큐시트를 예배 순서대로 PPT 하나로.
+/// 슬라이드 나눔·그림 위치는 잠금 안에서 빨리, 그림 읽기·파일 쓰기는 다른 스레드에서 (화면이 멈추지 않게)
+pub fn export_pptx_dialog(app: &mut App) {
+    let name = app.core.lock().cue.as_ref().map(|c| c.name.clone());
+    let Some(name) = name else {
+        fail(app, tr("큐시트를 먼저 여세요."));
+        return;
+    };
+    let Some(path) = rfd::FileDialog::new().add_filter("PowerPoint", &["pptx"]).set_file_name(format!("{}.pptx", file_name(&name))).save_file() else { return };
+    let path = if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pptx")) { path } else { path.with_extension("pptx") };
+    let plan = app.core.lock().cue_pptx_plan();
+    let plan = match plan {
+        Ok(p) => p,
+        Err(e) => return fail(app, e),
+    };
+    app.core.lock().notify(tr("PPT 파일을 만드는 중…"), "info");
+    let core = app.core.clone();
+    std::thread::spawn(move || {
+        let r = wp_core::pptxout::finish_pptx(plan, &path);
+        let mut c = core.lock();
+        match r {
+            Ok(v) => {
+                let skipped: Vec<String> = v["skipped"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+                let mut msg = tr_args("PPT 파일을 만들었습니다: 순서 {1}개 · 슬라이드 {2}장", &[&v["items"], &v["slides"]]);
+                if !skipped.is_empty() {
+                    msg.push_str(&format!("\n{} {}", tr("빼진 순서:"), skipped.iter().take(4).cloned().collect::<Vec<_>>().join(" / ")));
+                }
+                if v["dropped"].as_u64().unwrap_or(0) > 0 {
+                    msg.push_str(&format!("\n{}", tr_args("읽지 못한 그림·영상 {1}장은 빼습니다", &[&v["dropped"]])));
+                }
+                let ok_all = skipped.is_empty() && v["dropped"].as_u64().unwrap_or(0) == 0;
+                c.notify(msg, if ok_all { "ok" } else { "warn" });
+                let _ = wp_core::trackd::open_path(path.parent().unwrap_or(std::path::Path::new(".")));
+            }
+            Err(e) => c.notify(e, "error"),
+        }
+    });
+}
+
 /// 큐시트 메뉴 → 찬양 콘티 가져오기: 콘티 스튜디오의 .worship 파일을 골라 큐시트로 만들고 첫 큐시트를 연다
 pub fn import_conti_dialog(app: &mut App) {
     let Some(fs) = rfd::FileDialog::new().add_filter(tr("찬양 콘티 스튜디오 콘티"), &["worship"]).add_filter(tr("큐시트 · 콘티"), &["json", "worship"]).pick_files() else { return };

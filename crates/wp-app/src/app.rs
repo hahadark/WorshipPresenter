@@ -1522,6 +1522,11 @@ impl App {
                     self.core.lock().open_saved_cue(&first);
                 }
             }
+            // 점검용 --export-pptx <파일>: 열린 큐시트를 PPT 로 (큐시트 → PPT 파일로 내보내기와 같은 길)
+            if let Some(p) = std::env::args().position(|x| x == "--export-pptx").and_then(|i| std::env::args().nth(i + 1)) {
+                let r = self.core.lock().export_cue_pptx(std::path::Path::new(&p));
+                log::info!("점검: PPT 내보내기 {r:?}");
+            }
             if let Some(i) = std::env::args().position(|x| x == "--item").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()) { self.sel = Some(i); acts.push(Act::PreviewItem(i)); }
             if send { acts.push(Act::SendPreview); }
             // 점검용 --outwin-esc-test: 예배당 창(wp-output)을 작은 창으로 실제로 띄우고, 창 안 페이지에서 Esc keydown 을 흉내 낸다 → 창이 꺼지고 상태가 '꺼짐' 으로

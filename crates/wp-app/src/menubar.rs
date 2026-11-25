@@ -40,6 +40,7 @@ pub fn menus() -> Vec<Menu> {
             it("b:redo", "다시 실행", "Ctrl+Y"),
             it("-", "-", ""),
             it("b:print", "큐시트 인쇄", "Ctrl+P"),
+            it("b:pptx", "PPT 파일로 내보내기 (예배 순서대로)…", ""),
         ] },
         Menu { label: "송출", items: vec![
             it("c:history", "송출 기록", "Ctrl+H"),
@@ -141,6 +142,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "c:slideedit" => "square-pen",
         "b:cues" => "folder-open",
         "b:conti" => "download",
+        "b:pptx" => "file-text",
         "b:undo" => "undo-2",
         "b:redo" => "redo-2",
         "b:print" => "file-text",
