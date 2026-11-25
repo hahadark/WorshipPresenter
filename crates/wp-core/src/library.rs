@@ -9,6 +9,17 @@ pub const IMAGE: [&str; 7] = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"]
 pub const VIDEO: [&str; 4] = ["mp4", "m4v", "webm", "mov"];
 pub const AUDIO: [&str; 9] = ["mp3", "wav", "m4a", "aac", "ogg", "oga", "flac", "opus", "wma"];
 
+/// 읽지 않는 폴더: 숨김(.) · NAS 시스템 폴더(시놀로지 @eaDir · #recycle · #snapshot) · 윈도우 휴지통·시스템 폴더
+pub fn skip_dir(name: &str) -> bool {
+    let l = name.to_ascii_lowercase();
+    name.starts_with('.') || name.starts_with('@') || name.starts_with('#') || l == "$recycle.bin" || l == "system volume information" || l == "recycler"
+}
+
+/// 건너뛸 파일: 숨김 · 오피스 임시 파일(~$) · 맥이 남기는 꼬리 파일(._이름)
+pub fn skip_file(name: &str) -> bool {
+    name.starts_with('.') || name.starts_with("~$")
+}
+
 fn ext(p: &Path) -> String {
     p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase()
 }
@@ -35,15 +46,18 @@ pub fn list_files(kind: &str, dir: &Path) -> Vec<PathBuf> {
         let Ok(rd) = std::fs::read_dir(d) else { return };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') || name.starts_with("~$") {
-                continue;
-            }
+            // 파일마다 따로 묻지 않고 폴더 목록에 따라온 종류를 쓴다 (NAS 에서 빠름). 바로가기 등 모르면 예전처럼 묻는다
             let p = e.path();
-            if p.is_dir() {
-                if depth < 1 {
+            let is_dir = match e.file_type() {
+                Ok(t) if t.is_dir() => true,
+                Ok(t) if t.is_file() => false,
+                _ => p.is_dir(),
+            };
+            if is_dir {
+                if depth < 1 && !skip_dir(&name) {
                     walk(kind, &p, depth + 1, out)
                 }
-            } else if want(kind, &p) {
+            } else if !skip_file(&name) && want(kind, &p) {
                 out.push(p)
             }
             if out.len() >= 3000 {

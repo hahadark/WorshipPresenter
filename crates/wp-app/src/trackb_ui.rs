@@ -1191,7 +1191,13 @@ fn collect_song_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>, 
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let path = e.path();
-        if path.is_dir() { collect_song_files(&path, out, depth + 1); continue; }
+        let name = e.file_name().to_string_lossy().to_string();
+        // NAS 시스템 폴더(@eaDir · #recycle) · 휴지통 · 숨김 폴더는 들어가지 않고, 맥의 ._이름 · 오피스 임시 파일은 뺀다
+        if e.file_type().map(|t| t.is_dir()).unwrap_or_else(|_| path.is_dir()) {
+            if !wp_core::library::skip_dir(&name) { collect_song_files(&path, out, depth + 1); }
+            continue;
+        }
+        if wp_core::library::skip_file(&name) { continue; }
         let ext = path.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
         if wp_core::songimport::SONG_EXT.contains(&ext.as_str()) { out.push(path); }
     }

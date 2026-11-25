@@ -39,18 +39,41 @@ pub fn parse_name(file: &Path) -> (Option<i64>, String, String) {
     (None, base.clone(), base)
 }
 
+/// 폴더 목록 기억: (폴더 수정 시각, 읽은 때, 목록). 파일을 넣거나 지우거나 이름을 바꾸면 폴더 수정 시각이 바뀌므로
+/// 그때만 다시 읽는다. 검색칸에 글자를 칠 때마다 NAS · 큰 폴더를 다시 훑지 않게 (10분이 지나면 한 번은 다시 읽음).
+static LIST_CACHE: Lazy<Mutex<HashMap<PathBuf, (std::time::SystemTime, std::time::Instant, Vec<HymnFile>)>>> = Lazy::new(Default::default);
+
 pub fn list_folder(dir: &Path, folder: &str) -> Vec<HymnFile> {
+    let mtime = std::fs::metadata(dir).and_then(|m| m.modified()).ok();
+    if let Some(mt) = mtime {
+        if let Some((t, at, v)) = LIST_CACHE.lock().get(dir) {
+            if *t == mt && at.elapsed() < std::time::Duration::from_secs(600) {
+                return v.iter().cloned().map(|mut h| { h.folder = folder.to_string(); h }).collect();
+            }
+        }
+    }
     let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
     let mut v: Vec<HymnFile> = rd
         .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && EXT.is_match(&p.to_string_lossy()))
-        .map(|p| {
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().to_string();
+            // 파일 종류는 폴더 목록에 따라온 것을 쓴다 (파일마다 따로 묻지 않음). 맥의 ._이름 · 오피스 임시 파일 ~$이름은 뺀다
+            !crate::library::skip_file(&n) && EXT.is_match(&n) && e.file_type().map(|t| t.is_file() || t.is_symlink() && e.path().is_file()).unwrap_or_else(|_| e.path().is_file())
+        })
+        .map(|e| {
+            let p = e.path();
             let (number, title, name) = parse_name(&p);
             HymnFile { file: p, number, title, name, folder: folder.to_string() }
         })
         .collect();
     v.sort_by(|a, b| a.number.unwrap_or(1_000_000_000).cmp(&b.number.unwrap_or(1_000_000_000)).then(a.title.cmp(&b.title)));
+    if let Some(mt) = mtime {
+        let mut c = LIST_CACHE.lock();
+        if c.len() > 200 {
+            c.clear();
+        }
+        c.insert(dir.to_path_buf(), (mt, std::time::Instant::now(), v.clone()));
+    }
     v
 }
 
@@ -1155,6 +1178,27 @@ pub fn new_hymn_item(h: &HymnFile) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn folder_list_skips_junk_and_follows_changes() {
+        let dir = std::env::temp_dir().join(format!("wp-hymnlist-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(dir.join("@eaDir")).unwrap();
+        for n in ["010 전능왕 오셔서.pps", "._010 전능왕 오셔서.pps", "~$임시.pptx", "메모.txt", "@eaDir/010 x.pps"] {
+            std::fs::write(dir.join(n), b"x").unwrap();
+        }
+        let names = |v: Vec<HymnFile>| v.into_iter().map(|h| h.name).collect::<Vec<_>>();
+        assert_eq!(names(list_folder(&dir, "찬송가")), ["010 전능왕 오셔서"], "맥 꼬리 파일 · 임시 파일 · 폴더는 뺀다");
+        assert_eq!(list_folder(&dir, "다른 이름")[0].folder, "다른 이름", "기억한 목록에도 부른 폴더 이름");
+        // 파일을 더하거나 이름을 바꾸면 다음 목록에 바로 나온다 (폴더 수정 시각이 바뀜)
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("020 나의 안에 거하는 자.pptx"), b"x").unwrap();
+        assert_eq!(list_folder(&dir, "").len(), 2);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::rename(dir.join("010 전능왕 오셔서.pps"), dir.join("011 전능왕.pps")).unwrap();
+        assert_eq!(list_folder(&dir, "")[0].name, "011 전능왕");
+        let _ = std::fs::remove_dir_all(dir);
+        assert!(list_folder(&std::env::temp_dir().join("wp-없는-폴더-xyz"), "").is_empty());
+    }
+
     #[test]
     fn names() {
         assert_eq!(parse_name(Path::new("010 전능왕 오셔서.pps")), (Some(10), "전능왕 오셔서".into(), "010 전능왕 오셔서".into()));
