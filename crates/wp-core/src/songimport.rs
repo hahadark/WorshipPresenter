@@ -122,12 +122,22 @@ pub fn parse_open_lyrics(xml: &str, file: &Path) -> Vec<Value> {
         .collect();
     let arrangement = order.iter().enumerate().filter(|(k, t)| !(*k > 0 && **t == order[k - 1] && t.ends_with('절'))).map(|(_, t)| t.as_str()).collect::<Vec<_>>().join(" ");
     let credit = credit_of(&[authors.join(", "), copyright, if ccli.is_empty() { String::new() } else { format!("CCLI {ccli}") }]);
-    vec![song(&title, &clean(&lyrics), &credit, &arrangement)]
+    let mut sg = song(&title, &clean(&lyrics), &credit, &arrangement);
+    // 곡 정보: <key> · <tempo type="bpm"> (글로 쓴 빠르기는 버림)
+    let key = tag(re!(r"(?is)<key>(.*?)</key>"));
+    if !key.is_empty() {
+        sg["key"] = json!(key);
+    }
+    if let Some(m) = re!(r#"(?is)<tempo[^>]*type="bpm"[^>]*>\s*(\d{2,3})\s*</tempo>"#).captures(xml) {
+        sg["bpm"] = json!(m[1].to_string());
+    }
+    vec![sg]
 }
 
 // ---------------- ChordPro ----------------
 pub fn parse_chord_pro(text: &str, file: &Path) -> Vec<Value> {
     let (mut title, mut artist, mut copyright, mut ccli) = (String::new(), String::new(), String::new(), String::new());
+    let (mut key, mut meter, mut bpm) = (String::new(), String::new(), String::new());
     let mut out: Vec<String> = vec![];
     let mut verse_no = 0;
     for raw in text.replace('\r', "").split('\n') {
@@ -140,6 +150,9 @@ pub fn parse_chord_pro(text: &str, file: &Path) -> Vec<Value> {
                 "artist" | "composer" | "lyricist" | "subtitle" | "st" => artist = if artist.is_empty() { v } else { format!("{artist}, {v}") },
                 "copyright" => copyright = v,
                 "ccli" => ccli = v,
+                "key" => key = v,
+                "time" => meter = v,
+                "tempo" => bpm = v,
                 "start_of_chorus" | "soc" => out.extend([String::new(), format!("[{}]", if v.is_empty() { "후렴".into() } else { label_of(&v) })]),
                 "start_of_verse" | "sov" => {
                     let l = if v.is_empty() {
@@ -161,7 +174,7 @@ pub fn parse_chord_pro(text: &str, file: &Path) -> Vec<Value> {
                     }
                 }
                 "chorus" => out.extend([String::new(), "[후렴]".into()]),
-                _ => {} // 그 밖의 지시어(키·카포·끝 표시)는 버림
+                _ => {} // 그 밖의 지시어(카포·끝 표시)는 버림
             }
             continue;
         }
@@ -172,7 +185,13 @@ pub fn parse_chord_pro(text: &str, file: &Path) -> Vec<Value> {
     }
     let credit = credit_of(&[artist, copyright, if ccli.is_empty() { String::new() } else { format!("CCLI {ccli}") }]);
     let title = if title.is_empty() { base(file) } else { title };
-    vec![song(&title, &clean(&out.join("\n")), &credit, "")]
+    let mut sg = song(&title, &clean(&out.join("\n")), &credit, "");
+    for (k, v) in [("key", key), ("meter", meter), ("bpm", bpm)] {
+        if !v.is_empty() {
+            sg[k] = json!(v);
+        }
+    }
+    vec![sg]
 }
 
 // ---------------- ProPresenter 6 (.pro6, XML + RTF/글) ----------------
@@ -397,6 +416,12 @@ mod tests {
         assert_eq!(s["title"], "은혜");
         assert_eq!(s["credit"], "손경민");
         assert_eq!(s["lyrics"], "[1절]\n[G]내가 누려왔던\n\n[후렴]\n그 모든 것이 은혜\n\n[2절]\n두 번째");
+        assert_eq!(s["key"], "G");
+        let s2 = &parse_chord_pro("{title: x}\n{time: 6/8}\n{tempo: 84}\n가사", &PathBuf::from("x.cho"))[0];
+        assert_eq!((s2["meter"].as_str(), s2["bpm"].as_str(), s2.get("key")), (Some("6/8"), Some("84"), None));
+        let ol = r#"<song><properties><titles><title>t</title></titles><key>D</key><tempo type="bpm">90</tempo></properties><lyrics><verse name="v1"><lines>가</lines></verse></lyrics></song>"#;
+        let s3 = &parse_open_lyrics(ol, &PathBuf::from("t.xml"))[0];
+        assert_eq!((s3["key"].as_str(), s3["bpm"].as_str()), (Some("D"), Some("90")));
     }
     #[test]
     fn pro6_and_rtf() {

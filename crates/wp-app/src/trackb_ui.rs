@@ -198,7 +198,7 @@ impl App {
                     let w = (ui.available_width() - bw).max(140.0);
                     ui.add_sized([w, 30.0], egui::TextEdit::singleline(&mut self.tb.song_q).hint_text(tr("찬양 제목·가사로 찾기")).vertical_align(egui::Align::Center).margin(egui::Margin::symmetric(9, 4)));
                     if ui.add(Btn::new(tr("새 찬양")).icon("plus").height(30.0).tooltip(tr("새 찬양 가사 입력"))).clicked() {
-                        self.tb.song_edit = Some(json!({ "title": "", "lyrics": "", "credit": "", "tags": "", "arrangement": "" }));
+                        self.tb.song_edit = Some(json!({ "title": "", "lyrics": "", "credit": "", "tags": "", "arrangement": "", "key": "", "meter": "", "bpm": "" }));
                     }
                     if ui.add(Btn::new(tr("가사 찾기")).icon("globe").height(30.0).tooltip(tr("벅스 · 지니 · 멜론에서 가사를 찾아 찬양 슬라이드로 (한 곡씩, Ctrl+L)"))).clicked() {
                         crate::lyrics_ui::open();
@@ -256,7 +256,9 @@ impl App {
         }
         for s in &list {
             let id = s["id"].as_str().unwrap_or("").to_string();
-            let (row, edit, add) = song_row(ui, s["title"].as_str().unwrap_or(""), s["first"].as_str().unwrap_or(""), sel.as_deref() == Some(id.as_str()));
+            // Key 가 있으면 흐린 첫 줄 앞에 (예: "G · 내가 누려왔던…")
+            let first = match s["key"].as_str().filter(|k| !k.trim().is_empty()) { Some(k) => format!("{} · {}", k.trim(), s["first"].as_str().unwrap_or("")), None => s["first"].as_str().unwrap_or("").to_string() };
+            let (row, edit, add) = song_row(ui, s["title"].as_str().unwrap_or(""), &first, sel.as_deref() == Some(id.as_str()));
             crate::widgets::mark(&format!("song-row-{}", s["title"].as_str().unwrap_or("")), row.rect);
             // ctxmenu.js libraryMenu: 큐시트에 넣기 (더블클릭) · 그 줄의 단추(고치기)
             let menu = crate::ctx_ui::lib_menu(&row, s["title"].as_str().unwrap_or(""), true, &[crate::ctx_ui::LibOp::new("edit", Some("pencil"), tr("고치기"))]);
@@ -299,6 +301,14 @@ impl App {
                 ui.label(tr("가사 (빈 줄로 슬라이드, [1절] [후렴] 이름표)")); s("lyrics", ui, true);
                 ui.label(tr("곡 정보 (작사·작곡·저작권)")); s("credit", ui, false);
                 ui.label(tr("기본 부를 순서 (예: 1 C 2 C)")); s("arrangement", ui, false);
+                // 찬양팀용 곡 정보: 큐시트에 넣으면 진행 메모로 따라간다
+                ui.horizontal(|ui| {
+                    for (k, label, hint, w) in [("key", tr("Key"), "G", 60.0), ("meter", tr("박자"), "4/4", 60.0), ("bpm", tr("빠르기 (BPM)"), "72", 60.0)] {
+                        ui.label(label);
+                        let mut v = e[k].as_str().unwrap_or("").to_string();
+                        if ui.add(egui::TextEdit::singleline(&mut v).hint_text(hint).desired_width(w)).changed() { e[k] = json!(v); }
+                    }
+                });
                 crate::media_ui::song_arrangements(ui, &mut self.core.lock(), e);
                 let e2 = e.clone();
                 ui.horizontal(|ui| {

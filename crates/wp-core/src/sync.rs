@@ -150,9 +150,11 @@ impl Core {
         }
         let db = &self.store.db;
         let songs: Vec<Value> = {
-            let mut st = db.prepare("SELECT id, title, lyrics, credit, tags, arrangement, arrangements, updated_at FROM Songs")?;
+            let mut st = db.prepare("SELECT id, title, lyrics, credit, tags, arrangement, arrangements, updated_at, song_key, meter, bpm FROM Songs")?;
             let rows = st.query_map([], |r| {
-                Ok(json!({ "id": r.get::<_, String>(0)?, "title": r.get::<_, String>(1)?, "lyrics": r.get::<_, Option<String>>(2)?, "credit": r.get::<_, Option<String>>(3)?, "tags": r.get::<_, Option<String>>(4)?, "arrangement": r.get::<_, Option<String>>(5)?, "arrangements": r.get::<_, Option<String>>(6)?, "updated_at": r.get::<_, Option<String>>(7)? }))
+                // key · meter · bpm 은 Rust 판에서 더한 칸 (1.x 는 모르는 칸이라 무시한다)
+                Ok(json!({ "id": r.get::<_, String>(0)?, "title": r.get::<_, String>(1)?, "lyrics": r.get::<_, Option<String>>(2)?, "credit": r.get::<_, Option<String>>(3)?, "tags": r.get::<_, Option<String>>(4)?, "arrangement": r.get::<_, Option<String>>(5)?, "arrangements": r.get::<_, Option<String>>(6)?, "updated_at": r.get::<_, Option<String>>(7)?,
+                    "key": r.get::<_, Option<String>>(8)?, "meter": r.get::<_, Option<String>>(9)?, "bpm": r.get::<_, Option<String>>(10)? }))
             })?;
             rows.filter_map(|x| x.ok()).collect()
         };
@@ -199,9 +201,12 @@ impl Core {
                 }
                 let arr = if x["arrangements"].is_string() { cut(&s(x, "arrangements"), 5000) } else { "[]".into() };
                 let up = if s(x, "updated_at").is_empty() { iso_now() } else { s(x, "updated_at") };
+                // 곡 정보(key · meter · bpm)가 없는 파일(1.x 가 쓴 것)이면 이 PC 의 값을 그대로 둔다
+                let mine: (String, String, String) = tx.query_row("SELECT song_key, meter, bpm FROM Songs WHERE id = ?", [&id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?.unwrap_or_default();
+                let m = |k: &str, local: &str| if x.get(k).is_some_and(|v| !v.is_null()) { cut(&s(x, k), 20) } else { local.to_string() };
                 tx.execute(
-                    "INSERT OR REPLACE INTO Songs (id, title, lyrics, credit, tags, arrangement, arrangements, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    params![id, cut(&s(x, "title"), 200), cut(&s(x, "lyrics"), 50000), cut(&s(x, "credit"), 300), cut(&s(x, "tags"), 300), cut(&s(x, "arrangement"), 300), arr, up],
+                    "INSERT OR REPLACE INTO Songs (id, title, lyrics, credit, tags, arrangement, arrangements, updated_at, song_key, meter, bpm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    params![id, cut(&s(x, "title"), 200), cut(&s(x, "lyrics"), 50000), cut(&s(x, "credit"), 300), cut(&s(x, "tags"), 300), cut(&s(x, "arrangement"), 300), arr, up, m("key", &mine.0), m("meter", &mine.1), m("bpm", &mine.2)],
                 )?;
                 gs += 1;
             }
@@ -446,6 +451,41 @@ mod tests {
         assert_eq!(ov["size"].as_f64(), Some(100.0));
         assert_eq!(ov["on"], false, "켜짐 여부는 이 PC 것");
         assert_eq!(b.store.get_cue(&cue_id).unwrap().name, "주일 (PC2 수정)", "로컬이 더 최신인 큐시트는 덮지 않는다");
+    }
+
+    /// 곡 정보(Key · 박자 · BPM): 다른 PC 로 따라가고, 1.x 가 쓴 동기화 파일(그 칸이 없음)은 이 PC 의 값을 지우지 않는다
+    #[test]
+    fn song_meta_travels_and_survives_old_files() {
+        let root = std::env::temp_dir().join(format!("wp-sync-meta-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        let share = root.join("share");
+        std::fs::create_dir_all(&share).unwrap();
+        let mut a = core(&root.join("pc1"));
+        let s = a.save_song(&json!({ "title": "은혜", "lyrics": "가", "key": "A", "meter": "4/4", "bpm": "70" })).unwrap();
+        let id = s["id"].as_str().unwrap().to_string();
+        a.set_sync_dir(&share.to_string_lossy()).unwrap();
+        let mut b = core(&root.join("pc2"));
+        b.set_sync_dir(&share.to_string_lossy()).unwrap();
+        let got = b.get_song(&id).unwrap();
+        assert_eq!((got["key"].as_str(), got["meter"].as_str(), got["bpm"].as_str()), (Some("A"), Some("4/4"), Some("70")));
+        // 1.x 가 가사만 고쳐 쓴 파일: key · meter · bpm 칸이 없다
+        let f = share.join(SYNC_FILE);
+        let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
+        for x in v["songs"].as_array_mut().unwrap() {
+            let o = x.as_object_mut().unwrap();
+            o.remove("key");
+            o.remove("meter");
+            o.remove("bpm");
+            o.insert("lyrics".into(), json!("고친 가사"));
+            o.insert("updated_at".into(), json!("9999-01-01T00:00:00.000Z"));
+        }
+        std::fs::write(&f, v.to_string()).unwrap();
+        b.sync_import().unwrap();
+        let got = b.get_song(&id).unwrap();
+        assert_eq!(got["lyrics"], "고친 가사");
+        assert_eq!(got["key"], "A", "칸이 없는 파일은 이 PC 의 Key 를 두고");
+        assert_eq!(got["bpm"], "70");
+        drop((a, b));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

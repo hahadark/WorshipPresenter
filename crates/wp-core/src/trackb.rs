@@ -96,6 +96,8 @@ impl Core {
         it["lyrics"] = s["lyrics"].clone();
         it["credit"] = s["credit"].clone();
         it["order"] = s["arrangement"].clone();
+        // 찬양팀용 곡 정보가 있으면 진행 메모로 (큐시트 목록·인쇄에 보임)
+        it["note"] = json!(crate::songs::meta_line(&s));
         Some(it)
     }
 

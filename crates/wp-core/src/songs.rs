@@ -18,7 +18,32 @@ pub fn ensure_schema(db: &Connection) -> Result<()> {
     if !cols.iter().any(|c| c == "arrangements") {
         db.execute_batch("ALTER TABLE Songs ADD COLUMN arrangements TEXT NOT NULL DEFAULT '[]'")?;
     }
+    // 찬양팀용 곡 정보 (Rust 판에서 더함, 2026-11-25): Key · 박자 · 빠르기(BPM)
+    for (c, _) in SONG_META {
+        if !cols.iter().any(|x| x == c) {
+            db.execute_batch(&format!("ALTER TABLE Songs ADD COLUMN {c} TEXT NOT NULL DEFAULT ''"))?;
+        }
+    }
     Ok(())
+}
+
+/// 곡 정보 칸: (DB 칸, JSON 이름)
+pub const SONG_META: [(&str, &str); 3] = [("song_key", "key"), ("meter", "meter"), ("bpm", "bpm")];
+
+/// 진행 메모용 한 줄: "Key G · 4/4 · BPM 72" (없는 칸은 뺀다)
+pub fn meta_line(s: &Value) -> String {
+    let g = |k: &str| s[k].as_str().unwrap_or("").trim().to_string();
+    let mut a = vec![];
+    if !g("key").is_empty() {
+        a.push(format!("Key {}", g("key")));
+    }
+    if !g("meter").is_empty() {
+        a.push(g("meter"));
+    }
+    if !g("bpm").is_empty() {
+        a.push(format!("BPM {}", g("bpm")));
+    }
+    a.join(" · ")
 }
 
 fn cut(s: &str, n: usize) -> String {
@@ -61,20 +86,20 @@ fn squash(s: &str) -> String {
 pub fn list_songs(db: &Connection, query: &str) -> Vec<Value> {
     let q = squash(query);
     let cho = crate::textnorm::has_choseong(query);
-    let Ok(mut st) = db.prepare("SELECT id, title, lyrics, credit, tags, COALESCE(updated_at,'') FROM Songs ORDER BY title COLLATE NOCASE") else { return vec![] };
-    let rows: Vec<(String, String, String, String, String, String)> = st
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
+    let Ok(mut st) = db.prepare("SELECT id, title, lyrics, credit, tags, COALESCE(updated_at,''), song_key FROM Songs ORDER BY title COLLATE NOCASE") else { return vec![] };
+    let rows: Vec<(String, String, String, String, String, String, String)> = st
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))
         .map(|it| it.filter_map(|x| x.ok()).collect())
         .unwrap_or_default();
     let mut out: Vec<(bool, bool, Value)> = vec![];
-    for (id, title, lyrics, credit, tags, upd) in rows {
+    for (id, title, lyrics, credit, tags, upd, key) in rows {
         let hit = q.is_empty() || crate::textnorm::fuzzy_contains(&title, query);
         if !hit && (cho || !squash(&format!("{title}{lyrics}{tags}")).contains(&q)) {
             continue;
         }
         let first = lyrics.lines().map(strip_chords).find(|l| !l.is_empty() && !(l.starts_with('[') && l.ends_with(']'))).unwrap_or_default();
         let start = !q.is_empty() && crate::textnorm::fuzzy_starts_with(&title, query);
-        out.push((hit, start, json!({ "id": id, "title": title, "first": first, "credit": credit, "tags": tags, "updatedAt": upd, "titleHit": hit })));
+        out.push((hit, start, json!({ "id": id, "title": title, "first": first, "credit": credit, "tags": tags, "updatedAt": upd, "titleHit": hit, "key": key })));
     }
     out.sort_by_key(|x| (!x.0, !x.1));
     out.into_iter().take(500).map(|x| x.2).collect()
@@ -94,10 +119,11 @@ pub fn find_by_title(db: &Connection, name: &str) -> Option<Value> {
 }
 
 pub fn get_song(db: &Connection, id: &str) -> Option<Value> {
-    db.query_row("SELECT id, title, lyrics, credit, tags, arrangement, arrangements, COALESCE(updated_at,'') FROM Songs WHERE id = ?", [id], |r| {
+    db.query_row("SELECT id, title, lyrics, credit, tags, arrangement, arrangements, COALESCE(updated_at,''), song_key, meter, bpm FROM Songs WHERE id = ?", [id], |r| {
         let arrs: String = r.get(6)?;
         Ok(json!({ "id": r.get::<_, String>(0)?, "title": r.get::<_, String>(1)?, "lyrics": r.get::<_, String>(2)?, "credit": r.get::<_, String>(3)?, "tags": r.get::<_, String>(4)?,
-            "arrangement": r.get::<_, String>(5)?, "arrangements": norm_arr(&serde_json::from_str(&arrs).unwrap_or(json!([]))), "updatedAt": r.get::<_, String>(7)? }))
+            "arrangement": r.get::<_, String>(5)?, "arrangements": norm_arr(&serde_json::from_str(&arrs).unwrap_or(json!([]))), "updatedAt": r.get::<_, String>(7)?,
+            "key": r.get::<_, String>(8)?, "meter": r.get::<_, String>(9)?, "bpm": r.get::<_, String>(10)? }))
     })
     .optional()
     .ok()
@@ -110,12 +136,19 @@ pub fn save_song(db: &Connection, s: &Value) -> Result<Value> {
         bail!("찬양 제목을 입력하세요.");
     }
     let id = s["id"].as_str().filter(|x| valid_id(x)).map(String::from).unwrap_or_else(|| short_id("s"));
-    // arrangements 를 안 보내면 저장해 둔 것을 그대로
-    let keep = if s.get("arrangements").is_none() { get_song(db, &id).map(|x| x["arrangements"].clone()).unwrap_or(json!([])) } else { s["arrangements"].clone() };
+    // arrangements · 곡 정보(Key · 박자 · BPM)를 안 보내면 저장해 둔 것을 그대로 (가사 찾기·큐시트에서 저장할 때 지우지 않게)
+    let old = if s.get("arrangements").is_none() || SONG_META.iter().any(|(_, k)| s.get(*k).is_none()) { get_song(db, &id) } else { None };
+    let keep = if s.get("arrangements").is_none() { old.as_ref().map(|x| x["arrangements"].clone()).unwrap_or(json!([])) } else { s["arrangements"].clone() };
     let g = |k: &str, n: usize| cut(s[k].as_str().unwrap_or(""), n);
+    let meta = |k: &str| -> String {
+        match s.get(k) {
+            Some(v) => cut(v.as_str().map(String::from).or_else(|| v.as_i64().map(|n| n.to_string())).unwrap_or_default().trim(), 20),
+            None => old.as_ref().and_then(|x| x[k].as_str()).unwrap_or("").to_string(),
+        }
+    };
     db.execute(
-        "INSERT OR REPLACE INTO Songs (id, title, lyrics, credit, tags, arrangement, arrangements, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        params![id, title, g("lyrics", 50000), g("credit", 300), g("tags", 300), g("arrangement", 300), serde_json::to_string(&norm_arr(&keep))?, iso_now()],
+        "INSERT OR REPLACE INTO Songs (id, title, lyrics, credit, tags, arrangement, arrangements, updated_at, song_key, meter, bpm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![id, title, g("lyrics", 50000), g("credit", 300), g("tags", 300), g("arrangement", 300), serde_json::to_string(&norm_arr(&keep))?, iso_now(), meta("key"), meta("meter"), meta("bpm")],
     )?;
     Ok(get_song(db, &id).unwrap_or(Value::Null))
 }
@@ -205,6 +238,26 @@ pub fn save_imported(db: &Connection, songs: &[Value]) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn song_meta_saved_and_kept() {
+        let db = Connection::open_in_memory().unwrap();
+        ensure_schema(&db).unwrap();
+        ensure_schema(&db).unwrap(); // 두 번 불러도 괜찮다
+        let s = save_song(&db, &json!({ "title": "은혜", "lyrics": "가", "key": " A ", "meter": "4/4", "bpm": 70 })).unwrap();
+        let id = s["id"].as_str().unwrap().to_string();
+        assert_eq!((s["key"].as_str(), s["meter"].as_str(), s["bpm"].as_str()), (Some("A"), Some("4/4"), Some("70")));
+        assert_eq!(meta_line(&s), "Key A · 4/4 · BPM 70");
+        assert_eq!(list_songs(&db, "")[0]["key"], "A");
+        // 곡 정보 없이 저장(가사 찾기 · 큐시트에서 저장)해도 지워지지 않는다
+        let s = save_song(&db, &json!({ "id": id, "title": "은혜", "lyrics": "나" })).unwrap();
+        assert_eq!((s["lyrics"].as_str(), s["key"].as_str(), s["bpm"].as_str()), (Some("나"), Some("A"), Some("70")));
+        // 빈 글을 보내면 지운다
+        let s = save_song(&db, &json!({ "id": id, "title": "은혜", "lyrics": "나", "key": "" })).unwrap();
+        assert_eq!(s["key"], "");
+        assert_eq!(meta_line(&s), "4/4 · BPM 70");
+        assert_eq!(meta_line(&json!({})), "");
+    }
+
     #[test]
     fn choseong_and_title_lookup() {
         let db = Connection::open_in_memory().unwrap();
