@@ -667,6 +667,7 @@
  "telemetry": true,
  "autoUpdate": true,
  "cueTimes": false,
+ "webConsent": false,
  "cueTimesV2": true,
  "cameras": {},
  "triggerKey": "",

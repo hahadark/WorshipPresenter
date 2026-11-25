@@ -94,11 +94,17 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             } else {
                 let q: String = get(ui, Q);
                 let tpl = app.core.lock().settings.str(&["songSearchUrl"]);
-                if let Ok(url) = songinbox::online_search_url(&tpl, &q) {
-                    open_url(&url);
-                }
-                if let Err(e) = songinbox::arm(&app.core) {
-                    app.core.lock().notify(e, "error");
+                let consented = crate::lyrics_ui::consented(&app.core.lock());
+                if !consented {
+                    // 처음엔 인터넷 자료 사용 안내에 동의부터 (동의하면 검색 화면을 열고 지켜보기 시작)
+                    crate::lyrics_ui::ask(crate::lyrics_ui::Pending::OnlinePpt(songinbox::online_search_url(&tpl, &q).unwrap_or_default()));
+                } else {
+                    if let Ok(url) = songinbox::online_search_url(&tpl, &q) {
+                        open_url(&url);
+                    }
+                    if let Err(e) = songinbox::arm(&app.core) {
+                        app.core.lock().notify(e, "error");
+                    }
                 }
             }
         }

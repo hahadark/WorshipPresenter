@@ -29,6 +29,31 @@ pub fn open() {
     ST.lock().open = true;
 }
 
+// ---------------- 인터넷 자료 사용 안내 (처음 한 번 동의) ----------------
+// 가사 찾기(벅스·지니·멜론)와 온라인 찬양 PPT 찾기는 남의 사이트 자료를 읽는다. 처음 쓸 때 저작권·CCLI 안내에 동의를 받고,
+// 설정 센터(자료) '인터넷에서 가사·PPT 찾기 쓰기'를 끄면 다음에 다시 묻는다.
+
+/// 동의한 뒤 이어서 할 일
+#[derive(Clone, Debug, PartialEq)]
+pub enum Pending {
+    Lyrics,
+    /// 온라인 찬양 PPT 찾기: 검색 주소를 열고 다운로드 폴더를 지켜본다
+    OnlinePpt(String),
+}
+
+static PENDING: Lazy<Mutex<Option<Pending>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn consented(core: &wp_core::core::Core) -> bool {
+    core.settings.get()["webConsent"].as_bool() == Some(true)
+}
+
+/// 동의 창을 띄우고, 동의하면 p 를 이어서 한다
+pub fn ask(p: Pending) {
+    *PENDING.lock() = Some(p);
+}
+
+pub const NOTICE: &str = "가사 찾기와 온라인 찬양 PPT 찾기는 검색 사이트(벅스 · 지니 · 멜론 등)의 공개 화면을 읽어 결과를 보여 줄 뿐, 자료를 제공하거나 사용을 허락하지 않습니다.\n\n· 가사 · 악보 · PPT 의 저작권은 작사 · 작곡자 · 출판사 · 번역자에게 있습니다.\n· 예배 중 찬양을 부르는 것과 가사를 화면에 띄우거나 주보 · PPT 로 복제하는 것은 법적으로 따로 다룹니다. 화면에 띄울 때는 CCLI 등 교회가 받은 이용 허락 범위 안에서 쓰세요.\n· 각 사이트의 이용약관을 지키고 자료를 적법하게 쓰는 책임은 사용자(교회)에게 있습니다.\n· 도구 → 사용 기록(저작권 보고)에서 띄운 찬양을 CCLI 보고용으로 모을 수 있습니다.\n\n동의하지 않으면 인터넷에 묻지 않고, 찬양 라이브러리 · 내 찬송가·PPT 폴더만 씁니다. 동의는 설정 → 자료에서 언제든지 끌 수 있습니다.";
+
 /// 찾기 (백그라운드). dir: 찾은 결과·가사를 보관할 자료 폴더 — 사이트가 막혀도 지난번 결과를 보여 준다
 fn run_search(ctx: egui::Context, q: String, dir: std::path::PathBuf) {
     {
@@ -86,9 +111,51 @@ fn clean_title(t: &str) -> String {
 }
 
 impl App {
+    /// 인터넷 자료 사용 안내 창 (동의하면 미뤄 둔 일을 이어서)
+    pub(crate) fn consent_window(&mut self, ctx: &egui::Context) {
+        let Some(p) = PENDING.lock().clone() else { return };
+        let mut open = true;
+        let mut agreed = false;
+        crate::widgets::float_window(ctx, "web-consent", wp_core::i18n::tr("인터넷 자료 사용 안내"), [520.0, 380.0]).open(&mut open).show(ctx, |ui| {
+            ui.label(wp_core::i18n::tr(NOTICE));
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("동의하고 계속")).kind(crate::widgets::Kind::Primary)).clicked() {
+                    agreed = true;
+                }
+                if ui.button(wp_core::i18n::tr("취소")).clicked() {
+                    *PENDING.lock() = None;
+                }
+            });
+        });
+        if !open {
+            *PENDING.lock() = None;
+        }
+        if agreed {
+            *PENDING.lock() = None;
+            self.core.lock().settings.update(|d| d["webConsent"] = json!(true));
+            match p {
+                Pending::Lyrics => self::open(),
+                Pending::OnlinePpt(url) => {
+                    let _ = wp_core::trackd::open_link(&url);
+                    if let Err(e) = wp_core::songinbox::arm(&self.core) {
+                        self.core.lock().notify(e, "error");
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn lyrics_window(&mut self, ctx: &egui::Context) {
+        self.consent_window(ctx);
         let mut open = ST.lock().open;
         if !open {
+            return;
+        }
+        // 처음 쓸 때는 안내에 동의부터 (어느 길로 열었든: Ctrl+L · 메뉴 · 찬양 라이브러리 · 순서 편집칸)
+        if !consented(&self.core.lock()) {
+            ST.lock().open = false;
+            ask(Pending::Lyrics);
             return;
         }
         let sel_song = self.sel.and_then(|i| self.core.lock().cue.as_ref().and_then(|c| c.items.get(i).cloned())).filter(|it| it["type"] == "song");
