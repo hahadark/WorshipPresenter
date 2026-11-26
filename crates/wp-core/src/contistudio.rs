@@ -131,7 +131,9 @@ fn note_of(it: &Value, show_form: bool) -> String {
 }
 
 fn file_stem(p: &str) -> String {
-    Path::new(p).file_stem().map(|x| x.to_string_lossy().to_string()).unwrap_or_default()
+    // 콘티(.worship)는 Windows 에서 만든 파일이라 경로가 'Z:\폴더\곡' 모양 → 맥에서도 '\' 를 구분자로 (Windows 는 그대로)
+    let p = if cfg!(windows) { p.to_string() } else { p.replace('\\', "/") };
+    Path::new(&p).file_stem().map(|x| x.to_string_lossy().to_string()).unwrap_or_default()
 }
 
 /// 이 PC 에 있는 PPT 파일인가
