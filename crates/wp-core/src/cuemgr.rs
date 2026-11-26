@@ -393,7 +393,7 @@ impl Core {
     /// 순서지 (글) — 단톡방·문서에 붙이기 (Electron cueText)
     pub fn cue_text_of(&self, id: &str) -> Option<String> {
         let c = if self.cue.as_ref().is_some_and(|c| c.id == id) { self.cue.clone() } else { self.store.get_cue(id) }?;
-        Some(crate::parity_a::cue_text(&c.name, &c.service_date, &c.start_time, &c.items, &c.memo))
+        Some(crate::parity_a::cue_text_with(&c.name, &c.service_date, &c.start_time, &c.items, &c.memo, &|it| self.song_meta_of(it)))
     }
 }
 
@@ -429,6 +429,30 @@ mod tests {
         assert_eq!(ago_parts("2026-11-15T09:00:00.000Z", now), Some(("{1}시간 전", Some(3))));
         assert_eq!(ago_parts("2026-11-12T12:00:00.000Z", now), Some(("{1}일 전", Some(3))));
         assert_eq!(ago("2026-01-01T00:00:00.000Z", now), "2026-01-01", "30일이 넘으면 날짜");
+    }
+
+    /// 순서지 글: 찬양 순서에 라이브러리 곡 정보(Key · 박자 · BPM)가 붙는다 — 찬양팀 단톡방 콘티
+    #[test]
+    fn cue_text_has_song_meta_from_library() {
+        let (mut c, dir) = core();
+        crate::songs::ensure_schema(&c.store.db).ok();
+        let s = crate::songs::save_song(&c.store.db, &json!({ "title": "주 은혜임을", "lyrics": "가사", "key": "G", "meter": "4/4", "bpm": "72" })).unwrap();
+        c.new_cue("찬양 콘티").unwrap();
+        let id = c.cue.as_ref().unwrap().id.clone();
+        let mut it = crate::core::new_item("song", "주 은혜임을");
+        it["songId"] = s["id"].clone();
+        c.add_item(it, None);
+        let mut own = crate::core::new_item("song", "직접 적은 곡");
+        own["key"] = json!("A");
+        c.add_item(own, None);
+        c.add_item(crate::core::new_item("title", "설교"), None);
+        let t = c.cue_text_of(&id).unwrap();
+        assert!(t.contains("1. 주 은혜임을 [Key G · 4/4 · BPM 72]"), "{t}");
+        assert!(t.contains("2. 직접 적은 곡 [Key A]"), "순서에 적은 Key 가 먼저: {t}");
+        assert!(t.contains("3. 설교") && !t.contains("설교 ["), "찬양이 아니면 붙이지 않음: {t}");
+        assert_eq!(c.active_cue_text().unwrap(), t);
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

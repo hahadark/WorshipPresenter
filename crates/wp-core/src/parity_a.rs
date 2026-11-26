@@ -26,6 +26,13 @@ impl Core {
 
 /// 큐시트 → 글 (Electron cueText 와 같은 모양)
 pub fn cue_text(name: &str, service_date: &str, start_time: &str, items: &[Value], memo: &str) -> String {
+    cue_text_with(name, service_date, start_time, items, memo, &|_| String::new())
+}
+
+/// 큐시트 → 글, 찬양 순서에는 곡 정보(Key · 박자 · BPM)를 붙인다 — 찬양팀 단톡방에 콘티로 보낼 때
+/// (2026-11-26 예배송출 기능 소개의 '콘티를 카톡으로 복사' 를 참고해 더함, 코드는 새로 씀)
+/// song_meta: 찬양 순서 → "Key G · 4/4 · BPM 72" (없으면 빈 글)
+pub fn cue_text_with(name: &str, service_date: &str, start_time: &str, items: &[Value], memo: &str, song_meta: &dyn Fn(&Value) -> String) -> String {
     let when = if service_date.is_empty() { String::new() } else { format!(" ({}{})", service_date, if start_time.is_empty() { String::new() } else { format!(" {start_time}") }) };
     let mut lines = vec![format!("■ {name}{when}")];
     for (i, it) in items.iter().enumerate() {
@@ -36,11 +43,13 @@ pub fn cue_text(name: &str, service_date: &str, start_time: &str, items: &[Value
             _ => it["subtitle"].as_str().unwrap_or(""),
         };
         let note = it["note"].as_str().unwrap_or("");
+        let meta = if ty == "song" { song_meta(it) } else { String::new() };
         lines.push(format!(
-            "{}. {}{}{}",
+            "{}. {}{}{}{}",
             i + 1,
             it["title"].as_str().unwrap_or(""),
             if sub.is_empty() { String::new() } else { format!(" — {sub}") },
+            if meta.is_empty() { String::new() } else { format!(" [{meta}]") },
             if note.is_empty() { String::new() } else { format!("  ({note})") }
         ));
     }
@@ -55,7 +64,16 @@ impl Core {
     /// 열어 둔 큐시트를 글로
     pub fn active_cue_text(&self) -> Option<String> {
         let c = self.cue.as_ref()?;
-        Some(cue_text(&c.name, &c.service_date, &c.start_time, &c.items, &c.memo))
+        Some(cue_text_with(&c.name, &c.service_date, &c.start_time, &c.items, &c.memo, &|it| self.song_meta_of(it)))
+    }
+
+    /// 찬양 순서의 곡 정보 한 줄: 순서에 적은 것(key · meter · bpm)이 먼저, 없으면 찬양 라이브러리의 곡(songId)
+    pub fn song_meta_of(&self, it: &Value) -> String {
+        let own = crate::songs::meta_line(it);
+        if !own.is_empty() {
+            return own;
+        }
+        it["songId"].as_str().filter(|x| !x.is_empty()).and_then(|id| crate::songs::get_song(&self.store.db, id)).map(|s| crate::songs::meta_line(&s)).unwrap_or_default()
     }
 }
 
@@ -165,6 +183,12 @@ mod tests {
         let items = vec![json!({ "type": "bible", "title": "성경 봉독", "ref": "시 23", "note": "" }), json!({ "type": "hymn", "title": "찬송", "subtitle": "x", "note": "일어서서" }), json!({ "type": "title", "title": "설교", "subtitle": "선한 목자" })];
         let t = cue_text("주일예배", "2026-11-15", "11:00", &items, "성찬");
         assert_eq!(t, "■ 주일예배 (2026-11-15 11:00)\n1. 성경 봉독 — 시 23\n2. 찬송  (일어서서)\n3. 설교 — 선한 목자\n\n※ 성찬");
+        // 찬양 순서에는 곡 정보 (곡 정보가 없으면 그대로)
+        let songs = vec![json!({ "type": "song", "title": "주 은혜임을", "songId": "s1" }), json!({ "type": "song", "title": "새 곡", "songId": "s2" })];
+        let t2 = cue_text_with("찬양 콘티", "", "", &songs, "", &|it| if it["songId"] == "s1" { "Key G · 4/4 · BPM 72".into() } else { String::new() });
+        assert_eq!(t2, "■ 찬양 콘티
+1. 주 은혜임을 [Key G · 4/4 · BPM 72]
+2. 새 곡");
         let d = duplicate_item(&items[0]);
         assert_ne!(d["id"], items[0]["id"]);
         assert_eq!(d["ref"], "시 23");
