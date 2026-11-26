@@ -35,6 +35,12 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 
 - 이름 자막 · 방화벽 확인·열기 · 휴대폰을 카메라로(https 37560 · WebRTC) · 리모컨에 무대 메시지 표시. 세부는 docs/easylive-ideas.md. 휴대폰 카메라 점검 tools/phonecam/e2e.js.
 
+## 2026-11-27 예배송출(worship-caster)에서 가져온 아이디어 → 2.0.7
+
+- 순서지 글 복사에 곡 정보 [Key · 박자 · BPM] · 무대 타이머 '몇 시까지'(조작 화면 · 리모컨 · /api/trigger/timer?at=) · 예배당 화면 4:3(템플릿 → 위치와 여백 → 화면 비율, paint_slide 레터박스) · 다른 컴퓨터로 옮기기(.wpmove, movedata.rs). 세부·대조표·제안은 docs/worshipcaster-ideas.md.
+- 예배송출 저장소에는 라이선스가 없다 → 코드는 옮기지 않고 동작만 참고. 맥: localtime.rs local_offset_ms 가 맥에서 0 이던 것을 SQLite localtime 으로 고침.
+- 점검용 인자 추가: `--tpl-open <묶음>`(템플릿 편집 창 열기). 웹 출력 캡처는 앱을 `--search x --item N --send`(--shot 없이, 15초에 꺼지지 않게)로 띄우고 tools/flow-compare/cdp.js launch → open(url, w, h) → shot.
+
 ## 구조
 
 | 경로 | 내용 |
