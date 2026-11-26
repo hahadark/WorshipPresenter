@@ -35,6 +35,7 @@ pub mod firewall; // Windows 방화벽: 휴대폰·내부망 연결 확인 · �
 pub mod pptxout; // 큐시트 → PPT 파일 하나 (예배 순서대로)
 pub mod library; // [트랙 B]
 pub mod localtime; // [트랙 B]
+pub mod movedata; // 다른 컴퓨터로 옮기기 (자료 한 파일)
 pub mod schedule; // [트랙 B]
 pub mod lyricsweb; // [트랙 B]
 pub mod songimport; // [트랙 B]

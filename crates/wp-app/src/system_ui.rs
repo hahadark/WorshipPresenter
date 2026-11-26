@@ -208,6 +208,47 @@ impl App {
                 }
                 if list.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("아직 백업이 없습니다.")).color(Color32::GRAY)); }
             });
+            // 다른 컴퓨터로 옮기기: 자료 전체를 파일 하나로 (wp_core::movedata)
+            ui.separator();
+            ui.label(RichText::new(wp_core::i18n::tr("다른 컴퓨터로 옮기기")).strong());
+            ui.label(RichText::new(wp_core::i18n::tr("성경·찬양·큐시트·설정·올린 그림을 파일 하나로 저장합니다. 새 컴퓨터에서 '옮기기 파일 가져오기' 뒤 프로그램을 다시 시작하세요.")).small());
+            ui.horizontal(|ui| {
+                let b = ui.add_enabled(!restore_busy, egui::Button::new(wp_core::i18n::tr("옮기기 파일 만들기…")));
+                crate::widgets::mark("move-export", b.rect);
+                if b.clicked() {
+                    let name = format!("워십프리젠터-자료-{}.{}", wp_core::util::iso_now().get(..10).unwrap_or(""), wp_core::movedata::EXT);
+                    if let Some(f) = rfd::FileDialog::new().set_file_name(name).add_filter(wp_core::i18n::tr("워십프리젠터 옮기기 파일"), &[wp_core::movedata::EXT]).save_file() {
+                        let (dir, ctx2) = (self.data_dir.clone(), ui.ctx().clone());
+                        ST.lock().restore_busy = true;
+                        note = wp_core::i18n::tr("옮기기 파일을 만드는 중…");
+                        std::thread::spawn(move || {
+                            let r = wp_core::movedata::export_to(&dir, &f);
+                            let mut state = ST.lock();
+                            state.note = match r { Ok(v) => wp_core::i18n::tr_args("옮기기 파일을 만들었습니다 ({1}MB · 그림 {2}개): {3}", &[&format!("{:.1}", v["size"].as_f64().unwrap_or(0.0) / 1048576.0), &v["media"], &f.display()]), Err(e) => format!("{e:#}") };
+                            state.restore_busy = false;
+                            drop(state);
+                            ctx2.request_repaint();
+                        });
+                    }
+                }
+                let b = ui.add_enabled(!restore_busy && info["restorePending"] != true, egui::Button::new(wp_core::i18n::tr("옮기기 파일 가져오기…"))).on_hover_text(wp_core::i18n::tr("다음 시작 때 이 컴퓨터의 자료를 그 파일의 것으로 바꿉니다 (지금 것은 bible.pre-restore.db 로 남김). 같은 이름의 그림은 덮지 않습니다."));
+                crate::widgets::mark("move-import", b.rect);
+                if b.clicked() {
+                    if let Some(f) = rfd::FileDialog::new().add_filter(wp_core::i18n::tr("워십프리젠터 옮기기 파일"), &[wp_core::movedata::EXT]).pick_file() {
+                        let (dir, ctx2) = (self.data_dir.clone(), ui.ctx().clone());
+                        ST.lock().restore_busy = true;
+                        note = wp_core::i18n::tr("옮기기 파일을 읽는 중…");
+                        std::thread::spawn(move || {
+                            let r = wp_core::movedata::import_from(&dir, &f);
+                            let mut state = ST.lock();
+                            state.note = match r { Ok(v) => wp_core::i18n::tr_args("가져오기를 예약했습니다 (그림 {1}개 더함) — 프로그램을 다시 시작하면 적용됩니다.", &[&v["media"]]), Err(e) => format!("{e:#}") };
+                            state.restore_busy = false;
+                            drop(state);
+                            ctx2.request_repaint();
+                        });
+                    }
+                }
+            });
             if !note.is_empty() { ST.lock().note = note; }
             let n = ST.lock().note.clone();
             if !n.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&n)).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }

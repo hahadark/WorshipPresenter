@@ -18,6 +18,10 @@ const KEEP_BACKUPS: usize = 10;
 
 // 큰 파일 작업은 코어 잠금과 분리한다. 중복 요청은 기다리지 않고 실패시킨다.
 static FILE_WORK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+/// 백업 · 되돌리기 · 옮기기(movedata)가 동시에 파일을 만지지 않게
+pub(crate) fn file_work() -> &'static parking_lot::Mutex<()> {
+    &FILE_WORK
+}
 
 #[derive(Default, Clone)]
 pub struct SyncStatus {
