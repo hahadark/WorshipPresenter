@@ -304,8 +304,16 @@ fn tpl_family(ctx: &egui::Context, t: &Value, weight: f32) -> FontFamily {
 /// 슬라이드 하나를 rect 에 그린다 (웹 출력 render.js buildStage + buildContent + fit 과 같은 규칙).
 /// visible=false 면 글자는 숨기고 배경만 (LIVE 숨김 상태), logo = '로고 화면', hide_bg = 배경 끄기
 pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t: &Value, version_name: &str, visible: bool, logo: bool, hide_bg: bool) {
-    let p = ui.painter_at(rect);
     let (tw, th) = crate::slide_layout::stage_size(t);
+    // 템플릿 비율(예: 4:3)이 그릴 칸(16:9 썸네일 등)과 다르면 가운데에 맞추고 남는 곳은 검게 — 웹 출력 scaleStage 의 레터박스와 같다
+    let rect = {
+        let fit = letterbox(rect, tw / th.max(1.0));
+        if fit != rect {
+            ui.painter_at(rect).rect_filled(rect, 0.0, Color32::BLACK);
+        }
+        fit
+    };
+    let p = ui.painter_at(rect);
     let sc = rect.width() / tw;
     let to_screen = |r: Rect| Rect::from_min_size(rect.min + r.min.to_vec2() * sc, r.size() * sc);
     // 숨김 + '지우면 배경도 숨김' 템플릿: 배경층도 숨는다 (output.js render)
@@ -1110,4 +1118,40 @@ pub fn paint_pip(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: &Value, main_t: &Val
         p.rect_filled(r.translate(Vec2::new(0.0, rect.width() * 0.005)).expand(rect.width() * 0.004 * k), rect.width() * 0.01 + k, Color32::from_black_alpha(22));
     }
     paint_slide(ui, c, r, Some(slide), main_t, "", true, false, false);
+}
+
+/// 칸 안에 가로:세로 = aspect 인 가장 큰 사각형 (가운데). 비율이 거의 같으면(0.5% 안) 칸 그대로
+pub fn letterbox(rect: Rect, aspect: f32) -> Rect {
+    if !(aspect.is_finite() && aspect > 0.0) || rect.height() <= 0.0 {
+        return rect;
+    }
+    let cur = rect.width() / rect.height();
+    if (cur / aspect - 1.0).abs() < 0.005 {
+        return rect;
+    }
+    let size = if cur > aspect { Vec2::new(rect.height() * aspect, rect.height()) } else { Vec2::new(rect.width(), rect.width() / aspect) };
+    Rect::from_center_size(rect.center(), size)
+}
+
+#[cfg(test)]
+mod letterbox_tests {
+    use super::*;
+    #[test]
+    fn letterbox_fits_four_three_in_wide() {
+        let wide = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(320.0, 180.0));
+        assert_eq!(letterbox(wide, 16.0 / 9.0), wide, "같은 비율이면 그대로");
+        let r = letterbox(wide, 4.0 / 3.0);
+        assert_eq!(r.height(), 180.0);
+        assert!((r.width() - 240.0).abs() < 0.01 && (r.center().x - wide.center().x).abs() < 0.01);
+        let tall = Rect::from_min_size(Pos2::ZERO, Vec2::new(300.0, 300.0));
+        let r = letterbox(tall, 16.0 / 9.0);
+        assert!((r.width() - 300.0).abs() < 0.01 && (r.height() - 168.75).abs() < 0.01);
+    }
+    #[test]
+    fn aspect_names() {
+        assert_eq!(crate::tpl_inspect::aspect_of(1920.0, 1080.0), "16:9");
+        assert_eq!(crate::tpl_inspect::aspect_of(1440.0, 1080.0), "4:3");
+        assert_eq!(crate::tpl_inspect::aspect_of(1024.0, 768.0), "4:3");
+        assert_eq!(crate::tpl_inspect::aspect_of(1080.0, 1920.0), "");
+    }
 }

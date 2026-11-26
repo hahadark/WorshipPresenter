@@ -353,8 +353,27 @@ fn font(ui: &mut egui::Ui, t: &mut Value) -> bool {
     ch
 }
 
+/// 화면 비율 → (가로, 세로) px. 4:3 은 옛 프로젝터 (예배송출의 '4:3 프로젝터' 를 참고해 더함, 2026-11-27)
+pub const ASPECTS: [(&str, &str, f64, f64); 2] = [("16:9", "16:9 (보통 TV)", 1920.0, 1080.0), ("4:3", "4:3 (옛 프로젝터)", 1440.0, 1080.0)];
+
+/// 지금 템플릿 크기가 어느 비율인가 (그 밖의 크기는 "")
+pub fn aspect_of(w: f64, h: f64) -> &'static str {
+    ASPECTS.iter().find(|a| ((w / h.max(1.0)) - a.2 / a.3).abs() < 0.02).map(|a| a.0).unwrap_or("")
+}
+
 fn layout(ui: &mut egui::Ui, t: &mut Value) -> bool {
     let mut ch = false;
+    // 화면 비율: 예배당 프로젝터가 4:3 이면 4:3 으로 (글이 위아래 검은 띠 없이 화면을 다 씀)
+    let mut asp = aspect_of(f(t, "width", 1920.0), f(t, "height", 1080.0)).to_string();
+    let items: Vec<(&str, &str)> = ASPECTS.iter().map(|a| (a.0, a.1)).collect();
+    let changed = tc::row(ui, "화면 비율", "예배당 TV·프로젝터의 모양. 옛 프로젝터(1024×768 등)는 4:3", |ui| tc::seg_widget(ui, &mut asp, &items));
+    if changed {
+        if let Some(a) = ASPECTS.iter().find(|a| a.0 == asp) {
+            set(t, "width", json!(a.2 as i64));
+            set(t, "height", json!(a.3 as i64));
+            ch = true;
+        }
+    }
     let al = s(t, "align").to_string();
     let al = if al.is_empty() { "center".to_string() } else { al };
     tc::row(ui, "정렬", "", |ui| {

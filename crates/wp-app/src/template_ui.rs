@@ -166,6 +166,14 @@ impl TemplateUi {
     }
 
     pub fn show(&mut self, ctx: &egui::Context, core: &Shared, web_dir: &std::path::Path, data_dir: &std::path::Path) {
+        // 점검용: --tpl-open <묶음> — 지금 예배당 템플릿 편집 창을 열고 그 묶음(layout 등)을 펼친다
+        static TPL_OPEN: std::sync::Once = std::sync::Once::new();
+        TPL_OPEN.call_once(|| {
+            if let Some(sec) = std::env::args().position(|x| x == "--tpl-open").and_then(|i| std::env::args().nth(i + 1)) {
+                self.open = true;
+                self.focus = Sec::ALL.into_iter().find(|x| x.id() == sec);
+            }
+        });
         if !self.open {
             if self.changed_at.is_some() {
                 self.flush(core);
