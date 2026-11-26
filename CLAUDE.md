@@ -35,7 +35,9 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 
 - 이름 자막 · 방화벽 확인·열기 · 휴대폰을 카메라로(https 37560 · WebRTC) · 리모컨에 무대 메시지 표시. 세부는 docs/easylive-ideas.md. 휴대폰 카메라 점검 tools/phonecam/e2e.js.
 
-## 2026-11-27 예배송출(worship-caster)에서 가져온 아이디어 → 2.0.7
+## 2026-11-27 예배송출(worship-caster)에서 가져온 아이디어 → 2.0.7 공개 (2026-11-27)
+
+- 공개: Windows 설치판·포터블·latest.yml + 맥 dmg(맥 CI 시험 통과) 모두 같은 릴리스, 내려받아 SHA-256 대조 같음. 시험 wp-core 302 · wp-app 227 (firstrun::copy_db_with_progress 는 전역 PROGRESS 를 함께 써서 병렬로 돌면 가끔 실패 — 혼자 돌리면 통과, 원래 있던 흔들림). parity 44/44 같은 글자 크기(obs-pip-score 차이 없어짐). 설치판 /S /TEST 로 켜서 '몇 시까지' 와 /api/trigger/timer?at= 확인.
 
 - 순서지 글 복사에 곡 정보 [Key · 박자 · BPM] · 무대 타이머 '몇 시까지'(조작 화면 · 리모컨 · /api/trigger/timer?at=) · 예배당 화면 4:3(템플릿 → 위치와 여백 → 화면 비율, paint_slide 레터박스) · 다른 컴퓨터로 옮기기(.wpmove, movedata.rs). 세부·대조표·제안은 docs/worshipcaster-ideas.md.
 - 예배송출 저장소에는 라이선스가 없다 → 코드는 옮기지 않고 동작만 참고. 맥: localtime.rs local_offset_ms 가 맥에서 0 이던 것을 SQLite localtime 으로 고침.
