@@ -14,12 +14,12 @@ const CANDIDATES = [
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function launch(profileDir, port = 9400 + Math.floor(Math.random() * 400)) {
+async function launch(profileDir, port = 9400 + Math.floor(Math.random() * 400), extraArgs = []) {
   const exe = CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('엣지/크롬을 찾지 못했습니다 (FLOW_BROWSER 로 지정)');
   fs.mkdirSync(profileDir, { recursive: true });
   const proc = spawn(exe, [`--remote-debugging-port=${port}`, `--user-data-dir=${path.resolve(profileDir)}`, '--headless=new', '--no-first-run',
-    '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: 'ignore' });
+    '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1', '--autoplay-policy=no-user-gesture-required', ...extraArgs, 'about:blank'], { stdio: 'ignore' });
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 100; i++) {
     try { const r = await fetch(base + '/json/version'); if (r.ok) break; } catch {}

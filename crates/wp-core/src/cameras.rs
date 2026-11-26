@@ -242,7 +242,10 @@ impl Core {
         for c in self.cues.iter().filter(|c| self.cue.as_ref().map(|o| &o.id) != Some(&c.id)).filter_map(|c| self.store.get_cue(&c.id)) {
             items.extend(c.items.into_iter().filter(|it| it["type"] == "camera"));
         }
-        choices(&self.b.cams.devices, &self.settings.get(), &items)
+        // 연결된 휴대폰 카메라(phone:<id>)도 함께 — 출력 화면(render.js)이 WebRTC 로 받는다
+        let mut live = self.b.cams.devices.clone();
+        live.extend(crate::phonecam::devices());
+        choices(&live, &self.settings.get(), &items)
     }
 }
 

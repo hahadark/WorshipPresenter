@@ -75,6 +75,7 @@ pub fn menus() -> Vec<Menu> {
             it("d:trigger", "스트림덱 · 외부 단추", ""),
             it("d:devices", "Companion · 장비 (X32 · PTZ)", ""),
             it("d:lan", "내부망 출력 (다른 PC 의 OBS)", ""),
+            it("d:phonecam", "휴대폰 카메라 (QR 로 연결)", ""),
             it("d:obs", "OBS 원격 조작", ""), // [트랙 D]
             it("d:bulletin", "주보 → 큐시트 (AI)", ""), // [트랙 D]
             it("a:home", "홈페이지 주보 → 큐시트 · 광고", ""), // [트랙 A]
@@ -145,6 +146,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "b:conti" => "download",
         "b:pptx" => "file-text",
         "b:names" => "tag",
+        "d:phonecam" => "camera",
         "b:undo" => "undo-2",
         "b:redo" => "redo-2",
         "b:print" => "file-text",

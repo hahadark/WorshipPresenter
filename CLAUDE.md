@@ -31,6 +31,10 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 - 콘티(.worship) 가져오기 · 초성 검색 · 웹 가사 찾기 까닭 구분·보관 · 큰 폴더 목록 기억 · 곡 정보(Key·박자·BPM) · 큐시트 → PPT 내보내기 · 인터넷 자료 사용 안내. 세부는 docs/contistudio-and-choseong.md.
 - 찬양 콘티 스튜디오(윤명중, AGPL-3.0) 코드는 옮기지 않았다. 파일 형식과 동작만 참고.
 
+## 2026-11-26 쉬운방송에서 가져온 아이디어 (커밋만, 푸시·릴리스 안 함)
+
+- 이름 자막 · 방화벽 확인·열기 · 휴대폰을 카메라로(https 37560 · WebRTC) · 리모컨에 무대 메시지 표시. 세부는 docs/easylive-ideas.md. 휴대폰 카메라 점검 tools/phonecam/e2e.js.
+
 ## 구조
 
 | 경로 | 내용 |

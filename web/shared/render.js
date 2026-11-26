@@ -441,7 +441,56 @@
       resizeMode: 'none', // 브라우저가 줄여서 늘리지 않게: 카메라가 실제로 내보내는 화질 그대로
     };
   }
+  // ---------- 휴대폰 카메라 (deviceId 'phone:<id>') ----------
+  // 워십프리젠터 서버가 연결 정보만 이어 주고, 영상은 휴대폰에서 이 화면으로 같은 내부망 안에서 바로 온다 (WebRTC).
+  // 돌려주는 MediaStream 은 그대로 두고, 끊기면 3초마다 다시 잇고 새 영상 트랙만 바꿔 끼운다 (휴대폰이 늦게 켜져도 저절로 나온다).
+  const phones = new Map(); // deviceId → { stream, close }
+  function phoneStream(deviceId) {
+    const phone = deviceId.slice(6);
+    const ms = new MediaStream();
+    let pc = null;
+    let viewer = '';
+    let closed = false;
+    let timer = null;
+    const H = { 'Content-Type': 'application/json', 'X-WorshipCue': '1' };
+    const sleep = ms2 => new Promise(r => setTimeout(r, ms2));
+    const again = () => { if (!closed && !timer) timer = setTimeout(() => { timer = null; connect(); }, 3000); };
+    const bye = () => { if (viewer) fetch('/phonecam/bye', { method: 'POST', headers: H, body: JSON.stringify({ phone, viewer }) }).catch(() => {}); };
+    async function connect() {
+      if (closed) return;
+      if (pc) { try { pc.close(); } catch { /* 무시 */ } bye(); }
+      viewer = 'v' + Math.random().toString(36).slice(2, 12);
+      const my = pc = new RTCPeerConnection({ iceServers: [] });
+      my.addTransceiver('video', { direction: 'recvonly' });
+      my.ontrack = e => { for (const t of ms.getVideoTracks()) ms.removeTrack(t); ms.addTrack(e.track); document.querySelectorAll('video[data-cam]').forEach(v => { if (v.dataset.cam === deviceId) { v.srcObject = ms; v.play().catch(() => {}); } }); };
+      my.onconnectionstatechange = () => { if (my === pc && ['failed', 'disconnected', 'closed'].includes(my.connectionState)) again(); };
+      try {
+        await my.setLocalDescription(await my.createOffer());
+        await new Promise(res => { if (my.iceGatheringState === 'complete') return res(); my.addEventListener('icegatheringstatechange', () => { if (my.iceGatheringState === 'complete') res(); }); setTimeout(res, 1500); });
+        const r = await fetch('/phonecam/offer', { method: 'POST', headers: H, body: JSON.stringify({ phone, viewer, sdp: my.localDescription.sdp }) }).then(x => x.json());
+        if (!r.ok) throw new Error(r.error || 'offer');
+        for (let i = 0; i < 48 && !closed && my === pc; i++) {
+          await sleep(250);
+          const a = await fetch('/phonecam/answer?viewer=' + viewer, { cache: 'no-store' }).then(x => x.json());
+          if (a.sdp) { await my.setRemoteDescription({ type: 'answer', sdp: a.sdp }); return; }
+        }
+        throw new Error('timeout');
+      } catch { if (my === pc) again(); }
+    }
+    connect();
+    return { stream: ms, close() { closed = true; clearTimeout(timer); bye(); if (pc) try { pc.close(); } catch { /* 무시 */ } for (const t of ms.getTracks()) t.stop(); } };
+  }
   function cameraStream(deviceId) {
+    if (String(deviceId || '').startsWith('phone:')) {
+      if (typeof RTCPeerConnection !== 'function') return Promise.reject(new Error('휴대폰 카메라를 받을 수 없는 화면입니다.'));
+      if (!cams.has(deviceId)) {
+        const h = phoneStream(deviceId);
+        phones.set(deviceId, h);
+        cams.set(deviceId, Promise.resolve(h.stream));
+        opened.set(deviceId, camKey(deviceId));
+      }
+      return cams.get(deviceId);
+    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.reject(new Error('카메라를 쓸 수 없는 화면입니다.'));
     if (!cams.has(deviceId)) {
       // '꼭 맞추기' 가 안 되는 카메라면 가까운 화질로 다시
@@ -461,6 +510,8 @@
     cams.delete(id);
     opened.delete(id);
     camIdle.delete(id);
+    const ph = phones.get(id);
+    if (ph) { phones.delete(id); ph.close(); return; }
     if (p) p.then(s => s.getTracks().forEach(t => t.stop())).catch(() => {});
   }
   if (typeof setInterval === 'function' && typeof document !== 'undefined') setInterval(() => {
@@ -494,7 +545,7 @@
     if (!st) { st = document.createElement('style'); st.id = 'bc-cam-style'; document.head.appendChild(st); }
     if (st.textContent !== css) st.textContent = css;
     for (const [id, key] of [...opened]) {
-      if (camKey(id) === key) continue;
+      if (camKey(id) === key || id.startsWith('phone:')) continue; // 휴대폰은 화질을 휴대폰에서 고른다
       const old = cams.get(id);
       // 예전 스트림을 완전히 닫은 뒤에 새 화질로 연다 (열려 있으면 카메라가 예전 화질을 그대로 준다)
       const closed = (old || Promise.resolve(null)).then(s => { if (s) s.getTracks().forEach(t => t.stop()); }).catch(() => {}).then(() => new Promise(r => setTimeout(r, 250)));

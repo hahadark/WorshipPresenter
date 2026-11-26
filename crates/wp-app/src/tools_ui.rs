@@ -13,6 +13,7 @@ pub enum Tool {
     Trigger,
     Devices,
     Lan,
+    PhoneCam,
 }
 
 #[derive(Default)]
@@ -52,7 +53,7 @@ pub fn close_for_test(t: Tool) -> bool {
 /// 임시: 기존 상단 줄에 두는 '도구' 단추 (상단 메뉴 줄이 생기면 그쪽으로)
 pub fn menu_button(ui: &mut egui::Ui) {
     ui.menu_button(wp_core::i18n::tr("도구"), |ui| {
-        for (t, label) in [(Tool::Remote, "휴대폰 리모컨"), (Tool::Trigger, "스트림덱·외부 단추"), (Tool::Devices, "Companion·장비 (X32·PTZ)"), (Tool::Lan, "내부망 출력 (다른 PC 의 OBS)")] {
+        for (t, label) in [(Tool::Remote, "휴대폰 리모컨"), (Tool::Trigger, "스트림덱·외부 단추"), (Tool::Devices, "Companion·장비 (X32·PTZ)"), (Tool::Lan, "내부망 출력 (다른 PC 의 OBS)"), (Tool::PhoneCam, "휴대폰 카메라")] {
             if ui.button(label).clicked() {
                 open(t);
                 ui.close();
@@ -104,7 +105,7 @@ pub fn show(ctx: &egui::Context, core: &Shared) {
         let a: Vec<String> = std::env::args().collect();
         for (i, x) in a.iter().enumerate() {
             if x == "--tool" {
-                match a.get(i + 1).map(|s| s.as_str()) { Some("remote") => open(Tool::Remote), Some("trigger") => open(Tool::Trigger), Some("devices") => open(Tool::Devices), Some("lan") => open(Tool::Lan), _ => {} }
+                match a.get(i + 1).map(|s| s.as_str()) { Some("remote") => open(Tool::Remote), Some("trigger") => open(Tool::Trigger), Some("devices") => open(Tool::Devices), Some("lan") => open(Tool::Lan), Some("phonecam") => open(Tool::PhoneCam), _ => {} }
             }
         }
     });
@@ -119,6 +120,7 @@ pub fn show(ctx: &egui::Context, core: &Shared) {
             Tool::Trigger => "스트림덱·외부 단추",
             Tool::Devices => "Companion·장비",
             Tool::Lan => "내부망 출력",
+            Tool::PhoneCam => "휴대폰 카메라",
         };
         // 떠 있는 창 기본 자리 (widgets::float_pos) · 제목 번역
         let wid = egui::Id::unique(("wp-float", title));
@@ -128,6 +130,7 @@ pub fn show(ctx: &egui::Context, core: &Shared) {
             Tool::Trigger => trigger(ui, core),
             Tool::Devices => devices(ui, core),
             Tool::Lan => lan(ui, core),
+            Tool::PhoneCam => phonecam(ui, core),
         });
         if !keep {
             ST.lock().open.retain(|x| *x != t);
@@ -371,4 +374,100 @@ fn lan(ui: &mut egui::Ui, core: &Shared) {
 /// 리모컨에서 '끄기' 를 눌렀는지 (조작 화면이 예배당 창을 닫는다)
 pub fn take_off_request() -> bool {
     wp_core::remote::OFF_REQUEST.swap(false, std::sync::atomic::Ordering::SeqCst)
+}
+
+// ---------------- 휴대폰 카메라 ----------------
+fn phonecam(ui: &mut egui::Ui, core: &Shared) {
+    use wp_core::i18n::tr;
+    ui.ctx().request_repaint_after(std::time::Duration::from_secs(1)); // 휴대폰 목록이 저절로 바뀌게
+    let (st, mut en) = {
+        let c = core.lock();
+        (wp_core::phonecam::status(&c), c.settings.get()["phoneCam"]["enabled"].as_bool().unwrap_or(false))
+    };
+    ui.label(tr("같은 Wi-Fi 의 휴대폰을 카메라로 씁니다. QR 을 찍어 브라우저로 열면 앱 설치 없이 바로 됩니다. 영상은 인터넷을 거치지 않고 이 PC 로 바로 옵니다."));
+    ui.horizontal(|ui| {
+        if ui.checkbox(&mut en, tr("휴대폰 카메라 켜기")).changed() {
+            changed(core, |d| {
+                if !d["phoneCam"].is_object() {
+                    d["phoneCam"] = json!({});
+                }
+                d["phoneCam"]["enabled"] = json!(en);
+                if d["phoneCam"]["key"].as_str().unwrap_or("").is_empty() {
+                    d["phoneCam"]["key"] = json!(wp_core::phonecam::new_key());
+                }
+            });
+        }
+        ui.separator();
+        ui.label(tr("포트"));
+        let mut p = st["port"].as_u64().unwrap_or(wp_core::phonecam::DEFAULT_PORT as u64).to_string();
+        if ui.add(egui::TextEdit::singleline(&mut p).desired_width(72.0)).lost_focus() {
+            if let Ok(n) = p.trim().parse::<u16>() {
+                changed(core, |d| d["phoneCam"]["port"] = json!(n));
+            }
+        }
+        if ui.small_button(tr("새 열쇠")).on_hover_text(tr("QR 주소의 열쇠를 바꿉니다. 이미 연결한 휴대폰은 새 QR 을 다시 찍어야 합니다.")).clicked() {
+            changed(core, |d| d["phoneCam"]["key"] = json!(wp_core::phonecam::new_key()));
+        }
+    });
+    let err = st["error"].as_str().unwrap_or("");
+    if !err.is_empty() {
+        ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), err);
+    }
+    if !en {
+        return;
+    }
+    crate::firewall_ui::row(ui);
+    if st["running"] == json!(true) {
+        let urls: Vec<String> = st["urls"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+        ui.horizontal(|ui| {
+            if let Some(u) = urls.first() {
+                qr(ui, u, 170.0);
+            }
+            ui.vertical(|ui| {
+                ui.label(RichText::new(tr("휴대폰 기본 카메라로 QR 을 찍으세요 (카카오톡 안에서 열면 카메라가 안 됩니다).")).small());
+                for u in &urls {
+                    copy_row(ui, "", u);
+                }
+                if urls.is_empty() {
+                    ui.label(RichText::new(tr("이 PC 의 내부망 주소를 찾지 못했습니다 (Wi-Fi·유선 연결 확인).")).small().color(Color32::GRAY));
+                }
+                ui.add_space(4.0);
+                ui.label(RichText::new(tr("처음 한 번 '연결이 비공개로 설정되어 있지 않습니다' 안내가 나옵니다. 이 PC 가 스스로 만든 인증서라서 나오는 것이니 [고급] → [… (으)로 이동(안전하지 않음)]을 누르세요 (아이폰: [세부사항 보기] → [이 웹 사이트 방문]).")).small().color(Color32::LIGHT_GRAY));
+            });
+        });
+    }
+    ui.separator();
+    let phones = st["phones"].as_array().cloned().unwrap_or_default();
+    if phones.is_empty() {
+        ui.label(RichText::new(tr("아직 연결된 휴대폰이 없습니다.")).small().color(Color32::GRAY));
+    }
+    for p in phones {
+        ui.horizontal_wrapped(|ui| {
+            let online = p["online"].as_bool().unwrap_or(false);
+            ui.label(RichText::new(if online { "●" } else { "○" }).color(if online { Color32::from_rgb(0x8a, 0xe0, 0xa8) } else { Color32::GRAY }));
+            ui.label(RichText::new(format!("휴대폰 · {}", p["name"].as_str().unwrap_or(""))).strong());
+            let viewers = p["viewers"].as_u64().unwrap_or(0);
+            let size = p["size"].as_str().unwrap_or("");
+            ui.label(RichText::new(if !online { tr("끊김") } else if viewers > 0 { wp_core::i18n::tr_args("화면 {1}곳에 보내는 중 · {2}", &[&viewers, &size]) } else { wp_core::i18n::tr_args("대기 · {1}", &[&size]) }).small());
+            if ui.small_button(tr("큐시트에 카메라 순서로 넣기")).on_hover_text(tr("이 휴대폰 영상을 보여 주는 카메라 순서를 큐시트에 넣습니다")).clicked() {
+                let name = format!("휴대폰 · {}", p["name"].as_str().unwrap_or(""));
+                let mut it = wp_core::core::new_item("camera", &name);
+                it["deviceId"] = p["deviceId"].clone();
+                it["label"] = json!(name);
+                it["fit"] = json!("cover");
+                let mut c = core.lock();
+                if c.cue.is_none() {
+                    ST.lock().msg = tr("큐시트를 먼저 여세요.");
+                } else {
+                    c.add_item(it, None);
+                    ST.lock().msg = tr("큐시트 끝에 카메라 순서를 넣었습니다.");
+                }
+            }
+        });
+    }
+    ui.label(RichText::new(tr("다른 곳에서도 이 휴대폰을 고를 수 있습니다: 카메라 순서 · 템플릿 배경 · 화면 층의 카메라 목록에 '휴대폰 · 이름' 으로 나옵니다.")).small().color(Color32::GRAY));
+    let msg = ST.lock().msg.clone();
+    if !msg.is_empty() {
+        ui.label(RichText::new(msg).small().color(Color32::LIGHT_GRAY));
+    }
 }

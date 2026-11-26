@@ -670,6 +670,7 @@
  "webConsent": false,
  "people": [],
  "nameTagSeconds": 0,
+ "phoneCam": { "enabled": false, "port": 37560, "key": "" },
  "cueTimesV2": true,
  "cameras": {},
  "triggerKey": "",

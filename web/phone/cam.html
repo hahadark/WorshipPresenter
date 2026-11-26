@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>워십프리젠터 휴대폰 카메라</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; color: #e8ebf0; font-family: system-ui, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; -webkit-tap-highlight-color: transparent; }
+  #v { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .top { position: fixed; left: 0; right: 0; top: 0; padding: 10px 12px calc(10px + env(safe-area-inset-top)); background: linear-gradient(#000c, #0000); display: flex; gap: 8px; align-items: center; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #666; flex: none; }
+  .dot.on { background: #e04b4b; box-shadow: 0 0 10px #e04b4b; }
+  .dot.ready { background: #2e9e57; }
+  #st { font-size: 15px; font-weight: 700; flex: 1; text-shadow: 0 1px 3px #000; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(#0000, #000d); display: flex; gap: 8px; flex-wrap: wrap; }
+  button, input { font: inherit; color: #e8ebf0; background: #252c38cc; border: 1px solid #3a4352; border-radius: 10px; padding: 10px 12px; }
+  button { flex: 1 1 auto; }
+  input { flex: 1 1 140px; min-width: 0; }
+  .hint { position: fixed; left: 12px; right: 12px; top: 50%; transform: translateY(-50%); text-align: center; font-size: 16px; line-height: 1.6; }
+  .hint b { color: #ffd479; }
+  .small { font-size: 12px; color: #aab3c2; width: 100%; }
+</style>
+</head>
+<body>
+<video id="v" autoplay muted playsinline></video>
+<div class="top"><span class="dot" id="dot"></span><span id="st">카메라를 여는 중…</span></div>
+<div class="hint" id="hint" hidden></div>
+<div class="bar">
+  <button id="flip">앞 · 뒤 바꾸기</button>
+  <button id="res">1080p</button>
+  <input id="name" maxlength="30" placeholder="이 휴대폰 이름 (예: 강단 정면)">
+  <div class="small" id="info">휴대폰을 가로로 세우고 화면을 켜 둔 채로 두세요. 이 화면을 닫거나 다른 앱으로 가면 영상이 멈춥니다.</div>
+</div>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const K = new URLSearchParams(location.search).get('k') || '';
+  let id = '';
+  try { id = localStorage.getItem('wp-cam-id') || ''; } catch { /* 저장 안 됨 */ }
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(id)) { id = 'p' + Math.random().toString(36).slice(2, 12); try { localStorage.setItem('wp-cam-id', id); } catch { /* 무시 */ } }
+  const ua = navigator.userAgent;
+  const guess = /iPhone/.test(ua) ? '아이폰' : /iPad/.test(ua) ? '아이패드' : /Android/.test(ua) ? '안드로이드' : '휴대폰';
+  try { $('name').value = localStorage.getItem('wp-cam-name') || guess; } catch { $('name').value = guess; }
+  $('name').onchange = () => { try { localStorage.setItem('wp-cam-name', $('name').value.trim()); } catch { /* 무시 */ } };
+
+  let facing = 'environment';
+  let hd = true;
+  let stream = null;
+  const pcs = new Map(); // 보는 화면(viewer) → RTCPeerConnection
+  let lastOk = 0;
+
+  function status(text, cls) { $('st').textContent = text; $('dot').className = 'dot ' + (cls || ''); }
+  function hint(html) { $('hint').hidden = !html; $('hint').innerHTML = html || ''; }
+
+  async function openCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      hint('이 브라우저에서는 카메라를 쓸 수 없습니다.<br><b>크롬(안드로이드) · 사파리(아이폰)</b>로 열어 주세요.<br>카카오톡 안에서 열렸다면 기본 카메라로 QR 을 다시 찍으세요.');
+      status('카메라를 쓸 수 없음');
+      return false;
+    }
+    const [w, h] = hd ? [1920, 1080] : [1280, 720];
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30 } }, audio: false });
+      const old = stream;
+      stream = s;
+      $('v').srcObject = s;
+      const t = s.getVideoTracks()[0];
+      t.contentHint = 'motion';
+      // 이미 보고 있는 화면은 새 카메라로 바꿔 끼운다 (다시 잇지 않고)
+      for (const pc of pcs.values()) for (const snd of pc.getSenders()) if (snd.track && snd.track.kind === 'video') snd.replaceTrack(t).catch(() => {});
+      if (old) old.getTracks().forEach(x => x.stop());
+      t.onended = () => { setTimeout(() => openCamera(), 800); }; // 다른 앱이 카메라를 가져갔다 돌려주면 다시
+      hint('');
+      return true;
+    } catch (e) {
+      const n = e && e.name;
+      hint(n === 'NotAllowedError' ? '카메라 사용을 허용해 주세요.<br>주소창 왼쪽 자물쇠(설정) → 카메라 → 허용 뒤 새로고침' : '카메라를 열지 못했습니다 (' + (n || e) + ')');
+      status('카메라를 열지 못함');
+      return false;
+    }
+  }
+
+  function size() {
+    const t = stream && stream.getVideoTracks()[0];
+    const st = t && t.getSettings ? t.getSettings() : {};
+    return st.width ? st.width + 'x' + st.height : '';
+  }
+
+  async function post(url, body) {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' });
+    return r.json();
+  }
+
+  function waitIce(pc, ms) {
+    if (pc.iceGatheringState === 'complete') return Promise.resolve();
+    return new Promise(res => {
+      const done = () => { if (pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', done); res(); } };
+      pc.addEventListener('icegatheringstatechange', done);
+      setTimeout(res, ms);
+    });
+  }
+
+  async function onOffer(viewer, sdp) {
+    if (!stream) return;
+    const old = pcs.get(viewer);
+    if (old) old.close();
+    const pc = new RTCPeerConnection({ iceServers: [] });
+    pcs.set(viewer, pc);
+    const t = stream.getVideoTracks()[0];
+    const snd = pc.addTrack(t, stream);
+    pc.onconnectionstatechange = () => { if (['failed', 'closed'].includes(pc.connectionState) && pcs.get(viewer) === pc) { pcs.delete(viewer); pc.close(); } };
+    await pc.setRemoteDescription({ type: 'offer', sdp });
+    await pc.setLocalDescription(await pc.createAnswer());
+    // 화질을 지키고(해상도 유지) 넉넉한 비트레이트로: 같은 Wi-Fi 안이라 인터넷 속도와 상관없다
+    try { const p = snd.getParameters(); p.encodings = p.encodings && p.encodings.length ? p.encodings : [{}]; p.encodings[0].maxBitrate = hd ? 8000000 : 4000000; p.degradationPreference = 'maintain-resolution'; await snd.setParameters(p); } catch { /* 안 되는 기기 */ }
+    await waitIce(pc, 2000);
+    await post('/cam/answer', { k: K, id, viewer, sdp: pc.localDescription.sdp });
+  }
+
+  async function poll() {
+    try {
+      const r = await post('/cam/poll', { k: K, id, name: $('name').value.trim(), viewers: pcs.size, size: size() });
+      if (!r.ok) { status(r.error === 'key' ? '주소의 열쇠가 바뀌었습니다 — QR 을 다시 찍으세요' : '연결 오류', ''); return; }
+      lastOk = Date.now();
+      for (const m of r.msgs || []) {
+        if (m.t === 'offer') onOffer(m.viewer, m.sdp).catch(e => console.warn(e));
+        else if (m.t === 'bye') { const pc = pcs.get(m.viewer); if (pc) { pc.close(); pcs.delete(m.viewer); } }
+      }
+      const live = [...pcs.values()].filter(pc => pc.connectionState === 'connected').length;
+      status(live ? `화면 ${live}곳에 보내는 중 · ${size()}` : `워십프리젠터에 연결됨 · 카메라 목록에 '${$('name').value.trim() || guess}' 로 보입니다`, live ? 'on' : 'ready');
+    } catch {
+      if (Date.now() - lastOk > 4000) status('워십프리젠터에 연결되지 않음 — 같은 Wi-Fi 인지, 프로그램이 켜져 있는지 확인하세요', '');
+    }
+  }
+
+  // 화면이 저절로 꺼지지 않게 (지원하는 브라우저)
+  let lock = null;
+  async function keepAwake() { try { if (navigator.wakeLock && document.visibilityState === 'visible') lock = await navigator.wakeLock.request('screen'); } catch { /* 무시 */ } }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); if (!stream || !stream.active) openCamera(); } });
+
+  $('flip').onclick = () => { facing = facing === 'environment' ? 'user' : 'environment'; openCamera(); };
+  $('res').onclick = () => { hd = !hd; $('res').textContent = hd ? '1080p' : '720p'; openCamera(); };
+
+  (async () => {
+    if (!K) { hint('주소에 열쇠가 없습니다. 워십프리젠터의 QR 을 다시 찍어 주세요.'); return; }
+    await openCamera();
+    keepAwake();
+    poll();
+    setInterval(poll, 700);
+  })();
+})();
+</script>
+</body>
+</html>

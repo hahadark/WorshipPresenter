@@ -333,6 +333,7 @@ pub fn router(core: Shared) -> Router {
         .merge(crate::remote::dock_routes()) // [트랙 D] OBS 도킹
         .merge(crate::trigger::routes()) // [트랙 D] 스트림덱·외부 단추
         .merge(crate::camhelper::routes()) // 카메라 찾기·미리보기 도우미 (조작 PC 전용)
+        .merge(crate::phonecam::viewer_routes()) // 휴대폰 카메라: 출력 화면이 영상을 청하는 길 (이 PC 전용)
         .layer(middleware::from_fn_with_state(core.clone(), host_check))
         .with_state(core)
 }
