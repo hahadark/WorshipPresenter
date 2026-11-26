@@ -119,6 +119,8 @@ pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result
         }
         // [트랙 B] 오버레이 · 타이머 · 무대 메시지 · 매크로
         "overlays" => core.toggle_overlays_off(),
+        // 몇 시까지: /api/trigger/timer?at=11:00
+        "timer" if q.get("at").is_some_and(|x| !x.trim().is_empty()) => core.stage_timer_until(&q["at"]).map_err(|e| e.to_string())?,
         "timer" => {
             let min = q.get("min").and_then(|x| x.parse::<f64>().ok()).filter(|x| *x > 0.0).unwrap_or(30.0);
             core.stage_timer("start", min).map_err(|e| e.to_string())?;
@@ -192,6 +194,19 @@ mod tests_b {
         assert!(c.b.stage.timer.running);
         run(&mut c, "timer-reset", &q(&[])).unwrap();
         assert_eq!(c.b.stage.timer.duration, 0);
+        // 몇 시까지: 이미 지난 0시는 오류, 지금부터 한 시간 뒤(자정 전일 때)는 그만큼
+        assert!(run(&mut c, "timer", &q(&[("at", "0:00")])).is_err());
+        assert!(c.stage_timer_until("열한시").is_err());
+        let now = crate::util::now_ms() + crate::localtime::local_offset_ms();
+        let min = now.div_euclid(60_000).rem_euclid(1440);
+        if min < 22 * 60 {
+            let at = format!("{}:{:02}", (min + 61) / 60, (min + 61) % 60);
+            run(&mut c, "timer", &q(&[("at", at.as_str())])).unwrap();
+            assert!(c.b.stage.timer.running);
+            let d = c.b.stage.timer.duration;
+            assert!((60 * 60_000..=61 * 60_000).contains(&d), "{at} 까지 {d}ms");
+            run(&mut c, "timer-reset", &q(&[])).unwrap();
+        }
         run(&mut c, "message", &q(&[("text", "설교 5분 남음")])).unwrap();
         assert_eq!(c.b.stage.message, "설교 5분 남음");
         run(&mut c, "overlays", &q(&[])).unwrap();

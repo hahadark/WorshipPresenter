@@ -158,6 +158,7 @@ pub fn act(core: &mut Core, a: &Value) -> Result<Value, String> {
             }
             _ => core.hide_name_tag(),
         },
+        "timer" if a["op"] == "until" => core.stage_timer_until(a["at"].as_str().unwrap_or("")).map_err(|e| e.to_string())?, // 몇 시까지
         "timer" => core.stage_timer(a["op"].as_str().unwrap_or(""), a["minutes"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?,
         "obsFull" => { let f = a["on"].as_bool().unwrap_or(!core.obs_full); crate::themes::set_obs_view(core, Some(f), None); } // [트랙 C]
         _ => return Err(crate::i18n::tr("알 수 없는 조작입니다.").into()),
@@ -371,5 +372,23 @@ mod tests {
     #[test]
     fn text() {
         assert_eq!(slide_text(&json!({ "kind": "text", "parts": [{ "text": "**주** [C]님을  찬양" }] })), "주 님을 찬양");
+    }
+}
+
+#[cfg(test)]
+mod timer_until_tests {
+    /// 리모컨 '그 시각까지': 이상한 시각·지난 시각은 오류 글, 타이머는 그대로
+    #[test]
+    fn remote_timer_until() {
+        let dir = std::env::temp_dir().join(format!("wp-rmt-{}", crate::util::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = crate::core::Core::open(dir.clone(), dir.clone(), None).unwrap();
+        let e = super::act(&mut c, &serde_json::json!({ "action": "timer", "op": "until", "at": "몰라" })).unwrap_err();
+        assert!(e.contains("11:00"), "{e}");
+        assert!(super::act(&mut c, &serde_json::json!({ "action": "timer", "op": "until", "at": "0:00" })).is_err());
+        assert!(!c.b.stage.timer.running);
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

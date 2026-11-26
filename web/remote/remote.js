@@ -94,6 +94,7 @@
   document.querySelectorAll('[data-msg]').forEach(b => b.onclick = () => { $('msg').value = b.dataset.msg; act({ action: 'message', text: b.dataset.msg }); });
   document.querySelectorAll('[data-tm]').forEach(b => b.onclick = () => act({ action: 'timer', op: 'start', minutes: +b.dataset.tm }));
   document.querySelectorAll('[data-op]').forEach(b => b.onclick = () => act({ action: 'timer', op: b.dataset.op }));
+  $('tmAtGo').onclick = () => { if ($('tmAt').value.trim()) act({ action: 'timer', op: 'until', at: $('tmAt').value }); }; // 몇 시까지 (예: 11:00)
 
   if (pin) start(); else showLogin();
 })();

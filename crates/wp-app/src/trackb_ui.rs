@@ -32,6 +32,8 @@ pub struct TbState {
     quick_was_open: bool,
     quick_focus: bool,
     timer_min: String,
+    /// 무대 타이머 '몇 시까지' 칸 ("11:00")
+    timer_at: String,
     stage_msg: String,
     pin_text: String,
     macro_name: String,
@@ -747,6 +749,20 @@ impl App {
                 let mut m: f64 = self.tb.timer_min.parse().unwrap_or(30.0);
                 if ui.add(egui::DragValue::new(&mut m).range(1.0..=180.0).speed(0.5).max_decimals(0).suffix(tr("분"))).on_hover_text(tr("직접 정하기 (1~180분)")).changed() { self.tb.timer_min = format!("{m}"); }
                 if ui.add(Btn::new(tr("시작")).icon("play").size(Size::Sm).kind(Kind::Primary)).clicked() { self.tb.note = err(self.core.lock().stage_timer("start", m)); }
+            });
+            // 몇 시까지: 예배 시작 · 설교 끝 시각에 맞춰 (예: 11:00 → 지금부터 그 시각까지)
+            ui.horizontal_wrapped(|ui| {
+                ui.label(tr("몇 시까지"));
+                let r = ui.add(egui::TextEdit::singleline(&mut self.tb.timer_at).desired_width(76.0).hint_text("11:00"));
+                crate::widgets::mark("stage-timer-at", r.rect);
+                let go = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let empty = self.tb.timer_at.trim().is_empty();
+                let b = ui.add(Btn::new(tr("그 시각까지 시작")).icon("clock").size(Size::Sm).enabled(!empty).tooltip(if empty { tr("시각을 먼저 적으세요 (예: 11:00 · 오후 2시)") } else { tr("지금부터 그 시각까지 남은 시간으로 시작") }));
+                crate::widgets::mark("stage-timer-at-go", b.rect);
+                if (b.clicked() || go) && !empty {
+                    let at = self.tb.timer_at.clone();
+                    self.tb.note = err(self.core.lock().stage_timer_until(&at));
+                }
             });
             ui.horizontal_wrapped(|ui| {
                 let why = tr("타이머를 먼저 시작하세요");

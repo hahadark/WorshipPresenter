@@ -332,6 +332,14 @@ impl Core {
         self.changed(true);
         Ok(())
     }
+    /// 무대 타이머를 '그 시각까지'로 시작 ("11:00" · "11시 30분" · "오후 2시"). 예배 시작·설교 끝 시각에 맞출 때.
+    /// (2026-11-26 예배송출의 '시각으로 맞추는 타이머' 를 참고해 더함, 코드는 새로 씀)
+    pub fn stage_timer_until(&mut self, at: &str) -> Result<()> {
+        let Some(hm) = crate::localtime::parse_hm(at) else { anyhow::bail!(crate::i18n::tr("시각을 '11:00' 처럼 적어 주세요.")) };
+        let now = crate::util::now_ms() + crate::localtime::local_offset_ms();
+        let Some(ms) = crate::localtime::ms_until(hm, now) else { anyhow::bail!(crate::i18n::tr("이미 지난 시각입니다.")) };
+        self.stage_timer("start", ms as f64 / 60000.0)
+    }
     pub fn stage_message(&mut self, text: &str) {
         self.b.stage.message = text.chars().take(300).collect();
         self.changed(true);
