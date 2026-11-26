@@ -36,6 +36,11 @@
     $('xHide').textContent = L.visible ? '숨김' : '보이기';
     $('dHide').textContent = L.visible ? '글자 숨김' : '다시 보이기';
     $('noctl').hidden = r.control;
+    // 지금 무대 화면(설교자 쪽)에 떠 있는 말 · 타이머 — 보낸 것이 실제로 떴는지 리모컨에서 바로 보이게
+    const st = r.stage || {};
+    const t = st.timer || {}; const left = Math.max(0, Math.round((+t.remaining || 0) / 60000));
+    const tm = t.duration > 0 ? (t.running ? ' · 타이머 ' + left + '분 남음' : ' · 타이머 멈춤') : '';
+    $('stageNow').textContent = (st.message ? '— 지금 떠 있음: ' + st.message : '— 띄운 말 없음') + tm;
     // 이름표(1절·후렴…) 바로 가기
     const groups = [];
     L.labels.forEach((l, i) => { const k = l.replace(/-\d+$/, ''); if (k && !/^\d+$/.test(k) && (i === 0 || L.labels[i - 1].replace(/-\d+$/, '') !== k)) groups.push({ k, i }); });
