@@ -66,6 +66,14 @@ fn open(ctx: &egui::Context) {
 
 /// 방화벽 줄 하나 (처음 그릴 때 저절로 확인)
 pub fn row(ui: &mut egui::Ui) {
+    // 맥: 확인·열기는 Windows 방화벽 전용이라 안내만 (전에는 '열려 있음' 으로 잘못 보였다)
+    if !cfg!(windows) {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(tr("방화벽")).strong());
+            ui.label(RichText::new(tr("휴대폰·다른 PC 에서 안 열리면 시스템 설정 → 네트워크 → 방화벽 → 옵션에서 워십프리젠터의 들어오는 연결을 허용하세요.")).small());
+        });
+        return;
+    }
     let (busy, result, note) = {
         let s = ST.lock();
         (s.busy, s.result.clone(), s.note.clone())
