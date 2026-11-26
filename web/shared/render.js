@@ -600,6 +600,22 @@
     if (tr.length) css.push('transform:' + tr.join(' '));
     return css.join(';');
   }
+  // 이름 자막 (설교자 · 기도자): 이름 + 직분. 모양 bar(왼쪽 색 띠 + 반투명 바탕) · box(강조색 상자) · plain(글자만)
+  function nameTagHtml(o, t, base) {
+    const s = o.size || 52;
+    const style = o.style || 'bar';
+    const accent = o.accent || '#3d7bff';
+    const fam = `font-family:${t.font.family};`;
+    const nameCss = `${fam}font-size:${s}px;font-weight:800;color:${esc(o.color || '#ffffff')};line-height:1.15;white-space:nowrap`;
+    const subCss = `${fam}font-size:${Math.round(s * 0.55)}px;font-weight:600;line-height:1.2;margin-top:${Math.round(s * 0.12)}px;white-space:nowrap;`;
+    let box;
+    if (style === 'box') box = `background:${esc(accent)};padding:${Math.round(s * 0.3)}px ${Math.round(s * 0.55)}px;border-radius:${Math.round(s * 0.22)}px;box-shadow:0 6px 24px rgba(0,0,0,.35);`;
+    else if (style === 'plain') box = 'text-shadow:0 2px 10px rgba(0,0,0,.9);';
+    else box = `background:${esc(o.bg || 'rgba(10,14,22,0.78)')};border-left:${Math.max(4, Math.round(s * 0.16))}px solid ${esc(accent)};padding:${Math.round(s * 0.28)}px ${Math.round(s * 0.6)}px ${Math.round(s * 0.3)}px ${Math.round(s * 0.45)}px;border-radius:${Math.round(s * 0.08)}px;`;
+    const subColor = style === 'box' ? 'rgba(255,255,255,.88)' : style === 'plain' ? '#e6e9ef' : '#c9d1e0';
+    const sub = o.sub ? `<div style="${subCss}color:${subColor}">${esc(o.sub)}</div>` : '';
+    return `<div class="bc-ov bc-name" data-name-style="${esc(style)}" style="${base}${box}"><div style="${nameCss}">${esc(o.text || '')}</div>${sub}</div>`;
+  }
   function buildOverlays(list, t) {
     const layer = document.createElement('div');
     layer.className = 'bc-ovl';
@@ -610,6 +626,7 @@
       let html;
       if (o.type === 'logo') html = o.image ? `<img class="bc-ov" alt="" src="${safeUrl(o.image)}" style="${base}height:${o.size}px">` : '';
       else if (o.type === 'clock') html = `<div class="bc-ov" data-ov="clock" data-o='${esc(JSON.stringify({ format: o.format, showSeconds: o.showSeconds }))}' style="${base}${font}${box}white-space:nowrap">${esc(clockText(o))}</div>`;
+      else if (o.type === 'name') html = nameTagHtml(o, t, base);
       else if (o.type === 'countdown') html = `<div class="bc-ov" data-ov="countdown" data-o='${esc(JSON.stringify({ target: o.target, startedAt: o.startedAt, doneText: o.doneText }))}' style="${base}${font}${box}white-space:nowrap">${esc(countdownText(o))}</div>`;
       else html = `<div class="bc-ov" style="${base}${font}${box}${o.full ? 'text-align:center;' : 'max-width:90%;'}white-space:pre-line;line-height:1.35">${esc(o.text)}</div>`;
       layer.insertAdjacentHTML('beforeend', html);

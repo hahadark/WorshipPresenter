@@ -4,6 +4,7 @@
 mod app;
 mod imgcache; // 그림 메모리: 줄여 읽기 · 상한(LRU)
 mod panel_ui;
+mod names_ui; // 이름 자막 창 (명단 · 띄우기 · 모양)
 mod quick_ui; // 디자인 2단계: 빠른 설정 안쪽 (tplcontrols basic)
 mod center_ui; // 디자인 2단계: 가운데 본문 패널 (머리·목록·격자·주석)
 mod workspace_ui;

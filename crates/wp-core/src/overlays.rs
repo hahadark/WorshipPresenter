@@ -5,7 +5,11 @@ use crate::util::{now_ms, short_id};
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
-pub const OVERLAY_TYPES: [&str; 5] = ["logo", "clock", "countdown", "banner", "text"];
+pub const OVERLAY_TYPES: [&str; 6] = ["logo", "clock", "countdown", "banner", "text", "name"];
+/// 이름 자막 모양: 막대(왼쪽 색 띠 + 반투명 바탕) · 상자(둥근 바탕) · 글자만(그림자)
+pub const NAME_STYLES: [&str; 3] = ["bar", "box", "plain"];
+/// 이름 자막은 하나만 두고 이름·직분을 바꿔 띄운다
+pub const NAME_TAG_ID: &str = "nametag";
 pub const POSITIONS: [&str; 9] = ["top-left", "top-center", "top-right", "middle-left", "center", "middle-right", "bottom-left", "bottom-center", "bottom-right"];
 
 fn cut(v: &Value, n: usize) -> String {
@@ -25,15 +29,16 @@ pub fn normalize_overlay(o: &Value) -> Result<Value> {
         bail!("알 수 없는 오버레이 종류입니다.");
     }
     let id = ok_id(&o["id"], 4).unwrap_or_else(|| short_id("o"));
-    let def_name = match ty { "logo" => "로고", "clock" => "시계", "countdown" => "카운트다운", "banner" => "배너", _ => "글자" };
+    let def_name = match ty { "logo" => "로고", "clock" => "시계", "countdown" => "카운트다운", "banner" => "배너", "name" => "이름 자막", _ => "글자" };
     let name = cut(&o["name"], 80).trim().to_string();
     let outputs: Vec<Value> = match o["outputs"].as_array() {
         Some(a) => a.iter().filter(|x| *x == "main" || *x == "overlay").cloned().collect(),
         None => vec![json!("main"), json!("overlay")],
     };
-    let pos = o["position"].as_str().filter(|p| POSITIONS.contains(p)).unwrap_or(if ty == "banner" { "bottom-center" } else { "top-right" });
+    let pos = o["position"].as_str().filter(|p| POSITIONS.contains(p)).unwrap_or(match ty { "banner" => "bottom-center", "name" => "bottom-left", _ => "top-right" });
     let color = cut(&o["color"], 40);
-    Ok(json!({
+    let accent = cut(&o["accent"], 40);
+    let mut v = json!({
         "id": id, "type": ty, "name": if name.is_empty() { def_name.to_string() } else { name },
         "on": o["on"].as_bool().unwrap_or(false), "outputs": outputs, "position": pos,
         "margin": clampf(&o["margin"], 40.0, 0.0, 400.0), "size": clampf(&o["size"], if ty == "logo" { 140.0 } else { 44.0 }, 10.0, 800.0),
@@ -42,7 +47,67 @@ pub fn normalize_overlay(o: &Value) -> Result<Value> {
         "image": cut(&o["image"], 600), "text": cut(&o["text"], 1000), "target": cut(&o["target"], 40),
         "startedAt": o["startedAt"].as_i64().unwrap_or(0), "doneText": cut(&o["doneText"], 200),
         "format": if o["format"] == "12" { "12" } else { "24" }, "showSeconds": o["showSeconds"].as_bool().unwrap_or(true), "full": o["full"].as_bool().unwrap_or(false),
-    }))
+    });
+    if ty == "name" {
+        // 이름 자막: 이름(text) · 직분(sub) · 모양 · 강조색 · 저절로 내릴 시각(hideAt, 0 = 계속)
+        v["size"] = json!(clampf(&o["size"], 52.0, 10.0, 800.0));
+        v["sub"] = json!(cut(&o["sub"], 120));
+        v["style"] = json!(o["style"].as_str().filter(|s| NAME_STYLES.contains(s)).unwrap_or("bar"));
+        v["accent"] = json!(if accent.is_empty() { "#3d7bff".to_string() } else { accent });
+        v["hideAt"] = json!(o["hideAt"].as_i64().unwrap_or(0).max(0));
+        if o["bg"].is_null() {
+            v["bg"] = json!("rgba(10,14,22,0.78)");
+        }
+        if o["outputs"].is_null() {
+            v["outputs"] = json!(["overlay"]); // 이름 자막은 보통 방송(OBS)에만. 예배당 화면도 켤 수 있다
+        }
+    }
+    Ok(v)
+}
+
+/// 이름 명단 [{name, role}] (최대 60명, 빈 이름은 버림)
+pub fn people(settings: &Value) -> Vec<Value> {
+    settings["people"].as_array().into_iter().flatten().filter(|p| p["name"].as_str().is_some_and(|n| !n.trim().is_empty())).cloned().collect()
+}
+
+pub fn save_people(settings: &mut Value, list: &[Value]) {
+    let clean: Vec<Value> = list
+        .iter()
+        .map(|p| json!({ "name": cut(&p["name"], 60).trim(), "role": cut(&p["role"], 120).trim() }))
+        .filter(|p| p["name"].as_str().is_some_and(|n| !n.is_empty()))
+        .take(60)
+        .collect();
+    settings["people"] = json!(clean);
+}
+
+/// 이름 자막 띄우기: 하나뿐인 이름 자막 오버레이의 이름·직분을 바꾸고 켠다 (없으면 만든다).
+/// seconds > 0 이면 그만큼 뒤에 저절로 내린다 (flow::tick).
+pub fn show_name(settings: &mut Value, name: &str, role: &str, seconds: f64, now: i64) -> Result<Value> {
+    if name.trim().is_empty() {
+        bail!("이름을 입력하세요.");
+    }
+    let cur = settings["overlays"].as_array().and_then(|l| l.iter().find(|x| x["id"] == NAME_TAG_ID)).cloned().unwrap_or_else(|| json!({ "id": NAME_TAG_ID, "type": "name" }));
+    let mut o = cur;
+    o["type"] = json!("name");
+    o["text"] = json!(name.trim());
+    o["sub"] = json!(role.trim());
+    o["on"] = json!(true);
+    o["hideAt"] = json!(if seconds >= 1.0 { now + (seconds * 1000.0) as i64 } else { 0 });
+    save_overlay(settings, &o)
+}
+
+/// 이름 자막 내리기 (없으면 아무것도 안 함) → 내렸는가
+pub fn hide_name(settings: &mut Value) -> bool {
+    let Some(o) = settings["overlays"].as_array_mut().and_then(|l| l.iter_mut().find(|x| x["id"] == NAME_TAG_ID)) else { return false };
+    let was = o["on"] == true;
+    o["on"] = json!(false);
+    o["hideAt"] = json!(0);
+    was
+}
+
+/// 지금 떠 있는 이름 자막 {name, role, hideAt} (없으면 None)
+pub fn name_on(settings: &Value) -> Option<Value> {
+    settings["overlays"].as_array()?.iter().find(|x| x["id"] == NAME_TAG_ID && x["on"] == true).map(|o| json!({ "name": o["text"], "role": o["sub"], "hideAt": o["hideAt"] }))
 }
 
 pub fn save_overlay(settings: &mut Value, o: &Value) -> Result<Value> {
@@ -449,6 +514,35 @@ pub fn due_schedules(schedule: &Value, weekday: u32, hhmm: &str, fired: &mut Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn name_tags() {
+        let mut s = json!({});
+        save_people(&mut s, &[json!({ "name": " 김택근 ", "role": "사관" }), json!({ "name": "", "role": "빈 이름" }), json!({ "name": "홍길동" })]);
+        let p = people(&s);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0]["name"], "김택근");
+        assert_eq!(p[1]["role"], "");
+        assert!(name_on(&s).is_none());
+        let o = show_name(&mut s, "김택근", "사관 · 설교", 0.0, 1000).unwrap();
+        assert_eq!((o["type"].as_str(), o["name"].as_str(), o["position"].as_str(), o["style"].as_str()), (Some("name"), Some("이름 자막"), Some("bottom-left"), Some("bar")));
+        assert_eq!(o["outputs"], json!(["overlay"]), "기본은 방송(OBS)에만");
+        assert_eq!(o["hideAt"], 0);
+        // 다른 사람을 띄우면 같은 자막이 바뀜 (하나만) · 고쳤던 모양·출력은 그대로
+        let mut o2 = o.clone();
+        o2["style"] = json!("box");
+        o2["outputs"] = json!(["main", "overlay"]);
+        save_overlay(&mut s, &o2).unwrap();
+        let o3 = show_name(&mut s, "홍길동", "기도", 8.0, 1000).unwrap();
+        assert_eq!(s["overlays"].as_array().unwrap().len(), 1);
+        assert_eq!((o3["text"].as_str(), o3["sub"].as_str(), o3["style"].as_str(), o3["hideAt"].as_i64()), (Some("홍길동"), Some("기도"), Some("box"), Some(9000)));
+        assert_eq!(o3["outputs"], json!(["main", "overlay"]));
+        assert_eq!(name_on(&s).unwrap()["name"], "홍길동");
+        assert!(hide_name(&mut s));
+        assert!(!hide_name(&mut s), "이미 내렸으면 바뀜 없음");
+        assert!(name_on(&s).is_none());
+        assert!(show_name(&mut s, " ", "", 0.0, 0).is_err());
+        assert_eq!(normalize_overlay(&json!({ "type": "name", "style": "이상한것" })).unwrap()["style"], "bar");
+    }
     #[test]
     fn overlays() {
         let mut s = json!({});

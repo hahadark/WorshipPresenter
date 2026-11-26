@@ -152,6 +152,7 @@ impl App {
         self.cues_window(ctx);
         self.pptsplit_window(ctx); // [갈래 C] PPT 나누기 창
         self.lyrics_window(ctx);
+        self.names_window(ctx); // 이름 자막
         self.music_tick(ctx);
         self.system_windows(ctx);
     }
@@ -1072,7 +1073,7 @@ mod tests_ux {
 
 /// 오버레이 종류 이름
 fn ov_type_ko(t: &str) -> &'static str {
-    match t { "clock" => "시계", "countdown" => "카운트다운", "banner" => "배너", "text" => "글자", "logo" => "로고", _ => "오버레이" }
+    match t { "clock" => "시계", "countdown" => "카운트다운", "banner" => "배너", "text" => "글자", "logo" => "로고", "name" => "이름 자막", _ => "오버레이" }
 }
 
 /// 자리 이름 (top-left → 왼쪽 위)

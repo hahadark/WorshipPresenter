@@ -260,6 +260,42 @@ impl Core {
         self.changed(true);
         out
     }
+    // ---------------- 이름 자막 ----------------
+    pub fn people(&self) -> Vec<Value> {
+        overlays::people(&self.settings.get())
+    }
+    pub fn save_people(&mut self, list: &[Value]) {
+        self.settings.update(|d| overlays::save_people(d, list));
+        self.emit(Ev::Ui);
+    }
+    /// 이름 자막을 저절로 내릴 때까지 초 (설정 nameTagSeconds, 0 = 계속)
+    pub fn name_tag_seconds(&self) -> f64 {
+        self.settings.get()["nameTagSeconds"].as_f64().unwrap_or(0.0).clamp(0.0, 600.0)
+    }
+    pub fn show_name_tag(&mut self, name: &str, role: &str) -> Result<Value> {
+        let sec = self.name_tag_seconds();
+        let mut out = Ok(Value::Null);
+        let now = now_ms();
+        self.settings.update(|d| out = overlays::show_name(d, name, role, sec, now));
+        self.changed(true);
+        out
+    }
+    /// 명단의 i 번째 사람
+    pub fn show_person(&mut self, i: usize) -> Result<Value> {
+        let p = self.people().get(i).cloned().ok_or_else(|| anyhow::anyhow!(crate::i18n::tr("명단에 없는 사람입니다.")))?;
+        self.show_name_tag(p["name"].as_str().unwrap_or(""), p["role"].as_str().unwrap_or(""))
+    }
+    pub fn hide_name_tag(&mut self) {
+        let mut was = false;
+        self.settings.update(|d| was = overlays::hide_name(d));
+        if was {
+            self.changed(true);
+        }
+    }
+    pub fn name_tag_on(&self) -> Option<Value> {
+        overlays::name_on(&self.settings.get())
+    }
+
     pub fn toggle_overlays_off(&mut self) {
         let mut saved = std::mem::take(&mut self.b.saved_overlays);
         self.settings.update(|d| overlays::toggle_all_off(d, &mut saved));
@@ -587,6 +623,42 @@ mod tests_video {
         assert!(!v.playing && v.ended);
         assert_eq!(v.offset, 8.0);
         assert_eq!(c.video_payload()["offset"], 8.0);
+    }
+}
+
+#[cfg(test)]
+mod tests_name_tag {
+    // 이름 자막: 명단에서 띄우고 · 출력(OBS)에 실리고 · 정한 초가 지나면 저절로 내려간다 · 리모컨에서도
+    use crate::core::Core;
+    use serde_json::json;
+    #[test]
+    fn show_expire_remote() {
+        let dir = std::env::temp_dir().join(format!("wp-name-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = Core::open(dir.clone(), dir.clone(), None).unwrap();
+        c.save_people(&[json!({ "name": "김택근", "role": "사관" }), json!({ "name": "홍길동", "role": "기도" })]);
+        c.show_person(0).unwrap();
+        assert_eq!(c.overlays_for("overlay").iter().filter(|o| o["type"] == "name").count(), 1);
+        assert_eq!(c.overlays_for("main").iter().filter(|o| o["type"] == "name").count(), 0);
+        assert!(c.show_person(9).is_err());
+        // 저절로 내리기
+        c.settings.update(|d| d["nameTagSeconds"] = json!(5));
+        c.show_person(1).unwrap();
+        let at = c.name_tag_on().unwrap()["hideAt"].as_i64().unwrap();
+        crate::flow::tick(&mut c, at - 1);
+        assert!(c.name_tag_on().is_some());
+        crate::flow::tick(&mut c, at + 1);
+        assert!(c.name_tag_on().is_none(), "5초 뒤 내려감");
+        // 리모컨
+        let st = crate::remote::state_for(&c);
+        assert_eq!(st["names"]["people"].as_array().unwrap().len(), 2);
+        crate::remote::act(&mut c, &json!({ "action": "name", "index": 0 })).unwrap();
+        assert_eq!(crate::remote::state_for(&c)["names"]["on"]["name"], "김택근");
+        crate::remote::act(&mut c, &json!({ "action": "name", "index": -1 })).unwrap();
+        assert!(crate::remote::state_for(&c)["names"]["on"].is_null());
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 

@@ -39,6 +39,14 @@ pub fn expire_message(c: &mut Core, now: i64) {
     }
 }
 
+/// 이름 자막: 정한 시간이 지나면 저절로 내린다
+pub fn expire_name_tag(c: &mut Core, now: i64) {
+    let due = c.name_tag_on().and_then(|n| n["hideAt"].as_i64()).filter(|t| *t > 0 && now >= *t);
+    if due.is_some() {
+        c.hide_name_tag();
+    }
+}
+
 fn live_visible(c: &Core) -> bool {
     c.pres.live.as_ref().is_some_and(|l| l.visible)
 }
@@ -46,6 +54,7 @@ fn live_visible(c: &Core) -> bool {
 /// 타이머 확인 (시험하려고 now 를 받는다)
 pub fn tick(c: &mut Core, now: i64) {
     expire_message(c, now);
+    expire_name_tag(c, now);
     if c.finish_video_fade(now) { return; }
     let ver = c.pres.version;
     if ver != c.flow.seen {

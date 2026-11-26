@@ -47,6 +47,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "b:lib" => app.tb.lib = true,
         "b:overlays" => app.tb.overlays = true,
         "b:message" => app.tb.message = true,
+        "b:names" => crate::names_ui::open(),
         "b:quick" => app.tb.quick = true,
         "b:stage" => app.tb.stage = true,
         "b:macros" => app.tb.macros = true,

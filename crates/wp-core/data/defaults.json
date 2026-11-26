@@ -668,6 +668,8 @@
  "autoUpdate": true,
  "cueTimes": false,
  "webConsent": false,
+ "people": [],
+ "nameTagSeconds": 0,
  "cueTimesV2": true,
  "cameras": {},
  "triggerKey": "",

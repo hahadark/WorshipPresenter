@@ -37,6 +37,9 @@
   .cue button { display: flex; width: 100%; text-align: left; gap: 8px; margin-bottom: 6px; padding: 12px; }
   .cue button.on { border-color: var(--live); background: #3a1d20; }
   .cue .n { color: var(--muted); min-width: 1.6em; }
+  .names button { flex: 0 1 auto; text-align: left; }
+  .names button small { display: block; color: var(--muted); font-size: 12px; }
+  .names button.on { border-color: var(--live); background: #4a2427; }
   .login { max-width: 360px; margin: 18vh auto; text-align: center; }
   .login input { width: 100%; font-size: 28px; text-align: center; letter-spacing: 8px; margin: 12px 0; }
   .login button { width: 100%; font-size: 18px; background: var(--accent); border-color: var(--accent); }
@@ -79,6 +82,10 @@
   <div class="card" style="margin-top:12px">
     <b>큐시트</b> <span class="muted" id="cueName"></span> <span class="muted">— 누르면 송출</span>
     <div class="cue" id="cue" style="margin-top:8px"></div>
+  </div>
+  <div class="card" id="namesCard" hidden>
+    <b>이름 자막</b> <span class="muted" id="nameNow"></span>
+    <div class="row names" id="names"></div>
   </div>
   <div class="card">
     <b>무대 화면</b> <span class="muted" id="stageNow"></span>

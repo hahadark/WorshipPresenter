@@ -36,6 +36,16 @@
     $('xHide').textContent = L.visible ? '숨김' : '보이기';
     $('dHide').textContent = L.visible ? '글자 숨김' : '다시 보이기';
     $('noctl').hidden = r.control;
+    // 이름 자막: 명단 단추 (누르면 띄우기, 떠 있는 사람을 다시 누르면 내리기)
+    const nm = r.names || { people: [] };
+    $('namesCard').hidden = !(nm.people && nm.people.length);
+    const onKey = nm.on ? nm.on.name + '|' + (nm.on.role || '') : '';
+    $('nameNow').textContent = nm.on ? '— 지금: ' + nm.on.name + (nm.on.role ? ' · ' + nm.on.role : '') : '— 띄운 이름 없음';
+    const nk = JSON.stringify([nm.people, onKey]);
+    if ($('names').dataset.k !== nk) {
+      $('names').dataset.k = nk;
+      $('names').innerHTML = (nm.people || []).map((p, i) => `<button data-name="${i}" class="${onKey === p.name + '|' + (p.role || '') ? 'on' : ''}">${esc(p.name)}${p.role ? '<small>' + esc(p.role) + '</small>' : ''}</button>`).join('') + (nm.on ? '<button data-name="-1">내리기</button>' : '');
+    }
     // 지금 무대 화면(설교자 쪽)에 떠 있는 말 · 타이머 — 보낸 것이 실제로 떴는지 리모컨에서 바로 보이게
     const st = r.stage || {};
     const t = st.timer || {}; const left = Math.max(0, Math.round((+t.remaining || 0) / 60000));
@@ -77,6 +87,7 @@
   $('dPip').onclick = () => act({ action: 'obsPip' });
   $('dFull').onclick = () => act({ action: 'obsFull' });
   $('labels').onclick = e => { const b = e.target.closest('[data-goto]'); if (b) act({ action: 'goto', index: +b.dataset.goto }); };
+  $('names').onclick = e => { const b = e.target.closest('[data-name]'); if (!b) return; act({ action: 'name', index: b.classList.contains('on') ? -1 : +b.dataset.name }); };
   $('cue').onclick = e => { const b = e.target.closest('[data-cue]'); if (b) act({ action: 'cue', index: +b.dataset.cue }); };
   $('msgSend').onclick = () => act({ action: 'message', text: $('msg').value });
   $('msgClear').onclick = () => { $('msg').value = ''; act({ action: 'message', text: '' }); };
