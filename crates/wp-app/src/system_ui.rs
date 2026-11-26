@@ -237,6 +237,8 @@ impl App {
                 if ui.button(wp_core::i18n::tr("로그 폴더")).clicked() { handle_menu(self, "b:logs"); }
             });
             ui.separator();
+            crate::firewall_ui::row(ui); // 휴대폰 리모컨 · 내부망 출력 · 휴대폰 카메라가 들어오는 길
+            ui.separator();
             egui::ScrollArea::vertical().id_salt("diag").auto_shrink([false, false]).show(ui, |ui| {
                 for x in r["items"].as_array().into_iter().flatten() {
                     let (mark, col) = match x["status"].as_str().unwrap_or("") {

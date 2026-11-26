@@ -169,6 +169,9 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
     if !err.is_empty() {
         ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), err);
     }
+    if en {
+        crate::firewall_ui::row(ui);
+    }
     if st["running"] == json!(true) {
         let urls: Vec<String> = st["urls"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
         ui.horizontal(|ui| {
@@ -335,6 +338,9 @@ fn lan(ui: &mut egui::Ui, core: &Shared) {
     let st = { let mut c = core.lock(); wp_core::lan::info(&mut c) };
     let mut en = st["enabled"].as_bool().unwrap_or(false);
     ui.label(wp_core::i18n::tr("송출 PC 가 따로 있으면, 그 PC 의 OBS 에서 이 PC 의 출력 화면을 브라우저 소스로 엽니다 (열쇠가 든 주소로만)."));
+    if en {
+        crate::firewall_ui::row(ui); // 다른 PC 에서 안 열리면 대개 방화벽
+    }
     ui.horizontal(|ui| {
         if ui.checkbox(&mut en, wp_core::i18n::tr("내부망 출력 켜기")).changed() {
             changed(core, |d| d["lanOutput"]["enabled"] = json!(en));
