@@ -155,3 +155,9 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - 웹 출력: 카메라 · 웹 칸은 같은 요소 그대로 새 자리로(FLIP, Web Animations), 템플릿이 바뀌어도 옮김. `<body data-scene>` 점검용.
 - AI 5번 실시간 자막 = 소스 `caption` (띄운 동안만 기본 구성 칸, 구성에 넣을 수 있음). AI 메뉴 시험은 `ai_ui::dry()` 로 창을 열지 않음(전역 창 상태가 다른 화면 시험을 가렸음).
 - 점검: `node tools/scenes/e2e-auto.js --exe target\debug\wp-app.exe --data tmp\data --out tmp\auto-e2e --fake-cam` (20개).
+
+## 2026-11-27 인터페이스 다듬기 (sources 가지, 아직 릴리스 전)
+
+- 목록 · 결정 · 용어집 · 전후 점수 · 제안: **docs/ui-polish.md**. 캡처 `node tools/polish/shots.js` (95장, 격리 · `COMPUTERNAME=TEST-PC`), 외부 판정 `tools/polish/judge.py` · `score.py` · `table.py` · 쌍 비교 `compare.py` (키는 OPENROUTER_API_KEY 환경변수만).
+- 창 안 양식은 공용 부품으로: `widgets::form_row` / `form_label`(오른쪽 맞춤 이름표 칸) · `group_head`(구획 머리) · `empty_state` · `status_mark`(✔/✖ 글자 대신 아이콘 — 글꼴에 따라 색 이모지로 나옴). 새 창은 `widgets::float_window` (접기 삼각형 없음 · 화면 안 · 높이 한도).
+- 용어: 예배당 화면 = Sanctuary screen, 화면 구성 = Layout(s) (Scene 은 OBS 장면), 내장 출력 이름 'OBS'. 전문가 테마는 오류 글 주황 · 성공 글 회색 (빨강 = 송출 중만).
