@@ -228,21 +228,35 @@ fn settings_win(app: &mut App, ctx: &egui::Context) {
 
 // ---------------- 예배 전 큐시트 점검 ----------------
 
-fn level_color(l: &str) -> egui::Color32 {
+/// 점검 표시: 색이 아니라 모양·밝기로 (빨강=송출 중 · 노랑=다음 규칙)
+///  꼭 고칠 것 = 밝은 글자색으로 채운 원 + 굵은 느낌표 · 살펴볼 것 = 흐린 테두리 원 + 느낌표 · 참고 = 작은 흐린 점
+fn level_mark(ui: &mut egui::Ui, level: &str) {
     let p = crate::theme::pal();
-    match l {
-        // 빨강은 송출 중, 노랑은 '다음' 에만 — 점검 목록은 글자 색의 진하기로 나눈다
-        "error" => p.text,
-        "warn" => p.text2,
-        _ => p.muted,
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+    let c = rect.center();
+    let painter = ui.painter();
+    let bang = |painter: &egui::Painter, col: egui::Color32, w: f32| {
+        painter.line_segment([c + egui::vec2(0.0, -4.0), c + egui::vec2(0.0, 1.0)], egui::Stroke::new(w, col));
+        painter.circle_filled(c + egui::vec2(0.0, 3.8), w * 0.6, col);
+    };
+    match level {
+        "error" => {
+            painter.circle_filled(c, 7.0, p.text);
+            bang(painter, p.panel, 2.2);
+        }
+        "warn" => {
+            painter.circle_stroke(c, 6.5, egui::Stroke::new(1.3, p.muted));
+            bang(painter, p.muted, 1.5);
+        }
+        _ => {
+            painter.circle_filled(c, 2.5, p.muted2);
+        }
     }
 }
-fn level_icon(l: &str) -> &'static str {
-    match l {
-        "error" => "circle-x",
-        "warn" => "flag",
-        _ => "info",
-    }
+
+fn level_text(l: &str) -> egui::Color32 {
+    let p = crate::theme::pal();
+    if l == "info" { p.muted } else { p.text }
 }
 
 /// 점검을 다시 돌린다 (규칙 + 주보)
@@ -325,9 +339,12 @@ fn check_win(app: &mut App, ctx: &egui::Context) {
                 let r = ui
                     .push_id(("cc", k), |ui| {
                         ui.horizontal(|ui| {
-                            crate::icons::show(ui, level_icon(x.level), 14.0, level_color(x.level));
+                            level_mark(ui, x.level);
                             ui.vertical(|ui| {
-                                let t = ui.add(egui::Label::new(RichText::new(tr_dyn_s(&x.msg)).color(crate::theme::pal().text)).sense(egui::Sense::click()));
+                                let t = ui.add(egui::Label::new({
+                                    let t = RichText::new(tr_dyn_s(&x.msg)).color(level_text(x.level));
+                                    if x.level == "error" { t.strong() } else { t }
+                                }).sense(egui::Sense::click()));
                                 if !x.fix.is_empty() {
                                     ui.label(RichText::new(tr_dyn_s(&x.fix)).small().color(crate::theme::pal().muted));
                                 }
