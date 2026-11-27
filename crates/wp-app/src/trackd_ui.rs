@@ -837,7 +837,7 @@ pub(crate) fn update_ui(ui: &mut egui::Ui, core: &Shared) {
             egui::ScrollArea::vertical()
                 .max_height(260.0)
                 .show(ui, |ui| {
-                    ui.label(st["notes"].as_str().unwrap_or(""));
+                    ui.label(plain_notes(st["notes"].as_str().unwrap_or("")));
                 });
             ui.horizontal(|ui| {
                 if let Some(u) = st["notesUrl"]
@@ -1071,5 +1071,52 @@ mod ai_card_ui_tests {
         assert!(file.items.iter().any(|i| i.id == "d:bulletin" && i.label.contains("(AI)")));
         assert!(m.iter().flat_map(|x| &x.items).any(|i| i.id == "d:bulletin" && i.label == "주보 → 큐시트 (AI)"));
         assert!(handle_menu("d:bulletin"));
+    }
+}
+
+/// 릴리스 설명(마크다운)을 '새 버전' 창에 보일 보통 글로: 머리 #, 굵게 **, `코드`, [글](주소) → 글, 목록 - → ·, 표 줄 | 정리
+pub(crate) fn plain_notes(md: &str) -> String {
+    let mut out = Vec::new();
+    for line in md.lines() {
+        let t = line.trim_end();
+        let s = t.trim_start();
+        // 표 나눔 줄 (|---|---|) 은 버린다
+        if s.starts_with('|') && s.chars().all(|c| matches!(c, '|' | '-' | ':' | ' ')) {
+            continue;
+        }
+        let indent = &t[..t.len() - s.len()];
+        let mut s = s.trim_start_matches('#').trim_start().to_string();
+        if let Some(r) = s.strip_prefix("- ").or_else(|| s.strip_prefix("* ")) {
+            s = format!("· {r}");
+        }
+        if s.starts_with('|') {
+            s = s.trim_matches('|').split('|').map(|c| c.trim()).collect::<Vec<_>>().join("  ·  ");
+        }
+        // [글](주소) → 글
+        let mut r = String::with_capacity(s.len());
+        let mut rest = s.as_str();
+        while let Some(a) = rest.find('[') {
+            match rest[a..].find("](").and_then(|b| rest[a + b..].find(')').map(|c| (b, b + c))) {
+                Some((b, c)) => {
+                    r.push_str(&rest[..a]);
+                    r.push_str(&rest[a + 1..a + b]);
+                    rest = &rest[a + c + 1..];
+                }
+                None => break,
+            }
+        }
+        r.push_str(rest);
+        let r = r.replace("**", "").replace("__", "").replace('`', "");
+        out.push(format!("{indent}{r}"));
+    }
+    out.join("\n")
+}
+
+#[cfg(test)]
+mod plain_notes_tests {
+    #[test]
+    fn strips_markdown_marks() {
+        let md = "## 새 기능\n- **뷰어 하나만 보기** (`Ctrl+Shift+L`)\n  * 자세히: [설명서](https://x.y/z)\n| 파일 | 크기 |\n|---|---|\n| a.exe | 1 |";
+        assert_eq!(super::plain_notes(md), "새 기능\n· 뷰어 하나만 보기 (Ctrl+Shift+L)\n  · 자세히: 설명서\n파일  ·  크기\na.exe  ·  1");
     }
 }
