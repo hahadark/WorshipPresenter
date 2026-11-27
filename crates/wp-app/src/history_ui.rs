@@ -124,7 +124,10 @@ impl HistoryUi {
                 });
                 let direct = core.lock().direct_mode();
                 ui.label(RichText::new(wp_core::i18n::tr(if direct { "누르면 바로 송출" } else { "누르면 미리보기, 두 번 누르면 송출" })).small().color(pal().muted));
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                if hist.is_empty() {
+                    widgets::empty_state(ui, &wp_core::i18n::tr("아직 송출한 기록이 없습니다. 송출하면 여기에 차례대로 남습니다."));
+                }
+                egui::ScrollArea::vertical().auto_shrink([false, !hist.is_empty()]).show(ui, |ui| {
                     for (i, h) in hist.iter().enumerate() {
                         let title = h["title"].as_str().unwrap_or("");
                         let t = format!("{}   {}  ·  {}", local_time(h["at"].as_i64().unwrap_or(0)), title, h["versionName"].as_str().unwrap_or(""));

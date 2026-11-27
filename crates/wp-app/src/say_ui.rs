@@ -85,7 +85,7 @@ pub fn show(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
         let r = ui.add(egui::TextEdit::singleline(&mut s.text).desired_width(f32::INFINITY).hint_text(tr("예) 지난주 큐시트 복사해서 설교 제목을 '은혜' 로, 본문은 롬 8:28 로 바꿔")));
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         ui.horizontal_wrapped(|ui| {
-            if ui.add(Btn::new(tr("규칙으로 알아듣기")).size(Size::Sm)).clicked() || enter {
+            if ui.add(Btn::new(tr("규칙으로 알아듣기")).size(Size::Sm).kind(Kind::Primary)).clicked() || enter {
                 rule(app, s);
             }
             if crate::ai_ui::ai_button(ui, app, "AI 로 알아듣기", s.busy) && crate::ai_ui::ready(app, "say") {

@@ -169,7 +169,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            if ui.button(wp_core::i18n::tr("규칙으로 찾기")).on_hover_text(wp_core::i18n::tr("'첫째·둘째', '1. 2.', 'Ⅰ. Ⅱ.', '대지 1' 표시를 찾습니다 (AI 없이)")).clicked() {
+            if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("규칙으로 찾기")).kind(crate::widgets::Kind::Primary)).on_hover_text(wp_core::i18n::tr("'첫째·둘째', '1. 2.', 'Ⅰ. Ⅱ.', '대지 1' 표시를 찾습니다 (AI 없이)")).clicked() {
                 match sp::find_points(&p.text, &meta(p)) {
                     Ok(d) => p.data = Some(d),
                     Err(e) => app.core.lock().notify(e, "warn"),

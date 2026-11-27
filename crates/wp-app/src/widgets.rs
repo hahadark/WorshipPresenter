@@ -187,7 +187,7 @@ fn colors(kind: Kind, hovered: bool, selected: bool) -> (Color32, Color32, Color
         return match kind {
             Kind::Default => (if hovered { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, if selected { p.accent } else { Color32::TRANSPARENT }, p.text),
             // 노랑은 '다음' 뜻이라 기본 단추에 쓰지 않는다: 조금 더 밝은 회색 + 굵은 글
-            Kind::Primary => (if hovered { mix(p.raised, 70.0, Color32::WHITE) } else { mix(p.raised, 85.0, Color32::WHITE) }, Color32::TRANSPARENT, Color32::WHITE),
+            Kind::Primary => (if hovered { mix(p.raised, 62.0, Color32::WHITE) } else { mix(p.raised, 74.0, Color32::WHITE) }, Color32::TRANSPARENT, Color32::WHITE), // 창마다 주된 일 하나 (보통 단추보다 확실히 밝게)
             Kind::Send => (if hovered { Color32::WHITE } else { p.send_bg }, Color32::TRANSPARENT, p.send_fg),
             // 지우기·삭제는 빨강 없이 보통 단추 (빨강은 송출 중에만) — 묻기·되돌리기로 막는다
             Kind::Danger => (if hovered { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, Color32::TRANSPARENT, p.text),
