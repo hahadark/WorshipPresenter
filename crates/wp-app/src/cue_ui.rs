@@ -802,6 +802,13 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     if PDF_BUSY.load(std::sync::atomic::Ordering::Relaxed) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
     }
+    if p.bevel {
+        // (나) 판 아래 한 줄 (.pfoot): '+ 순서 넣기' 펼침 목록 · 오른쪽 'N개 · M분'. 도움말은 툴팁으로
+        add_footer_pro(app, ui, direct, acts);
+        let h = ui.cursor().top() - top;
+        ui.data_mut(|d| d.insert_temp(id(BOTTOM_H), h));
+        return;
+    }
     inset(ui, 8.0, |ui| {
         let cw = ((ui.available_width() - 10.0) / 3.0).floor();
         let main: [(&str, &str, &str); 6] = [
@@ -871,6 +878,83 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     ui.add_space(8.0);
     let h = ui.cursor().top() - top;
     ui.data_mut(|d| d.insert_temp(id(BOTTOM_H), h));
+}
+
+/// (나) 큐시트 판 아래 줄: + 순서 넣기 ▾ (종류 목록) · 오른쪽 개수·분
+fn add_footer_pro(app: &mut App, ui: &mut egui::Ui, direct: bool, acts: &mut Vec<Act>) {
+    let p = pal();
+    let (n, mins) = {
+        let c = app.core.lock();
+        c.cue.as_ref().map(|c| (c.items.len(), c.items.iter().map(|x| match &x["duration"] { Value::String(s) => s.trim().parse::<f64>().unwrap_or(0.0), v => v.as_f64().unwrap_or(0.0) }).sum::<f64>())).unwrap_or((0, 0.0))
+    };
+    let (bar, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::hover());
+    ui.painter().rect_filled(bar, 0.0, p.head);
+    ui.painter().hline(bar.x_range(), bar.top() + 0.5, Stroke::new(1.0, p.edge));
+    let help = if direct { tr("클릭 = 바로 송출 (회중 화면에 바로 나감) · ← → 로 고르고 Enter(F9) = 송출 · Ctrl+↑↓ = 이전/다음 · 끌어서 순서 바꾸기") } else { tr("클릭 = 미리보기 (화면에는 안 나감) · ← → 로 고르고 Enter(F9) = 송출 · Ctrl+↑↓ = 이전/다음 · 끌어서 순서 바꾸기") };
+    let br = Rect::from_min_size(Pos2::new(bar.left() + 4.0, bar.top() + 3.0), Vec2::new(104.0, 22.0));
+    let resp = ui.interact(br, id("add-open"), Sense::click()).on_hover_text(format!("{}\n\n{help}", tr("예배 순서 넣기 (고른 순서 다음에)")));
+    widgets::mark("add-open", br);
+    if resp.hovered() {
+        ui.painter().rect_filled(br, theme::cr(theme::Rad::Sm), p.hover);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    icons::paint(ui, Rect::from_center_size(Pos2::new(br.left() + 12.0, br.center().y), Vec2::splat(14.0)), "plus", p.text2);
+    ui.painter().text(Pos2::new(br.left() + 24.0, br.center().y), Align2::LEFT_CENTER, tr("순서 넣기"), theme::font(11.5, Weight::Medium), p.text2);
+    let stat = if mins > 0.0 { tr_args("{1}개 · {2}분", &[&n, &(mins.round() as i64)]) } else { tr_args("{1}개", &[&n]) };
+    ui.painter().text(Pos2::new(bar.right() - 8.0, bar.center().y), Align2::RIGHT_CENTER, stat, theme::font(11.0, Weight::Regular), p.muted);
+    let searched = app.searched_bible_item();
+    egui::Popup::menu(&resp).frame(crate::menubar::drop_frame()).gap(2.0).show(|ui| {
+        ui.set_min_width(240.0);
+        ui.spacing_mut().item_spacing.y = 0.0;
+        crate::menubar::head(ui, &tr("순서 넣기"));
+        for (ty, label, tip) in [
+            ("hymn", "찬송가·PPT", "찬송가·교독문·찬양 PPT (폴더 검색 · 온라인에서 찾기)"),
+            ("bible", "성경", ""),
+            ("song", "찬양", ""),
+            ("weblyrics", "가사 (웹에서 찾기)", "웹(벅스·지니·멜론)에서 가사를 찾아 찬양 순서로 넣기 (Ctrl+L)"),
+            ("text", "공지", ""),
+            ("title", "제목", ""),
+        ] {
+            let tip = match (ty, &searched) {
+                ("bible", Some(it)) => tr_args("성경 순서 넣기: 검색한 '{1}' 로 채움 (고른 순서 다음)", &[&it["ref"].as_str().unwrap_or("")]),
+                ("bible", None) => tr("성경 순서 넣기 (먼저 장절을 검색하면 그 장절로 채움)"),
+                _ => tr(tip),
+            };
+            let key = if ty == "weblyrics" { "Ctrl+L" } else { "" };
+            let r = crate::menubar::item_row(ui, Some(icons::for_type(ty)), &tr(label), key, None);
+            widgets::mark(&format!("add-{ty}"), r.rect);
+            let r = if tip.is_empty() { r } else { r.on_hover_text(tip) };
+            if r.clicked() {
+                add(app, ui.ctx(), ty, acts);
+                ui.close();
+            }
+        }
+        crate::menubar::sep(ui);
+        for (ty, ic, label) in [
+            ("image", "image", "이미지"),
+            ("video", "clapperboard", "영상"),
+            ("youtube", "video", "유튜브 주소"),
+            ("pdf", "file-text", "PDF…"),
+            ("audio", "volume-2", "음악"),
+            ("slideshow", "images", "슬라이드쇼"),
+            ("camera", "camera", "카메라"),
+            ("blank", "square", "빈 화면"),
+        ] {
+            let r = crate::menubar::item_row(ui, Some(ic), &tr(label), "", None);
+            widgets::mark(&format!("add-{ty}"), r.rect);
+            if r.clicked() {
+                add(app, ui.ctx(), ty, acts);
+                ui.close();
+            }
+        }
+        crate::menubar::sep(ui);
+        for (ty, ic, label) in [("points", "presentation", "설교 포인트 슬라이드…"), ("preservice", "images", "예배 전 화면 자동 만들기…")] {
+            if crate::menubar::item_row(ui, Some(ic), &tr(label), "", None).clicked() {
+                add(app, ui.ctx(), ty, acts);
+                ui.close();
+            }
+        }
+    });
 }
 
 static PDF_DONE: parking_lot::Mutex<Option<Result<Value, String>>> = parking_lot::Mutex::new(None);

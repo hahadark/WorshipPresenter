@@ -298,6 +298,7 @@ pub(crate) fn basic_controls(ui: &mut egui::Ui, t: &mut Value) -> Out {
     let col_align = if hanging { "left".to_string() } else { t["align"].as_str().unwrap_or("center").to_string() };
     let valign = t["valign"].as_str().unwrap_or("middle").to_string();
     let section1 = |ui: &mut egui::Ui, t: &mut Value, out: &mut Out| {
+        if band(ui, "text", "글자") {
         // 글꼴
         tc_row(ui, "글꼴", |ui| {
             let cur = font_name(t["font"]["family"].as_str().unwrap_or(""));
@@ -331,8 +332,10 @@ pub(crate) fn basic_controls(ui: &mut egui::Ui, t: &mut Value) -> Out {
                 emit(out, true);
             }
         });
+        }
+        if band(ui, "bg", "배경") {
         // 배경: [테마 그라데이션] 단색·투명 견본 · 카메라 · 영상 · 이미지
-        tc_row(ui, "배경", |ui| {
+        tc_row(ui, if pal().bevel { "채우기" } else { "배경" }, |ui| {
             ui.horizontal_wrapped(|ui| {
                 let ty = t["background"]["type"].as_str().unwrap_or("color").to_string();
                 if let Some(g) = t["background"]["gradient"].as_str().filter(|g| !g.is_empty()).map(String::from) {
@@ -360,10 +363,13 @@ pub(crate) fn basic_controls(ui: &mut egui::Ui, t: &mut Value) -> Out {
                 }
             });
         });
+        }
     };
     let section2 = |ui: &mut egui::Ui, t: &mut Value, out: &mut Out| {
+        if band(ui, "pos", "위치 · 정렬") {
         // 위치 3×3 + 내어쓰기 + 'ㅇㅇ · ㅇㅇ'
         ui.horizontal(|ui| {
+            if pal().bevel { ui.add_space(84.0); }
             ui.spacing_mut().item_spacing.x = 12.0;
             if let Some((v, a)) = pos_grid(ui, &valign, &col_align) {
                 t["valign"] = json!(v);
@@ -389,6 +395,8 @@ pub(crate) fn basic_controls(ui: &mut egui::Ui, t: &mut Value) -> Out {
             });
         });
         ui.add_space(6.0);
+        }
+        if band(ui, "ref", "장절 · 로고 · 전환") {
         tc_row(ui, "장절 위치", |ui| {
             let mut cur = t["reference"]["position"].as_str().unwrap_or("top").to_string();
             if seg(ui, &mut cur, &[("top", "위"), ("bottom", "아래"), ("fixed-top", "위 고정"), ("fixed-bottom", "아래 고정")]) {
@@ -477,6 +485,7 @@ pub(crate) fn basic_controls(ui: &mut egui::Ui, t: &mut Value) -> Out {
                 emit(out, true);
             }
         });
+        }
     };
     if two {
         ui.horizontal_top(|ui| {
@@ -495,6 +504,17 @@ pub(crate) fn basic_controls(ui: &mut egui::Ui, t: &mut Value) -> Out {
         section2(ui, t, &mut out);
     }
     out
+}
+
+/// (나) 인스펙터 접는 구획 머리 (예전 테마는 머리 없이 늘 펼침)
+fn band(ui: &mut egui::Ui, key: &str, title: &str) -> bool {
+    if !pal().bevel {
+        return true;
+    }
+    ui.add_space(2.0);
+    let open = crate::prolayout_ui::section(ui, &format!("quick-{key}"), &tr(title), true);
+    ui.add_space(if open { 8.0 } else { 0.0 });
+    open
 }
 
 /// 콤보(select) — 고른 값이 바뀌면 true

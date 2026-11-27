@@ -129,6 +129,52 @@ impl App {
         let collapsed_id = egui::Id::new("quick-collapsed");
         let mut collapsed = ui.data(|d| d.get_temp::<bool>(collapsed_id)).unwrap_or(false);
         let mut dup = false;
+        let pro = crate::theme::pal().bevel;
+        if pro {
+            // (나) 인스펙터 양식: [예배당 화면 | OBS 성경 | OBS 찬송가] 한 줄 + '템플릿:' '분할:' '이동:' 오른쪽 맞춤 이름표 줄.
+            // 접기는 구획 머리로 대신 (빠른 설정 '접기' 단추 없음)
+            collapsed = false;
+            egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 6 }).show(ui, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                let labels: Vec<(String, String)> = TARGETS.iter().map(|(id, l)| (id.to_string(), tr(l))).collect();
+                let items: Vec<(String, &str)> = labels.iter().map(|(id, l)| (id.clone(), l.as_str())).collect();
+                crate::widgets::segmented_with(ui, &mut slot, &items, crate::widgets::SegStyle { font: 11.5, pad: egui::vec2(4.0, 2.0), fill: true, radius: 4 });
+                let tpl_opts: Vec<(String, String)> = list.iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect();
+                let row = |ui: &mut egui::Ui, label: &str, f: &mut dyn FnMut(&mut egui::Ui)| {
+                    ui.horizontal(|ui| {
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(64.0, 22.0), egui::Sense::hover());
+                        ui.painter().text(r.right_center(), egui::Align2::RIGHT_CENTER, tr(label), crate::theme::font(11.5, crate::theme::Weight::Regular), crate::theme::pal().muted);
+                        f(ui);
+                    });
+                };
+                row(ui, "템플릿", &mut |ui| {
+                    let w = (ui.available_width() - 3.0 * 34.0 - 16.0).max(60.0);
+                    crate::quick_ui::select(ui, "quick-template", &mut selected, &tpl_opts, w, "이 출력에 쓸 템플릿");
+                    if ui.add(crate::widgets::Btn::icon_only("copy").enabled(!old_id.is_empty()).tooltip(tr("복제: 지금 템플릿을 복사해 이 출력에 겁니다. 원래 템플릿은 그대로 남습니다"))).clicked() {
+                        dup = true;
+                    }
+                    if ui.add(crate::widgets::Btn::icon_only("palette").tooltip(tr("테마: 구세군 테마 고르기"))).clicked() {
+                        self.tc.themes.open = true;
+                    }
+                    if ui.add(crate::widgets::Btn::icon_only("sliders-horizontal").tooltip(tr("자세히: 굵기·줄 간격·여백·장절 색 등 모든 디자인 항목 (템플릿 편집)"))).clicked() {
+                        self.tc.templates.open_with(&old_id);
+                    }
+                });
+                let split_opts: Vec<(String, String)> = [("auto", "자동"), ("1", "한 절씩"), ("2", "2절씩"), ("3", "3절씩"), ("4", "4절씩")].iter().map(|(v, l)| (v.to_string(), tr(l))).collect();
+                row(ui, "분할", &mut |ui| {
+                    let w = (ui.available_width() - 16.0).max(60.0);
+                    crate::quick_ui::select(ui, "quick-split", &mut split, &split_opts, w, "슬라이드 나누기");
+                });
+                let nav_opts = vec![("range".to_string(), tr("범위 안")), ("continuous".to_string(), tr("다음 절로 계속"))];
+                row(ui, "이동", &mut |ui| {
+                    let w = (ui.available_width() - 16.0).max(60.0);
+                    crate::quick_ui::select(ui, "quick-nav", &mut nav, &nav_opts, w, "F5/F6 으로 범위 끝에 닿았을 때");
+                });
+                if !self.tb.note.is_empty() {
+                    ui.label(crate::theme::rich(&self.tb.note, 11.5, crate::theme::Weight::Regular, crate::theme::pal().muted));
+                }
+            });
+        } else {
         // .quick-head: 대상 분할 단추 · 템플릿 · 테마 · 분할 · 이동 · (빈 칸) · 자세히 ▸ · 접기 ▾
         egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 7)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -160,6 +206,7 @@ impl App {
                 }
             });
         });
+        }
         crate::quick_ui::rule(ui);
         ui.data_mut(|d| d.insert_temp(collapsed_id, collapsed));
         remember(ui, "quick-target", slot.clone());
@@ -189,7 +236,7 @@ impl App {
         if !collapsed {
             // .quick-body: 안쪽 8px 12px 10px, 넘치면 굴림
             egui::ScrollArea::vertical().id_salt("quick-body").auto_shrink([false, false]).show(ui, |ui| {
-                egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 10 }).show(ui, |ui| {
+                egui::Frame::new().inner_margin(if pro { egui::Margin { left: 0, right: 12, top: 0, bottom: 10 } } else { egui::Margin { left: 12, right: 12, top: 8, bottom: 10 } }).show(ui, |ui| {
                     out = crate::quick_ui::basic_controls(ui, &mut tpl);
                     // 순서 되돌리기·다시 하기(↶↷)는 큐시트 머리(cue_ui::undo_buttons)·큐시트 메뉴·Ctrl+Z/Y 에 있어 여기서 뺐다.
                 });

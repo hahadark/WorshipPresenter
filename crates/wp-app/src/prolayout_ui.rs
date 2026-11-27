@@ -60,7 +60,9 @@ pub(crate) fn section(ui: &mut egui::Ui, key: &str, title: &str, default_open: b
     let id = Id::new(("pro-sec", key));
     let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(default_open);
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), theme::SECTION_H), Sense::click());
-    let pt = ui.painter();
+    // 띠는 판 끝까지 (안쪽 여백을 넘어) 그린다
+    let r = Rect::from_min_max(Pos2::new(ui.clip_rect().left().max(r.left() - 12.0), r.top()), Pos2::new(ui.clip_rect().right(), r.bottom()));
+    let pt = ui.painter().with_clip_rect(ui.clip_rect());
     pt.rect_filled(r, 0.0, if resp.hovered() { p.hover } else { theme::mix(p.head, 70.0, p.panel) });
     pt.hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, p.line));
     pt.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.edge));
@@ -139,6 +141,8 @@ impl App {
 
     /// 왼쪽 판: 머리 '큐시트' + [순서 | 성경 | 라이브러리]
     fn pro_side(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+        let w = ui.available_width();
+        ui.set_max_width(w);
         ui.spacing_mut().item_spacing.y = 0.0;
         let mut tab = crate::cue_ui::side_tab(ui.ctx());
         pane_head(ui, &tr("큐시트"), "", |ui| {
@@ -167,6 +171,9 @@ impl App {
     /// 오른쪽 인스펙터: 머리 '인스펙터' + [글자 | 무대 | 미디어], 그 아래 지금 다음(미리보기) 순서 이름
     fn pro_inspector(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         let p = pal();
+        // 안의 칸이 판을 밀어 넓히지 않게 (egui 옆 판은 내용 폭을 따라 커진다)
+        let w = ui.available_width();
+        ui.set_max_width(w);
         ui.spacing_mut().item_spacing.y = 0.0;
         let id = Id::new("pro-ins-tab");
         let mut tab = ui.data(|d| d.get_temp::<InsTab>(id)).unwrap_or(InsTab::Text);
@@ -218,7 +225,7 @@ impl App {
         let full = ui.available_rect_before_wrap();
         // 뷰어 높이 비율 (설정 rsProLayout.viewers, 0.3~0.75). 편집칸 '크게' 면 본문이 판 전체
         let big = crate::app::editor_big(ui.ctx());
-        let ratio = self.core.lock().settings.get()["rsProLayout"]["viewers"].as_f64().unwrap_or(if full.height() < 520.0 { 0.6 } else { 0.52 }).clamp(0.25, 0.8) as f32;
+        let ratio = self.core.lock().settings.get()["rsProLayout"]["viewers"].as_f64().unwrap_or(if full.height() < 520.0 { 0.6 } else { 0.56 }).clamp(0.25, 0.8) as f32;
         let vh = if big { 0.0 } else { ((full.height() - 6.0) * ratio).clamp(180.0_f32.min(full.height() * 0.5), (full.height() - 160.0).max(180.0)) };
         if vh > 0.0 {
             let top = Rect::from_min_size(full.min, Vec2::new(full.width(), vh));

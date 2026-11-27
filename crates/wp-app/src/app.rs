@@ -123,16 +123,16 @@ pub(crate) fn picked_sel<T>(sel: &mut Option<usize>, edit: &mut Option<T>, r: wp
 
 fn type_info(t: &str) -> (&'static str, Color32) {
     match t {
-        "bible" => ("성경", Color32::from_rgb(0x5b, 0x9c, 0xf6)),
-        "song" => ("찬양", Color32::from_rgb(0xe0, 0x7b, 0xd6)),
-        "hymn" => ("찬송", Color32::from_rgb(0xf0, 0x9a, 0x4a)),
-        "text" => ("공지", Color32::from_rgb(0x58, 0xc2, 0x8a)),
-        "title" => ("제목", Color32::from_rgb(0xc7, 0xa6, 0x4b)),
-        "blank" => ("빈 화면", Color32::from_rgb(0x8a, 0x93, 0xa3)),
-        "image" => ("그림", Color32::from_rgb(0x4f, 0xc3, 0xc9)),
-        "camera" => ("카메라", Color32::from_rgb(0xd9, 0x6a, 0x6a)),
-        "video" => ("영상", Color32::from_rgb(0xd9, 0x6a, 0x6a)),
-        "slideshow" => ("슬라이드쇼", Color32::from_rgb(0x9b, 0x87, 0xf5)),
+        "bible" => ("성경", crate::theme::type_ink("bible")),
+        "song" => ("찬양", crate::theme::type_ink("song")),
+        "hymn" => ("찬송", crate::theme::type_ink("hymn")),
+        "text" => ("공지", crate::theme::type_ink("text")),
+        "title" => ("제목", crate::theme::type_ink("title")),
+        "blank" => ("빈 화면", crate::theme::type_ink("blank")),
+        "image" => ("그림", crate::theme::type_ink("image")),
+        "camera" => ("카메라", crate::theme::type_ink("camera")),
+        "video" => ("영상", crate::theme::type_ink("camera")),
+        "slideshow" => ("슬라이드쇼", crate::theme::type_ink("slideshow")),
         _ => ("순서", crate::theme::pal().muted),
     }
 }
@@ -1004,7 +1004,7 @@ impl App {
             });
         });
         let r = frame.response.rect;
-        ui.painter().hline(r.x_range(), r.bottom() - 1.0, egui::Stroke::new(2.0, p.pv));
+        ui.painter().hline(r.x_range(), r.bottom() - 1.0, egui::Stroke::new(if p.bevel { 1.0 } else { 2.0 }, if p.bevel { p.line } else { p.pv }));
         if head.up && i > 0 {
             acts.push(Act::MoveItem(i, -1));
         }
@@ -1101,9 +1101,9 @@ impl App {
             let fold_key = if is_live { "lv" } else { "pv" };
             let folded_saved = self.core.lock().settings.get()["thumbsFold"][fold_key].as_bool().unwrap_or(false);
             // (나) 뷰어가 낮으면(작은 창) 절 단추 줄을 저절로 접는다 — 같은 단추는 아래 본문 판에도 있다
-            let auto_fold = p.bevel && ui.available_height() < 330.0;
+            let auto_fold = p.bevel && ui.available_height() < 250.0;
             let folded = folded_saved || auto_fold;
-            let reserve = if auto_fold { 40.0 + 34.0 } else if p.bevel { 112.0 } else if is_live { 128.0 } else { 74.0 } - if folded && deck.is_some() { 34.0 } else { 0.0 };
+            let reserve = if auto_fold { 44.0 } else if p.bevel { 44.0 + 34.0 + if folded { 0.0 } else { 74.0 } } else if is_live { 128.0 } else { 74.0 } - if folded && deck.is_some() && !p.bevel { 34.0 } else { 0.0 };
             let h = (w * th / tw).min(ui.available_height() - reserve).max(60.0);
             let w2 = h * tw / th;
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
@@ -1204,12 +1204,18 @@ impl App {
             // ---- .thumbs: 슬라이드 칩 (1. 3:16 …) — 접었으면 안 그린다 (.thumbs.folded { display: none })
             if let Some(d) = deck.filter(|_| !folded) {
                 ui.add_space(4.0);
-                egui::ScrollArea::vertical().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).max_height(76.0).auto_shrink([false, true]).show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                // (나) 슬라이드 줄: 작은 그림 + 절 번호 한 줄 (가로로 굴림). 예전 테마는 둥근 칩 여러 줄
+                let strip = p.bevel;
+                let (wd, dd) = (self.web_dir.clone(), self.data_dir.clone());
+                let c = paint::Ctx { web_dir: &wd, data_dir: &dd };
+                let sa = if strip { egui::ScrollArea::horizontal().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).auto_shrink([false, true]) } else { egui::ScrollArea::vertical().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).max_height(76.0).auto_shrink([false, true]) };
+                sa.show(ui, |ui| {
+                    let mut body = |ui: &mut egui::Ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(if strip { 6.0 } else { 4.0 }, 4.0);
                         let item = crate::center_ui::deck_item(s, d);
                         for (k, sl) in d.slides.iter().enumerate() {
-                            let r = thumb_chip(ui, &chip_label(k, &slide_chip_text(sl)), k == d.index, is_live).on_hover_text(slide_snippet(sl));
+                            let label = chip_label(k, &slide_chip_text(sl));
+                            let r = if strip { slide_tile(ui, &c, sl, tpl, &version, &label, k == d.index, k < d.index, is_live) } else { thumb_chip(ui, &label, k == d.index, is_live) }.on_hover_text(slide_snippet(sl));
                             if r.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
                             widgets::mark(&format!("{fold_key}-chip-{k}"), r.rect);
                             // 마우스 올림 단추 (격자와 같은 규칙, 칩이 작아 칩 위에 띄운다)
@@ -1226,7 +1232,8 @@ impl App {
                             }
                             crate::parity2_ui::slide_menu(&self.core, &r, d, k, is_live, acts); // [트랙 A] 썸네일 오른쪽 클릭
                         }
-                    });
+                    };
+                    if strip { ui.horizontal(|ui| body(ui)); } else { ui.horizontal_wrapped(|ui| body(ui)); }
                 });
             }
         });
@@ -1452,6 +1459,33 @@ fn thumb_chip(ui: &mut egui::Ui, text: &str, on: bool, is_live: bool) -> egui::R
     resp
 }
 
+/// (나) 슬라이드 줄의 한 칸: 16:9 작은 그림(84×47) + 아래 번호. 지금 장 = 빨강(송출 중) / 노랑(다음) 테두리, 지난 장은 흐리게
+#[allow(clippy::too_many_arguments)]
+fn slide_tile(ui: &mut egui::Ui, c: &paint::Ctx, sl: &Value, tpl: &Value, version: &str, label: &str, on: bool, past: bool, is_live: bool) -> egui::Response {
+    use crate::theme::{font, pal, Weight};
+    let p = pal();
+    let (tw, th) = (84.0, 47.0);
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(tw, th + 17.0), Sense::click());
+    if ui.is_rect_visible(r) {
+        let img = egui::Rect::from_min_size(r.min, Vec2::new(tw, th));
+        ui.painter().rect_filled(img, 0.0, Color32::BLACK);
+        paint_slide(ui, c, img, Some(sl), tpl, version, true, false, false);
+        if past {
+            ui.painter().rect_filled(img, 0.0, Color32::from_black_alpha(120));
+        }
+        let col = if is_live { p.live } else { p.next };
+        if on {
+            ui.painter().rect_stroke(img, 0.0, egui::Stroke::new(if is_live { 3.0 } else { 2.0 }, col), egui::StrokeKind::Outside);
+        } else {
+            ui.painter().rect_stroke(img, 0.0, egui::Stroke::new(1.0, if resp.hovered() { p.line2 } else { Color32::BLACK }), egui::StrokeKind::Outside);
+        }
+        let tc = if on { if is_live { p.live_text } else { p.next } } else if past { p.muted2 } else { p.muted };
+        ui.painter().with_clip_rect(r).text(egui::Pos2::new(r.center().x, img.bottom() + 9.0), egui::Align2::CENTER_CENTER, label, font(10.5, if on { Weight::Bold } else { Weight::Regular }), tc);
+    }
+    if resp.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+    resp
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LayerAct { Content, Media, BgOn, BgItem, BgTpl, Overlays, Logo, Draw }
 
@@ -1479,7 +1513,8 @@ fn layer_chip(ui: &mut egui::Ui, ly: &Layer) -> egui::Response {
     let pt = ui.painter();
     let bg = if hovered { p.hover } else { p.panel2 };
     let border = if ly.on { p.live } else if hovered { p.line2 } else { p.line };
-    let cr = crate::theme::cr(crate::theme::Rad::Xl);
+    // (나): 둥근 알약 대신 각진 꼬리표 (둥글기 Sm), 켜진 층은 왼쪽 빨간 테두리 대신 같은 1px 빨강
+    let cr = if p.bevel { crate::theme::cr(crate::theme::Rad::Sm) } else { crate::theme::cr(crate::theme::Rad::Xl) };
     if ly.on {
         pt.rect(r, cr, bg, egui::Stroke::new(p.border_w, border), egui::StrokeKind::Inside);
     } else {
@@ -1736,15 +1771,17 @@ impl App {
         // (나) 위 컨트롤 막대 (bar 색 · 아래 1px edge) — probar_ui.rs
         {
             let p = crate::theme::pal();
-            egui::Panel::top("top").frame(egui::Frame::new().fill(p.bar).inner_margin(egui::Margin::ZERO).stroke(egui::Stroke::NONE)).show(ui, |ui| {
+            let tr_ = egui::Panel::top("top").frame(egui::Frame::new().fill(p.bar).inner_margin(egui::Margin::ZERO).stroke(egui::Stroke::NONE)).show(ui, |ui| {
                 self.control_bar(ui, &s, &mut acts);
                 ui.painter().hline(ui.max_rect().x_range(), ui.max_rect().bottom() - 0.5, egui::Stroke::new(1.0, p.edge));
             });
+            // 알림 띠가 놓일 높이 (컨트롤 막대 바로 아래)
+            ctx.data_mut(|d| d.insert_temp(egui::Id::new("pro-top-y"), tr_.response.rect.bottom()));
         }
         if !s.preview_mode {
             // 바로 송출 중: 주황 띠를 계속 보인다 (조작 실수 막기)
             let p = crate::theme::pal();
-            egui::Panel::top("direct-band").frame(egui::Frame::new().fill(p.warn_bg).stroke(egui::Stroke::new(1.0, p.warn)).inner_margin(egui::Margin::symmetric(12, 4))).show(ui, |ui| {
+            egui::Panel::top("direct-band").frame(egui::Frame::new().fill(p.warn_bg).stroke(egui::Stroke::new(1.0, p.warn)).inner_margin(egui::Margin::symmetric(12, if p.bevel { 1 } else { 4 }))).show(ui, |ui| {
                 self.direct_band(ui, &mut acts);
             });
         }

@@ -206,10 +206,10 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
 
 /// 순서 넣기 단추 (카메라 · 슬라이드쇼)
 pub fn add_buttons(ui: &mut egui::Ui, acts: &mut Vec<Act>) {
-    if ui.add(egui::Button::new(RichText::new(wp_core::i18n::tr("카메라")).color(Color32::from_rgb(0xd9, 0x6a, 0x6a)))).on_hover_text(wp_core::i18n::tr("웹캠·캡처보드를 예배당 화면에 (기기는 편집칸에서)")).clicked() {
+    if ui.add(egui::Button::new(RichText::new(wp_core::i18n::tr("카메라")).color(crate::theme::type_ink("camera")))).on_hover_text(wp_core::i18n::tr("웹캠·캡처보드를 예배당 화면에 (기기는 편집칸에서)")).clicked() {
         acts.push(Act::AddItem("camera", Some(json!({ "title": "카메라", "deviceId": "", "label": "", "fit": "cover" }))));
     }
-    if ui.add(egui::Button::new(RichText::new(wp_core::i18n::tr("슬라이드쇼")).color(Color32::from_rgb(0x9b, 0x87, 0xf5)))).on_hover_text(wp_core::i18n::tr("그림 여러 장 + 광고 글을 자동으로 넘기기 (예배 전 화면)")).clicked() {
+    if ui.add(egui::Button::new(RichText::new(wp_core::i18n::tr("슬라이드쇼")).color(crate::theme::type_ink("slideshow")))).on_hover_text(wp_core::i18n::tr("그림 여러 장 + 광고 글을 자동으로 넘기기 (예배 전 화면)")).clicked() {
         acts.push(Act::AddItem("slideshow", Some(json!({ "title": "슬라이드쇼", "images": [], "body": "", "autoSec": 8, "autoLoop": true, "countdown": "", "countdownLabel": "예배 시작까지" }))));
     }
 }
@@ -342,11 +342,11 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
                     ui.data_mut(|d| d.insert_temp(id, s.clone()));
                 }
                 if !s.trim().is_empty() && !wp_core::youtube::is_youtube(&s) {
-                    ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), wp_core::i18n::tr("유튜브 주소가 아닙니다"));
+                    ui.colored_label(crate::theme::pal().danger_text, wp_core::i18n::tr("유튜브 주소가 아닙니다"));
                 }
             });
             if let Some((vid, start)) = &yt {
-                ui.label(RichText::new(wp_core::i18n::tr_args("유튜브 {1}{2} · 인터넷이 있어야 재생됩니다. 올린 사람이 퍼가기를 막은 영상은 재생되지 않습니다.", &[vid, &if *start > 0 { format!(" ({start}초부터)") } else { String::new() }])).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr_args("유튜브 {1}{2} · 인터넷이 있어야 재생됩니다. 올린 사람이 퍼가기를 막은 영상은 재생되지 않습니다.", &[vid, &if *start > 0 { format!(" ({start}초부터)") } else { String::new() }])).small().color(crate::theme::pal().muted));
             }
             ui.horizontal(|ui| {
                 let mut snd = e["sound"].as_bool().unwrap_or(true);

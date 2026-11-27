@@ -237,10 +237,10 @@ fn webedit(ui: &mut egui::Ui, core: &Shared) {
             }
         }
     });
-    ui.label(RichText::new(if pin.is_empty() { tr("PIN 이 없으면 이 PC 의 브라우저에서만 열리고 PIN 을 묻지 않습니다. 다른 컴퓨터에서 쓰려면 PIN 을 정하세요.") } else { tr("PIN 을 정했으므로 같은 내부망의 다른 컴퓨터에서 열 수 있고, 열 때 PIN 을 묻습니다 (5번 틀리면 30초 막음).") }).small().color(Color32::GRAY));
+    ui.label(RichText::new(if pin.is_empty() { tr("PIN 이 없으면 이 PC 의 브라우저에서만 열리고 PIN 을 묻지 않습니다. 다른 컴퓨터에서 쓰려면 PIN 을 정하세요.") } else { tr("PIN 을 정했으므로 같은 내부망의 다른 컴퓨터에서 열 수 있고, 열 때 PIN 을 묻습니다 (5번 틀리면 30초 막음).") }).small().color(crate::theme::pal().muted));
     let err = st["error"].as_str().unwrap_or("");
     if !err.is_empty() {
-        ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), err);
+        ui.colored_label(crate::theme::pal().danger_text, err);
     }
     if en && !pin.is_empty() {
         crate::firewall_ui::row(ui);
@@ -255,7 +255,7 @@ fn webedit(ui: &mut egui::Ui, core: &Shared) {
                 }
             });
         }
-        ui.label(RichText::new(tr("같은 큐시트를 조작 화면과 브라우저에서 함께 고치면, 나중에 저장하는 쪽이 '다시 불러오기' 를 하라는 안내를 받습니다 (서로 덮어쓰지 않음).")).small().color(Color32::GRAY));
+        ui.label(RichText::new(tr("같은 큐시트를 조작 화면과 브라우저에서 함께 고치면, 나중에 저장하는 쪽이 '다시 불러오기' 를 하라는 안내를 받습니다 (서로 덮어쓰지 않음).")).small().color(crate::theme::pal().muted));
     } else if en {
         ui.label(RichText::new(tr("서버를 켜는 중…")).small());
     }

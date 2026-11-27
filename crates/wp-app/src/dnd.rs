@@ -144,14 +144,14 @@ fn overlay(ctx: &egui::Context, pos: Option<Pos2>) {
     // 큐시트 순서 위: 그 아래에 들어간다는 표시
     if let Some(Zone::CueRow(i)) = zs.iter().find(|z| matches!(z, Zone::CueRow(_))).filter(|_| !zs.contains(&Zone::SlideEdit)) {
         if let Some(r) = PREV.with(|v| v.borrow().iter().rev().find(|(z, _)| *z == Zone::CueRow(*i)).map(|(_, r)| *r)) {
-            pt.line_segment([r.left_bottom(), r.right_bottom()], Stroke::new(3.0, Color32::from_rgb(0x4d, 0xa3, 0xff)));
+            pt.line_segment([r.left_bottom(), r.right_bottom()], Stroke::new(3.0, crate::theme::pal().accent));
         }
     }
     let text = format!("⬇ 여기에 놓기 — {}", wp_core::i18n::tr(hint_for(&zs)));
     let font = FontId::proportional(18.0);
     let g = pt.layout_no_wrap(text, font, Color32::WHITE);
     let r = Rect::from_center_size(sc.center_top() + egui::vec2(0.0, 80.0), g.size() + egui::vec2(40.0, 24.0));
-    pt.rect(r, 8.0, Color32::from_rgb(0x1d, 0x3a, 0x5f), Stroke::new(2.0, Color32::from_rgb(0x4d, 0xa3, 0xff)), egui::StrokeKind::Inside);
+    pt.rect(r, 8.0, crate::theme::pal().accent_bg, Stroke::new(2.0, crate::theme::pal().accent), egui::StrokeKind::Inside);
     pt.galley(r.center() - g.size() / 2.0, g, Color32::WHITE);
     let _ = Align2::CENTER_CENTER;
 }

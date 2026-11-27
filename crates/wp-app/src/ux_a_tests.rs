@@ -186,10 +186,14 @@ fn center_head_add_button_inserts_searched_passage_after_selection() {
 #[test]
 fn left_bible_button_fills_searched_reference() {
     let mut h = H::new(two());
+    // (나): 판 아래 '+ 순서 넣기' 를 펼친 뒤 '성경'
+    let pro = crate::theme::pal().bevel;
+    if pro { h.click("add-open", cue); }
     h.click("add-bible", cue);
     assert_eq!(h.items().last().unwrap()["ref"].as_str().unwrap_or(""), "", "검색이 없으면 빈 성경 순서");
     searched(&mut h);
     h.app.sel = None;
+    if pro { h.click("add-open", cue); }
     h.click("add-bible", cue);
     assert_eq!(h.items().last().unwrap()["ref"], "요한복음 3:16");
 }
@@ -288,6 +292,11 @@ fn editor_delete_button_removes_with_undo_toast() {
     let mut h = H::new(two());
     h.app.sel = Some(1);
     h.click("editor-del", main);
+    // (나) 전문가 테마(기본): 한 번 더 묻는다
+    if crate::theme::pal().bevel {
+        assert_eq!(h.items().len(), 2, "첫 누름은 묻기만");
+        h.click("editor-del-yes", main);
+    }
     assert_eq!(h.items().len(), 1);
     let (msg, act) = h.toast();
     assert!(msg.contains("'설교' 순서를 삭제"), "{msg}");

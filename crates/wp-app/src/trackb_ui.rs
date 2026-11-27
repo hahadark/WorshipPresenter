@@ -955,7 +955,7 @@ impl App {
         let Some(v) = v else { return };
         let mut act: Option<(&str, f64)> = None;
         ui.horizontal(|ui| {
-            ui.label(RichText::new(wp_core::i18n::tr("영상")).strong().color(Color32::from_rgb(0xd9, 0x6a, 0x6a)));
+            ui.label(RichText::new(wp_core::i18n::tr("영상")).strong().color(crate::theme::type_ink("camera")));
             if ui.button(if v.playing { wp_core::i18n::tr_s("⏸ 멈춤") } else { wp_core::i18n::tr_s("▶ 재생") }).clicked() { act = Some((if v.playing { "pause" } else { "play" }, 0.0)); }
             if ui.button(wp_core::i18n::tr("⏮ 처음부터")).clicked() { act = Some(("restart", 0.0)); }
             if ui.button(wp_core::i18n::tr("정지")).clicked() { act = Some(("stop", 0.0)); }
@@ -998,7 +998,7 @@ impl App {
         if let Some(from) = r.dnd_hover_payload::<usize>() {
             if *from != i {
                 let y = if *from < i { r.rect.bottom() } else { r.rect.top() };
-                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(2.5, Color32::from_rgb(0x5b, 0x9c, 0xf6)));
+                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(2.5, crate::theme::type_ink("bible")));
             }
         }
         if let Some(from) = r.dnd_release_payload::<usize>() {

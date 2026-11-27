@@ -37,6 +37,8 @@ pub(crate) struct LcdInfo {
     pub live: Option<(String, String, i64)>,
     /// 다음: (예정 시각, 번호·제목)
     pub next: Option<(String, String)>,
+    /// 바로 송출 방식 (누르면 바로 나감) — 표시창 '송출 중' 이름표 옆에 글자로
+    pub direct: bool,
 }
 
 /// 순서 이름 (번호 + 제목) — 큐시트 순서면 'N 제목', 아니면 제목만
@@ -81,7 +83,7 @@ pub(crate) fn lcd_info(ctx: &egui::Context, s: &Snap, planned: &[String]) -> Lcd
             (planned.get(i).cloned().unwrap_or_default(), format!("{} {}", i + 1, name))
         })
     };
-    LcdInfo { live, next }
+    LcdInfo { live, next, direct: false }
 }
 
 /// 막대 위 도드라진 단추 (.tpb) — 아이콘(+글)
@@ -184,13 +186,18 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) {
     let lt = p.lcd_text;
     let ll = p.lcd_label;
     let live = info.live.clone();
+    let direct = info.direct;
+    let warn_c = p.warn;
     let lf = label_f.clone();
     cols.push((rest, Box::new(move |pt: &egui::Painter, r: Rect| {
         let r = r.shrink2(Vec2::new(12.0, 0.0));
         let pt = pt.with_clip_rect(r);
         match &live {
             Some((t, k, sec)) => {
-                pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, format!("{} · {:02}:{:02}", tr("송출 중"), sec / 60, sec % 60), lf.clone(), live_c);
+                let lr = pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, format!("{} · {:02}:{:02}", tr("송출 중"), sec / 60, sec % 60), lf.clone(), live_c);
+                if direct {
+                    pt.text(Pos2::new(lr.right() + 6.0, r.top() + 6.0), Align2::LEFT_TOP, tr("바로 송출"), lf.clone(), warn_c);
+                }
                 let g = pt.layout_no_wrap(t.clone(), theme::font(13.0, Weight::Bold), lt);
                 let gw = g.size().x;
                 pt.galley(Pos2::new(r.left(), r.bottom() - 6.0 - g.size().y), g, lt);
@@ -199,7 +206,10 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) {
                 }
             }
             None => {
-                pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, tr("송출 중"), lf.clone(), ll);
+                let lr = pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, tr("송출 중"), lf.clone(), ll);
+                if direct {
+                    pt.text(Pos2::new(lr.right() + 6.0, r.top() + 6.0), Align2::LEFT_TOP, tr("바로 송출"), lf.clone(), warn_c);
+                }
                 pt.text(Pos2::new(r.left(), r.bottom() - 6.0), Align2::LEFT_BOTTOM, tr("없음"), theme::font(13.0, Weight::Bold), ll);
             }
         }
@@ -299,7 +309,8 @@ impl App {
         x += 44.0 + 12.0;
         // ---- 상태 표시창
         let planned = self.core.lock().planned_times();
-        let info = lcd_info(ui.ctx(), s, &planned);
+        let mut info = lcd_info(ui.ctx(), s, &planned);
+        info.direct = !s.preview_mode;
         let lr = Rect::from_min_size(Pos2::new(x, cy - 21.0), Vec2::new(lcd_w, 42.0));
         let clock = clock_text(local_ms());
         paint_lcd(ui, lr, &info, show_clock.then_some(clock.as_str()));

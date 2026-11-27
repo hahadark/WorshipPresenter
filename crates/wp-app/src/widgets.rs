@@ -186,9 +186,11 @@ fn colors(kind: Kind, hovered: bool, selected: bool) -> (Color32, Color32, Color
         // (나) 전문가용: 단추는 테두리 대신 위 밝은 선 · 아래 어두운 선 (paint_bevel). 바탕은 도드라진 회색
         return match kind {
             Kind::Default => (if hovered { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, if selected { p.accent } else { Color32::TRANSPARENT }, p.text),
-            Kind::Primary => (if hovered { white85(p.accent) } else { p.accent }, Color32::TRANSPARENT, p.on_accent),
+            // 노랑은 '다음' 뜻이라 기본 단추에 쓰지 않는다: 조금 더 밝은 회색 + 굵은 글
+            Kind::Primary => (if hovered { mix(p.raised, 70.0, Color32::WHITE) } else { mix(p.raised, 85.0, Color32::WHITE) }, Color32::TRANSPARENT, Color32::WHITE),
             Kind::Send => (if hovered { Color32::WHITE } else { p.send_bg }, Color32::TRANSPARENT, p.send_fg),
-            Kind::Danger => (if hovered { p.live_dk } else { p.raised }, p.live_line, p.live_text),
+            // 지우기·삭제는 빨강 없이 보통 단추 (빨강은 송출 중에만) — 묻기·되돌리기로 막는다
+            Kind::Danger => (if hovered { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, Color32::TRANSPARENT, p.text),
             Kind::Warn => (p.warn_bg, p.warn, p.text),
             Kind::Pv => (p.next_bg, p.next, p.next),
             Kind::Ghost => (bg, if selected { p.accent } else { Color32::TRANSPARENT }, fg),
@@ -314,7 +316,7 @@ impl Widget for Btn {
             }            if let Some(g) = kg {
                 x += kgap;
                 let ks = kbd_size(&g);
-                let (kf, kb) = if self.kind == Kind::Send { if p.bevel { (alpha(p.send_fg, 0.6), alpha(p.send_fg, 0.25)) } else { (alpha(Color32::WHITE, 0.8), alpha(Color32::WHITE, 0.4)) } } else if self.kind == Kind::Primary && p.bevel { (alpha(p.on_accent, 0.7), alpha(p.on_accent, 0.3)) } else { (p.muted, p.line) };
+                let (kf, kb) = if self.kind == Kind::Send { if p.bevel { (alpha(p.send_fg, 0.6), alpha(p.send_fg, 0.25)) } else { (alpha(Color32::WHITE, 0.8), alpha(Color32::WHITE, 0.4)) } } else if self.kind == Kind::Primary && p.bevel { (alpha(Color32::WHITE, 0.7), alpha(Color32::WHITE, 0.3)) } else { (p.muted, p.line) };
                 let kf = if self.enabled { kf } else { kf.gamma_multiply(0.5) };
                 paint_kbd(ui, Rect::from_min_size(Pos2::new(x, cy - ks.y / 2.0), ks), g, kf, kb);
             }

@@ -2327,7 +2327,7 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved:
         ui.spacing_mut().item_spacing.x = 6.0;
         let (r, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
         ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), p.sunken);
-        icons::paint(ui, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icons::for_type(ty), p.hl);
+        icons::paint(ui, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icons::for_type(ty), if p.bevel { p.muted } else { p.hl });
         // 목록에서 누른 이름 그대로 ('6. 설교') + 종류 꼬리표 (평가 20번). 이름이 없으면 예전처럼 'N번 종류'
         let title = title.trim();
         if title.is_empty() {
@@ -2345,9 +2345,31 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved:
             h.big = br.clicked();
             widgets::vsep(ui, 20.0);
             // 되돌릴 수 있지만 큰 변화라 빨간 휴지통 + '순서 삭제', 복제와 구분선으로 떼어 둔다 (평가 9번)
+            if p.bevel {
+                // (나): 빨강은 송출 중에만 — 채우지 않은 보통 단추, 누르면 한 번 더 묻는다 (그 뒤에도 되돌리기 · Ctrl+Z)
+                let cid = egui::Id::new(("ce-del-confirm", i));
+                if widgets::confirm_armed(ui, cid) {
+                    if ui.add(sm(&tr("그만두기"))).clicked() {
+                        widgets::confirm_arm(ui, cid, false);
+                    }
+                    let yr = ui.add(sm(&tr("정말 삭제")).icon("trash-2").tooltip(tr("이 순서를 큐시트에서 삭제 — 알림의 [되돌리기] 나 Ctrl+Z 로 되살림")));
+                    widgets::mark("editor-del-yes", yr.rect);
+                    if yr.clicked() {
+                        widgets::confirm_arm(ui, cid, false);
+                        h.del = true;
+                    }
+                } else {
+                    let dr = ui.add(sm(&tr("순서 삭제")).icon("trash-2").tooltip(tr("이 순서를 큐시트에서 삭제 (누르면 한 번 더 묻습니다 · Delete 키는 바로) — 알림의 [되돌리기] 나 Ctrl+Z 로 되살림")));
+                    widgets::mark("editor-del", dr.rect);
+                    if dr.clicked() {
+                        widgets::confirm_arm(ui, cid, true);
+                    }
+                }
+            } else {
             let dr = ui.add(sm(&tr("순서 삭제")).icon("trash-2").icon_color(p.live).kind(widgets::Kind::Danger).tooltip(tr("이 순서를 큐시트에서 삭제 (Delete) — 알림의 [되돌리기] 나 Ctrl+Z 로 되살림")));
             widgets::mark("editor-del", dr.rect);
             h.del = dr.clicked();
+            }
             widgets::vsep(ui, 20.0);
             h.dup = ui.add(sm(&tr("복제")).tooltip(tr("이 순서 복제"))).clicked();
             if ty != "audio" {

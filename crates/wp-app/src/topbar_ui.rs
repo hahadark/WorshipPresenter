@@ -447,6 +447,51 @@ impl App {
             "ok" => p.pv_bg,
             _ => p.accent_bg,
         };
+        if p.bevel {
+            // (나): 컨트롤 막대 바로 아래 가운데 한 줄 띠 (내용·편집칸을 가리지 않게, 판 머리 높이만 덮음)
+            let y = ctx.data(|d| d.get_temp::<f32>(Id::new("pro-top-y"))).unwrap_or(90.0);
+            let (fill, edge) = match *kind {
+                "error" => (theme::mix(p.live, 30.0, p.bar), p.live),
+                "warn" => (theme::mix(p.warn, 28.0, p.bar), p.warn),
+                "ok" => (theme::mix(p.ok_text, 18.0, p.bar), p.ok_text),
+                _ => (p.raised, p.line2),
+            };
+            let w = (ctx.content_rect().width() * 0.6).clamp(380.0, 760.0);
+            egui::Area::new(Id::new("wp-toast"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(egui::pos2(ctx.content_rect().center().x - w / 2.0, y + 2.0))
+                .interactable(true)
+                .show(ctx, |ui| {
+                    egui::Frame::new().fill(fill).stroke(Stroke::new(1.0, edge)).corner_radius(theme::cr(theme::Rad::Sm)).inner_margin(egui::Margin::symmetric(10, 2)).show(ui, |ui| {
+                        ui.set_width(w - 20.0);
+                        ui.horizontal(|ui| {
+                            ui.set_height(22.0);
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                let xr = ui.add(Btn::icon_only("x").kind(Kind::Ghost).size(Size::Sm).height(18.0).tooltip(tr("닫기")));
+                                if xr.clicked() {
+                                    out = Some(Act::ToastDismiss);
+                                }
+                                if let Some(a) = s.toast_act {
+                                    let (label, icon) = toast_button(a);
+                                    let br = ui.add(Btn::new(label).icon(icon).size(Size::Sm).height(18.0));
+                                    widgets::mark("toast-act", br.rect);
+                                    if br.clicked() {
+                                        out = Some(Act::ToastAct(a));
+                                    }
+                                }
+                                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                    let lr = ui.add(egui::Label::new(theme::rich(wp_core::i18n::tr_dyn(msg), 12.0, Weight::SemiBold, p.text)).truncate().selectable(false).sense(Sense::click())).on_hover_text(tr("눌러서 닫기"));
+                                    if lr.clicked() {
+                                        out = Some(Act::ToastDismiss);
+                                    }
+                                });
+                            });
+                        });
+                    });
+                });
+            return out;
+        }
         egui::Area::new(Id::new("wp-toast"))
             .order(egui::Order::Foreground)
             // (나) 아래 시간표·상태 줄 위에 뜨게 (prolayout 이 지난 프레임에 잰 아래쪽 높이)
@@ -583,6 +628,23 @@ impl App {
     /// 바로 송출 중일 때 머리 줄 아래에 계속 보이는 주황 띠 (평가 7번)
     pub(super) fn direct_band(&mut self, ui: &mut Ui, acts: &mut Vec<Act>) {
         let p = pal();
+        if p.bevel {
+            // (나): 22px 한 줄 띠 (상태 표시창에도 '바로 송출' 이라고 보인다)
+            ui.horizontal(|ui| {
+                ui.set_height(20.0);
+                ui.spacing_mut().item_spacing.x = 6.0;
+                icons::show(ui, "radio", 13.0, p.warn);
+                ui.add(egui::Label::new(theme::rich(tr("바로 송출 중 — 누르는 즉시 회중 화면에 나갑니다"), 11.5, Weight::SemiBold, p.text)).truncate().selectable(false));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let b = ui.add(Btn::new(tr("미리보기로 돌아가기")).size(Size::Sm).height(18.0).tooltip(tr("클릭하면 미리보기에 놓고 송출 단추로 내보내는 방식으로")));
+                    widgets::mark("direct-band-back", b.rect);
+                    if b.clicked() {
+                        acts.push(Act::TogglePreviewMode);
+                    }
+                });
+            });
+            return;
+        }
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             icons::show(ui, "radio", 16.0, p.warn);

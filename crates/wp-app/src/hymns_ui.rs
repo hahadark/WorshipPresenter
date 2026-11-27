@@ -59,7 +59,7 @@ pub fn ppt_box(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
         if matches { d.remove::<String>(key); }
         matches
     });
-    let response = egui::CollapsingHeader::new(RichText::new(wp_core::i18n::tr("PPT 도구 (요소 따로 꺼내기 · 자동으로 나누기)")).color(Color32::from_rgb(0xf0, 0x9a, 0x4a)))
+    let response = egui::CollapsingHeader::new(RichText::new(wp_core::i18n::tr("PPT 도구 (요소 따로 꺼내기 · 자동으로 나누기)")).color(crate::theme::type_ink("hymn")))
         .id_salt("ppt-box").open(requested.then_some(true)).show(ui, |ui| ppt_tools(app, ui, i, it));
     if requested { response.header_response.scroll_to_me(Some(egui::Align::Center)); }
 }
@@ -76,7 +76,7 @@ fn search_box(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
 fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     let mut open: bool = get(ui, OPEN);
     ui.horizontal(|ui| {
-        ui.label(RichText::new(wp_core::i18n::tr("찬송가·교독문")).strong().color(Color32::from_rgb(0xf0, 0x9a, 0x4a)));
+        ui.label(RichText::new(wp_core::i18n::tr("찬송가·교독문")).strong().color(crate::theme::type_ink("hymn")));
         open = true;
         if ui.small_button(wp_core::i18n::tr("붙여 넣기")).on_hover_text(wp_core::i18n::tr("클립보드의 PowerPoint 슬라이드·그림을 새 순서로 (글은 Ctrl+V)")).clicked() {
             grab_clipboard(app);
