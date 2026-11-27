@@ -220,6 +220,51 @@ impl App {
                         self.edit = None;
                     }
                 }
+                // 미리 만든 예배 틀 (주일 · 성찬 · 수요 · 금요 · 새벽)
+                {
+                    let mut pick: Option<(&str, bool)> = None;
+                    let r = egui::ComboBox::from_id_salt("cm-frame").selected_text(tr("예배 틀에서…")).show_ui(ui, |ui| {
+                        for f in wp_core::cuemgr::SERVICE_FRAMES {
+                            let r = ui.selectable_label(false, tr(f.1));
+                            widgets::mark(&format!("cm-frame-{}", f.0), r.rect);
+                            if r.clicked() {
+                                pick = Some((f.0, false));
+                            }
+                        }
+                        ui.separator();
+                        let r = ui.selectable_label(false, tr("다섯 틀을 서식 목록에 넣기 (고쳐 쓰기)"));
+                        widgets::mark("cm-frame-all", r.rect);
+                        if r.clicked() {
+                            pick = Some(("*", true));
+                        }
+                    });
+                    widgets::mark("cm-frame", r.response.rect);
+                    r.response.on_hover_text(tr("주일 낮 예배 · 성찬 예배 · 수요 예배 · 금요 기도회 · 새벽 기도회 순서로 새 큐시트를 만듭니다"));
+                    if let Some((key, all)) = pick {
+                        if all {
+                            let mut c = self.core.lock();
+                            let mut err = None;
+                            for f in wp_core::cuemgr::SERVICE_FRAMES {
+                                if let Err(e) = c.new_cue_from_frame(f.0, true) {
+                                    err = Some(e);
+                                }
+                            }
+                            drop(c);
+                            match err {
+                                Some(e) => fail(self, e),
+                                None => st.view = "template".into(),
+                            }
+                        } else {
+                            let r = self.core.lock().new_cue_from_frame(key, false);
+                            match r {
+                                Ok(_) => *open = false,
+                                Err(e) => fail(self, e),
+                            }
+                            self.sel = None;
+                            self.edit = None;
+                        }
+                    }
+                }
                 if ui.add(Btn::new(tr("주보로 (AI)")).icon("sparkles").tooltip(tr("주보 글·사진에서 예배 순서를 읽어 큐시트를 만듭니다"))).clicked() {
                     *open = false;
                     crate::trackd_ui::handle_menu("d:bulletin");

@@ -1522,6 +1522,11 @@ impl App {
                     self.core.lock().open_saved_cue(&first);
                 }
             }
+            // 점검용 --frame <열쇠>: 미리 만든 예배 틀(sunday · communion · wednesday · friday · dawn)로 새 큐시트
+            if let Some(k) = std::env::args().position(|x| x == "--frame").and_then(|i| std::env::args().nth(i + 1)) {
+                let r = self.core.lock().new_cue_from_frame(&k, false);
+                log::info!("점검: 예배 틀 {k} → {r:?}");
+            }
             // 점검용 --export-pptx <파일>: 열린 큐시트를 PPT 로 (큐시트 → PPT 파일로 내보내기와 같은 길)
             if let Some(p) = std::env::args().position(|x| x == "--export-pptx").and_then(|i| std::env::args().nth(i + 1)) {
                 let r = self.core.lock().export_cue_pptx(std::path::Path::new(&p));

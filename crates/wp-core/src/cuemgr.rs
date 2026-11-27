@@ -172,6 +172,90 @@ pub fn sample_items(en: bool) -> Vec<Value> {
         .collect()
 }
 
+/// 미리 만든 예배 틀 (예배송출의 '주일·성찬·수요·금요·새벽 틀 한 번에' 를 참고해 새로 씀).
+/// (열쇠, 한국어 이름, 영어 이름). 순서는 `frame_items` 가 만든다. 순서 내용(성경 장절·가사)은 비워 둔다.
+pub const SERVICE_FRAMES: [(&str, &str, &str); 5] = [
+    ("sunday", "주일 낮 예배", "Sunday Service"),
+    ("communion", "성찬 예배", "Communion Service"),
+    ("wednesday", "수요 예배", "Wednesday Service"),
+    ("friday", "금요 기도회", "Friday Prayer Meeting"),
+    ("dawn", "새벽 기도회", "Dawn Prayer"),
+];
+
+/// 예배 틀의 순서. 알 수 없는 열쇠면 빈 목록
+pub fn frame_items(key: &str, en: bool) -> Vec<Value> {
+    // (종류, 한국어 제목, 영어 제목, 성경 장절)
+    let list: &[(&str, &str, &str, &str)] = match key {
+        "sunday" => &[
+            ("title", "예배로 부름", "Call to Worship", ""),
+            ("song", "찬송", "Hymn", ""),
+            ("title", "신앙고백", "Confession of Faith", ""),
+            ("title", "대표기도", "Prayer", ""),
+            ("bible", "성경 봉독", "Scripture Reading", ""),
+            ("song", "찬양", "Praise", ""),
+            ("title", "설교", "Sermon", ""),
+            ("song", "결단 찬송", "Response Hymn", ""),
+            ("title", "헌금", "Offering", ""),
+            ("text", "광고", "Announcements", ""),
+            ("title", "축도", "Benediction", ""),
+            ("blank", "빈 화면", "Blank", ""),
+        ],
+        "communion" => &[
+            ("title", "예배로 부름", "Call to Worship", ""),
+            ("song", "찬송", "Hymn", ""),
+            ("title", "대표기도", "Prayer", ""),
+            ("bible", "성경 봉독", "Scripture Reading", ""),
+            ("title", "설교", "Sermon", ""),
+            ("bible", "성찬 제정의 말씀", "Words of Institution", "고전 11:23-26"),
+            ("title", "성찬", "Holy Communion", ""),
+            ("song", "성찬 찬송", "Communion Hymn", ""),
+            ("title", "축도", "Benediction", ""),
+            ("blank", "빈 화면", "Blank", ""),
+        ],
+        "wednesday" => &[
+            ("song", "찬양", "Praise", ""),
+            ("title", "기도", "Prayer", ""),
+            ("bible", "성경 봉독", "Scripture Reading", ""),
+            ("title", "말씀", "Message", ""),
+            ("title", "통성기도", "Prayer Together", ""),
+            ("text", "광고", "Announcements", ""),
+            ("title", "주기도문", "The Lord's Prayer", ""),
+            ("blank", "빈 화면", "Blank", ""),
+        ],
+        "friday" => &[
+            ("song", "찬양 1", "Praise 1", ""),
+            ("song", "찬양 2", "Praise 2", ""),
+            ("song", "찬양 3", "Praise 3", ""),
+            ("bible", "성경 봉독", "Scripture Reading", ""),
+            ("title", "말씀", "Message", ""),
+            ("title", "통성기도", "Prayer Together", ""),
+            ("title", "합심기도", "United Prayer", ""),
+            ("title", "마침 기도", "Closing Prayer", ""),
+            ("blank", "빈 화면", "Blank", ""),
+        ],
+        "dawn" => &[
+            ("song", "찬송", "Hymn", ""),
+            ("bible", "성경 봉독", "Scripture Reading", ""),
+            ("title", "말씀", "Message", ""),
+            ("title", "기도", "Prayer", ""),
+            ("blank", "빈 화면", "Blank", ""),
+        ],
+        _ => &[],
+    };
+    list.iter()
+        .map(|(ty, ko, e, r)| {
+            let mut it = crate::core::new_item(ty, if en { e } else { ko });
+            if *ty == "bible" {
+                it["ref"] = json!(if en && !r.is_empty() { "1 Cor 11:23-26" } else { r });
+            }
+            if *ty == "blank" {
+                it["mode"] = json!("background");
+            }
+            it
+        })
+        .collect()
+}
+
 fn fresh(items: &[Value]) -> Vec<Value> {
     items
         .iter()
@@ -246,6 +330,32 @@ impl Core {
         let c = self.duplicate_cue_as(tpl_id, Some(&name), Some(&today), false)?;
         self.open_cue(&c.id);
         Ok(c.id)
+    }
+
+    /// 미리 만든 예배 틀에서 새 큐시트 → 연다. as_template 이면 열지 않고 '서식' 으로만 넣는다 (고쳐서 쓰라고)
+    pub fn new_cue_from_frame(&mut self, key: &str, as_template: bool) -> Result<String> {
+        let en = self.settings.get()["uiLang"] == "en";
+        let Some(f) = SERVICE_FRAMES.iter().find(|f| f.0 == key) else { bail!("알 수 없는 예배 틀입니다.") };
+        let label = if en { f.2 } else { f.1 };
+        let today = today();
+        let cue = Cue {
+            id: short_id("c"),
+            name: if as_template { label.to_string() } else { format!("{today} {label}") },
+            service_date: if as_template { String::new() } else { today },
+            start_time: String::new(),
+            items: frame_items(key, en),
+            memo: String::new(),
+            pinned: false,
+            template: as_template,
+        };
+        self.store.save_cue(&cue)?;
+        if as_template {
+            self.cues_changed();
+        } else {
+            self.cues = self.store.list_cues();
+            self.open_cue(&cue.id);
+        }
+        Ok(cue.id)
     }
 
     /// 이름·날짜·메모·고정·서식 (Electron updateCueMeta 의 검증 그대로). 열린 큐시트면 다시 읽는다
@@ -451,6 +561,29 @@ mod tests {
         assert!(t.contains("2. 직접 적은 곡 [Key A]"), "순서에 적은 Key 가 먼저: {t}");
         assert!(t.contains("3. 설교") && !t.contains("설교 ["), "찬양이 아니면 붙이지 않음: {t}");
         assert_eq!(c.active_cue_text().unwrap(), t);
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn service_frames_make_cues_and_templates() {
+        let (mut c, dir) = core();
+        for f in SERVICE_FRAMES {
+            assert!(frame_items(f.0, false).len() >= 5, "{} 틀에 순서가 있다", f.0);
+            assert_eq!(frame_items(f.0, false).len(), frame_items(f.0, true).len());
+        }
+        assert!(frame_items("없는틀", false).is_empty());
+        let id = c.new_cue_from_frame("communion", false).unwrap();
+        let cue = c.cue.clone().unwrap();
+        assert_eq!(cue.id, id, "만들면 연다");
+        assert!(cue.name.ends_with("성찬 예배") && cue.name.starts_with(&today()));
+        assert!(!cue.template);
+        assert!(cue.items.iter().any(|it| it["ref"] == "고전 11:23-26"));
+        let tid = c.new_cue_from_frame("dawn", true).unwrap();
+        assert_eq!(c.cue.as_ref().unwrap().id, id, "서식으로 넣을 때는 열린 큐시트를 바꾸지 않는다");
+        let t = c.store.get_cue(&tid).unwrap();
+        assert!(t.template && t.name == "새벽 기도회" && t.service_date.is_empty());
+        assert!(c.new_cue_from_frame("없는틀", false).is_err());
         drop(c);
         let _ = std::fs::remove_dir_all(dir);
     }

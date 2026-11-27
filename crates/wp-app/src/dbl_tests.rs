@@ -725,6 +725,27 @@ fn cue_manager_search_views_pin_template_and_duplicate() {
 }
 
 #[test]
+fn cue_manager_service_frame_makes_and_opens_a_cue() {
+    let mut h = cm_h();
+    h.click("cm-frame", cm);
+    h.frame(vec![], cm);
+    h.click("cm-frame-friday", cm);
+    h.frame(vec![], cm);
+    assert!(cur_name(&h).ends_with("금요 기도회"), "만든 큐시트가 열린다: {}", cur_name(&h));
+    assert!(!cm_is_open(), "만들면 창을 닫는다");
+    assert_eq!(items(&h).iter().filter(|i| i["type"] == "song").count(), 3);
+    // 서식 목록에 넣기: 열린 큐시트는 그대로
+    CM_OPEN.with(|c| c.set(true));
+    h.click("cm-frame", cm);
+    h.frame(vec![], cm);
+    h.click("cm-frame-all", cm);
+    h.frame(vec![], cm);
+    let tpls: Vec<Value> = h.app.core.lock().cue_list(false).into_iter().filter(|c| c["template"] == true).collect();
+    assert_eq!(tpls.len(), 5, "다섯 틀이 서식으로");
+    assert!(cur_name(&h).ends_with("금요 기도회"));
+}
+
+#[test]
 fn cue_manager_rename_saves_when_leaving_the_field() {
     let mut h = cm_h();
     single_panel(&mut h, "cm-row-수요 예배", cm);

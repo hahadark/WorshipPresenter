@@ -1,4 +1,13 @@
 {
+ "예배 틀에서…": "From a service frame…",
+ "다섯 틀을 서식 목록에 넣기 (고쳐 쓰기)": "Add the five frames to templates (to edit)",
+ "주일 낮 예배 · 성찬 예배 · 수요 예배 · 금요 기도회 · 새벽 기도회 순서로 새 큐시트를 만듭니다": "Creates a new cue sheet from a Sunday, Communion, Wednesday, Friday prayer or dawn prayer order",
+ "주일 낮 예배": "Sunday Service",
+ "성찬 예배": "Communion Service",
+ "수요 예배": "Wednesday Service",
+ "금요 기도회": "Friday Prayer Meeting",
+ "새벽 기도회": "Dawn Prayer",
+ "알 수 없는 예배 틀입니다.": "Unknown service frame.",
  "다른 컴퓨터로 옮기기": "Move to another computer",
  "성경·찬양·큐시트·설정·올린 그림을 파일 하나로 저장합니다. 새 컴퓨터에서 '옮기기 파일 가져오기' 뒤 프로그램을 다시 시작하세요.": "Saves Bibles, songs, cue sheets, settings and uploaded images as one file. On the new computer, use 'Import move file' and restart the program.",
  "옮기기 파일 만들기…": "Create move file…",
