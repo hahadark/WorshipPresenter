@@ -77,4 +77,5 @@ pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/helper/cameras", get(|| async { html(PROBE_HTML) }))
         .route("/helper/camera", get(|| async { html(PREVIEW_HTML) }))
+        .route("/helper/camtest", get(|| async { html(crate::camtest::PAGE_HTML) })) // 카메라 동시 열기 시험 (로드맵 3단계)
 }

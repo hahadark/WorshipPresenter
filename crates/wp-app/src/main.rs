@@ -4,6 +4,8 @@
 mod app;
 mod sources_ui; // 인스펙터 '소스' 탭 (로드맵 1단계)
 mod scene_ui; // 화면 구성 편집 창 (로드맵 2단계)
+mod outputs_ui; // 출력 목록 · 추가 출력 창 (로드맵 3단계)
+mod camtest_ui; // 카메라 동시 열기 시험 (로드맵 3단계)
 mod imgcache; // 그림 메모리: 줄여 읽기 · 상한(LRU)
 mod panel_ui;
 mod names_ui;

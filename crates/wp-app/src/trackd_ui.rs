@@ -111,6 +111,7 @@ pub fn handle_menu(id: &str) -> bool {
         "d:output" => open(Win::Output),
         "d:obs" => open(Win::Obs),
         "d:update" => open(Win::Update),
+        "d:camtest" => crate::camtest_ui::open(),
         "d:reimport" => wp_core::firstrun::menu_ask(),
         _ => return false,
     }
@@ -120,6 +121,8 @@ pub fn handle_menu(id: &str) -> bool {
 /// 매 프레임: 예배당 창 자동 켜기 · 상태 알리기 · 창 그리기
 pub fn frame(app: &mut App, ctx: &egui::Context) {
     output_exit(app, ctx);
+    crate::outputs_ui::frame(app); // 추가 출력 창 (로드맵 3단계)
+    crate::camtest_ui::frame(app, ctx); // 카메라 동시 열기 시험
     let running = app.out.running();
     // 점검 실행(--shot)에서는 사용자 모니터에 전체 화면 창을 띄우지 않는다
     let testing = std::env::args().any(|x| x == "--shot");
@@ -165,7 +168,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
         // 떠 있는 창 기본 자리: 큐시트·메뉴줄을 가리지 않게 (widgets::float_pos)
         let wid = egui::Id::unique(("wp-float", title));
         crate::widgets::close_on_outside(ctx, wid, &mut keep);
-        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).default_height(if w == Win::Bulletin { (ctx.content_rect().height() - 150.0).clamp(300.0, 760.0) } else { 0.0 }).collapsible(false).vscroll(w == Win::Bulletin).show(ctx, |ui| match w {
+        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).default_height(if w == Win::Bulletin { (ctx.content_rect().height() - 150.0).clamp(300.0, 760.0) } else { 0.0 }).max_height(if w == Win::Output { (ctx.content_rect().height() - 120.0).max(300.0) } else { f32::INFINITY }).collapsible(false).vscroll(matches!(w, Win::Bulletin | Win::Output)).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),
@@ -615,6 +618,8 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
             app.out.open(port, app.monitor, true);
         }
     });
+    ui.separator();
+    crate::outputs_ui::section(ui, app); // 출력 더하기 · 소리 내는 출력 (로드맵 3단계)
     ui.separator();
     let port = core.lock().port;
     obs_urls(ui, port);

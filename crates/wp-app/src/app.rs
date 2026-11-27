@@ -111,6 +111,22 @@ pub(crate) struct Snap {
     pub(crate) scenes: [Value; 4],
     /// 칸 자리 표시에 쓸 소스 이름 (camera:… · src-… → 이름)
     pub(crate) source_names: Vec<(String, String)>,
+    /// 추가 출력 (로드맵 3단계): 뷰어의 출력 고르기 [예배당 | OBS | 로비 …] 에 붙는다
+    pub(crate) extra_views: Vec<ExtraView>,
+    /// 순서마다 '출력 기본과 다른 화면 구성' 툴팁 글 (items 와 같은 차례, 비면 표시 없음)
+    pub(crate) scene_marks: Vec<String>,
+}
+
+/// 뷰어가 추가 출력을 그릴 때 쓸 것 (LIVE · 미리보기 따로)
+pub(crate) struct ExtraView {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    /// 방송(OBS)처럼 그리는 출력 (그림 우상단)
+    pub(crate) obs_like: bool,
+    pub(crate) tpl_live: Value,
+    pub(crate) tpl_pv: Value,
+    pub(crate) scene_live: Value,
+    pub(crate) scene_pv: Value,
 }
 
 /// 고른 것을 넣은 결과로 왼쪽 큐시트의 고른 순서를 맞춘다 (넣은 자리 또는 이미 있던 순서)
@@ -233,7 +249,8 @@ impl App {
             obs_pip: !c.obs_full && s["output"]["obsPip"].as_bool().unwrap_or(false),
             scenes: {
                 let pv = c.pres.preview.as_ref();
-                let any = s["outputScenes"].as_object().is_some_and(|m| !m.is_empty());
+                // 구성이 하나라도 있으면 (출력 · 순서 · 종류 지정은 있는 구성만 가리킨다) — 없으면 모두 기본 full
+                let any = s["scenes"].as_array().is_some_and(|a| !a.is_empty());
                 if any {
                     [c.scene_for("main"), c.scene_for("overlay"), c.scene_for_deck("main", pv), c.scene_for_deck("overlay", pv)]
                 } else {
@@ -241,7 +258,27 @@ impl App {
                     [f(), f(), f(), f()]
                 }
             },
-            source_names: if s["outputScenes"].as_object().is_some_and(|m| !m.is_empty()) { crate::scene_ui::source_names(&c) } else { vec![] },
+            source_names: if s["scenes"].as_array().is_some_and(|a| !a.is_empty()) { crate::scene_ui::source_names(&c) } else { vec![] },
+            scene_marks: if s["scenes"].as_array().is_some_and(|a| !a.is_empty()) { crate::sources_ui::scene_marks(&c) } else { vec![] },
+            extra_views: {
+                let pv = c.pres.preview.as_ref();
+                let lv = c.pres.live.as_ref().map(|l| &l.deck);
+                c.extra_outputs()
+                    .iter()
+                    .map(|o| {
+                        let id = o["id"].as_str().unwrap_or("").to_string();
+                        ExtraView {
+                            name: o["name"].as_str().unwrap_or("").to_string(),
+                            obs_like: o["kind"] == "overlay",
+                            tpl_live: c.stage_template_for_deck(&id, lv),
+                            tpl_pv: c.stage_template_for_deck(&id, pv),
+                            scene_live: c.scene_for(&id),
+                            scene_pv: c.scene_for_deck(&id, pv),
+                            id,
+                        }
+                    })
+                    .collect()
+            },
         }
     }
 
@@ -674,6 +711,7 @@ impl App {
                         hidden: live_hidden,
                         time: times.get(i).filter(|t| !t.is_empty() || pro).map(|t| (t.clone(), it["duration"].as_i64().unwrap_or(0))),
                         done: live_idx.is_some_and(|l| (i as i64) < l),
+                        scene: s.scene_marks.get(i).cloned().unwrap_or_default(),
                     };
                     let out = crate::cue_ui::row(ui, i, it, &st);
                     if !pro { ui.add_space(2.0); } // .cue-item { margin-bottom: 2px }
@@ -1091,9 +1129,15 @@ impl App {
                 } else if is_live { widgets::badge(ui, "LIVE", Badge::Live); } else { widgets::badge(ui, &tr("미리보기"), Badge::Pv); }
                 let info = deck.map(|d| deck_info(d, is_live)).unwrap_or_default();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let view = if is_live { &mut self.views.live_obs } else { &mut self.views.preview_obs };
+                    // 출력 고르기 (로드맵 3단계: 출력 목록을 따름 — 추가 출력이 없으면 예전처럼 [예배당 | OBS])
+                    let view = if is_live { &mut self.views.live } else { &mut self.views.preview };
+                    if !s.extra_views.iter().any(|x| &x.id == view) && view != "overlay" {
+                        view.clear();
+                    }
                     let main_label = tr("예배당");
-                    widgets::segmented(ui, view, &[(false, main_label.as_str()), (true, "OBS")]);
+                    let mut items: Vec<(String, &str)> = vec![(String::new(), main_label.as_str()), ("overlay".into(), "OBS")];
+                    items.extend(s.extra_views.iter().map(|x| (x.id.clone(), x.name.as_str())));
+                    widgets::segmented(ui, view, &items);
                     if hidden { hidden_badge(ui, &tr("숨김 중")); }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         ui.add(egui::Label::new(theme::rich(info, if p.bevel { 12.0 } else { 14.0 }, if p.bevel { Weight::Regular } else { Weight::SemiBold }, if p.bevel { p.muted } else { p.text })).truncate().selectable(false));
@@ -1104,9 +1148,11 @@ impl App {
             if is_live && !p.bevel { self.output_off_band(ui, deck.is_some(), acts); }
             ui.add_space(8.0); // .pane-head { margin-bottom: 8px }
             // ---- .screen: 16:9, 2px 테두리 (미리보기 pv · LIVE live · 숨김이면 점선), 둥글기 6
-            let tpl = match (is_live, self.views.obs(is_live)) {
-                (true, false) => &s.tpl_main, (true, true) => &s.tpl_overlay,
-                (false, false) => &s.preview_main, (false, true) => &s.preview_overlay,
+            let extra = s.extra_views.iter().find(|x| x.id == self.views.pick(is_live));
+            let tpl = match (extra, is_live, self.views.obs(is_live)) {
+                (Some(x), true, _) => &x.tpl_live, (Some(x), false, _) => &x.tpl_pv,
+                (None, true, false) => &s.tpl_main, (None, true, true) => &s.tpl_overlay,
+                (None, false, false) => &s.preview_main, (None, false, true) => &s.preview_overlay,
             };
             let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
             let w = ui.available_width();
@@ -1128,11 +1174,15 @@ impl App {
             let (visible, logo, hide_bg) = match live { Some(l) => (l.visible, s.logo, s.hide_bg), None if is_live => (true, s.logo, s.hide_bg), None => (true, false, false) };
             ui.painter().rect_filled(rect, crate::theme::cr(crate::theme::Rad::Md), Color32::BLACK);
             // 화면 구성 (로드맵 2단계): 고른 구성의 칸 자리 · 자르기대로 (기본 구성이면 paint_slide 그대로)
-            let scene = &s.scenes[match (is_live, self.views.obs(is_live)) { (true, false) => 0, (true, true) => 1, (false, false) => 2, (false, true) => 3 }];
+            let scene = match extra {
+                Some(x) => if is_live { &x.scene_live } else { &x.scene_pv },
+                None => &s.scenes[match (is_live, self.views.obs(is_live)) { (true, false) => 0, (true, true) => 1, (false, false) => 2, (false, true) => 3 }],
+            };
+            let obs_like = extra.map(|x| x.obs_like).unwrap_or(self.views.obs(is_live));
             let names = |id: &str| s.source_names.iter().find(|(k, _)| k == id).map(|(_, n)| n.clone()).unwrap_or_else(|| id.to_string());
             paint::paint_scene(ui, &c, rect.shrink(2.0), scene, slide, tpl, &version, visible, logo, hide_bg, &names);
             // OBS 자막 + 그림 우상단 켬: 그림·악보 슬라이드를 예배당 모양 그대로 오른쪽 위에 작게 (output index.html .bc-pip)
-            if self.views.obs(is_live) && s.obs_pip && visible && slide.is_some_and(|x| matches!(x["kind"].as_str(), Some("image" | "score"))) {
+            if obs_like && s.obs_pip && visible && slide.is_some_and(|x| matches!(x["kind"].as_str(), Some("image" | "score"))) {
                 let main_t = if is_live { &s.tpl_main } else { &s.preview_main };
                 let mut sl = slide.cloned().unwrap_or_default();
                 sl["caption"] = json!("");
@@ -1914,10 +1964,12 @@ impl App {
 #[path = "topbar_ui.rs"]
 mod topbar_ui;
 /// 두 모니터의 보기 전환은 실제 송출 설정을 변경하지 않는다.
+/// 뷰어마다 고른 출력 id ("" = 예배당, "overlay" = OBS, 추가 출력 out-…)
 #[derive(Default)]
-struct MonitorViews { preview_obs: bool, live_obs: bool }
+struct MonitorViews { preview: String, live: String }
 impl MonitorViews {
-    fn obs(&self, live: bool) -> bool { if live { self.live_obs } else { self.preview_obs } }
+    fn pick(&self, live: bool) -> &str { if live { &self.live } else { &self.preview } }
+    fn obs(&self, live: bool) -> bool { self.pick(live) == "overlay" }
 }
 fn reveal_main(n: &mut wp_core::workspace::Node) {
     use wp_core::workspace::{Node, Pane};
@@ -1934,10 +1986,11 @@ mod preview_edit_tests {
     fn monitor_views_are_independent() {
         let mut v = MonitorViews::default();
         assert!(!v.obs(false) && !v.obs(true));
-        v.preview_obs = true;
+        v.preview = "overlay".into();
         assert!(v.obs(false) && !v.obs(true));
-        v.live_obs = true; v.preview_obs = false;
+        v.live = "overlay".into(); v.preview = "out-lobby".into();
         assert!(!v.obs(false) && v.obs(true));
+        assert_eq!(v.pick(false), "out-lobby");
     }
     #[test]
     fn editor_reveals_inactive_collapsed_main_tab() {

@@ -6,7 +6,7 @@ use crate::theme::{self, pal, Weight};
 use crate::widgets::{self, Badge};
 use eframe::egui::{self, Id};
 use serde_json::{json, Value};
-use wp_core::i18n::tr;
+use wp_core::i18n::{tr, tr_args};
 use wp_core::sources::SourceRow;
 
 /// 묶음: 제목과 그 묶음에 드는 종류
@@ -36,6 +36,19 @@ fn on_air_badges(ui: &mut egui::Ui, r: &SourceRow, connected: &[&str]) {
     }
 }
 
+/// 열린 큐시트 순서마다 '출력 기본과 다른 구성' 툴팁 글 (예: '예배당: 본문 전체 · 방송 (OBS): 카메라 + 자막'). 순서 · 출력 · 구성 이름은 사용자 글
+pub(crate) fn scene_marks(c: &wp_core::core::Core) -> Vec<String> {
+    let s = c.settings.get();
+    let outs = c.output_list();
+    let scenes = c.scenes();
+    let name = |id: &str| if id == wp_core::scenes::FULL { tr("전체 화면 (기본)") } else { scenes.iter().find(|x| x["id"] == id).and_then(|x| x["name"].as_str()).unwrap_or("").to_string() };
+    let oname = |id: &str| outs.iter().find(|(k, _)| k == id).map(|(k, n)| if k == "main" || k == "overlay" { tr(n) } else { n.clone() }).unwrap_or_default();
+    c.cue
+        .as_ref()
+        .map(|q| q.items.iter().map(|it| wp_core::outputs::item_differs(s, it).iter().map(|(o, id)| format!("{}: {}", oname(o), name(id))).collect::<Vec<_>>().join(" · ")).collect())
+        .unwrap_or_default()
+}
+
 impl App {
     pub(crate) fn sources_panel(&mut self, ui: &mut egui::Ui) {
         let p = pal();
@@ -46,45 +59,9 @@ impl App {
         egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 4 }).show(ui, |ui| {
             ui.add(egui::Label::new(theme::rich(tr("화면에 나올 수 있는 것과 지금 나가고 있는 곳입니다. 빨간 표시가 송출 중입니다."), 11.5, Weight::Regular, p.muted)).wrap());
         });
-        // 화면 구성 (로드맵 2단계): 출력마다 쓰는 구성 · 편집 창 열기
+        // 화면 구성: 고른 순서의 출력별 구성(3단계) · 그 종류의 기본 · 출력 기본(2단계) · 편집 창 열기
         if crate::prolayout_ui::section(ui, "src-scenes", &tr("화면 구성"), true) {
-            let (names, used) = {
-                let c = self.core.lock();
-                let names: Vec<(String, String)> = c.scenes().iter().map(|s| (s["id"].as_str().unwrap_or("").to_string(), s["name"].as_str().unwrap_or("").to_string())).collect();
-                (names, [c.output_scene("main"), c.output_scene("overlay")])
-            };
-            let mut open: Option<String> = None;
-            egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 10, top: 4, bottom: 6 }).show(ui, |ui| {
-                for (i, (o, label)) in [("main", "예배당"), ("overlay", "방송 (OBS)")].into_iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.set_min_height(24.0);
-                        ui.add(egui::Label::new(theme::rich(tr(label), 12.0, Weight::Regular, p.muted)).selectable(false));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let cur = used[i].clone();
-                            let shown = names.iter().find(|(k, _)| *k == cur).map(|(_, n)| n.clone()).unwrap_or_else(|| tr("전체 화면 (기본)"));
-                            let mut pick = cur.clone();
-                            egui::ComboBox::from_id_salt(("src-scene-pick", o)).width(170.0).selected_text(shown).show_ui(ui, |ui| {
-                                ui.selectable_value(&mut pick, wp_core::scenes::FULL.to_string(), tr("전체 화면 (기본)"));
-                                for (k, n) in &names {
-                                    ui.selectable_value(&mut pick, k.clone(), n);
-                                }
-                            });
-                            if pick != cur {
-                                let r = self.core.lock().set_output_scene(o, &pick);
-                                if let Err(e) = r {
-                                    self.core.lock().notify(e.to_string(), "error");
-                                }
-                            }
-                        });
-                    });
-                }
-                if ui.add(widgets::Btn::new(tr("화면 구성 편집…")).icon("layout-grid").size(widgets::Size::Sm)).clicked() {
-                    open = Some(used[1].clone());
-                }
-            });
-            if let Some(id) = open {
-                self.tc.scenes.open_with(&id);
-            }
+            self.scene_section(ui);
         }
         for (gi, g) in GROUPS.iter().enumerate() {
             let list: Vec<&SourceRow> = rows.iter().filter(|r| group_of(r) == gi).collect();
@@ -212,4 +189,144 @@ impl App {
         }
         ui.data_mut(|d| d.insert_temp(id, (name, url)));
     }
+    /// 인스펙터 '화면 구성' 구획 (로드맵 3단계, docs/roadmap-sources.md '3단계 한 것'):
+    /// 고른 순서 → 출력마다 한 줄 (따라감 / 전체 화면 / 구성), 그 순서 종류의 기본, 출력 기본.
+    /// 송출할 때 각 출력이 고르는 차례: 순서 → 종류 기본 → 출력 기본 → 전체 화면.
+    fn scene_section(&mut self, ui: &mut egui::Ui) {
+        use wp_core::outputs::{self, From};
+        let p = pal();
+        let (names, outs, item, base, types, follows) = {
+            let c = self.core.lock();
+            let names: Vec<(String, String)> = c.scenes().iter().map(|s| (s["id"].as_str().unwrap_or("").to_string(), s["name"].as_str().unwrap_or("").to_string())).collect();
+            let outs: Vec<(String, String)> = c
+                .output_list()
+                .into_iter()
+                .map(|(id, n)| {
+                    let n = if id == "main" || id == "overlay" { tr(&n) } else { n };
+                    (id, n)
+                })
+                .collect();
+            let item = self.sel.and_then(|i| c.cue.as_ref().and_then(|q| q.items.get(i)).map(|it| (i, it.clone())));
+            let s = c.settings.get();
+            let base: Vec<String> = outs.iter().map(|(o, _)| wp_core::scenes::output_scene_id(s, o)).collect();
+            let ty = item.as_ref().map(|(_, it)| it["type"].as_str().unwrap_or("").to_string()).unwrap_or_default();
+            let types: Vec<String> = outs.iter().map(|(o, _)| outputs::type_scene(s, &ty, o)).collect();
+            // 순서가 '따라감' 일 때 쓰게 될 것: 종류 기본 → 출력 기본
+            let follows: Vec<(String, From)> = outs.iter().map(|(o, _)| outputs::item_scene(s, o, &serde_json::json!({ "type": ty }))).collect();
+            (names, outs, item, base, types, follows)
+        };
+        let scene_name = |id: &str| -> String {
+            if id == wp_core::scenes::FULL || id.is_empty() {
+                tr("전체 화면 (기본)")
+            } else {
+                names.iter().find(|(k, _)| k == id).map(|(_, n)| n.clone()).unwrap_or_else(|| tr("없는 구성"))
+            }
+        };
+        // 한 줄: 이름 | 고르기. follow = '따라감' 칸의 글 (None 이면 따라감 칸 없음). 바뀌면 새 값
+        let row = |ui: &mut egui::Ui, salt: (&str, &str), label: &str, cur: &str, follow: Option<String>| -> Option<String> {
+            let mut out = None;
+            ui.horizontal(|ui| {
+                ui.set_min_height(24.0);
+                ui.add(egui::Label::new(theme::rich(label, 12.0, Weight::Regular, p.muted)).truncate().selectable(false));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let shown = match (&follow, cur.is_empty()) {
+                        (Some(f), true) => f.clone(),
+                        _ => scene_name(cur),
+                    };
+                    let mut pick = cur.to_string();
+                    let r = egui::ComboBox::from_id_salt(("scene-pick", salt.0, salt.1)).width(178.0).selected_text(shown).show_ui(ui, |ui| {
+                        if let Some(f) = &follow {
+                            ui.selectable_value(&mut pick, String::new(), f);
+                        }
+                        ui.selectable_value(&mut pick, wp_core::scenes::FULL.to_string(), tr("전체 화면 (기본)"));
+                        for (k, n) in &names {
+                            ui.selectable_value(&mut pick, k.clone(), n);
+                        }
+                    });
+                    widgets::mark(&format!("scene-pick-{}-{}", salt.0, salt.1), r.response.rect);
+                    if pick != cur {
+                        out = Some(pick);
+                    }
+                });
+            });
+            out
+        };
+        let head = |ui: &mut egui::Ui, t: &str| {
+            ui.add_space(2.0);
+            ui.add(egui::Label::new(theme::rich(t, 11.5, Weight::SemiBold, p.text2)).truncate().selectable(false));
+        };
+        let mut open: Option<String> = None;
+        let mut err: Option<String> = None;
+        egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 10, top: 4, bottom: 6 }).show(ui, |ui| {
+            if let Some((i, it)) = &item {
+                // ① 고른 순서 (순서 제목은 사용자 글 — 번역하지 않음)
+                let title = it["title"].as_str().unwrap_or("");
+                head(ui, &format!("{} · {title}", tr("고른 순서")));
+                let ty = it["type"].as_str().unwrap_or("");
+                for (k, (o, label)) in outs.iter().enumerate() {
+                    let cur = it["scenes"][o.as_str()].as_str().unwrap_or("").to_string();
+                    let (fid, from) = &follows[k];
+                    let why = if *from == From::Type { tr("종류 기본") } else { tr("출력 기본") };
+                    let follow = format!("{} ({why}: {})", tr("따라감"), scene_name(fid));
+                    if let Some(v) = row(ui, ("item", o), label, &cur, Some(follow)) {
+                        let r = self.core.lock().set_item_scene(*i, o, &v);
+                        match r {
+                            Ok(()) => {
+                                // 아래 편집칸이 같은 순서를 열고 있으면 그 사본도 (입력하다 저장할 때 지정이 덮이지 않게)
+                                if let Some((ei, e)) = &mut self.edit {
+                                    if it["id"].as_str() == Some(ei.as_str()) {
+                                        outputs::set_item_scene(e, o, &v);
+                                    }
+                                }
+                            }
+                            Err(e) => err = Some(e.to_string()),
+                        }
+                    }
+                }
+                // ② 이 순서 종류의 기본
+                if outputs::SCENE_TYPES.iter().any(|(k, _)| *k == ty) {
+                    ui.add_space(4.0);
+                    head(ui, &tr_args("{1} 순서 기본", &[&tr(outputs::type_name(ty))]));
+                    for (k, (o, label)) in outs.iter().enumerate() {
+                        let follow = format!("{} ({}: {})", tr("따라감"), tr("출력 기본"), scene_name(&base[k]));
+                        if let Some(v) = row(ui, ("type", o), label, &types[k], Some(follow)) {
+                            let r = self.core.lock().set_type_scene(ty, o, &v);
+                            if let Err(e) = r {
+                                err = Some(e.to_string());
+                            }
+                        }
+                    }
+                }
+                ui.add_space(4.0);
+            } else {
+                ui.add(egui::Label::new(theme::rich(tr("큐시트에서 순서를 고르면 그 순서의 출력별 구성을 정할 수 있습니다."), 11.0, Weight::Regular, p.muted)).wrap());
+            }
+            // ③ 출력 기본
+            head(ui, &tr("출력 기본"));
+            for (k, (o, label)) in outs.iter().enumerate() {
+                if let Some(v) = row(ui, ("out", o), label, &base[k], None) {
+                    let r = self.core.lock().set_output_scene(o, &v);
+                    if let Err(e) = r {
+                        err = Some(e.to_string());
+                    }
+                }
+            }
+            ui.add(egui::Label::new(theme::rich(tr("송출하면 출력마다 고른 순서 → 종류 기본 → 출력 기본 차례로 구성을 고릅니다."), 11.0, Weight::Regular, p.muted2)).wrap());
+            ui.horizontal(|ui| {
+                if ui.add(widgets::Btn::new(tr("화면 구성 편집…")).icon("layout-grid").size(widgets::Size::Sm)).clicked() {
+                    open = Some(base.get(1).cloned().unwrap_or_default());
+                }
+                if ui.add(widgets::Btn::new(tr("출력 설정…")).icon("monitor").size(widgets::Size::Sm).tooltip(tr("출력 더하기 · 모니터 · 소리 내는 출력"))).clicked() {
+                    crate::trackd_ui::open(crate::trackd_ui::Win::Output);
+                }
+            });
+        });
+        if let Some(e) = err {
+            self.core.lock().notify(e, "error");
+        }
+        if let Some(id) = open {
+            self.tc.scenes.open_with(&id);
+        }
+    }
+
 }

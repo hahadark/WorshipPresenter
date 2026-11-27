@@ -6,7 +6,9 @@
 (function () {
   'use strict';
   const R = window.BCRender;
-  const output = location.pathname.endsWith('/overlay') ? 'overlay' : 'main';
+  // 출력 이름 = 주소 끝 (/outputs/main · /outputs/overlay · 추가 출력 /outputs/out-…, 로드맵 3단계). 모르는 것은 예전처럼 예배당
+  const tail = location.pathname.replace(/\/+$/, '').split('/').pop() || '';
+  const output = tail === 'overlay' ? 'overlay' : /^out-[A-Za-z0-9_-]{1,36}$/.test(tail) ? tail : 'main';
   const params = new URLSearchParams(location.search);
   const isWindow = params.has('window');
   const screenEl = document.getElementById('screen');
@@ -261,8 +263,9 @@
   }
 
   // ---------- 영상 재생 슬라이드 ----------
-  // 소리: 예배당 전체화면 창(?window=1 의 main)에서만 (OBS 브라우저 소스는 소리 없음 → 이중 재생 방지)
-  const soundHere = output === 'main' && isWindow;
+  // 소리: 소리 내는 출력(코어 payload.audio, 기본 예배당)의 모니터 창(?window=1)에서만 (OBS 브라우저 소스는 소리 없음 → 이중 재생 방지).
+  // audio 칸이 없는 옛 코어면 예전처럼 예배당 창에서만
+  const soundHere = () => isWindow && (lastPayload && typeof lastPayload.audio === 'boolean' ? lastPayload.audio : output === 'main');
   let endedKey = '';
   // 유튜브 임베드: 코어의 재생 상태(playing · offset · at)에 맞춰 postMessage 로 재생·멈춤·위치·소리를 맞춘다
   function ytSend(f, func, args) { try { f.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*'); } catch (_) {} }
@@ -279,7 +282,7 @@
     if (len) target = o.loop ? target % len : Math.min(target, Math.max(0, len - 0.3));
     const off = Math.abs(y.time - (start + target));
     if (off > 1.5 || (!st.playing && off > 0.3)) ytSend(f, 'seekTo', [start + target, true]);
-    if (soundHere && o.sound) { ytSend(f, 'unMute'); ytSend(f, 'setVolume', [Math.round(Math.max(0, Math.min(1, o.volume ?? 1)) * 100)]); } else ytSend(f, 'mute');
+    if (soundHere() && o.sound) { ytSend(f, 'unMute'); ytSend(f, 'setVolume', [Math.round(Math.max(0, Math.min(1, o.volume ?? 1)) * 100)]); } else ytSend(f, 'mute');
     if (st.playing && y.state !== 1 && !(len && !o.loop && target >= len - 0.3)) ytSend(f, 'playVideo');
     if (!st.playing && y.state === 1) ytSend(f, 'pauseVideo');
   }
@@ -330,7 +333,7 @@
     const o = { ...(p.slide.video || {}) };
     if (p.video.volume != null) o.volume = p.video.volume; // 미디어 패널에서 바꾼 소리 크기
     if (p.video.loop != null) o.loop = p.video.loop;
-    R.syncVideo(v, p.video, { sound: soundHere && o.sound, volume: o.volume ?? 1, loop: !!o.loop });
+    R.syncVideo(v, p.video, { sound: soundHere() && o.sound, volume: o.volume ?? 1, loop: !!o.loop });
     // 페이드아웃: 소리와 화면을 서서히
     clearInterval(v._fadeT);
     if (p.video.fade) {
@@ -347,7 +350,7 @@
         fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WorshipCue': '1' }, body: JSON.stringify({ cmd: 'videoMeta', args: { key, duration: v.duration } }) }).catch(() => {});
       };
       v.addEventListener('loadedmetadata', () => {
-        if (lastPayload) R.syncVideo(v, lastPayload.video, { sound: soundHere && o.sound, volume: o.volume ?? 1, loop: !!o.loop });
+        if (lastPayload) R.syncVideo(v, lastPayload.video, { sound: soundHere() && o.sound, volume: o.volume ?? 1, loop: !!o.loop });
         reportMeta();
       });
       // 메타데이터가 이벤트 연결 전에 캐시에서 읽힌 경우도 알린다.

@@ -204,8 +204,14 @@ impl App {
             if wide && !detail.is_empty() && r.width() > 60.0 {
                 clip_pt.text(Pos2::new(r.left() + 6.0, r.top() + 19.0), Align2::LEFT_TOP, &detail, theme::font(10.5, Weight::Regular), sub_c);
             }
+            // 출력마다 다른 화면 구성 (로드맵 3단계): 막대 오른쪽 위 작은 격자 아이콘
+            let mark = s.scene_marks.get(c.index).filter(|m| !m.is_empty());
+            if mark.is_some() && r.width() > 40.0 {
+                crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.right() - 9.0, r.top() + 10.0), Vec2::splat(11.0)), "layout-grid", sub_c);
+            }
             if hover_pos.is_some_and(|hp| r.contains(hp)) {
-                tip = Some(format!("{} {} · {} – {} ({}분){}", c.index + 1, name, hm(c.start), hm(c.start + c.len), c.len, if detail.is_empty() { String::new() } else { format!("\n{detail}") }));
+                let sc = mark.map(|m| format!("\n{}: {m}", tr("화면 구성"))).unwrap_or_default();
+                tip = Some(format!("{} {} · {} – {} ({}분){}{sc}", c.index + 1, name, hm(c.start), hm(c.start + c.len), c.len, if detail.is_empty() { String::new() } else { format!("\n{detail}") }));
             }
         }
         if let Some(t) = tip {

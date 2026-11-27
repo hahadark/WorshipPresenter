@@ -48,13 +48,19 @@ fn pct_encode(s: &str) -> String {
 pub fn allowed(method: &Method, path: &str, query_client: Option<&str>) -> bool {
     if method == Method::GET {
         if path == "/events" {
-            return matches!(query_client, Some("main" | "overlay" | "stage"));
+            return matches!(query_client, Some("main" | "overlay" | "stage")) || query_client.is_some_and(extra_name);
         }
-        let out_page = matches!(path, "/outputs/main" | "/outputs/overlay" | "/outputs/stage");
+        // 추가 출력 /outputs/out-… (로드맵 3단계): 이름 모양만 여기서 보고, 있는 출력인지는 서버가 본다 (없으면 예배당 / 404)
+        let out_page = matches!(path, "/outputs/main" | "/outputs/overlay" | "/outputs/stage") || path.strip_prefix("/outputs/").is_some_and(extra_name);
         let out_asset = path.strip_prefix("/outputs/").is_some_and(|f| !f.contains('/') && (f.ends_with(".js") || f.ends_with(".css")) && f.chars().all(|c| c.is_alphanumeric() || "._-".contains(c)));
         return out_page || out_asset || path.starts_with("/shared/") || path.starts_with("/media/") || path == "/lib/file" || path.starts_with("/hymn/") || path.starts_with("/hymnal/score/");
     }
     method == Method::POST && (path == "/api/ack" || path == "/api/command")
+}
+
+/// 추가 출력 이름 모양 (out- + 영문 · 숫자 · - _)
+fn extra_name(s: &str) -> bool {
+    s.starts_with("out-") && s.len() <= 40 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn query_get(q: &str, k: &str) -> Option<String> {
@@ -163,6 +169,11 @@ mod tests {
         assert!(!allowed(&Method::GET, "/outputs/../x.js", None));
         assert!(allowed(&Method::GET, "/events", Some("overlay")));
         assert!(!allowed(&Method::GET, "/events", Some("control")));
+        // 추가 출력 (로드맵 3단계)
+        assert!(allowed(&Method::GET, "/outputs/out-lobby1", None));
+        assert!(allowed(&Method::GET, "/events", Some("out-lobby1")));
+        assert!(!allowed(&Method::GET, "/outputs/out-../x", None));
+        assert!(!allowed(&Method::GET, "/events", Some("out-a b")));
         assert!(!allowed(&Method::GET, "/api/state", None));
         assert!(!allowed(&Method::GET, "/dock", None));
         assert!(!allowed(&Method::GET, "/api/trigger/next", None));

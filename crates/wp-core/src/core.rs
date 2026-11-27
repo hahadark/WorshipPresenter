@@ -317,6 +317,15 @@ impl Core {
         let s = self.settings.get();
         let tpls = self.settings.templates();
         let find = |id: &str| tpls.iter().find(|t| t["id"] == id);
+        // 추가 출력 (로드맵 3단계): 자기 템플릿 → 없으면 같은 종류 내장 출력(예배당 · 방송)의 규칙 그대로
+        if output != "main" && output != "overlay" {
+            let own = crate::outputs::find_extra(s, output);
+            if let Some(t) = own.as_ref().and_then(|o| o["template"].as_str()).filter(|x| !x.is_empty()).and_then(find) {
+                return t.clone();
+            }
+            let kind = own.as_ref().map(|o| if o["kind"] == "overlay" { "overlay" } else { "main" }).unwrap_or("main");
+            return self.template_for_deck(kind, deck);
+        }
         if let Some(t) = deck.and_then(|d| d.passage["tpl"][output].as_str()).and_then(find) {
             return t.clone();
         }
@@ -332,7 +341,7 @@ impl Core {
         let s = self.settings.get();
         let tpl = self.template_for(output);
         let logo = s["logoScreenImage"].as_str().filter(|x| !x.is_empty()).or(tpl["logo"]["image"].as_str().filter(|x| !x.is_empty())).unwrap_or("/shared/assets/sa-shield.png");
-        let media = if output == "main" { self.layers.media.clone() } else { None };
+        let media = if crate::outputs::kind_of(s, output) == "main" { self.layers.media.clone() } else { None };
         json!({ "hideBg": self.layers.hide_bg, "logo": self.layers.logo, "logoImage": logo, "overlaysOff": false, "media": media })
     }
 
@@ -350,17 +359,22 @@ impl Core {
     pub fn output_payload(&self, output: &str) -> Value {
         let live = self.pres.live_state();
         let s = self.settings.get();
+        // 추가 출력(로드맵 3단계)은 같은 종류 내장 출력처럼 그리고, 'OBS 화면 숨김'(예배당 화면을 끄면 같이)은 받지 않는다 — 따로 켜고 끄는 화면
+        let kind = crate::outputs::kind_of(s, output);
+        let builtin = output == "main" || output == "overlay";
+        let hold = self.obs_hold && builtin;
+        let scene_id = self.scene_id_for_deck(output, self.pres.live.as_ref().map(|l| &l.deck));
         json!({
             "output": output,
             "version": live["version"],
             "hasLive": live["hasLive"],
-            "visible": live["visible"].as_bool().unwrap_or(false) && !self.obs_hold,
-            "held": self.obs_hold,
+            "visible": live["visible"].as_bool().unwrap_or(false) && !hold,
+            "held": hold,
             "slide": live["slide"],
             "versionName": live["passage"]["versionName"].as_str().unwrap_or(""),
-            "template": if output == "overlay" && self.obs_full { self.template_for("main") } else { self.template_for(output) }, // [트랙 C]
-            "obsFull": output == "overlay" && self.obs_full, // [트랙 C]
-            "pip": if output == "overlay" && !self.obs_full && s["output"]["obsPip"].as_bool().unwrap_or(false) { json!({ "template": self.template_for("main") }) } else { Value::Null },
+            "template": self.stage_template_for_deck(output, self.pres.live.as_ref().map(|l| &l.deck)), // [트랙 C] 'OBS 전체' 면 예배당 템플릿
+            "obsFull": kind == "overlay" && self.obs_full, // [트랙 C]
+            "pip": if kind == "overlay" && !self.obs_full && s["output"]["obsPip"].as_bool().unwrap_or(false) { json!({ "template": self.template_for("main") }) } else { Value::Null },
             "overlays": (self.overlays_for(output)), // [트랙 B]
             "layers": self.layers_payload(output),
             "video": self.video_payload(), // [트랙 B]
@@ -368,7 +382,9 @@ impl Core {
             "cameras": s.get("cameras").cloned().unwrap_or(json!({})),
             // 소스 · 화면 구성 (docs/roadmap-sources.md): 덧붙인 칸 — 옛 칸은 그대로, 옛 output.js 는 이 칸을 모른 채 그린다
             "scene": self.scene_for(output),
-            "sources": crate::sources::payload_sources_for(output, &crate::sources::user_sources(s), &crate::scenes::output_scene_id(s, output), s),
+            "sources": crate::sources::payload_sources_for(output, &crate::sources::user_sources(s), &scene_id, s),
+            // 소리 내는 출력 (로드맵 3단계, 설정 output.audioOutput · 기본 예배당). 옛 output.js 는 이 칸을 모르고 예배당 창에서만 소리를 낸다 (같은 결과)
+            "audio": crate::outputs::audio_output(s) == output,
         })
     }
 
@@ -458,6 +474,10 @@ impl Core {
         p["note"] = json!(it["note"].as_str().unwrap_or(""));
         p["lyrics"] = json!(it["type"] == "song" || it["type"] == "hymn");
         p["credit"] = json!(it["credit"].as_str().unwrap_or(""));
+        // 출력마다 화면 구성 (로드맵 3단계): 순서에 고른 것만 (없으면 종류 · 출력 기본)
+        if it["scenes"].as_object().is_some_and(|m| !m.is_empty()) {
+            p["scenes"] = it["scenes"].clone();
+        }
         let (tm, to) = (it["tplMain"].as_str().unwrap_or(""), it["tplOverlay"].as_str().unwrap_or(""));
         if !tm.is_empty() || !to.is_empty() {
             p["tpl"] = json!({ "main": tm, "overlay": to });

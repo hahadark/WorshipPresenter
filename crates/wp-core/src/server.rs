@@ -190,7 +190,8 @@ fn render_event(core: &crate::core::Core, client: &str) -> Event {
 }
 
 async fn events(State(core): State<Shared>, Query(q): Query<HashMap<String, String>>, headers: HeaderMap) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let client = q.get("client").map(|s| s.as_str()).filter(|c| ["main", "overlay", "stage"].contains(c)).unwrap_or("main").to_string();
+    // 추가 출력(out-…, 로드맵 3단계)은 설정에 있을 때만. 모르는 이름은 예전처럼 예배당
+    let client = q.get("client").map(|s| s.as_str()).filter(|c| ["main", "overlay", "stage"].contains(c) || crate::outputs::find_extra(core.lock().settings.get(), c).is_some()).unwrap_or("main").to_string();
     let ua = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
     let kind = if q.contains_key("window") { "window" } else if ua.to_lowercase().contains("obs") { "obs" } else { "browser" };
     let id = SEQ.fetch_add(1, Ordering::Relaxed) + 1;
@@ -279,6 +280,11 @@ async fn command(State(core): State<Shared>, headers: HeaderMap, local: Option<a
             Ok(n) => Json(json!({ "ok": true, "result": { "count": n } })).into_response(),
             Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": e }))).into_response(),
         },
+        // 카메라 동시 열기 시험 페이지(/helper/camtest)의 알림: 조작 서버에서만, 일회용 토큰 검사 (camtest::report)
+        Some("camTestReport") if local.is_some() => match crate::camtest::report(&b["args"]) {
+            Ok(()) => { core.lock().emit(Ev::Ui); Json(json!({ "ok": true, "result": null })).into_response() }
+            Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": e }))).into_response(),
+        },
         // [점검 A] 외부 연동 명령 (Electron 판과 같은 이름·응답): 조작 서버에서만. 내부망 출력에서는 위의 영상 메타데이터·끝남 알림만 (Electron: req.lan → 403)
         Some(cmd) if local.is_some() => {
             let t0 = std::time::Instant::now();
@@ -314,7 +320,8 @@ pub fn output_routes(core: Shared) -> Router<Shared> {
         .route("/outputs/main", get(move || { let w = w1.clone(); async move { send_file(&w, "output/index.html").await } }))
         .route("/outputs/overlay", get(move || { let w = w2.clone(); async move { send_file(&w, "output/index.html").await } }))
         .route("/outputs/stage", get(move || { let w = w3.clone(); async move { send_file(&w, "output/stage.html").await } }))
-        .route("/outputs/{*f}", get({ let w = web.clone(); move |axum::extract::Path(f): axum::extract::Path<String>| { let w = w.clone(); async move { send_file(&w.join("output"), &f).await } } }))
+        // 추가 출력 /outputs/out-… (로드맵 3단계)은 예배당 화면과 같은 페이지 — output.js 가 주소 끝 이름으로 자기 출력을 안다
+        .route("/outputs/{*f}", get({ let w = web.clone(); move |State(c): State<Shared>, axum::extract::Path(f): axum::extract::Path<String>| { let w = w.clone(); async move { if crate::outputs::find_extra(c.lock().settings.get(), &f).is_some() { send_file(&w, "output/index.html").await } else { send_file(&w.join("output"), &f).await } } } }))
         .route("/shared/{*f}", get(move |axum::extract::Path(f): axum::extract::Path<String>| { let w = w4.clone(); async move { send_file(&w.join("shared"), &f).await } }))
         .route("/media/{f}", get(move |axum::extract::Path(f): axum::extract::Path<String>| { let m = media.clone(); async move { send_file(&m, &f).await } }))
         .route("/lib/file", get(lib_file))

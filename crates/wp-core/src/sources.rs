@@ -191,7 +191,7 @@ pub fn payload_sources(output: &str, user: &[Value]) -> Value {
 
 /// 출력 데이터의 `sources` (2단계): 켜 둔 것 + 이 출력이 쓰는 구성에 넣은 사용자 소스
 pub fn payload_sources_for(output: &str, user: &[Value], scene_id: &str, settings: &Value) -> Value {
-    let mut v = payload_sources(output, user);
+    let mut v = payload_sources(crate::outputs::kind_of(settings, output), user);
     if scene_id == crate::scenes::FULL {
         return v;
     }
@@ -264,6 +264,79 @@ impl Core {
         OUTPUTS.iter().copied().filter(|o| self.outputs.values().any(|c| c.client == *o)).collect()
     }
 
+    /// 화면이 붙어 있는 출력 id (추가 출력 포함, 로드맵 3단계)
+    pub fn connected_output_ids(&self) -> Vec<String> {
+        crate::outputs::all_ids(self.settings.get()).into_iter().filter(|o| self.outputs.values().any(|c| &c.client == o)).collect()
+    }
+
+    /// 출력 목록 (id, 이름): 예배당 · 방송 (OBS) · 추가 출력
+    pub fn output_list(&self) -> Vec<(String, String)> {
+        crate::outputs::list(self.settings.get())
+    }
+
+    pub fn extra_outputs(&self) -> Vec<Value> {
+        crate::outputs::extra_outputs(self.settings.get())
+    }
+
+    pub fn save_extra_output(&mut self, v: &Value) -> Result<Value> {
+        let mut out = Ok(Value::Null);
+        self.settings.update(|d| out = crate::outputs::save_extra(d, v));
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+        out
+    }
+
+    pub fn delete_extra_output(&mut self, id: &str) {
+        self.settings.update(|d| crate::outputs::delete_extra(d, id));
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+    }
+
+    pub fn set_audio_output(&mut self, id: &str) -> Result<()> {
+        let mut out = Ok(());
+        self.settings.update(|d| out = crate::outputs::set_audio_output(d, id));
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+        out
+    }
+
+    /// 순서 종류별 기본 구성 ("" = 지정 없음)
+    pub fn set_type_scene(&mut self, ty: &str, output: &str, id: &str) -> Result<()> {
+        let mut out = Ok(());
+        self.settings.update(|d| out = crate::outputs::set_type_scene(d, ty, output, id));
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+        out
+    }
+
+    /// 열린 큐시트 순서 i 에 출력별 구성 지정 ("" = 따라감, "full" = 전체 화면 못 박기). 실행 취소에 남는다
+    pub fn set_item_scene(&mut self, i: usize, output: &str, id: &str) -> Result<()> {
+        let s = self.settings.get();
+        if !crate::outputs::is_output(s, output) {
+            bail!("{}", crate::i18n::tr("모르는 출력입니다."));
+        }
+        if !(id.is_empty() || id == crate::scenes::FULL || crate::scenes::find_scene(s, id).is_some()) {
+            bail!("{}", crate::i18n::tr("화면 구성을 찾을 수 없습니다."));
+        }
+        if self.cue.as_ref().and_then(|c| c.items.get(i)).is_none() {
+            bail!("{}", crate::i18n::tr("순서를 찾을 수 없습니다."));
+        }
+        self.remember_items();
+        if let Some(it) = self.cue.as_mut().and_then(|c| c.items.get_mut(i)) {
+            crate::outputs::set_item_scene(it, output, id);
+        }
+        self.save_cue();
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+        Ok(())
+    }
+
+    /// 출력의 지금 구성과 고른 곳 (LIVE 또는 미리보기 묶음)
+    pub fn scene_choice(&self, output: &str, live: bool) -> (String, crate::outputs::From) {
+        let deck = if live { self.pres.live.as_ref().map(|l| &l.deck) } else { self.pres.preview.as_ref() };
+        self.scene_choice_for_deck(output, deck)
+    }
+
     /// 이 출력의 화면 구성: 고른 구성(설정 outputScenes) → 없으면 기본 구성 `full` (2.0.8 과 같음)
     pub fn scene_for(&self, output: &str) -> Value {
         self.scene_for_deck(output, self.pres.live.as_ref().map(|l| &l.deck))
@@ -272,11 +345,45 @@ impl Core {
     /// 미리보기처럼 LIVE 가 아닌 묶음의 구성 (칸의 글 모양 'main' · 'overlay' 를 그 묶음의 템플릿으로)
     pub fn scene_for_deck(&self, output: &str, deck: Option<&crate::presentation::Deck>) -> Value {
         let s = self.settings.get();
-        let id = crate::scenes::output_scene_id(s, output);
+        let id = self.scene_id_for_deck(output, deck);
         let overlays = self.overlays_for(output);
         match crate::scenes::find_scene(s, &id) {
             Some(sc) => self.effective_scene_for(&sc, output, deck),
-            None => default_scene(output, &overlays, &user_sources(s)),
+            // 추가 출력은 같은 종류 내장 출력의 기본 구성 (켜 둔 웹 페이지 · 그림 우상단 포함)
+            None => default_scene(crate::outputs::kind_of(s, output), &overlays, &user_sources(s)),
+        }
+    }
+
+    /// 이 출력이 지금 쓸 구성 id (로드맵 3단계): 순서의 지정 → 순서 종류 기본 → 출력 기본 → full.
+    /// 송출 중인 순서가 열린 큐시트의 순서면 그 순서의 지금 값을 본다 (인스펙터에서 바꾸면 바로 반영)
+    pub fn scene_id_for_deck(&self, output: &str, deck: Option<&crate::presentation::Deck>) -> String {
+        self.scene_choice_for_deck(output, deck).0
+    }
+
+    pub fn scene_choice_for_deck(&self, output: &str, deck: Option<&crate::presentation::Deck>) -> (String, crate::outputs::From) {
+        let s = self.settings.get();
+        let p = deck.map(|d| {
+            let p = &d.passage;
+            let mut v = json!({ "itemType": p["itemType"], "scenes": p["scenes"] });
+            let i = p["cueIndex"].as_i64().unwrap_or(-1);
+            if i >= 0 {
+                if let Some(it) = self.cue.as_ref().filter(|c| p["cueId"] == c.id.as_str()).and_then(|c| c.items.get(i as usize)).filter(|it| it["type"] == p["itemType"]) {
+                    v["scenes"] = it["scenes"].clone();
+                }
+            }
+            v
+        });
+        crate::outputs::resolve_scene(s, output, p.as_ref())
+    }
+
+    /// 출력 무대의 템플릿 (output_payload 의 template): 'OBS 전체' 면 방송 쪽도 예배당 템플릿
+    pub fn stage_template_for_deck(&self, output: &str, deck: Option<&crate::presentation::Deck>) -> Value {
+        let s = self.settings.get();
+        let own_tpl = crate::outputs::find_extra(s, output).is_some_and(|o| o["template"].as_str().is_some_and(|t| !t.is_empty() && self.settings.template(t).is_some()));
+        if self.obs_full && crate::outputs::kind_of(s, output) == "overlay" && !own_tpl {
+            self.template_for_deck("main", deck)
+        } else {
+            self.template_for_deck(output, deck)
         }
     }
 
@@ -284,8 +391,7 @@ impl Core {
     pub fn effective_scene_for(&self, sc: &Value, output: &str, deck: Option<&crate::presentation::Deck>) -> Value {
         let overlays = self.overlays_for(output);
         // 무대 템플릿: output_payload 의 template 과 같게 ('OBS 전체' 면 OBS 도 예배당 템플릿)
-        let stage_out = if output == "overlay" && self.obs_full { "main" } else { output };
-        let stage_id = self.template_for_deck(stage_out, deck)["id"].clone();
+        let stage_id = self.stage_template_for_deck(output, deck)["id"].clone();
         let resolve = |t: &str| -> Option<Value> {
             let v = match t {
                 "main" | "overlay" => self.template_for_deck(t, deck),
@@ -294,7 +400,7 @@ impl Core {
             // 무대 템플릿과 같으면 붙이지 않는다 → 웹 출력이 무대에 바로 그림 (기본 구성과 같은 그림)
             (!v.is_null() && v["id"] != stage_id).then_some(v)
         };
-        crate::scenes::effective_scene(sc, output, &overlays, &resolve)
+        crate::scenes::effective_scene(sc, crate::outputs::kind_of(self.settings.get(), output), &overlays, &resolve)
     }
 
     pub fn scenes(&self) -> Vec<Value> {
@@ -604,5 +710,82 @@ mod tests {
         assert_eq!(c.sources_status().iter().find(|r| r.id == "logo-screen").unwrap().on_air, vec!["main", "overlay"]);
         c.toggle_source(&id, Some(false)).unwrap();
         assert!(c.output_payload("overlay")["sources"].get(&id).is_none());
+    }
+
+    /// 로드맵 3단계 시험 기준: 큐시트 하나에서 성경봉독 · 찬양 순서마다 예배당 · 방송이 각자 다른 구성으로
+    #[test]
+    fn per_item_and_type_scenes_follow_live_item() {
+        let mut c = core();
+        let text = c.save_scene(&json!({ "id": "sc-text", "name": "본문 전체", "layers": [{ "source": "background" }, { "source": "live" }] })).unwrap();
+        let camsub = c.save_scene(&json!({ "id": "sc-camsub", "name": "카메라 + 아래 자막", "layers": [{ "source": "camera:c1" }, { "source": "live", "tpl": "overlay" }] })).unwrap();
+        let corner = c.save_scene(&json!({ "id": "sc-corner", "name": "가사 + 구석 카메라", "layers": [{ "source": "background" }, { "source": "live" }, { "source": "camera:c1", "rect": [0.72, 0.7, 0.25, 0.25] }] })).unwrap();
+        assert_eq!((text["id"].as_str(), camsub["id"].as_str(), corner["id"].as_str()), (Some("sc-text"), Some("sc-camsub"), Some("sc-corner")));
+        c.new_cue("주일").unwrap();
+        let mut bible = crate::core::new_item("title", "성경봉독");
+        bible["type"] = json!("text");
+        bible["text"] = json!("태초에 하나님이 천지를 창조하시니라");
+        c.add_item(bible, None);
+        c.add_item(crate::core::new_item("title", "찬양"), None);
+        c.add_item(crate::core::new_item("title", "광고"), None);
+        // 순서 0 (공지 = 성경봉독): 예배당 본문 전체 · 방송 카메라 + 자막 — 순서에 직접
+        c.set_item_scene(0, "main", "sc-text").unwrap();
+        c.set_item_scene(0, "overlay", "sc-camsub").unwrap();
+        // 순서 1 (제목 = 찬양 자리): 종류 기본으로 — 방송만 구석 카메라
+        c.set_type_scene("title", "overlay", "sc-corner").unwrap();
+        // 순서 2 는 광고 (제목) 이지만 순서에 '전체 화면' 을 못 박음
+        c.set_item_scene(2, "overlay", "full").unwrap();
+        let sid = |c: &Core, o: &str| c.output_payload(o)["scene"]["id"].as_str().unwrap_or("").to_string();
+        assert_eq!((sid(&c, "main"), sid(&c, "overlay")), ("full".into(), "full".into()), "송출 전 = 출력 기본");
+        assert!(c.send_item(0));
+        assert_eq!((sid(&c, "main"), sid(&c, "overlay")), ("sc-text".into(), "sc-camsub".into()));
+        let po = c.output_payload("overlay");
+        assert_eq!(po["scene"]["layers"][0]["source"], "camera:c1");
+        assert!(po["scene"]["layers"][1]["template"].is_null(), "방송 출력의 자막 칸 = 방송 무대 템플릿 그대로 (무대에 바로)");
+        assert!(c.send_item(1));
+        assert_eq!((sid(&c, "main"), sid(&c, "overlay")), ("full".into(), "sc-corner".into()), "종류 기본");
+        assert!(c.send_item(2));
+        assert_eq!(sid(&c, "overlay"), "full", "순서에 못 박은 전체 화면");
+        // 송출 중에 순서 지정을 바꾸면 바로 (다시 송출하지 않아도)
+        c.set_item_scene(2, "overlay", "").unwrap();
+        assert_eq!(sid(&c, "overlay"), "sc-corner");
+        // 표시용: 기본과 다른 출력
+        let items = c.cue.as_ref().unwrap().items.clone();
+        assert_eq!(crate::outputs::item_differs(c.settings.get(), &items[0]).len(), 2);
+        // 실행 취소로 순서 지정이 돌아간다
+        assert!(items[0]["scenes"].is_object());
+    }
+
+    #[test]
+    fn extra_output_payload_and_audio() {
+        let mut c = core();
+        let lobby = c.save_extra_output(&crate::outputs::new_extra("로비 화면", "main")).unwrap();
+        let lid = lobby["id"].as_str().unwrap().to_string();
+        let obs2 = c.save_extra_output(&crate::outputs::new_extra("둘째 방송", "overlay")).unwrap();
+        let oid = obs2["id"].as_str().unwrap().to_string();
+        let p = c.output_payload(&lid);
+        assert_eq!(p["output"], lid.as_str());
+        assert_eq!(p["template"]["id"], c.output_payload("main")["template"]["id"], "템플릿이 비면 예배당 템플릿");
+        assert_eq!(p["audio"], false);
+        assert_eq!(c.output_payload("main")["audio"], true, "소리는 예배당 하나");
+        assert_eq!(c.output_payload("overlay")["audio"], false);
+        assert_eq!(c.output_payload(&oid)["template"]["id"], c.output_payload("overlay")["template"]["id"]);
+        assert!(c.output_payload(&oid)["scene"]["layers"].as_array().unwrap().iter().any(|l| l["source"] == "pip"), "방송처럼 → 그림 우상단 칸");
+        c.set_audio_output(&lid).unwrap();
+        assert_eq!((c.output_payload("main")["audio"].as_bool(), c.output_payload(&lid)["audio"].as_bool()), (Some(false), Some(true)));
+        // 'OBS 화면 숨김' 은 추가 출력에 안 미친다
+        c.obs_hold = true;
+        assert_eq!(c.output_payload("overlay")["held"], true);
+        assert_eq!(c.output_payload(&lid)["held"], false);
+        c.obs_hold = false;
+        // 추가 출력에 자기 구성
+        c.save_scene(&json!({ "id": "sc-l", "name": "로비", "layers": [{ "source": "live", "rect": [0, 0, 0.5, 1] }] })).unwrap();
+        c.set_output_scene(&lid, "sc-l").unwrap();
+        assert_eq!(c.output_payload(&lid)["scene"]["id"], "sc-l");
+        assert_eq!(c.output_payload("main")["scene"]["id"], "full");
+        // 지우면 소리 · 구성 지정도 정리
+        c.delete_extra_output(&lid);
+        assert_eq!(c.output_payload("main")["audio"], true);
+        assert!(c.settings.get()["outputScenes"].get(&lid).is_none());
+        assert_eq!(c.output_list().len(), 3);
     }
 }

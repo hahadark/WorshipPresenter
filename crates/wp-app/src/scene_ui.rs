@@ -19,7 +19,10 @@ const SNAP_PX: f32 = 8.0;
 /// 격자 칸 수 (가로 · 세로 같은 비율)
 const GRID: f64 = 24.0;
 /// 출력 (설정 outputScenes 열쇠, 이름)
-const OUTS: [(&str, &str); 2] = [("main", "예배당"), ("overlay", "방송 (OBS)")];
+/// 출력 목록 (id, 보일 이름): 예배당 · 방송 (OBS) · 추가 출력 (로드맵 3단계)
+fn outs(c: &Core) -> Vec<(String, String)> {
+    c.output_list().into_iter().map(|(k, n)| { let n = if k == "main" || k == "overlay" { tr(&n) } else { n }; (k, n) }).collect()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum DragKind {
@@ -61,6 +64,8 @@ pub struct SceneUi {
     want: Option<String>,
     /// 마지막 캔버스 자리 (headless 시험이 이 좌표로 끈다)
     pub(crate) canvas_seen: Option<Rect>,
+    /// Alt+누름으로 아래 칸을 골랐음 → 다음 끌기는 맨 위 칸 대신 고른 칸을 옮긴다 (보통 누름이면 풀림)
+    alt_pick: bool,
 }
 
 /// 칸 자리 표시 · 인스펙터에 쓸 소스 이름 (camera:… · src-… · overlay:… → 이름)
@@ -111,6 +116,17 @@ fn snap1(v: f64, cands: &[f64], thr: f64) -> Option<f64> {
 
 /// 끌기 계산 (시험할 수 있게 화면과 떼어 둠): 시작 자리 + 움직인 양(화면 비율) → 새 자리 · 붙은 안내선.
 /// others = 다른 칸 자리, thr = 붙는 거리(화면 비율, [가로, 세로]), grid = 격자 칸 수 (0 이면 없음), keep = 비율 지키기 (모서리 + Shift)
+/// Alt+누름: 누른 자리에 겹친 칸들(위 → 아래) 가운데 지금 고른 칸 바로 아래 칸. 맨 아래면 다시 맨 위로, 고른 칸이 없으면 맨 위
+pub(crate) fn cycle_pick(under: &[String], cur: Option<&str>) -> Option<String> {
+    if under.is_empty() {
+        return None;
+    }
+    match cur.and_then(|c| under.iter().position(|x| x == c)) {
+        Some(i) => Some(under[(i + 1) % under.len()].clone()),
+        None => Some(under[0].clone()),
+    }
+}
+
 pub(crate) fn drag_rect(start: [f64; 4], kind: u8, d: [f64; 2], others: &[[f64; 4]], thr: [f64; 2], grid: f64, keep: bool) -> ([f64; 4], Vec<(bool, f64)>) {
     let mut guides = vec![];
     let cand = |vert: bool| -> Vec<f64> {
@@ -377,9 +393,9 @@ impl SceneUi {
     /// 왼쪽: 구성 목록
     fn list_column(&mut self, ui: &mut egui::Ui, core: &Shared, list: &[Value]) {
         let p = pal();
-        let (used_main, used_ov) = {
+        let used: Vec<(String, String, String)> = {
             let c = core.lock();
-            (c.output_scene("main"), c.output_scene("overlay"))
+            outs(&c).into_iter().map(|(o, n)| { let u = c.output_scene(&o); (o, n, u) }).collect()
         };
         ui.label(theme::rich(tr("화면 구성"), 13.0, Weight::SemiBold, p.muted));
         ui.add_space(4.0);
@@ -403,7 +419,7 @@ impl SceneUi {
             }
             resp
         };
-        let uses_of = |id: &str| -> Vec<String> { OUTS.iter().filter(|(o, _)| if *o == "main" { used_main == id } else { used_ov == id }).map(|(_, n)| tr(if *n == "방송 (OBS)" { "방송" } else { n })).collect() };
+        let uses_of = |id: &str| -> Vec<String> { used.iter().filter(|(_, _, u)| u == id).map(|(o, n, _)| if o == "overlay" { tr("방송") } else { n.clone() }).collect() };
         let base_uses = uses_of(scenes::FULL);
         let r = base_row(ui, &tr("전체 화면 (기본)"), &tr("템플릿 그대로 · 고칠 수 없음"), false, base_uses.iter().rev().map(String::as_str).collect());
         r.on_hover_text(tr("구성을 고르지 않은 출력은 늘 이 모양입니다. 고치려면 새 구성을 만드세요."));
@@ -495,10 +511,14 @@ impl SceneUi {
             }
             ui.add_space(8.0);
             ui.label(theme::rich(tr("쓰는 곳"), 12.0, Weight::Regular, p.muted));
-            for (o, n) in OUTS {
+            let list = outs(&core.lock());
+            for (o, n) in &list {
+                let o = o.as_str();
                 let on = core.lock().output_scene(o) == self.sel;
-                let tip = if on { tr_args("누르면 {1} 출력이 기본 화면으로 돌아갑니다", &[&tr(n)]) } else { tr_args("{1} 출력에 이 구성을 씁니다", &[&tr(n)]) };
-                if ui.add(Btn::new(tr(n)).icon(if o == "main" { "monitor" } else { "radio" }).size(Size::Sm).selected(on).tooltip(tip)).clicked() {
+                let tip = if on { tr_args("누르면 {1} 출력이 기본 화면으로 돌아갑니다", &[n]) } else { tr_args("{1} 출력에 이 구성을 씁니다", &[n]) };
+                let b = ui.add(Btn::new(n.clone()).icon(if o == "overlay" { "radio" } else { "monitor" }).size(Size::Sm).selected(on).tooltip(tip));
+                widgets::mark(&format!("scene-use-{o}"), b.rect);
+                if b.clicked() {
                     self.flush(core);
                     let r = core.lock().set_output_scene(o, if on { "" } else { &self.sel });
                     if let Err(e) = r {
@@ -523,7 +543,7 @@ impl SceneUi {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.checkbox(&mut self.grid, tr("격자에 붙기")).on_hover_text(tr("칸을 끌 때 격자 · 화면 가운데 · 다른 칸 가장자리에 붙습니다. Alt 를 누르고 끌면 붙지 않습니다."));
+                ui.checkbox(&mut self.grid, tr("격자에 붙기")).on_hover_text(tr("칸을 끌 때 격자 · 화면 가운데 · 다른 칸 가장자리에 붙습니다. Alt 를 누르고 끌면 붙지 않습니다. Alt 를 누르고 (끌지 않고) 누르면 겹쳐 가려진 아래 칸을 차례로 고릅니다."));
             });
         });
         ui.add_space(6.0);
@@ -531,9 +551,12 @@ impl SceneUi {
         ui.horizontal(|ui| {
             ui.label(theme::rich(tr("미리 보기"), 12.0, Weight::Regular, p.muted));
             let mut v = self.view.clone();
-            let a = tr("예배당");
-            let b = tr("방송 (OBS)");
-            widgets::segmented(ui, &mut v, &[("main".to_string(), a.as_str()), ("overlay".to_string(), b.as_str())]);
+            let list = outs(&core.lock());
+            if !list.iter().any(|(k, _)| *k == v) {
+                v = "main".into();
+            }
+            let items: Vec<(String, &str)> = list.iter().map(|(k, n)| (k.clone(), n.as_str())).collect();
+            widgets::segmented(ui, &mut v, &items);
             self.view = v;
         });
         ui.add_space(6.0);
@@ -541,8 +564,8 @@ impl SceneUi {
         let (stage_t, scene, slide, names, version) = {
             let c = core.lock();
             let out = self.view.as_str();
-            let stage_t = c.template_for(if out == "overlay" && c.obs_full { "main" } else { out });
             let deck = c.pres.live.as_ref().map(|l| &l.deck).or(c.pres.preview.as_ref());
+            let stage_t = c.stage_template_for_deck(out, c.pres.live.as_ref().map(|l| &l.deck));
             let slide = deck.and_then(|d| d.slides.get(d.index)).cloned().unwrap_or_else(sample);
             let version = deck.map(|d| d.passage["versionName"].as_str().unwrap_or("").to_string()).unwrap_or_default();
             (stage_t, c.effective_scene_for(&self.draft, out, deck), slide, source_names(&c), version)
@@ -654,8 +677,9 @@ impl SceneUi {
                 let start_layer = match handle_at(pt) {
                     Some(k) => self.layer.clone().map(|id| (id, DragKind::Resize(k))),
                     None => {
-                        // 누른 자리의 맨 위 칸 (잠근 칸은 건너뜀 — 겹쳐 가려진 칸은 목록에서 고르고 숫자로)
-                        top_at(pt, true).map(|id| (id, DragKind::Move))
+                        // Alt+누름으로 아래 칸을 골라 두었으면 그 칸 (그 자리 안일 때), 아니면 누른 자리의 맨 위 칸 (잠근 칸은 건너뜀)
+                        let picked = self.alt_pick.then(|| self.layer.clone()).flatten().filter(|id| layers.iter().any(|l| l["id"] == id.as_str() && l["locked"] != true && to_screen(scenes::rect_of(l)).contains(pt)));
+                        picked.or_else(|| top_at(pt, true)).map(|id| (id, DragKind::Move))
                     }
                 };
                 if let Some((id, kind)) = start_layer {
@@ -694,11 +718,18 @@ impl SceneUi {
             self.drag = None;
             self.guides.clear();
         }
-        // 누르기: 고르기 (잠근 칸도 고를 수 있다)
+        // 누르기: 고르기 (잠근 칸도 고를 수 있다). Alt+누름 = 그 자리에 겹친 칸을 위에서 아래로 차례로 (가려진 칸 고르기)
+        // Alt+끌기는 그대로 '붙지 않음' — 누름(움직이지 않음)과 끌기는 따로라 겹치지 않는다
         if resp.clicked() {
             if let Some(pt) = resp.interact_pointer_pos() {
-                if handle_at(pt).is_none() {
+                let alt = ui.input(|i| i.modifiers.alt);
+                if alt {
+                    let under: Vec<String> = layers.iter().rev().filter(|l| l["visible"] != false && to_screen(scenes::rect_of(l)).contains(pt)).filter_map(|l| l["id"].as_str().map(String::from)).collect();
+                    self.layer = cycle_pick(&under, self.layer.as_deref());
+                    self.alt_pick = true;
+                } else if handle_at(pt).is_none() {
                     self.layer = top_at(pt, false);
+                    self.alt_pick = false;
                 }
             }
         }
@@ -710,7 +741,7 @@ impl SceneUi {
         let (choices, templates, names, stage_t) = {
             let c = core.lock();
             let out = self.view.as_str();
-            (choices(&c), c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect::<Vec<_>>(), source_names(&c), c.template_for(if out == "overlay" && c.obs_full { "main" } else { out }))
+            (choices(&c), c.settings.templates().iter().map(|t| (t["id"].as_str().unwrap_or("").to_string(), wp_core::i18n::tr_name(t["name"].as_str().unwrap_or("")))).collect::<Vec<_>>(), source_names(&c), c.stage_template_for_deck(out, c.pres.live.as_ref().map(|l| &l.deck)))
         };
         let name_of = |id: &str| -> String {
             if id.is_empty() {
@@ -1001,6 +1032,17 @@ fn preset_icon(k: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alt_click_cycles_through_stacked_cells() {
+        let under: Vec<String> = ["top", "mid", "bottom"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(cycle_pick(&under, None).as_deref(), Some("top"));
+        assert_eq!(cycle_pick(&under, Some("top")).as_deref(), Some("mid"));
+        assert_eq!(cycle_pick(&under, Some("mid")).as_deref(), Some("bottom"));
+        assert_eq!(cycle_pick(&under, Some("bottom")).as_deref(), Some("top"), "맨 아래 다음은 다시 맨 위");
+        assert_eq!(cycle_pick(&under, Some("elsewhere")).as_deref(), Some("top"));
+        assert_eq!(cycle_pick(&[], Some("top")), None);
+    }
 
     #[test]
     fn move_snaps_to_center_and_edges() {

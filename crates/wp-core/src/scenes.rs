@@ -182,6 +182,15 @@ pub fn delete_scene(settings: &mut Value, id: &str) {
     if let Some(m) = settings["outputScenes"].as_object_mut() {
         m.retain(|_, v| v != id);
     }
+    // 순서 종류별 기본도 (3단계). 순서에 남은 지정은 없는 구성이라 건너뛴다 (outputs::resolve_scene)
+    if let Some(m) = settings["typeScenes"].as_object_mut() {
+        for (_, v) in m.iter_mut() {
+            if let Some(o) = v.as_object_mut() {
+                o.retain(|_, x| x != id);
+            }
+        }
+        m.retain(|_, v| v.as_object().is_some_and(|o| !o.is_empty()));
+    }
 }
 
 /// 복제: 새 id · '이름 (사본)', 칸 id 는 그대로 (구성마다 따로라 겹쳐도 됨)
@@ -204,7 +213,7 @@ pub fn output_scene_id(settings: &Value, output: &str) -> String {
 
 /// 출력에 구성 고르기 (full · "" = 기본으로)
 pub fn set_output_scene(settings: &mut Value, output: &str, id: &str) -> Result<()> {
-    if !crate::sources::OUTPUTS.contains(&output) {
+    if !crate::outputs::is_output(settings, output) {
         bail!("{}", crate::i18n::tr("모르는 출력입니다."));
     }
     if !(id.is_empty() || id == FULL || find_scene(settings, id).is_some()) {

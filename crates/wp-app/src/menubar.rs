@@ -70,6 +70,7 @@ pub fn menus() -> Vec<Menu> {
             it("b:songs", "찬양 라이브러리", ""),
             it("b:lib", "그림 · 음악 · 영상 라이브러리", ""),
             it("b:cameras", "카메라 설정", ""), // [트랙 B]
+            it("d:camtest", "카메라 동시 열기 시험", ""), // 로드맵 3단계
             it("-", "-", ""),
             it("d:remote", "휴대폰 리모컨", ""),
             it("d:trigger", "스트림덱 · 외부 단추", ""),
@@ -169,6 +170,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "b:songs" => "music",
         "b:lib" => "library",
         "b:cameras" => "camera",
+        "d:camtest" => "camera",
         "d:remote" => "smartphone",
         "d:trigger" => "gamepad-2",
         "d:devices" => "sliders-horizontal",

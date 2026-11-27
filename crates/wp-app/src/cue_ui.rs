@@ -471,6 +471,20 @@ pub struct RowState {
     pub time: Option<(String, i64)>,
     /// 송출 중 순서보다 앞 (지나감, 흐리게)
     pub done: bool,
+    /// 출력 기본과 다른 화면 구성을 쓰는 출력 (로드맵 3단계): 툴팁 글 (예: '방송 (OBS): 카메라 + 자막'). 비면 표시 없음
+    pub scene: String,
+}
+
+/// 순서 줄 끝의 '화면 구성' 표시 (작은 격자 아이콘 + 툴팁). 그린 폭을 돌려준다
+fn scene_mark(ui: &egui::Ui, id: egui::Id, at: Pos2, size: f32, tip: &str, color: Color32) -> f32 {
+    if tip.is_empty() {
+        return 0.0;
+    }
+    let r = Rect::from_center_size(at, Vec2::splat(size));
+    icons::paint(ui, r, "layout-grid", color);
+    ui.interact(r.expand(2.0), id, Sense::hover()).on_hover_text(format!("{}
+{tip}", tr("이 순서는 출력마다 다른 화면 구성을 씁니다")));
+    size + 6.0
 }
 
 /// 줄 한 개 결과
@@ -570,6 +584,9 @@ fn row_pro(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         let mut right = rect.right() - PRO_MIN_W - PRO_TIME_W - 4.0;
         if hovered || st.selected {
             right = if hovered { send_rect.left() - 4.0 } else { edit_rect.left() - 4.0 };
+        }
+        if !(hovered || st.selected) {
+            right -= scene_mark(ui, resp.id.with("scene"), Pos2::new(right - 6.0, cy), 12.0, &st.scene, if strong { Color32::WHITE } else { p.muted });
         }
         if let Some((t, dur)) = &st.time {
             if !t.is_empty() {
@@ -694,6 +711,7 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
             }
             right = a.left() - 4.0 - GAP;
         }
+        right -= scene_mark(ui, resp.id.with("scene"), Pos2::new(right - 7.0, top + TITLE_LH / 2.0), 14.0, &st.scene, p.muted);
         let bw = (right - x).max(20.0);
         // 굵은 제목 · 흐린 둘째 줄 · 메모(gold)
         let tg = one_line(ui, &title, theme::font(14.0, Weight::Bold), p.text, bw);

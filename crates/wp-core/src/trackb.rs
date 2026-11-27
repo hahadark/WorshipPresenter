@@ -235,6 +235,8 @@ impl Core {
 
     /// 출력에 겹칠 오버레이: 켜진 것 + 회중 메시지
     pub fn overlays_for(&self, output: &str) -> Vec<Value> {
+        // 추가 출력(로드맵 3단계)은 같은 종류 내장 출력(예배당 · 방송)의 오버레이 · 회중 메시지를 받는다
+        let output = crate::outputs::kind_of(self.settings.get(), output);
         let mut o: Vec<Value> = self.overlays().into_iter().filter(|x| x["on"] == true && x["outputs"].as_array().is_some_and(|a| a.iter().any(|y| y == output))).collect();
         o.extend(overlays::message_overlay(&self.b.message, output));
         o
