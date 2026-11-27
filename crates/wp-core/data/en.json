@@ -1,4 +1,9 @@
 {
+ "또는 유튜브 주소": "Or a YouTube URL",
+ "유튜브 주소가 아닙니다": "Not a YouTube URL",
+ "유튜브 {1}{2} · 인터넷이 있어야 재생됩니다. 올린 사람이 퍼가기를 막은 영상은 재생되지 않습니다.": "YouTube {1}{2} · needs internet. Videos whose owner disabled embedding will not play.",
+ "유튜브": "YouTube",
+ "유튜브 주소": "YouTube URL",
  "웹 편집기": "Web editor",
  "웹 편집기 (다른 컴퓨터에서 큐시트 고치기)": "Web editor (edit cue sheets from another computer)",
  "다른 컴퓨터(찬양팀 · 방송실)의 브라우저에서 큐시트를 고칩니다: 순서 차례 · 제목 · 가사 · 장절 · 공지 글 · 메모. 저장하면 이 화면에도 바로 들어갑니다.": "Edit cue sheets from a browser on another computer (worship team, media room): order, titles, lyrics, references, notice text, notes. Saved changes appear here right away.",

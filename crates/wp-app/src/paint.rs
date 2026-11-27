@@ -411,7 +411,7 @@ fn paint_content(ui: &egui::Ui, c: &Ctx, p: &egui::Painter, rect: Rect, s: &Valu
         "video" | "camera" => {
             // 영상·카메라: 화면 가득 검은 바탕 (실제 화면은 영상이 재생된다)
             p.rect_filled(rect, 0.0, Color32::BLACK);
-            let label = if kind == "video" { wp_core::i18n::tr_s("영상") } else { wp_core::i18n::tr_s("카메라") };
+            let label = if s["youtube"].is_object() { wp_core::i18n::tr_s("유튜브") } else if kind == "video" { wp_core::i18n::tr_s("영상") } else { wp_core::i18n::tr_s("카메라") };
             p.text(rect.center(), Align2::CENTER_CENTER, format!("{} · {}", label, s["ref"].as_str().unwrap_or("")), label_font, Color32::GRAY);
             full_items(ui);
         }

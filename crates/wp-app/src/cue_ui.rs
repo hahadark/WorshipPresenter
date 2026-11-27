@@ -413,6 +413,9 @@ pub fn detail(it: &Value) -> String {
         }
         "video" => {
             let f = s("file");
+            if let Some((vid, _)) = wp_core::youtube::parse(&f) {
+                return format!("{} {vid}{}", tr("유튜브"), if it["loop"] == true { tr(" · 반복") } else { String::new() });
+            }
             if f.is_empty() { tr("(영상을 고르세요)") } else { format!("{}{}", file_name(&f), if it["loop"] == true { tr(" · 반복") } else { String::new() }) }
         }
         _ => String::new(),
@@ -681,6 +684,7 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             for (ty, ic, label) in [
                 ("image", "image", "이미지"),
                 ("video", "clapperboard", "영상"),
+                ("youtube", "video", "유튜브 주소"),
                 ("audio", "volume-2", "음악"),
                 ("slideshow", "images", "슬라이드쇼"),
                 ("camera", "camera", "카메라"),
@@ -731,6 +735,8 @@ pub(crate) fn add(app: &mut App, ctx: &egui::Context, ty: &str, acts: &mut Vec<A
         "camera" => acts.push(Act::AddItem("camera", Some(json!({ "title": tr("카메라"), "deviceId": "", "label": "", "fit": "cover" })))),
         "slideshow" => acts.push(Act::AddItem("slideshow", Some(json!({ "title": tr("예배 전 화면"), "images": [], "body": "", "autoSec": 8, "autoLoop": true, "countdown": "", "countdownLabel": tr("예배 시작까지") })))),
         "video" => acts.push(Act::AddItem("video", Some(json!({ "title": tr("영상"), "file": "", "sound": true, "volume": 1, "endAction": "hold", "loop": false })))),
+        // 유튜브: 영상 순서에 주소를 넣는다 (편집칸이 열리면 주소 칸에 붙여 넣기)
+        "youtube" => acts.push(Act::AddItem("video", Some(json!({ "title": tr("유튜브"), "file": "", "sound": true, "volume": 1, "endAction": "hold", "loop": false })))),
         "audio" => acts.push(Act::AddItem("audio", Some(json!({ "title": tr("음악"), "file": "" })))),
         "blank" => acts.push(Act::AddItem("blank", Some(json!({ "mode": "background" })))),
         // 지금 검색한 장절이 있으면 그것으로 채운다 (없으면 빈 성경 순서)

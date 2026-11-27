@@ -316,13 +316,37 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
             });
         }
         "video" => {
-            let f = e["file"].as_str().unwrap_or("");
-            ui.label(RichText::new(percent_encoding::percent_decode_str(f).decode_utf8_lossy().rsplit(['\\', '/']).next().unwrap_or("").to_string()).small());
+            let f = e["file"].as_str().unwrap_or("").to_string();
+            let yt = wp_core::youtube::parse(&f);
+            if yt.is_none() {
+                ui.label(RichText::new(percent_encoding::percent_decode_str(&f).decode_utf8_lossy().rsplit(['\\', '/']).next().unwrap_or("").to_string()).small());
+            }
             if ui.button(wp_core::i18n::tr("영상 고르기…")).clicked() {
                 if let Some(p) = rfd::FileDialog::new().add_filter("영상", &["mp4", "m4v", "webm", "mov"]).pick_file() {
                     e["file"] = json!(wp_core::library::file_url(&p));
                     changed = true;
                 }
+            }
+            // 유튜브 주소 (키 없이 임베드 재생 · 인터넷 필요)
+            ui.horizontal(|ui| {
+                ui.label(wp_core::i18n::tr("또는 유튜브 주소"));
+                let id = egui::Id::new(("yt-url", e["id"].as_str().unwrap_or("")));
+                let mut s: String = ui.data(|d| d.get_temp(id)).unwrap_or_else(|| if yt.is_some() { f.clone() } else { String::new() });
+                let r = ui.add(egui::TextEdit::singleline(&mut s).hint_text("https://youtu.be/…").desired_width(260.0));
+                crate::widgets::mark("yt-url", r.rect);
+                if r.changed() {
+                    if wp_core::youtube::is_youtube(&s) {
+                        e["file"] = json!(s.trim());
+                        changed = true;
+                    }
+                    ui.data_mut(|d| d.insert_temp(id, s.clone()));
+                }
+                if !s.trim().is_empty() && !wp_core::youtube::is_youtube(&s) {
+                    ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), wp_core::i18n::tr("유튜브 주소가 아닙니다"));
+                }
+            });
+            if let Some((vid, start)) = &yt {
+                ui.label(RichText::new(wp_core::i18n::tr_args("유튜브 {1}{2} · 인터넷이 있어야 재생됩니다. 올린 사람이 퍼가기를 막은 영상은 재생되지 않습니다.", &[vid, &if *start > 0 { format!(" ({start}초부터)") } else { String::new() }])).small().color(Color32::GRAY));
             }
             ui.horizontal(|ui| {
                 let mut snd = e["sound"].as_bool().unwrap_or(true);

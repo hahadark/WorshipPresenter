@@ -267,6 +267,14 @@
     // 영상 재생: 화면 전체 (소리·재생 위치는 출력 화면이 syncVideo 로 맞춘다)
     if (kind === 'video') {
       area.style.cssText = `left:0;top:0;width:${t.width}px;height:${t.height}px;`;
+      // 유튜브 주소: 임베드 (API 키 없음). 재생·위치·소리는 출력 화면이 syncYouTube 로 코어 상태에 맞춘다
+      const yt = slide.youtube && /^[A-Za-z0-9_-]{11}$/.test(slide.youtube.id || '') ? slide.youtube : null;
+      if (yt) {
+        const st0 = Math.max(0, Math.floor(+yt.start || 0));
+        const origin = encodeURIComponent(location.origin);
+        area.innerHTML = `<div class="bc-block bc-imgslide" style="background:#000"><iframe class="bc-yt" data-start="${st0}" src="https://www.youtube-nocookie.com/embed/${yt.id}?enablejsapi=1&autoplay=0&mute=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&cc_load_policy=0&hl=ko&start=${st0}&origin=${origin}" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin" style="width:100%;height:100%;border:0;display:block;background:#000;pointer-events:none"></iframe></div>`;
+        return area;
+      }
       area.innerHTML = `<div class="bc-block bc-imgslide"><video class="bc-play" src="${safeUrl(slide.image || '')}" playsinline preload="auto" muted style="width:100%;height:100%;object-fit:contain;background:#000;display:block"></video></div>`;
       return area;
     }

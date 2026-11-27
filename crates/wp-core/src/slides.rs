@@ -428,6 +428,13 @@ pub fn build_item(it: &Value, passage: Option<&Value>, opts: &SplitOpts) -> Vec<
         "title" => title_pages(it).iter().enumerate().map(|(k, p)| title_slide(p, k)).collect(),
         _ => vec![],
     };
+    // 유튜브 주소면 출력 화면이 임베드로 그린다 (youtube.rs)
+    if ty == "video" {
+        if let (Some(x), Some((id, start))) = (slides.first_mut(), crate::youtube::parse(s(it, "file"))) {
+            x["youtube"] = json!({ "id": id, "start": start });
+            x["label"] = json!("유튜브");
+        }
+    }
     if slides.is_empty() {
         slides.push(json!({ "kind": "title", "ref": title, "subtitle": s(it, "subtitle"), "label": "제목", "parts": [], "src": 0 }));
     }
@@ -454,6 +461,16 @@ pub fn build_item(it: &Value, passage: Option<&Value>, opts: &SplitOpts) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn youtube_video_item() {
+        let o = SplitOpts { mode: "count".into(), count: 1, templates: vec![] };
+        let s = build_item(&json!({"type":"video", "title":"찬양 영상", "file":"https://youtu.be/dQw4w9WgXcQ?t=30", "endAction":"next"}), None, &o);
+        assert_eq!((s[0]["kind"].as_str(), s[0]["youtube"]["id"].as_str(), s[0]["youtube"]["start"].as_u64()), (Some("video"), Some("dQw4w9WgXcQ"), Some(30)));
+        assert_eq!(s[0]["video"]["endAction"], "next");
+        let f = build_item(&json!({"type":"video", "title":"내 영상", "file":"file:///C:/a.mp4"}), None, &o);
+        assert!(f[0].get("youtube").is_none(), "파일 영상은 그대로");
+    }
+
     #[test]
     fn audio_has_no_visual_fallback() {
         assert!(build_item(&json!({"type":"audio", "title":"음악"}), None, &SplitOpts { mode: "count".into(), count: 1, templates: vec![] }).is_empty());

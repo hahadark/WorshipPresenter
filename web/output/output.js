@@ -122,7 +122,67 @@
   // 소리: 예배당 전체화면 창(?window=1 의 main)에서만 (OBS 브라우저 소스는 소리 없음 → 이중 재생 방지)
   const soundHere = output === 'main' && isWindow;
   let endedKey = '';
+  // 유튜브 임베드: 코어의 재생 상태(playing · offset · at)에 맞춰 postMessage 로 재생·멈춤·위치·소리를 맞춘다
+  function ytSend(f, func, args) { try { f.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*'); } catch (_) {} }
+  function syncYouTube(f, p) {
+    const st = p.video, s = p.slide, o = { ...(s.video || {}) };
+    if (st.volume != null) o.volume = st.volume;
+    if (st.loop != null) o.loop = st.loop;
+    const y = f._yt || (f._yt = { time: 0, dur: 0, state: -1, ready: false });
+    if (!y.ready) return;
+    const start = +f.dataset.start || 0;
+    const skew = Date.now() - (st.now || Date.now());
+    let target = st.offset + (st.playing ? (Date.now() - skew - st.at) / 1000 : 0);
+    const len = y.dur > start ? y.dur - start : 0;
+    if (len) target = o.loop ? target % len : Math.min(target, Math.max(0, len - 0.3));
+    const off = Math.abs(y.time - (start + target));
+    if (off > 1.5 || (!st.playing && off > 0.3)) ytSend(f, 'seekTo', [start + target, true]);
+    if (soundHere && o.sound) { ytSend(f, 'unMute'); ytSend(f, 'setVolume', [Math.round(Math.max(0, Math.min(1, o.volume ?? 1)) * 100)]); } else ytSend(f, 'mute');
+    if (st.playing && y.state !== 1 && !(len && !o.loop && target >= len - 0.3)) ytSend(f, 'playVideo');
+    if (!st.playing && y.state === 1) ytSend(f, 'pauseVideo');
+  }
+  function ytReport(cmd, key, duration) {
+    fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WorshipCue': '1' }, body: JSON.stringify({ cmd, args: { key, duration } }) }).catch(() => {});
+  }
+  window.addEventListener('message', (e) => {
+    if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+    const f = current && current.querySelector('iframe.bc-yt');
+    if (!f || e.source !== f.contentWindow) return;
+    let m; try { m = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (_) { return; }
+    if (!m || typeof m !== 'object') return;
+    const y = f._yt || (f._yt = { time: 0, dur: 0, state: -1, ready: false });
+    if (m.event === 'onReady' || m.event === 'initialDelivery' || m.event === 'infoDelivery') y.ready = true;
+    const info = m.info || {};
+    if (typeof info.currentTime === 'number') y.time = info.currentTime;
+    if (typeof info.playerState === 'number') y.state = info.playerState;
+    const lp = lastPayload;
+    const key = lp && lp.video && lp.video.key;
+    const start = +f.dataset.start || 0;
+    if (typeof info.duration === 'number' && info.duration > 0 && info.duration !== y.dur) {
+      y.dur = info.duration;
+      if (key) ytReport('videoMeta', key, Math.max(0.1, y.dur - start));
+    }
+    // 끝남(0): 반복이 아니면 코어에 알린다 (끝나면: 그대로 · 검은 화면 · 다음)
+    const looped = lp && ((lp.video && lp.video.loop) || (lp.slide && lp.slide.video && lp.slide.video.loop));
+    if (info.playerState === 0 && key && key !== endedKey && !looped) {
+      endedKey = key;
+      ytReport('videoEnded', key, Math.max(0.1, y.dur - start));
+    }
+    const now = Date.now();
+    if (lp && lp.video && lp.slide && lp.slide.kind === 'video' && (m.event === 'onReady' || now - (y.synced || 0) > 1000)) { y.synced = now; syncYouTube(f, lp); }
+  });
   function applyVideo(p) {
+    const f = current && current.querySelector('iframe.bc-yt');
+    if (f && p.video && p.slide && p.slide.kind === 'video') {
+      if (!f.dataset.bound) {
+        f.dataset.bound = '1';
+        // 플레이어가 상태를 알려 주게 한다 (준비될 때까지 몇 번)
+        const hello = () => { try { f.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 'wp', channel: 'widget' }), '*'); } catch (_) {} };
+        f.addEventListener('load', () => { hello(); let n = 0; const t = setInterval(() => { if ((f._yt && f._yt.ready) || ++n > 20 || !f.isConnected) clearInterval(t); else hello(); }, 500); });
+      }
+      syncYouTube(f, p);
+      return;
+    }
     const v = current && current.querySelector('video.bc-play');
     if (!v || !p.video || !p.slide || p.slide.kind !== 'video') return;
     const o = { ...(p.slide.video || {}) };
