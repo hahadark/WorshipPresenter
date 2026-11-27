@@ -16,6 +16,8 @@ macro_rules! re {
     }};
 }
 
+/// 파일 고르기 창에 보이는 형식 (폴더 훑기의 SONG_EXT + 다른 콘티 프로그램의 .json)
+pub const SONG_EXT_PICK: [&str; 13] = ["xml", "cho", "chordpro", "chopro", "crd", "pro6", "pro", "pptx", "ppsx", "ppt", "pps", "txt", "json"];
 pub const SONG_EXT: [&str; 12] = ["xml", "cho", "chordpro", "chopro", "crd", "pro6", "pro", "pptx", "ppsx", "ppt", "pps", "txt"];
 
 fn xml_text(s: &str) -> String {
@@ -367,10 +369,19 @@ pub fn parse_song_file(file: &Path) -> Result<Vec<Value>, String> {
     if ["cho", "chordpro", "chopro", "crd"].contains(&ext.as_str()) || re!(r"(?im)^\{\s*(title|t|soc|start_of_chorus)\b").is_match(&text) {
         return Ok(parse_chord_pro(&text, file));
     }
+    if ext == "json" {
+        // 다른 콘티 프로그램의 .json (contijson.rs): 가사가 있는 곡만 라이브러리로
+        let v: Value = serde_json::from_str(&text).map_err(|e| format!("JSON: {e}"))?;
+        let list: Vec<Value> = crate::contijson::songs(&v).iter().filter(|s| !s.lyrics.is_empty()).map(crate::contijson::to_library).collect();
+        if list.is_empty() {
+            return Err(crate::i18n::tr("이 JSON 에서 가사가 있는 곡을 찾지 못했습니다.").into());
+        }
+        return Ok(list);
+    }
     if ext == "txt" {
         return Ok(if re!(r"(?m)^#\s*\S").is_match(&text) { parse_song_text(&text, "", 2) } else { vec![song(&base(file), &clean(&text), "", "")] });
     }
-    Err(crate::i18n::tr("읽을 수 없는 형식입니다 (OpenLP .xml · ChordPro .cho · ProPresenter 6 .pro6 · PPT · .txt).").into())
+    Err(crate::i18n::tr("읽을 수 없는 형식입니다 (OpenLP .xml · ChordPro .cho · ProPresenter 6 .pro6 · PPT · .txt · 콘티 .json).").into())
 }
 
 /// 여러 파일 → (곡 목록, 못 읽은 파일 '이름: 까닭')
@@ -389,6 +400,20 @@ pub fn parse_song_files(files: &[std::path::PathBuf]) -> (Vec<Value>, Vec<String
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    #[test]
+    fn json_set_list_songs_with_lyrics_only() {
+        let d = std::env::temp_dir().join(format!("wp-songjson-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("콘티.json");
+        std::fs::write(&f, r#"{"songs":[{"title":"가","lyrics":"가 가사","key":"E"},{"title":"제목만"}]}"#).unwrap();
+        let s = parse_song_file(&f).unwrap();
+        assert_eq!(s.len(), 1, "가사 없는 곡은 라이브러리에 넣지 않는다");
+        assert_eq!((s[0]["title"].as_str(), s[0]["key"].as_str()), (Some("가"), Some("E")));
+        std::fs::write(&f, r#"{"a":1}"#).unwrap();
+        assert!(parse_song_file(&f).is_err());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
     #[test]
     fn labels() {
         assert_eq!(label_of("v1"), "1절");

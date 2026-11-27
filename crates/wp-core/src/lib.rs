@@ -29,6 +29,7 @@ pub mod textnorm;
 pub mod util;
 pub mod cues; // [트랙 B]
 pub mod cuemgr; // [갈래 C] 큐시트 관리 창 (목록·찾기·정렬·새로·복제·휴지통·내보내기)
+pub mod contijson; // 다른 콘티 프로그램 .json 가져오기
 pub mod contistudio; // 찬양 콘티 스튜디오 콘티(.worship) 가져오기
 pub mod phonecam; // 휴대폰을 카메라로 (https · WebRTC 이어 주기)
 pub mod firewall; // Windows 방화벽: 휴대폰·내부망 연결 확인 · 열기

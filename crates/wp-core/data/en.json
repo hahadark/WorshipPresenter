@@ -1,4 +1,10 @@
 {
+ "파일 고르기… (OpenLP · ChordPro · ProPresenter 6 · PPT · txt · 콘티 json)": "Choose files… (OpenLP · ChordPro · ProPresenter 6 · PPT · txt · set-list json)",
+ "내보낸 큐시트 파일(.json) · 찬양 콘티 스튜디오 콘티(.worship) · 다른 콘티 프로그램의 곡 목록(.json)을 가져옵니다 (여러 개 고를 수 있음)": "Imports exported cue sheets (.json), Worship Conti Studio set lists (.worship) or song lists from other set-list programs (.json) (you can pick several)",
+ "이 JSON 에서 가사가 있는 곡을 찾지 못했습니다.": "No songs with lyrics were found in this JSON.",
+ "읽을 수 없는 형식입니다 (OpenLP .xml · ChordPro .cho · ProPresenter 6 .pro6 · PPT · .txt · 콘티 .json).": "Unreadable format (OpenLP .xml · ChordPro .cho · ProPresenter 6 .pro6 · PPT · .txt · set-list .json).",
+ "큐시트 파일이나 콘티(곡 목록)를 찾지 못했습니다.": "No cue sheet or set list (song list) was found.",
+ "'{1}': 가사가 없어 제목만 넣었습니다 (찬양 라이브러리에도 없음)": "'{1}': no lyrics, so only the title was added (not in the song library either)",
  "예배 틀에서…": "From a service frame…",
  "다섯 틀을 서식 목록에 넣기 (고쳐 쓰기)": "Add the five frames to templates (to edit)",
  "주일 낮 예배 · 성찬 예배 · 수요 예배 · 금요 기도회 · 새벽 기도회 순서로 새 큐시트를 만듭니다": "Creates a new cue sheet from a Sunday, Communion, Wednesday, Friday prayer or dawn prayer order",

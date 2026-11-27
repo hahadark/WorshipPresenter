@@ -475,8 +475,13 @@ impl Core {
                     let (k, w) = self.import_conti(&v, &stem)?;
                     warns.extend(w.into_iter().map(|x| format!("{name}: {x}")));
                     Ok(k)
-                } else {
+                } else if cues::is_cue_file(&v) {
                     cues::import(&self.store, &v)
+                } else {
+                    // 다른 콘티 프로그램의 .json (곡 목록)
+                    let (k, w) = self.import_conti_json(&v, &stem)?;
+                    warns.extend(w.into_iter().map(|x| format!("{name}: {x}")));
+                    Ok(k)
                 }
             });
             match r {
@@ -496,6 +501,23 @@ impl Core {
         let (cue, warnings) = crate::contistudio::to_cue(v, fallback, &find).map_err(anyhow::Error::msg)?;
         let s = |k: &str| cue[k].as_str().unwrap_or("").to_string();
         let c = Cue { id: short_id("c"), name: s("name"), service_date: s("serviceDate"), start_time: s("startTime"), items: cue["items"].as_array().cloned().unwrap_or_default(), memo: s("memo"), pinned: false, template: false };
+        self.store.save_cue(&c)?;
+        Ok((1, warnings))
+    }
+
+    /// 다른 콘티 프로그램의 .json → 새 큐시트 (곡 차례대로, 가사가 없으면 찬양 라이브러리에서)
+    fn import_conti_json(&mut self, v: &Value, fallback: &str) -> Result<(usize, Vec<String>)> {
+        let list = crate::contijson::songs(v);
+        if list.is_empty() {
+            bail!("큐시트 파일이나 콘티(곡 목록)를 찾지 못했습니다.");
+        }
+        let db = &self.store.db;
+        let find = |t: &str| crate::songs::find_by_title(db, t);
+        let mut warnings = vec![];
+        let items: Vec<Value> = list.iter().map(|s| crate::contijson::to_item(s, &find, &mut warnings)).collect();
+        let (name, date) = crate::contijson::meta(v);
+        let name = if name.is_empty() { fallback.to_string() } else { name };
+        let c = Cue { id: short_id("c"), name, service_date: date, start_time: String::new(), items, memo: String::new(), pinned: false, template: false };
         self.store.save_cue(&c)?;
         Ok((1, warnings))
     }
@@ -738,6 +760,37 @@ mod tests {
         // 슬라이드까지: 부를 순서대로 5장
         let slides = crate::slides::arrange(crate::slides::lyrics_chunks(cue.items[0]["lyrics"].as_str().unwrap()), cue.items[0]["order"].as_str().unwrap());
         assert_eq!(slides.len(), 5);
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn import_other_conti_json_and_keep_own_cue_files() {
+        let (mut c, dir) = core();
+        c.save_song(&json!({ "title": "주 은혜임을", "lyrics": "[1절]
+은혜" })).unwrap();
+        let f = dir.join("다른 콘티.json");
+        std::fs::write(&f, json!({ "name": "청년부 찬양", "date": "2026/12/06",
+            "items": [ { "title": "주 은혜임을", "key": "G" }, { "title": "새 곡", "lyrics": "새 가사", "bpm": 80 } ] }).to_string()).unwrap();
+        let (n, first, errs, warns) = c.import_cue_files_ex(&[f]);
+        assert_eq!((n, errs.len(), warns.len()), (1, 0, 0), "{errs:?} {warns:?}");
+        let cue = c.store.get_cue(&first).unwrap();
+        assert_eq!((cue.name.as_str(), cue.service_date.as_str()), ("청년부 찬양", "2026-12-06"));
+        assert_eq!(cue.items.len(), 2);
+        assert_eq!(cue.items[0]["lyrics"], "[1절]
+은혜", "가사 없는 곡은 라이브러리에서");
+        assert_eq!((cue.items[1]["lyrics"].as_str(), cue.items[1]["bpm"].as_str()), (Some("새 가사"), Some("80")));
+        // 우리 큐시트 파일은 예전처럼 그대로
+        let own = dir.join("우리.json");
+        std::fs::write(&own, json!({ "name": "주일", "items": [ { "type": "title", "title": "설교" } ] }).to_string()).unwrap();
+        let (n, first, errs, _) = c.import_cue_files_ex(&[own]);
+        assert_eq!((n, errs.len()), (1, 0));
+        assert_eq!(c.store.get_cue(&first).unwrap().items[0]["type"], "title");
+        // 곡도 큐시트도 아닌 JSON 은 오류
+        let bad = dir.join("설정.json");
+        std::fs::write(&bad, r#"{"theme":"dark"}"#).unwrap();
+        let (n, _, errs, _) = c.import_cue_files_ex(&[bad]);
+        assert_eq!((n, errs.len()), (0, 1));
         drop(c);
         let _ = std::fs::remove_dir_all(dir);
     }

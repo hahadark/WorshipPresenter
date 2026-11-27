@@ -209,9 +209,9 @@ impl App {
                     let imp = ui.add(Btn::new(tr("가져오기")).icon("download").caret().height(30.0).tooltip(tr("파일 · 폴더 통째로 · 여러 곡 붙여넣기")));
                     egui::Popup::menu(&imp).show(|ui| {
                         ui.set_min_width(260.0);
-                        if ui.button(tr("파일 고르기… (OpenLP · ChordPro · ProPresenter 6 · PPT · txt)")).clicked() {
+                        if ui.button(tr("파일 고르기… (OpenLP · ChordPro · ProPresenter 6 · PPT · txt · 콘티 json)")).clicked() {
                             ui.close();
-                            if let Some(fs) = rfd::FileDialog::new().add_filter(tr("찬양 파일"), &wp_core::songimport::SONG_EXT).pick_files() {
+                            if let Some(fs) = rfd::FileDialog::new().add_filter(tr("찬양 파일"), &wp_core::songimport::SONG_EXT_PICK).pick_files() {
                                 self.import_song_paths(&fs);
                             }
                         }

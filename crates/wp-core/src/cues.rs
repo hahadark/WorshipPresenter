@@ -78,6 +78,16 @@ pub fn export(store: &BibleStore, ids: &[String]) -> Value {
 }
 
 /// 가져오기: 새 id 로 저장 → 가져온 수
+/// 워십프리젠터 큐시트 파일인가 (내보낸 큐시트 하나 · 여러 개). 순서마다 type 이 있어야 한다
+/// — 다른 프로그램의 { items: [곡…] } 을 큐시트로 잘못 읽지 않게
+pub fn is_cue_file(data: &Value) -> bool {
+    let typed = |items: &Value| items.as_array().is_some_and(|a| a.iter().all(|it| it["type"].is_string()));
+    match data["cues"].as_array() {
+        Some(a) => a.iter().all(|c| typed(&c["items"])),
+        None => typed(&data["items"]),
+    }
+}
+
 pub fn import(store: &BibleStore, data: &Value) -> Result<usize> {
     let list: Vec<Value> = if let Some(a) = data["cues"].as_array() {
         a.clone()

@@ -269,7 +269,7 @@ impl App {
                     *open = false;
                     crate::trackd_ui::handle_menu("d:bulletin");
                 }
-                if ui.add(Btn::new(tr("가져오기…")).icon("folder-open").tooltip(tr("내보낸 큐시트 파일(.json)이나 찬양 콘티 스튜디오 콘티(.worship)를 가져옵니다 (여러 개 고를 수 있음)"))).clicked() {
+                if ui.add(Btn::new(tr("가져오기…")).icon("folder-open").tooltip(tr("내보낸 큐시트 파일(.json) · 찬양 콘티 스튜디오 콘티(.worship) · 다른 콘티 프로그램의 곡 목록(.json)을 가져옵니다 (여러 개 고를 수 있음)"))).clicked() {
                     if let Some(fs) = rfd::FileDialog::new().add_filter(tr("큐시트 · 콘티"), &["json", "worship"]).add_filter(tr("찬양 콘티 스튜디오 콘티"), &["worship"]).pick_files() {
                         let (n, first, errs, warns) = self.core.lock().import_cue_files_ex(&fs);
                         import_report(self, n, errs, &warns);
