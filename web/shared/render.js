@@ -392,6 +392,61 @@
     return `background:${bg.color || '#000'};`;
   }
 
+
+  // ---------- 움직이는 배경 (템플릿 background.motion: aurora · waves · stars · bokeh) ----------
+  // 배경(단색·그라데이션·그림) 위에 캔버스로 겹친다. 조작 화면 미리보기(paint.rs motion)는 같은 수식의 t=0 장면을 그린다.
+  // 시각은 Date.now() 를 쓰므로 슬라이드가 바뀌어 다시 만들어져도 끊기지 않고, 화면끼리도 거의 같다.
+  const MOTIONS = ['aurora', 'waves', 'stars', 'bokeh'];
+  function mulberry(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+  function blob(g, x, y, r, hex, a) { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, rgba(hex, a)); gr.addColorStop(1, rgba(hex, 0)); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
+  function motionFrame(g, kind, W, H, t) {
+    g.clearRect(0, 0, W, H);
+    if (kind === 'aurora') {
+      const C = [['#22d3a6', 0.25, 0.30], ['#6d5dfc', 0.70, 0.35], ['#1fb6ff', 0.45, 0.75]];
+      C.forEach(([hex, cx, cy], i) => blob(g, W * cx + W * 0.18 * Math.sin(t * 0.07 * (i + 1) + i * 2), H * cy + H * 0.12 * Math.cos(t * 0.05 * (i + 1) + i), W * 0.4, hex, 0.45));
+    } else if (kind === 'waves') {
+      for (let i = 0; i < 3; i++) {
+        const base = H * (0.58 + 0.1 * i), A = H * (0.05 - 0.01 * i), L = W * (0.9 - 0.2 * i), ph = t * (0.35 + 0.15 * i) + i * 1.7;
+        g.beginPath(); g.moveTo(0, H);
+        for (let x = 0; x <= W; x += W / 96) g.lineTo(x, base + A * Math.sin((2 * Math.PI * x) / L + ph));
+        g.lineTo(W, H); g.closePath(); g.fillStyle = rgba(['#3b82f6', '#22d3ee', '#1d4ed8'][i], 0.22); g.fill();
+      }
+    } else if (kind === 'stars') {
+      blob(g, W * 0.3, H * 0.4, W * 0.45, '#7c3aed', 0.28); blob(g, W * 0.72, H * 0.62, W * 0.4, '#2563eb', 0.24);
+      const rnd = mulberry(7);
+      for (let i = 0; i < 220; i++) {
+        const x = rnd() * W, y = rnd() * H, r = (0.6 + rnd() * 1.6) * H / 1080, f = 0.4 + rnd() * 1.2, p = rnd() * 6.283;
+        g.fillStyle = `rgba(255,255,255,${(0.35 + 0.65 * Math.abs(Math.sin(t * f + p))).toFixed(3)})`;
+        g.beginPath(); g.arc((x + t * W * 0.004) % W, y, r, 0, 6.283); g.fill();
+      }
+    } else if (kind === 'bokeh') {
+      const rnd = mulberry(11), C = ['#ffd28a', '#ff9e6b', '#ffe9b8'];
+      for (let i = 0; i < 16; i++) {
+        const x0 = rnd() * W, y0 = rnd() * H, r = W * (0.03 + rnd() * 0.06), a = 0.18 + rnd() * 0.22, sp = H * (0.01 + rnd() * 0.02), hex = C[i % 3];
+        const span = H + r * 2, y = ((((y0 - t * sp + r) % span) + span) % span) - r;
+        blob(g, x0 + Math.sin(t * 0.2 + i) * W * 0.01, y, r, hex, a);
+      }
+    }
+  }
+  function motionLayer(kind, W, H) {
+    const c = document.createElement('canvas');
+    c.className = 'bc-motion';
+    // 반 크기로 그리고 늘인다 (흐린 그림이라 티가 안 나고 가볍다)
+    c.width = Math.max(2, Math.round(W / 2)); c.height = Math.max(2, Math.round(H / 2));
+    c.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+    const g = c.getContext('2d');
+    let last = 0;
+    const tick = (now) => {
+      if (!c.isConnected && last) return; // 화면에서 빠지면 멈춘다
+      if (now - last > 33) { last = now || 1; motionFrame(g, kind, c.width, c.height, Date.now() / 1000); }
+      requestAnimationFrame(tick);
+    };
+    motionFrame(g, kind, c.width, c.height, Date.now() / 1000);
+    requestAnimationFrame(tick);
+    return c;
+  }
+
   /** 템플릿 해상도의 무대(stage) 생성: 배경층 + 본문층 */
   function buildStage(t) {
     const stage = document.createElement('div');
@@ -412,6 +467,10 @@
       v.style.cssText = `position:absolute;inset:0;width:100%;height:100%;object-fit:${t.background.imageFit || 'cover'}`;
       bg.appendChild(v);
       attachCamera(v, (t.background.camera || {}).deviceId || '');
+    }
+    // 움직이는 배경 (단색·그라데이션·그림 위에). 없으면 예전과 같다
+    if (MOTIONS.includes(t.background.motion) && ['color', 'gradient', 'image', undefined, ''].includes(t.background.type)) {
+      bg.appendChild(motionLayer(t.background.motion, t.width, t.height));
     }
     if ((t.background.type === 'image' || t.background.type === 'video' || t.background.type === 'camera') && t.background.dim > 0) {
       bg.insertAdjacentHTML('beforeend', `<div class="bc-dim" style="background:rgba(0,0,0,${t.background.dim})"></div>`);
@@ -788,5 +847,5 @@
     svg.innerHTML = spot + lines;
   }
 
-  global.BCRender = { buildMediaLayer, attachCameras, cameraStream, cameraInfo, setCameraPrefs, openCameras, closeCamera, paintDraw, editFor, esc, buildLogoScreen, syncVideo, safeUrl, isVideo, lyricsOnly, buildOverlays, clockText, countdownText, buildContent, buildStage, scaleStage, fit, fitsAt, renderInto, backgroundCss, contentRect };
+  global.BCRender = { MOTIONS, motionFrame, buildMediaLayer, attachCameras, cameraStream, cameraInfo, setCameraPrefs, openCameras, closeCamera, paintDraw, editFor, esc, buildLogoScreen, syncVideo, safeUrl, isVideo, lyricsOnly, buildOverlays, clockText, countdownText, buildContent, buildStage, scaleStage, fit, fitsAt, renderInto, backgroundCss, contentRect };
 })(window);

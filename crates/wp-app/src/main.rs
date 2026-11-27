@@ -13,6 +13,7 @@ mod hymns_ui; // [트랙 A]
 mod dnd; // 끌어다 놓기·파일 붙여 넣기
 mod outwin;
 mod camscan; // 카메라 찾기·미리보기 (wp-output 도우미)
+mod motion; // 움직이는 배경 (템플릿 background.motion) 조작 화면 그림
 mod paint;
 mod paint_edit; // [트랙 A]
 mod css_bg; // 웹과 같은 CSS 그라데이션 계산

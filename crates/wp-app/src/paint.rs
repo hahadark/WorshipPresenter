@@ -342,6 +342,11 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
                 }
             }
         }
+        // 움직이는 배경: 웹 출력(render.js motionLayer)과 같은 수식의 한 장면
+        let mo = bg["motion"].as_str().unwrap_or("");
+        if crate::motion::is_motion(mo) && matches!(bgt, "color" | "gradient" | "image" | "") {
+            crate::motion::paint(&p, rect, mo, 0.0);
+        }
         let dim = num(&bg["dim"], 0.0);
         if dim > 0.0 && matches!(bgt, "image" | "video" | "camera") {
             p.rect_filled(rect, 0.0, Color32::from_black_alpha((dim.min(1.0) * 255.0) as u8));

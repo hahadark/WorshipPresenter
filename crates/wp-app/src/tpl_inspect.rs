@@ -261,6 +261,13 @@ fn background(ui: &mut egui::Ui, t: &mut Value, pc: &crate::paint::Ctx, data_dir
         }
         _ => {}
     }
+    // 움직이는 배경: 단색 · 그라데이션 · 그림 위에 겹친다 (기본 없음)
+    if matches!(ty.as_str(), "color" | "gradient" | "image") {
+        ch |= tc::seg(ui, t, "background.motion", "움직임", &crate::motion::KINDS, "");
+        if crate::motion::is_motion(s(t, "background.motion")) {
+            tc::note(ui, "예배당 화면·OBS 에서 천천히 움직입니다. 이 편집 화면과 미리보기는 한 장면으로 보여 줍니다.");
+        }
+    }
     ch |= tc::switch(ui, t, "clearHidesBackground", "숨김 때 배경도", "'글자 숨김'(F10)을 누르면 배경까지 함께 숨깁니다");
     ch
 }

@@ -1,4 +1,10 @@
 {
+ "움직임": "Motion",
+ "오로라": "Aurora",
+ "물결": "Waves",
+ "별빛": "Stars",
+ "빛망울": "Bokeh",
+ "예배당 화면·OBS 에서 천천히 움직입니다. 이 편집 화면과 미리보기는 한 장면으로 보여 줍니다.": "Moves slowly on the sanctuary screen and OBS. This editor and the previews show a single frame.",
  "또는 유튜브 주소": "Or a YouTube URL",
  "유튜브 주소가 아닙니다": "Not a YouTube URL",
  "유튜브 {1}{2} · 인터넷이 있어야 재생됩니다. 올린 사람이 퍼가기를 막은 영상은 재생되지 않습니다.": "YouTube {1}{2} · needs internet. Videos whose owner disabled embedding will not play.",
