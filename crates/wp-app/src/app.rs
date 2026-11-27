@@ -1623,7 +1623,7 @@ impl App {
                 crate::actions_ui::set_open(true);
             }
             self.test.as_mut().unwrap().4 = 1;
-        } else if stage == 1 && el > if std::env::args().any(|x| x == "--outwin-esc-test") { 10.0 } else { 3.5 } {
+        } else if stage == 1 && el > if std::env::args().any(|x| x == "--outwin-esc-test") { 10.0 } else { std::env::var("WP_SHOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(3.5) } {
             if let Some(path) = shot.clone() {
                 let c2 = ctx.clone();
                 ctx.request_screenshot(move |img| {
@@ -1637,7 +1637,7 @@ impl App {
             self.test.as_mut().unwrap().4 = 2;
         } else if stage == 2 {
             if SHOT_DONE.load(std::sync::atomic::Ordering::SeqCst) { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
-            if shot.is_some() && el > 15.0 { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
+            if shot.is_some() && el > 15.0_f32.max(std::env::var("WP_SHOT_AT").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0) + 10.0) { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
         }
         ctx.request_repaint();
     }

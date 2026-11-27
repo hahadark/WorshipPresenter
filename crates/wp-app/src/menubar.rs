@@ -85,6 +85,7 @@ pub fn menus() -> Vec<Menu> {
             it("-", "-", ""),
             it("ai:check", "예배 전 큐시트 점검", ""),
             it("ai:sermon", "설교 원고 → 슬라이드", ""),
+            it("ai:listen", "음성 인식: 구절 따라가기 · 실시간 자막", ""),
             it("ai:settings", "AI 설정 (키 · 제공자 · 동의)", ""),
         ] },
         Menu { label: "도움말", items: vec![
@@ -184,6 +185,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "a:preservice" => "images",
         "ai:check" => "list-checks",
         "ai:sermon" => "file-text",
+        "ai:listen" => "mic",
         "ai:settings" => "sparkles",
         "b:diagnose" => "list-checks",
         "b:logbundle" => "download",

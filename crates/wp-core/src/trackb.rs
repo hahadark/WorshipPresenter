@@ -237,6 +237,7 @@ impl Core {
     pub fn overlays_for(&self, output: &str) -> Vec<Value> {
         let mut o: Vec<Value> = self.overlays().into_iter().filter(|x| x["on"] == true && x["outputs"].as_array().is_some_and(|a| a.iter().any(|y| y == output))).collect();
         o.extend(overlays::message_overlay(&self.b.message, output));
+        o.extend(crate::voicefollow::caption_overlay(output)); // 실시간 자막 (기본은 방송 출력에만)
         o
     }
 

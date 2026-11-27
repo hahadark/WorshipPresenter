@@ -49,7 +49,7 @@ struct St {
 static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
 
 pub fn handle_menu(id: &str) -> bool {
-    if crate::sermon_ui::handle_menu(id) {
+    if crate::listen_ui::handle_menu(id) || crate::sermon_ui::handle_menu(id) {
         return true;
     }
     let mut s = ST.lock();
@@ -116,6 +116,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     });
     consent_win(app, ctx);
     crate::sermon_ui::show(app, ctx);
+    crate::listen_ui::show(app, ctx);
     settings_win(app, ctx);
     check_win(app, ctx);
 }

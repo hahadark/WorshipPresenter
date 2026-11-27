@@ -433,6 +433,30 @@ impl Core {
         self.after_preview();
     }
 
+    /// 장절을 '다음(미리보기)' 에만 올린다 — 바로 송출 모드여도 송출하지 않는다 (설교 구절 따라가기). 반환: 본문 제목
+    pub fn preview_passage_quiet(&mut self, reference: &str) -> Result<String, String> {
+        let v = self.version_id();
+        let r = self.store.resolve_reference(&v, reference);
+        if r["ok"] != json!(true) {
+            return Err(r["error"].as_str().unwrap_or("본문을 찾지 못했습니다.").to_string());
+        }
+        let passage = crate::flow::with_parallel(self, r["passage"].clone());
+        let opts = self.split_opts(None);
+        let slides = slides::build_bible(&passage, &opts);
+        let p = self.passage_meta(&passage, reference, None);
+        self.pres.set_preview(p, slides, 0);
+        self.pick.want = None;
+        self.pick.want_send = None;
+        self.emit(Ev::Ui); // after_preview 를 부르지 않는다 (송출하지 않음)
+        Ok(passage["title"].as_str().unwrap_or(reference).to_string())
+    }
+
+    /// 출력 화면에 오버레이(자막 등)가 바뀌었다고 알린다
+    pub fn overlays_changed(&self) {
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+    }
+
     fn passage_meta(&self, passage: &Value, query: &str, item: Option<(usize, &Value)>) -> Value {
         let ranges = passage["ranges"].as_array().cloned().unwrap_or_default();
         let first = ranges.first().map(|r| json!({ "chapter": r["sc"], "verse": r["sv"] }));
