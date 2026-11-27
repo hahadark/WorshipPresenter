@@ -49,7 +49,7 @@ struct St {
 static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
 
 pub fn handle_menu(id: &str) -> bool {
-    if crate::listen_ui::handle_menu(id) || crate::sermon_ui::handle_menu(id) {
+    if crate::lyricsfix_ui::handle_menu(id) || crate::listen_ui::handle_menu(id) || crate::sermon_ui::handle_menu(id) {
         return true;
     }
     let mut s = ST.lock();
@@ -113,6 +113,13 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     ONCE.call_once(|| {
         open_from_args();
         crate::sermon_ui::open_from_args();
+        // 점검용: --lyrics-file <txt> · --say "<말>"
+        let a: Vec<String> = std::env::args().collect();
+        if let Some(f) = a.iter().position(|x| x == "--lyrics-file").and_then(|i| a.get(i + 1)) {
+            if let Ok(t) = std::fs::read_to_string(f) {
+                crate::lyricsfix_ui::open_text(&t);
+            }
+        }
     });
     consent_win(app, ctx);
     crate::sermon_ui::show(app, ctx);

@@ -869,6 +869,11 @@ impl App {
                                     ch = true;
                                 }
                                 ce_note(ui, &tr("· 빈 줄 = 다음 슬라이드 · [1절] 줄은 슬라이드 이름"), p.muted);
+                                if let Some(i) = self.sel {
+                                    if ui.add(crate::widgets::Btn::new(tr("가사 자동 정리…")).size(crate::widgets::Size::Sm).tooltip(tr("절 · 후렴 · 브리지로 나누고 줄 바꿈 · 띄어쓰기를 다듬어 고치기 전후를 나란히 봅니다"))).clicked() {
+                                        crate::lyricsfix_ui::open_for(i, e);
+                                    }
+                                }
                             });
                             ch
                         });
@@ -1804,6 +1809,7 @@ impl App {
         self.trackb_windows(&ctx); // [트랙 B]
         crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
         crate::ai_ui::show(self, &ctx); // AI 도우미 (설정 · 동의 · 예배 전 점검 …)
+        crate::lyricsfix_ui::show(self, &ctx, &mut acts); // 가사 자동 정리
         crate::a_tools::show(self, &ctx, &mut acts); // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
         crate::parity_ui::show(self, &ctx); // [트랙 A] 단축키 보기
         crate::parity2_ui::show(self, &ctx, &mut acts); // [트랙 A] 성경 책 목록 · 종류 골라 붙여 넣기
