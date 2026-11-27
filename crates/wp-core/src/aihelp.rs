@@ -197,3 +197,43 @@ mod tests {
         assert_eq!(usage_text(&u), "토큰 7");
     }
 }
+
+/// 실제 AI 점검 (기본 건너뜀): WP_AI_LIVE_KEY_ENV=<키가 든 환경변수 이름> WP_AI_LIVE_ENDPOINT · WP_AI_LIVE_MODEL
+/// 키는 환경변수에서만 읽고 출력하지 않는다. cargo test -p wp-core -- --ignored ai_live --nocapture
+#[cfg(test)]
+mod live {
+    use super::*;
+    #[test]
+    #[ignore]
+    fn ai_live() {
+        let Ok(var) = std::env::var("WP_AI_LIVE_KEY_ENV") else { return };
+        let cfg = AiCfg { key: std::env::var(var).unwrap_or_default(), endpoint: std::env::var("WP_AI_LIVE_ENDPOINT").unwrap_or_default(), model: std::env::var("WP_AI_LIVE_MODEL").unwrap_or_default() };
+        let _g = TEST_LOCK.lock();
+        set_mock(None);
+        let mut tokens = 0i64;
+        let mut add = |u: &Value| tokens += u["total_tokens"].as_i64().unwrap_or(0);
+        let items = vec![json!({"type":"song","title":"찬양","lyrics":"주 은헤 임을 고백 합니다\n내 삶의 모든 것 주께 드립니\n다"}), json!({"type":"text","title":"광고","body":"수요 예베는 저녁 7시 30분 입니다"})];
+        let (f, u) = crate::cuecheck::ask_ai(&cfg, &items).unwrap();
+        add(&u);
+        println!("[점검] {} 곳: {:?}", f.len(), f.iter().map(|x| x.msg.clone()).collect::<Vec<_>>());
+        let ms = "제목: 포도나무와 가지\n본문: 요 15:1-8\n첫째, 붙어 있어야 삽니다. 로마서 8장 28절을 보면 모든 것이 합력하여 선을 이룹니다.\n둘째, 열매로 압니다. “기도는 영혼의 호흡이다” — 어느 성도\n셋째, 아버지께 영광이 됩니다.";
+        let (p, u) = crate::sermonslides::ask_ai(&cfg, ms, &json!({})).unwrap();
+        add(&u);
+        println!("[설교] {:?}", p.iter().map(|x| x.label.clone()).collect::<Vec<_>>());
+        let (c, u) = crate::lyricsclean::ask_ai(&cfg, "Verse 1\n주님만 바라봅니다 주님만 의지합니다\nChorus\n할렐루야 할렐루야\n\nVerse 2\n주의 이름 높이며\nChorus\n할렐루야 할렐루야").unwrap();
+        add(&u);
+        println!("[가사] {:?} / {}", c.lyrics, c.order);
+        let (sm, u) = crate::recap::ask_summary(&cfg, "[11:15:00] 오늘 요한복음 15장 5절 말씀을 봅니다\n[11:20:00] 첫째 붙어 있어야 삽니다 가지는 나무에 붙어 있어야 열매를 맺습니다\n[11:30:00] 둘째 열매로 압니다", "포도나무와 가지").unwrap();
+        add(&u);
+        println!("[요약] {sm}");
+        let ctx = crate::saycmd::Ctx { cues: vec![("c1".into(), "2026-11-22 주일 예배".into(), "2026-11-22".into())], open_id: "c1".into(), items: vec![("title".into(), "설교".into(), "“포도나무” · 홍길동".into()), ("bible".into(), "성경봉독".into(), "요 15:1-8".into())], today: "2026-11-27".into() };
+        let (v, u) = crate::saycmd::ask_ai(&cfg, "지난주 큐시트 복사해서 설교 제목만 '은혜' 로 바꾸고 송출해", &ctx).unwrap();
+        add(&u);
+        let (ok, bad) = crate::saycmd::validate(&v, &ctx);
+        println!("[말] 할 일 {:?} / 뺀 것 {bad:?} / {}", ok.iter().map(|x| x.label.clone()).collect::<Vec<_>>(), v["say"]);
+        let (t, u) = chat(&cfg, &crate::voicefollow::translate_system(), "오늘 함께 읽을 말씀은 요한복음 15장 5절입니다", false, 200).unwrap();
+        add(&u);
+        println!("[번역] {t}");
+        println!("합계 토큰 {tokens}");
+    }
+}
