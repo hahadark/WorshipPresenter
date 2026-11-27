@@ -50,6 +50,7 @@ Write-Output "DONE $n"
 
 #[cfg(target_os = "macos")]
 const JXA_PDF: &str = r#"
+// 0 = kPDFDisplayBoxMediaBox, 4 = NSBitmapImageFileTypePNG (이름 대신 값: JXA 다리에 이름이 없을 수 있음)
 ObjC.import('Foundation'); ObjC.import('AppKit'); ObjC.import('PDFKit');
 function run(argv) {
   const doc = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(argv[0]));
@@ -59,13 +60,13 @@ function run(argv) {
   const W = parseInt(argv[2], 10);
   for (let i = 0; i < n; i++) {
     const page = doc.pageAtIndex(i);
-    const b = page.boundsForBox($.kPDFDisplayBoxMediaBox);
+    const b = page.boundsForBox(0);
     const w = b.size.width, h = b.size.height;
     let tw = W, th = Math.round(W / w * h);
     if (th > 2160) { th = 2160; tw = Math.round(2160 / h * w); }
-    const img = page.thumbnailOfSizeForBox($.NSMakeSize(tw, th), $.kPDFDisplayBoxMediaBox);
+    const img = page.thumbnailOfSizeForBox($.NSMakeSize(tw, th), 0);
     const rep = $.NSBitmapImageRep.imageRepWithData(img.TIFFRepresentation);
-    const png = rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $());
+    const png = rep.representationUsingTypeProperties(4, $.NSDictionary.dictionary);
     const name = 'page-' + String(i + 1).padStart(3, '0') + '.png';
     png.writeToFileAtomically(argv[1] + '/' + name, true);
   }
@@ -217,10 +218,10 @@ mod tests {
         assert_eq!((it["type"].as_str(), it["autoSec"].as_i64(), it["images"][0].as_str().map(|s| s.starts_with("/lib/file?p="))), (Some("slideshow"), Some(0), Some(true)));
     }
 
-    /// 실제 변환 (Windows 는 Windows.Data.Pdf). 같은 파일은 두 번째에 다시 만들지 않는다
-    #[cfg(windows)]
+    /// 실제 변환 (Windows 는 Windows.Data.Pdf, 맥은 PDFKit — 맥 CI 에서 돈다). 같은 파일은 두 번째에 다시 만들지 않는다
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
-    fn windows_renders_pages_and_caches() {
+    fn renders_pages_and_caches() {
         let d = std::env::temp_dir().join(format!("wp-pdf-{}-{}", std::process::id(), crate::util::short_id("t")));
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("시험 주보.pdf");
