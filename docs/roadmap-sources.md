@@ -426,6 +426,8 @@ OBS 주소는 그대로 `/outputs/overlay` (예배당은 `/outputs/main`). 구�
   ④ 리모컨 상태 · 도킹 화면에 출력마다 구성 단추.
   캡처: `tmp\auto-e2e\1-bible-obs.png` · `2-moving-obs.png`(옮겨 가는 중) · `3-song-obs.png` · `4-once-obs.png` · `5-next-obs.png` · `6-hold-{obs,main}.png` · `7-remote-dock.png`, 기록 `report.json`(프레임마다 상자 폭 · 애니메이션 · 같은 요소).
 - **아무것도 안 바꾼 사용자**: `tools/scenes/e2e.js --old-exe <2.0.8 web>` — `/outputs/main` · `/outputs/overlay` 다른 화소 0개. 3단계 `e2e-outputs.js` 9개 그대로 통과.
+- 시험: wp-core 337 통과(19 제외, 새 3: scenectl) · wp-app 243 통과(1 제외, 새 2: 순서 동작 구성 · 예배당 따라 켜고 끄기).
+- 조작 화면 캡처(`--shot`, 자료 `tmp\ui4\data`): `tmp\ui4\shots\timeline.png`(시간표 구성 줄 · 기본 바꾸는 금) · `output.png`(출력 설정: 화면 구성이 바뀔 때 · 출력마다 다르게 · 예배당 화면과 함께 켜고 끄기, `--open-d output`) · `scene.png`(편집기 '이 구성으로 바뀔 때', `--scene-open`).
 - 코어 시험 `scenectl::tests::once_hold_and_item_action`: 지금 한 번(이름으로) → 같은 순서 다시 보내도 그대로 → 다음 순서에서 되돌아옴(저장 안 함) → hold 남음 → 순서 동작(모르는 출력 건너뜀) → all · 풀기 · 없는 구성/출력 오류 → 전환 차례.
 - **확인 못 한 것**: 실제 둘째 모니터에서 '예배당 화면과 함께 켜고 끄기'(이 PC 는 모니터 하나 — 순간 감지 시험만), 실제 스트림덱 · Companion 단추(주소 GET 은 같은 길), OBS 브라우저 소스(CEF) 안의 Web Animations(크롬 84 이상이면 됨 — OBS 27 이상), 실제 웹캠.
 
