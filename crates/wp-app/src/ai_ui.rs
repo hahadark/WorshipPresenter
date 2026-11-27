@@ -442,3 +442,19 @@ pub fn open_from_args() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// 도구 메뉴의 AI 항목은 모두 처리기가 받고 아이콘이 있다
+    #[test]
+    fn ai_menu_items_are_handled() {
+        let ids: Vec<&str> = crate::menubar::menus().iter().flat_map(|m| m.items.iter().map(|i| i.id)).filter(|id| id.starts_with("ai:")).collect();
+        for want in ["ai:check", "ai:sermon", "ai:lyrics", "ai:recap", "ai:say", "ai:listen", "ai:settings"] {
+            assert!(ids.contains(&want), "{want} 메뉴 없음");
+        }
+        for id in ids {
+            assert!(super::handle_menu(id), "{id} 를 받는 곳이 없음");
+            assert!(crate::menubar::icon_of(id).is_some(), "{id} 아이콘 없음");
+        }
+    }
+}
