@@ -119,3 +119,11 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 ## 점검 실행 격리 주의 (2026-11-16)
 
 `--data <빈 임시 폴더>`만으로는 격리되지 않는다. DB가 없으면 실제 Electron 자료와 설정을 복사해 미리 꺼둔 통계·업데이트·리모컨 설정을 덮을 수 있다. 점검 전에 빈 SQLite DB를 만들거나, `WP_LEGACY_DATA`를 bible.db가 없는 별도 빈 폴더로 지정한다. autoUpdate/telemetry/globalShortcuts/remote/lanOutput/output.autoOnSend와 syncDir를 다시 확인한다. 개발판 통계는 기본 차단되어 있지만 이것을 점검 격리 대신 믿지 말 것.
+
+## 2026-11-27 소스 · 화면 구성 로드맵 1단계 (sources 가지, 아직 릴리스 전)
+
+- 설계 · 확인 결과: docs/roadmap-sources.md (로드맵 1~5단계 · 소스/구성/출력 모델 · 옮김 규칙 · 단계별 위험 · 화면 캡처 · 카메라 동시 사용).
+- 코어 `sources.rs`: 내장 소스(background · media · slide-bg · live · overlay:<id> · message · logo-screen · draw · pip · camera:<id>) + 사용자 소스 설정 `sources[]`(지금은 웹 페이지만, 덧붙인 키). `output_payload` 에 `scene`(기본 구성 full) · `sources` 덧붙임.
+- web/output/output.js: 무대 아래는 소스마다 `.wp-layer` 하나, 구성 차례대로. 층 상자는 z-index·opacity 를 안 줘서 그림이 2.0.8 과 화소까지 같음 (확인함). 있는 층은 차례가 맞으면 옮기지 않는다 (옮기면 영상·카메라·iframe 이 끊김).
+- 조작 화면: 인스펙터 [글자 | 무대 | 미디어 | 소스]. 점검 인자 `--ins-tab sources`.
+- 화면 캡처는 WebView2 가 허락 창 없이 할 수 없어 넣지 않음. 카메라 동시 열기는 가상 카메라로만 확인 (실제 UVC 는 교회 PC 에서 시험 필요).

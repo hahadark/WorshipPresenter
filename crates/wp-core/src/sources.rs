@@ -234,6 +234,11 @@ fn overlay_word(t: &str) -> &'static str {
 }
 
 impl Core {
+    /// 화면이 붙어 있는 출력 (예배당 창 · OBS 브라우저 소스가 연결됨). 조작 화면은 여기에 든 출력만 빨강(송출 중)으로
+    pub fn connected_outputs(&self) -> Vec<&'static str> {
+        OUTPUTS.iter().copied().filter(|o| self.outputs.values().any(|c| c.client == *o)).collect()
+    }
+
     /// 이 출력의 화면 구성 (1단계: 늘 기본 구성)
     pub fn scene_for(&self, output: &str) -> Value {
         default_scene(output, &self.overlays_for(output), &user_sources(self.settings.get()))
@@ -452,5 +457,45 @@ mod tests {
         assert_eq!(st.get()["scenes"][0]["id"], "x");
         assert_eq!(user_sources(st.get()).len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join(format!("wp-sources-core-{}", crate::util::short_id("t")));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap(); // 실제 자료를 복사하지 않게 빈 DB
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+
+    #[test]
+    fn payload_and_status_from_core() {
+        let mut c = core();
+        // 옛 칸은 그대로, scene · sources 만 덧붙음
+        let p = c.output_payload("main");
+        for k in ["template", "slide", "layers", "overlays", "video", "cameras", "scene", "sources"] {
+            assert!(p.get(k).is_some(), "{k}");
+        }
+        assert_eq!(p["scene"]["id"], "full");
+        assert_eq!(p["sources"], json!({}));
+        // 웹 소스를 켜면 그 출력의 구성 · 데이터에만 들어간다
+        let s = c.save_source(&json!({ "kind": "web", "name": "홈", "url": "https://church.kr", "on": true, "outputs": ["overlay"] })).unwrap();
+        let id = s["id"].as_str().unwrap().to_string();
+        assert!(c.output_payload("main")["sources"].get(&id).is_none());
+        let po = c.output_payload("overlay");
+        assert_eq!(po["sources"][&id]["url"], "https://church.kr");
+        assert!(po["scene"]["layers"].as_array().unwrap().iter().any(|l| l["source"] == id.as_str()));
+        // 목록: 내장 소스 + 웹 소스, 웹 소스는 OBS 에 나가는 중, 보내는 화면이 없으니 연결된 출력 없음
+        let rows = c.sources_status();
+        for id in ["live", "background", "media", "slide-bg", "message", "logo-screen", "draw"] {
+            assert!(rows.iter().any(|r| r.id == id), "{id}");
+        }
+        let w = rows.iter().find(|r| r.id == id).unwrap();
+        assert!(w.user && w.enabled && w.on_air == vec!["overlay"]);
+        assert!(rows.iter().find(|r| r.id == "live").unwrap().on_air.is_empty(), "송출 전");
+        assert!(c.connected_outputs().is_empty());
+        // 로고 화면 켬 → 두 출력
+        c.layers.logo = true;
+        assert_eq!(c.sources_status().iter().find(|r| r.id == "logo-screen").unwrap().on_air, vec!["main", "overlay"]);
+        c.toggle_source(&id, Some(false)).unwrap();
+        assert!(c.output_payload("overlay")["sources"].get(&id).is_none());
     }
 }

@@ -137,9 +137,9 @@ cue item: "scenes": { "main": "sc-…", "overlay": "sc-…" }                // 
 | `crates/wp-core/src/sources.rs` (새) | 소스 목록(`catalog`) · 기본 구성(`default_scene`) · 출력 데이터의 `scene` · `sources` · 상태(어디에 나가는지) · 사용자 소스 저장/켜기/지우기 · 주소 검사 |
 | `core.rs output_payload` | `scene` · `sources` 덧붙임 |
 | `web/output/output.js` | 무대를 **소스마다 층 하나**(`.wp-layer[data-source]`)로: 구성의 칸 차례대로 빈 층을 만들고, 배경 · 미디어 · 본문 · 오버레이(하나씩) · 로고 화면 · 그리기가 자기 층에만 그린다. `insertBefore(stage.children[1])` 같은 자리 계산이 없어졌다. 웹 소스(iframe) 그리기 |
-| `web/shared/render.js` | 오버레이 하나만 그리는 `buildOverlays([o])` 를 층마다 부름 (함수는 그대로) · `layerBox`(칸 rect · crop · opacity) |
+| `web/shared/render.js` | 바꾸지 않음 — output.js 가 오버레이마다 `buildOverlays([o])` 를 불러 층 하나씩 (함수 그대로), 칸 모양은 output.js `layerBox` |
 | `crates/wp-app/src/paint.rs` | `paint_slide` 를 기본 구성 차례(배경 → 템플릿 로고 → 본문 → 로고 화면)대로 층 함수를 부르게 나눔 (그림 결과 같음) |
-| `crates/wp-app/src/sources_ui.rs` (새) | 인스펙터의 '소스' 탭: 소스 목록 · 지금 어디에 나가는지(예배당 · OBS 표시, 송출 중만 빨강) · 웹 페이지 소스 더하기 · 켜기 · 지우기 |
+| `crates/wp-app/src/sources_ui.rs` (새) | 인스펙터의 '소스' 탭: 묶음(화면 내용 · 자막 · 오버레이 · 카메라 · 웹 페이지) · 지금 어디에 나가는지(예배당 · OBS). 출력 화면이 붙어 있고 나가는 중이면 빨강, 출력 화면이 꺼져 있으면 흐린 글자 · 웹 페이지 소스 더하기 · 켜기 · 출력 · 글 위/아래 · 지우기. 점검 인자 `--ins-tab sources` |
 
 층 상자(`.wp-layer`)는 `position:absolute; inset:0` 이고 z-index · opacity · transform 을 주지 않는다 → 쌓임 맥락(stacking context)을
 새로 만들지 않아서, 안의 `.bc-ovl`(z 10) · `.bc-logoscreen`(z 20) · `.bc-draw`(z 50) 의 앞뒤가 전과 같다. rect · crop · opacity 를
@@ -171,10 +171,66 @@ cue item: "scenes": { "main": "sc-…", "overlay": "sc-…" }                // 
 - 바꿀 곳: 구성 바꿀 때 전환(디졸브는 층 단위로 이미 있음 → 구성 단위로), 순서 '송출할 때 자동으로'(item.actions)에 `scene`, 매크로 · 예약 · /api/trigger/scene.
 - 위험: 구성이 바뀔 때 같은 소스(카메라 · 유튜브 · 웹)는 다시 열지 않고 층을 옮겨야 끊기지 않는다 → 층 열쇠를 소스 id 로 두었다(1단계에서 그렇게 만듦).
 
-## (마) 화면 캡처 — 확인 결과
+## (마) 화면 캡처 — 확인 결과 (2026-11-27, 이 PC · WebView2 런타임 · wp-output.exe 로 실제 시험)
 
-(아래 '확인' 에 적음)
+**결론: 예배당 창(WebView2)에서 사용자 허락 창 없이 화면을 캡처할 방법이 없다 → 1단계에 넣지 않았다.**
+설정 모델에는 `kind: "capture"` 자리만 남겨 두었다 (코어가 아직 받아들이지 않음, `USER_KINDS = ["web"]`).
 
-## (바) 카메라 동시 사용 — 확인 결과
+| 시험 | 결과 |
+|---|---|
+| `getDisplayMedia()` 기본 | WebView2 가 자기 고르기 창("http://127.0.0.1:…과(와) 공유할 항목 선택", Window / 전체 화면 탭)을 띄우고 사람이 누를 때까지 멈춘다 (화면 찍어 확인) |
+| 같은 것 + `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--auto-select-desktop-capture-source=Entire screen --use-fake-ui-for-media-stream"` | 똑같이 고르기 창이 뜬다 — 크롬 시험용 자동 고르기 플래그가 WebView2 에서는 듣지 않음 |
+| 옛 방식 `getUserMedia({ video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: 'screen:0:0' } } })` (Electron · CEF 에서 허락 창 없이 되는 길) | `AbortError: Error starting tab capture` 로 거절 |
+| wry 권한 처리기 | WebView2 는 화면 캡처를 PermissionRequested 로 묻지 않아 `PermissionKind::DisplayCapture` 로 허락할 수 없다. ICoreWebView2_27 `ScreenCaptureStarting` 은 막기만 할 수 있고 고르기 창을 건너뛰지 못한다 |
+| OBS 브라우저 소스 (CEF) | OBS 가 화면 캡처를 이미 직접 한다 (디스플레이 · 창 캡처 소스). 우리 페이지 안의 iframe 은 `display-capture` 권한 정책으로 막힘을 확인 |
 
-(아래 '확인' 에 적음)
+허락 창을 한 번 누르게 하는 것은 예배 중 무인 출력에 맞지 않고, 다시 켤 때마다 또 묻는다. 대안 (2단계 이후, 필요할 때):
+
+1. **네이티브 캡처 → 로컬 스트림 (추천)**: wp-app(또는 작은 도우미 exe)이 Windows.Graphics.Capture(모니터 · 창, 허락 창 없음, 노란 테두리는 Win11 에서 끌 수 있음)로
+   프레임을 받아 → ① 127.0.0.1 MJPEG/`multipart/x-mixed-replace` 로 내보내 출력 페이지가 `<img src="/capture/<id>">` 로 받기(가장 쉬움, CPU 조금),
+   또는 ② WebRTC 로컬 연결(휴대폰 카메라 경로 `phonecam` 과 같은 받기 코드 재사용, 화질 좋음). 맥은 ScreenCaptureKit (화면 기록 권한 한 번).
+2. **OBS 에 맡기기**: 방송 화면에서는 OBS 의 디스플레이/창 캡처 소스를 쓰고, 우리 구성에는 넣지 않는다 (예배당 화면에는 안 나옴).
+3. 예배당 창을 띄울 때 한 번 고르게 하기 — 위 이유로 비추천.
+
+## (바) 카메라 동시 사용 — 확인 결과 (2026-11-27)
+
+이 PC 에는 실제 카메라(UVC)가 없다 (장치 목록: 스캐너뿐). 그래서 **가상 카메라(OBS Virtual Camera, OBS 33.0.1 이 설치한 DirectShow 장치)** 로 시험했다.
+OBS 를 켜지 않은 상태라 그 장치는 안내 그림을 1920×1080 60fps 로 내보낸다.
+
+| 시험 | 결과 |
+|---|---|
+| wp-output.exe(WebView2) 둘을 서로 다른 자료 폴더(= 다른 브라우저 프로세스)로 동시에 열고 같은 장치 `getUserMedia` | 둘 다 열림 · 둘 다 1920×1080 · 영상 시간이 2초마다 늘어남(프레임 들어옴), 끊김 없음 |
+| wp-output.exe(WebView2) + 크롬(헤드리스, OBS 브라우저 소스와 같은 Chromium 캡처 코드 — OBS CEF 대신) 동시에 같은 장치 | 둘 다 열림 · 둘 다 프레임 들어옴 |
+
+**한계 — 이것으로 실제 카메라가 된다고 말할 수 없다.** 가상 카메라는 공유 메모리에서 읽기만 해서 여러 앱이 동시에 여는 것이 원래 된다.
+실제 웹캠 · 캡처보드(UVC)는 Windows 의 Media Foundation 이 장치를 **한 프로세스만** 잡게 하는 경우가 많고(두 번째는 `NotReadableError: Could not start video source`),
+Windows 10 1809+ 의 Camera Frame Server · Windows 11 의 '여러 앱에서 카메라 동시 사용' 설정이 켜져 있거나 드라이버가 공유를 지원하면 된다. 장비마다 다르다.
+교회 PC 의 실제 카메라로 같은 시험을 해야 한다 (시험 페이지: 출력 창 `wp-output --helper --url <페이지>` 와 OBS 브라우저 소스에서 같은 장치를 동시에 열기).
+
+**지금 이미 있는 것**: 한 페이지 안에서는 같은 카메라를 한 번만 연다 (render.js `cameraStream` 공유). 예배당 창(main)과 OBS 자막(overlay)은
+다른 프로세스라 각자 연다 → 같은 카메라를 두 곳에 쓰면 실제 장비에서 한쪽이 '카메라 없음' 이 될 수 있다 (예전부터 있던 위험).
+
+**설계상 대책 (3단계에서 출력마다 다른 구성을 넣을 때 함께)**: "한 곳에서 열어 로컬로 나눠 주기".
+1. 카메라를 여는 곳을 하나로: 예배당 창(wp-output, 늘 켜져 있는 쪽)이 카메라를 열고, 다른 출력(OBS 브라우저 소스 · 추가 출력)은
+   `camera:<id>` 소스를 **127.0.0.1 WebRTC** 로 받는다. 휴대폰 카메라(`phone:<id>`)가 이미 이 모양이다: 보내는 쪽 → 코어가 연결 정보만 잇고(`/phonecam/offer` · `answer`)
+   → 받는 쪽 render.js `phoneStream`. 같은 코드를 "출력 창이 보내는 쪽" 으로 쓰면 된다 (`cameraStream` 이 장치를 못 열면 이 길로 바꿔 받기).
+2. 예배당 창이 꺼져 있을 때: 숨은 도우미(wp-output `--helper`, 카메라 찾기에 이미 씀)가 보내는 쪽을 맡는다.
+3. OBS 에서만 카메라를 쓰는 교회는 OBS 의 비디오 캡처 장치 소스를 그대로 쓰는 편이 화질 · 지연에 낫다 → 구성에서 '방송' 카메라 칸을 비워 두는 길도 안내.
+
+## 1단계 확인 (2026-11-27)
+
+- 시험: wp-core 321 통과(19 제외, 새 6개: `sources::tests`) · wp-app 233 통과(1 제외).
+- parity(`tools\parity
+un.ps1` + `verify.js`): 46 경우 중 정적 44, 글자 크기 같음 42/44 — 다른 둘(obs-pip-image 72/46 · obs-pip-score 72/56)은
+  이번 paint.rs 를 2.0.8 원본으로 되돌려 돌려도 같은 값 · 같은 화소 비율이라 이번 변경과 무관 (2.0.8 에 이미 있음).
+- 실제 웹 출력(output.js) 전후 비교: 같은 자료 · 요한복음 3:16 송출 · 오버레이 둘(글 · 이름 자막)로 `/outputs/main` · `/outputs/overlay` 를 1920×1080 으로 찍어
+  2.0.8 output.js 와 새 output.js 를 비교 → **두 출력 모두 다른 화소 0개** (문턱 0). DOM 은 `.wp-layer` 가 소스마다 하나 (background · media · slide-bg · live · overlay:ovt · overlay:ovn · message · logo-screen · draw).
+- 웹 페이지 소스: 켜면 `src-…` 층이 live 위 · 오버레이 아래(place over)에 iframe 으로 나옴 확인.
+
+## (사) 2단계를 시작하기 전에 주인이 정할 것
+
+1. **구성 편집기가 놓일 곳**: 별도 창(템플릿 편집기처럼) / 인스펙터 '소스' 탭 아래 / 가운데 뷰어 자리를 잠깐 바꿔 쓰기. (추천: 별도 창 — 캔버스가 넓어야 칸을 끌기 쉽다)
+2. **글자 칸(live)을 작은 칸에 넣을 때 글자 크기**: 칸 크기에 맞춰 다시 맞추기(템플릿 글자 크기를 칸 비율만큼 줄임) / 템플릿 크기 그대로 잘라 보이기. (추천: 다시 맞추기)
+3. **조작 화면 미리보기에서 카메라 · 웹 페이지 칸**: 지금처럼 자리 표시(이름 상자)만 / 실제 영상까지 (egui 에 영상을 그리려면 따로 일이 큼). (추천: 자리 표시)
+4. **화면 캡처를 할지**: (마)의 네이티브 캡처 → 로컬 스트림을 2단계에 넣을지, OBS 에 맡길지.
+5. **카메라를 여는 곳 하나로 모으기**(바 대책)를 3단계 전에 할지 — 교회 PC 의 실제 카메라로 동시 열기를 먼저 시험해 보고 정하면 된다 (안 되면 꼭 필요).

@@ -21,11 +21,17 @@ fn group_of(r: &SourceRow) -> usize {
 
 const GROUPS: [&str; 4] = ["화면 내용", "자막 · 오버레이", "카메라", "웹 페이지"];
 
-fn on_air_badges(ui: &mut egui::Ui, r: &SourceRow) {
-    // 오른쪽부터: OBS · 예배당 (나가는 중만, 빨강 = 송출 중)
+/// 오른쪽부터: OBS · 예배당. 화면이 붙은 출력에 나가는 중이면 빨강(송출 중), 출력 화면이 꺼져 있으면 흐린 글자(나갈 차례만)
+fn on_air_badges(ui: &mut egui::Ui, r: &SourceRow, connected: &[&str]) {
     for (o, label) in [("overlay", "OBS"), ("main", "예배당")] {
-        if r.on_air.contains(&o) {
+        if !r.on_air.contains(&o) {
+            continue;
+        }
+        if connected.contains(&o) {
             widgets::badge(ui, &tr(label), Badge::Live);
+        } else {
+            ui.add(egui::Label::new(theme::rich(tr(label), 11.0, Weight::Regular, pal().muted2)).selectable(false))
+                .on_hover_text(tr("출력 화면이 꺼져 있어 지금은 나가지 않습니다"));
         }
     }
 }
@@ -33,7 +39,10 @@ fn on_air_badges(ui: &mut egui::Ui, r: &SourceRow) {
 impl App {
     pub(crate) fn sources_panel(&mut self, ui: &mut egui::Ui) {
         let p = pal();
-        let rows = self.core.lock().sources_status();
+        let (rows, connected) = {
+            let c = self.core.lock();
+            (c.sources_status(), c.connected_outputs())
+        };
         egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 4 }).show(ui, |ui| {
             ui.add(egui::Label::new(theme::rich(tr("화면에 나올 수 있는 것과 지금 나가고 있는 곳입니다. 빨간 표시가 송출 중입니다."), 11.5, Weight::Regular, p.muted)).wrap());
         });
@@ -48,9 +57,9 @@ impl App {
                 }
                 for r in &list {
                     if r.user {
-                        self.user_source_row(ui, r);
+                        self.user_source_row(ui, r, &connected);
                     } else {
-                        Self::source_row(ui, r);
+                        Self::source_row(ui, r, &connected);
                     }
                 }
                 if gi == 3 {
@@ -60,12 +69,12 @@ impl App {
         }
     }
 
-    fn source_row(ui: &mut egui::Ui, r: &SourceRow) {
+    fn source_row(ui: &mut egui::Ui, r: &SourceRow, connected: &[&str]) {
         let p = pal();
         ui.horizontal(|ui| {
             ui.set_min_height(24.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                on_air_badges(ui, r);
+                on_air_badges(ui, r, connected);
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add(egui::Label::new(theme::rich(tr(&r.name), 12.5, Weight::SemiBold, if r.on_air.is_empty() { p.text2 } else { p.text })).selectable(false));
                     if !r.detail.is_empty() {
@@ -77,7 +86,7 @@ impl App {
         });
     }
 
-    fn user_source_row(&mut self, ui: &mut egui::Ui, r: &SourceRow) {
+    fn user_source_row(&mut self, ui: &mut egui::Ui, r: &SourceRow, connected: &[&str]) {
         let p = pal();
         let Some(mut src) = self.core.lock().user_sources().into_iter().find(|s| s["id"] == r.id.as_str()) else { return };
         let mut changed = false;
@@ -93,7 +102,7 @@ impl App {
                 if ui.small_button(tr("지우기")).clicked() {
                     delete = true;
                 }
-                on_air_badges(ui, r);
+                on_air_badges(ui, r, connected);
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add(egui::Label::new(theme::rich(&r.name, 12.5, Weight::SemiBold, if r.on_air.is_empty() { p.text2 } else { p.text })).selectable(false));
                     ui.add(egui::Label::new(theme::rich(&r.detail, 11.0, Weight::Regular, p.muted)).truncate().selectable(false));

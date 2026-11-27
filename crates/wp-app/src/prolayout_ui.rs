@@ -178,7 +178,14 @@ impl App {
         ui.set_max_width(w);
         ui.spacing_mut().item_spacing.y = 0.0;
         let id = Id::new("pro-ins-tab");
-        let mut tab = ui.data(|d| d.get_temp::<InsTab>(id)).unwrap_or(InsTab::Text);
+        // 점검용 --ins-tab sources|stage|media: 처음 고른 탭
+        let first = match std::env::args().position(|x| x == "--ins-tab").and_then(|i| std::env::args().nth(i + 1)).as_deref() {
+            Some("sources") => InsTab::Sources,
+            Some("stage") => InsTab::Stage,
+            Some("media") => InsTab::Media,
+            _ => InsTab::Text,
+        };
+        let mut tab = ui.data(|d| d.get_temp::<InsTab>(id)).unwrap_or(first);
         widgets::mark("pro-ins-head", Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), theme::HEAD_H)));
         pane_head(ui, &tr("인스펙터"), "", |ui| {
             let (a, b, c, d) = (tr("글자"), tr("무대"), tr("미디어"), tr("소스"));
