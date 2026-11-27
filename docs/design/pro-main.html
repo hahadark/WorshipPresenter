@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>(나) 어두운 전문가용 맥 — 조작 화면</title>
+<script src="common.js"></script>
+<style>
+/* (나) 어두운 전문가용 맥 — Final Cut·Logic 쪽. 중간 회색 판, 위에 컨트롤 막대 + 상태 표시창(LCD), 아래에 예배 시간표(타임라인).
+   강조색은 노랑 하나(고른 것 = 다음), 빨강은 송출 중에만 */
+@font-face{font-family:'Pretendard';src:url('../../../src/web/shared/fonts/PretendardVariable.woff2') format('woff2');font-weight:100 900}
+:root{
+  --base:#1f1f21; --panel:#2a2a2c; --head:#323235; --bar:#3a3a3d; --field:#1c1c1e; --hi:#444447;
+  --edge:#151516; --line:#3c3c3f;
+  --text:#e6e6e8; --text2:#c4c4c8; --sec:#9d9da3; --ter:#6c6c72;
+  --accent:#f0c419; --live:#e5372e; --live-dk:#5a1d1a;
+  --lcd:#181a1c; --lcd-t:#e3e9ea; --lcd-l:#7b878c;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1600px;height:960px;font:12.5px/1.35 'Pretendard',sans-serif;color:var(--text);background:var(--base);word-break:keep-all;overflow:hidden;display:grid;grid-template-rows:58px 1fr 290px}
+/* 컨트롤 막대 */
+.cb{background:var(--bar);border-bottom:1px solid var(--edge);box-shadow:inset 0 1px 0 #4a4a4e;display:flex;align-items:center;padding:0 12px 0 18px;gap:6px}
+.lights{display:flex;gap:8px;margin-right:16px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block;background:#5a5a5e;border:.5px solid #4a4a4d}
+.icb{width:30px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--text2)}
+.icb.on{color:var(--accent)}
+.sp{flex:1}
+.tp{display:flex;gap:2px;align-items:center}
+.tpb{height:32px;min-width:44px;padding:0 10px;border-radius:5px;background:#4a4a4e;box-shadow:inset 0 1px 0 #58585c,0 1px 0 var(--edge);display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text);font-size:12.5px}
+.tpb.go{min-width:150px;background:#e8e8ea;color:#1a1a1a;font-weight:700;box-shadow:inset 0 1px 0 #fff,0 1px 0 var(--edge)}
+.tpb.go small{font-weight:600;color:#666;font-size:10.5px}
+.lcd{width:430px;height:42px;margin:0 10px;background:var(--lcd);border-radius:6px;box-shadow:inset 0 1px 2px #000,0 1px 0 #4a4a4e;display:grid;grid-template-columns:auto 1px 1fr 1px 1fr;align-items:center;color:var(--lcd-t);font-variant-numeric:tabular-nums}
+.lcd>i{height:28px;background:#2c3033}
+.lcd div{padding:0 12px;line-height:1.15;white-space:nowrap;overflow:hidden}
+.lcd small{display:block;font-size:9.5px;color:var(--lcd-l);font-weight:600}
+.lcd .clk{font-size:20px;font-weight:600;letter-spacing:.5px}
+.lcd b{font-size:13px;font-weight:700}
+.lcd .lv small{color:#ff7a72}
+.lcd .nx small{color:var(--accent)}
+.tool{display:flex;flex-direction:column;align-items:center;font-size:10px;color:var(--sec);gap:2px;width:52px}
+.tool .ic{color:var(--text2)}
+.search{width:170px;height:24px;border-radius:5px;background:var(--field);box-shadow:inset 0 1px 1px #000;display:flex;align-items:center;gap:6px;padding:0 8px;color:var(--ter);font-size:11.5px}
+/* 가운데 세 칸 */
+.mid{display:grid;grid-template-columns:350px 1fr 296px;gap:1px;background:var(--edge);min-height:0}
+.pane{background:var(--panel);display:flex;flex-direction:column;min-height:0}
+.ph{height:30px;background:var(--head);border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:8px;padding:0 10px;font-size:11.5px;color:var(--sec)}
+.ph b{color:var(--text);font-weight:600}
+.seg{display:flex;background:var(--field);border-radius:5px;padding:1px;height:20px;box-shadow:inset 0 1px 1px #000}
+.seg span{padding:0 9px;display:flex;align-items:center;font-size:11px;color:var(--sec);border-radius:4px}
+.seg span.on{background:#58585c;color:var(--text)}
+/* 브라우저(큐시트 표) */
+.tbl{display:grid;grid-template-columns:28px 1fr 44px 30px;font-size:12.5px}
+.tbl .hd{font-size:10.5px;color:var(--ter);padding:5px 6px;border-bottom:1px solid var(--line);font-weight:600}
+.r{display:contents}
+.r>span{padding:0 6px;height:30px;display:flex;align-items:center;border-bottom:1px solid #303033;white-space:nowrap;overflow:hidden}
+.r .no{color:var(--ter);justify-content:flex-end;font-variant-numeric:tabular-nums}
+.r .tm,.r .mn{color:var(--sec);font-variant-numeric:tabular-nums;font-size:11.5px}
+.r .mn{justify-content:flex-end}
+.r .t small{color:var(--ter);margin-left:8px;font-size:11.5px}
+.r.done>span{color:var(--ter)}
+.r.live>span{background:var(--live-dk);color:#fff}
+.r.live .no{box-shadow:inset 3px 0 0 var(--live)}
+.r.sel>span{background:#4a4220;color:#fff;box-shadow:inset 0 1px 0 var(--accent),inset 0 -1px 0 var(--accent)}
+.r.sel .no{box-shadow:inset 3px 0 0 var(--accent),inset 0 1px 0 var(--accent),inset 0 -1px 0 var(--accent)}
+.grp{padding:6px 8px;font-size:11.5px;color:var(--text2);font-weight:600;background:#2f2f32;border-bottom:1px solid var(--line)}
+.pane .sp{flex:1}
+.pfoot{height:28px;border-top:1px solid var(--edge);background:var(--head);display:flex;align-items:center;gap:4px;padding:0 6px;color:var(--sec);font-size:11px}
+/* 뷰어 두 개 */
+.film{background:var(--panel);border-top:1px solid var(--edge);padding:0 10px 10px}
+.fh{height:28px;display:flex;align-items:center;gap:8px;color:var(--sec);font-size:11.5px}.fh b{color:var(--text)}
+.fs{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}
+.fs div{font-size:10.5px;color:var(--sec);text-align:center}
+.fs i{display:block;aspect-ratio:16/9;background:#0b1120;margin-bottom:3px;position:relative;box-shadow:0 0 0 1px #000}
+.fs i::after{content:'';position:absolute;left:20%;right:20%;top:38%;height:2px;background:#59617a;box-shadow:0 5px 0 #59617a,0 10px 0 #59617a}
+.fs .past{opacity:.45}.fs .on i{box-shadow:0 0 0 3px var(--live)}.fs .on{color:#ff6b62;font-weight:700}
+.viewers{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--edge)}
+.vw{background:#202022;display:flex;flex-direction:column}
+.vw .vh{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:11.5px;color:var(--sec)}
+.vw .vh b{font-weight:700}
+.vw.n .vh b{color:var(--accent)}
+.vw.l .vh b{color:#ff6b62}
+.vw .box{flex:1;display:flex;align-items:center;justify-content:center;padding:0 12px}
+.scr{width:100%;aspect-ratio:16/9;background:#0b1120;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
+.vw.n .scr{box-shadow:0 0 0 2px var(--accent)}
+.vw.l .scr{box-shadow:0 0 0 3px var(--live)}
+.scr .st{color:#f4f1e8;font-size:24px;font-weight:700}
+.scr .ss{color:#e2c98a;font-size:13px;margin-top:4px}
+.verse{color:#f4f1e8;font-size:15.5px;line-height:1.55;font-weight:600;text-align:center;padding:0 24px}
+.vref{position:absolute;right:12px;bottom:8px;color:#cfc6ae;font-size:10.5px}
+.vw .vf{height:34px;display:flex;align-items:center;justify-content:center;gap:4px;color:var(--sec);font-size:11.5px}
+.vs{display:flex;gap:2px}
+.vs span{width:24px;height:20px;border-radius:3px;background:#3a3a3d;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text2)}
+.vs span.past{color:var(--ter);background:#2e2e31}
+.vs span.on{background:var(--live);color:#fff;font-weight:700}
+/* 인스펙터 */
+.ins{overflow:hidden}
+.ititle{padding:10px 12px 8px;border-bottom:1px solid var(--line)}
+.ititle b{font-size:14px;font-weight:700}
+.ititle div{color:var(--sec);font-size:11.5px;margin-top:2px}
+.sh{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:#303033;border-bottom:1px solid var(--edge);border-top:1px solid #3a3a3d;font-size:11.5px;font-weight:600}
+.sh em{font-style:normal;color:var(--ter);font-weight:500}
+.fm{display:grid;grid-template-columns:76px 1fr;gap:6px 8px;align-items:center;padding:8px 12px 10px}
+.fm label{color:var(--sec);text-align:right;font-size:11.5px}
+.fld{height:22px;background:var(--field);border-radius:4px;box-shadow:inset 0 1px 1px #000;display:flex;align-items:center;padding:0 7px;font-size:12px}
+.pop{height:22px;background:#48484b;border-radius:4px;box-shadow:inset 0 1px 0 #555559,0 1px 0 var(--edge);display:flex;align-items:center;padding:0 6px 0 8px;font-size:12px}
+.pop::after{content:"⌄";margin-left:auto;color:var(--sec)}
+.sl{display:flex;align-items:center;gap:8px}
+.slider{flex:1;height:3px;background:#1a1a1b;border-radius:2px;position:relative}
+.slider b{position:absolute;left:0;top:0;bottom:0;width:48%;background:var(--text2);border-radius:2px}
+.slider u{position:absolute;left:48%;top:-6px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#d8d8da}
+.num{width:46px;height:22px;background:var(--field);border-radius:4px;box-shadow:inset 0 1px 1px #000;display:flex;align-items:center;justify-content:flex-end;padding:0 6px;font-variant-numeric:tabular-nums}
+.wells{display:flex;gap:5px}
+.wells i{width:26px;height:18px;border-radius:3px;border:1px solid #111;box-shadow:0 0 0 1px #4a4a4d}
+.wells i.on{box-shadow:0 0 0 2px var(--accent)}
+.ck{display:flex;align-items:center;gap:7px;height:22px;padding:0 12px 0 96px;font-size:12px}
+.ck i{width:13px;height:13px;border-radius:3px;background:#48484b;box-shadow:inset 0 1px 0 #555559;font-style:normal;font-size:9px;display:flex;align-items:center;justify-content:center;color:#1a1a1a}
+.ck i.on{background:var(--accent)}
+/* 타임라인 */
+.tl{background:var(--panel);border-top:1px solid var(--edge);display:flex;flex-direction:column}
+.tlh{height:28px;background:var(--head);border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:10px;padding:0 10px;font-size:11.5px;color:var(--sec)}
+.tlh b{color:var(--text);font-weight:600}
+.ruler{height:22px;position:relative;border-bottom:1px solid var(--line);margin-left:96px}
+.ruler span{position:absolute;top:4px;font-size:10px;color:var(--ter);transform:translateX(3px);font-variant-numeric:tabular-nums}
+.ruler i{position:absolute;bottom:0;width:1px;height:6px;background:#4a4a4e}
+.lane{height:58px;display:flex;border-bottom:1px solid #303033;position:relative}
+.lane.small{height:40px}
+.ln{width:96px;flex:none;background:#2f2f32;border-right:1px solid var(--edge);padding:8px 10px;font-size:11px;color:var(--sec)}
+.ln b{display:block;color:var(--text2);font-weight:600;font-size:11.5px}
+.trk{position:relative;flex:1}
+.clip{position:absolute;top:6px;bottom:6px;border-radius:4px;background:#56565b;box-shadow:inset 0 1px 0 #6a6a70;padding:4px 7px;font-size:11.5px;overflow:hidden;white-space:nowrap;color:#f0f0f2}
+.clip small{display:block;color:#c6c6cb;font-size:10.5px}
+.clip.done{background:#3a3a3e;box-shadow:none;color:var(--ter)}
+.clip.done small{color:#5e5e64}
+.clip.live{background:#8c2a24;box-shadow:inset 0 0 0 2px var(--live)}
+.clip.sel{background:#5a5230;box-shadow:inset 0 0 0 2px var(--accent)}
+.lane.small .clip{top:5px;bottom:5px;padding:3px 6px;font-size:10.5px}
+.ph-line{position:absolute;top:0;bottom:0;width:1px;background:#fff;z-index:3}
+.ph-line.top::before{content:"";position:absolute;top:-1px;left:-5px;border:5px solid transparent;border-top:7px solid #fff}
+</style></head><body>
+<div class="cb">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <span class="icb on"><i data-ic="sidebar"></i></span>
+  <span class="icb"><i data-ic="list"></i></span>
+  <span class="sp"></span>
+  <div class="tp">
+    <span class="tpb"><i data-ic="prev" data-s="13"></i></span>
+    <span class="tpb go"><i data-ic="play" data-s="13"></i>송출 <small>F9</small></span>
+    <span class="tpb"><i data-ic="next" data-s="13"></i></span>
+  </div>
+  <div class="lcd">
+    <div><small>예배 시각</small><span class="clk">11:25:18</span></div><i></i>
+    <div class="lv"><small>송출 중 · 00:42</small><b>6 성경봉독</b> 2/8</div><i></i>
+    <div class="nx"><small>다음 · 11:27</small><b>7 설교</b></div>
+  </div>
+  <span class="tool"><i data-ic="hide"></i>글자 숨김</span>
+  <span class="tool"><i data-ic="clear"></i>지우기</span>
+  <span class="tool"><i data-ic="caption"></i>즉석 자막</span>
+  <span class="sp"></span>
+  <div class="search"><i data-ic="search" data-s="12"></i>요3:16 · 찬양 제목</div>
+  <span class="icb on"><i data-ic="inspector"></i></span>
+</div>
+<div class="mid">
+  <div class="pane">
+    <div class="ph"><b>큐시트</b><span class="sp"></span><div class="seg"><span class="on">순서</span><span>성경</span><span>라이브러리</span></div></div>
+    <div class="grp">▾ 주일 성결예배 — 11월 29일 11:00</div>
+    <div class="tbl" id="tbl"><span class="hd" style="text-align:right">#</span><span class="hd">순서</span><span class="hd">시각</span><span class="hd" style="text-align:right">분</span></div>
+    <div class="grp" style="color:var(--sec);font-weight:500">▸ 수요예배 — 11월 25일</div>
+    <div class="sp"></div>
+    <div class="pfoot"><i data-ic="add" data-s="13"></i><span style="margin-left:4px">순서 넣기</span><span class="sp"></span>10개 · 65분</div>
+  </div>
+  <div class="pane">
+    <div class="ph"><b>보기</b><span>예배당 화면</span><span class="sp"></span><div class="seg"><span class="on">예배당</span><span>OBS 성경</span><span>OBS 찬송가</span><span>무대</span></div></div>
+    <div class="viewers">
+      <div class="vw n"><div class="vh"><b>다음</b><span>7 설교 · 1장</span></div><div class="box"><div class="scr"><div class="st">설교</div><div class="ss">포도나무 되신 주님</div></div></div><div class="vf">Enter · F9 로 송출</div></div>
+      <div class="vw l"><div class="vh"><b>송출 중</b><span>요 15:2 · 00:42</span></div><div class="box"><div class="scr"><div class="verse"></div><div class="vref">요한복음 15:2</div></div></div><div class="vf">← → 절 옮기기</div></div>
+    </div>
+    <div class="film"><div class="fh"><b>6 성경봉독</b> 슬라이드 8장<span class="sp"></span><div class="seg"><span class="on">격자</span><span>목록</span></div></div><div class="fs" id="vs"></div></div>
+  </div>
+  <div class="pane ins">
+    <div class="ph"><b>인스펙터</b><span class="sp"></span><div class="seg"><span class="on">글자</span><span>순서</span><span>동작</span></div></div>
+    <div class="ititle"><b>7 설교</b><div>제목 · 템플릿 '제목 · 예배당 기본'</div></div>
+    <div class="sh">▾ 글자 <em>보이기</em></div>
+    <div class="fm"><label>글꼴</label><div class="pop">맑은 고딕</div><label>굵기</label><div class="pop">굵게</div>
+      <label>크기</label><div class="sl"><div class="slider"><b></b><u></u></div><div class="num">72</div></div>
+      <label>줄 간격</label><div class="sl"><div class="slider"><b style="width:30%"></b><u style="left:30%"></u></div><div class="num">1.5</div></div>
+      <label>색</label><div class="wells"><i class="on" style="background:#fff"></i><i style="background:#fdebb4"></i><i style="background:#f6c25b"></i><i style="background:#9ec2ff"></i><i style="background:#000"></i></div></div>
+    <div class="sh">▾ 배경</div>
+    <div class="fm"><label>채우기</label><div class="pop">단색</div><label>색</label><div class="wells"><i class="on" style="background:#0b1120"></i><i style="background:#000"></i><i style="background:#1a2a1c"></i><i style="background:#2b1616"></i></div></div>
+    <div class="sh">▸ 그림자·테두리</div>
+    <div class="sh">▾ 송출할 때 자동으로</div>
+    <div style="padding:6px 0 8px"><div class="ck"><i class="on">✓</i>설교 타이머 30분 시작</div><div class="ck"><i class="on">✓</i>무대 화면: 순서표 고정</div><div class="ck"><i></i>OBS 장면 바꾸기</div></div>
+  </div>
+</div>
+<div class="tl">
+  <div class="tlh"><b>예배 시간표</b><span>11:00 – 12:05 · 계획대로면 12:05 마침</span><span class="sp"></span><span>지금 1분 늦음</span><div class="seg"><span>순서</span><span class="on">시간</span></div></div>
+  <div class="ruler" id="ruler"></div>
+  <div class="lane"><div class="ln"><b>순서</b>예배당</div><div class="trk" id="trk"></div></div>
+  <div class="lane small"><div class="ln"><b>무대</b>타이머</div><div class="trk" id="trk2"></div></div>
+  <div class="lane small"><div class="ln"><b>음악</b>배경</div><div class="trk" id="trk3"></div></div>
+  <div class="lane small" style="border-bottom:0"><div class="ln"><b>OBS</b>장면</div><div class="trk" id="trk4"></div></div>
+</div>
+<script>
+document.querySelector('.verse').textContent=VERSE;
+document.getElementById('tbl').insertAdjacentHTML('beforeend',ITEMS.map(x=>{const c=x.n<LIVE?'done':x.n==LIVE?'live':x.n==NEXT?'sel':'';return `<div class="r ${c}"><span class="no">${x.n}</span><span class="t">${x.t}<small>${x.s}</small></span><span class="tm">${x.at}</span><span class="mn">${x.m}</span></div>`}).join(''));
+document.getElementById('vs').innerHTML=[1,2,3,4,5,6,7,8].map(v=>`<div class="${v<2?'past':v==2?'on':''}"><i></i>${v}절</div>`).join('');
+const W=1600-96, per=W/65, x=m=>m*per;
+let r='';for(let m=0;m<=65;m+=5){r+=`<i style="left:${x(m)}px"></i>`;if(m%10==0||m==65)r+=`<span style="left:${x(m)}px">${m==65?'12:05':(m<60?'11:'+String(m).padStart(2,'0'):'12:00')}</span>`}
+document.getElementById('ruler').innerHTML=r;
+let t=0,c='';ITEMS.forEach(i=>{const k=i.n<LIVE?'done':i.n==LIVE?'live':i.n==NEXT?'sel':'';c+=`<div class="clip ${k}" style="left:${x(t)+1}px;width:${x(i.m)-2}px">${i.m>=3?i.n+' '+i.t:i.n}${i.m>=4?'<small>'+i.s+'</small>':''}</div>`;t+=i.m});
+const ph=`<div class="ph-line" style="left:${x(25.3)}px"></div>`;
+document.getElementById('trk').innerHTML=c+ph.replace('ph-line','ph-line top');
+document.getElementById('trk2').innerHTML=`<div class="clip" style="left:${x(27)+1}px;width:${x(30)-2}px">설교 타이머 30:00</div>`+ph;
+document.getElementById('trk3').innerHTML=`<div class="clip done" style="left:1px;width:${x(10)-2}px">예배 전 반주</div><div class="clip" style="left:${x(57)+1}px;width:${x(4)-2}px">헌신 반주</div>`+ph;
+document.getElementById('trk4').innerHTML=`<div class="clip done" style="left:1px;width:${x(25)-2}px">찬양·말씀 (카메라 1)</div><div class="clip" style="left:${x(25)+1}px;width:${x(2)-2}px">말씀</div><div class="clip" style="left:${x(27)+1}px;width:${x(30)-2}px">설교 (카메라 2 · 자막)</div><div class="clip" style="left:${x(57)+1}px;width:${x(8)-2}px">마침</div>`+ph;
+// windows-vs-mac.html 이 ?win 으로 부르면: 신호등을 빼고 맨 위에 Windows 제목 줄(메뉴 · 제목 · 최소화/최대화/닫기)을 붙인다
+if(location.search.includes('win')){
+  document.querySelector('.lights').remove();
+  document.body.style.gridTemplateRows='32px 58px 1fr 290px';
+  document.body.insertAdjacentHTML('afterbegin',`<div class="wt"><span class="wm">파일</span><span class="wm">큐시트</span><span class="wm">송출</span><span class="wm">보기</span><span class="wm">도구</span><span class="wm">도움말</span><span class="wtt">워십프리젠터 — 주일 성결예배</span><span class="cap">&#x2500;</span><span class="cap">&#x25A1;</span><span class="cap x">&#x2715;</span></div>`);
+  document.head.insertAdjacentHTML('beforeend',`<style>.wt{display:flex;align-items:center;background:#2c2c2e;border-bottom:1px solid #151516;font-size:12px;color:#c4c4c8}.wm{padding:0 10px;line-height:32px}.wtt{flex:1;text-align:center;color:#8d8d92}.cap{width:46px;line-height:32px;text-align:center;font-size:12px}</style>`);
+}
+if(location.search.includes('mac')){
+  document.body.style.gridTemplateRows='24px 58px 1fr 290px';
+  document.body.insertAdjacentHTML('afterbegin',`<div class="mm"><b>워십프리젠터</b><span>파일</span><span>큐시트</span><span>송출</span><span>보기</span><span>도구</span><span>윈도우</span><span>도움말</span><i></i><span>11:25</span></div>`);
+  document.head.insertAdjacentHTML('beforeend',`<style>.mm{display:flex;align-items:center;gap:16px;padding:0 16px 0 46px;background:#d9dadc;color:#111;font-size:12.5px}.mm i{flex:1}</style>`);
+}
+</script>
+</body></html>

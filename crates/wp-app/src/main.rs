@@ -49,6 +49,8 @@ mod theme; // 디자인 기반: control.css 색·글꼴
 mod icons; // 디자인 기반: Lucide 아이콘
 mod widgets; // 디자인 기반: 공용 위젯
 mod probar_ui; // (나) 전문가용 위 컨트롤 막대 · 상태 줄
+mod prolayout_ui; // (나) 고정 배치: 큐시트 판 · 뷰어 둘 · 인스펙터 (예전 독 작업공간 대신)
+mod timeline_ui; // (나) 아래 예배 시간표 (보기 전용)
 mod cue_ui; // 디자인 2단계: 왼쪽 큐시트 패널
 mod cuemgr_ui; // [갈래 C] 큐시트 관리 창 (cuemanager.js)
 mod pptsplit_ui; // [갈래 C] 한 PPT 를 여러 순서로 나누기 창 (cue.js openSplit)

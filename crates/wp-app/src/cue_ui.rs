@@ -205,8 +205,22 @@ fn side_default() -> String {
     let a: Vec<String> = std::env::args().collect();
     match a.iter().position(|x| x == "--left-tab").and_then(|i| a.get(i + 1)).map(|s| s.as_str()) {
         Some("books") => "books".into(),
+        Some("library") => "library".into(),
         _ => "cue".into(),
     }
+}
+
+/// (나) 왼쪽 판의 탭: "cue" | "books" | "library"
+pub fn side_tab(ctx: &egui::Context) -> String {
+    ctx.data(|d| d.get_temp::<String>(id(SIDE))).unwrap_or_else(side_default)
+}
+
+pub fn set_side_tab(ctx: &egui::Context, tab: &str) {
+    let old = side_tab(ctx);
+    if old != tab && tab == "books" {
+        ctx.data_mut(|d| d.insert_temp(id(BOOK_FOCUS), true));
+    }
+    ctx.data_mut(|d| d.insert_temp(id(SIDE), tab.to_string()));
 }
 
 /// Ctrl+B: 왼쪽 패널을 '성경 책' 으로 바꾸고 책 찾기 칸에 초점 (Electron openBooks → showSide('books'))
@@ -238,6 +252,8 @@ pub fn reveal_cue_pane(app: &mut App) {
             _ => {}
         }
     }
+    // (나) 고정 배치: 왼쪽 판을 펴고 '순서' 탭으로 (아래 독 배치 갱신은 옛 설정 호환용으로 남김)
+    app.pro_show_side();
     let st = &mut app.workspace.state;
     if !st.visible(Pane::Cue) {
         st.toggle(Pane::Cue);
@@ -286,9 +302,9 @@ pub fn head(app: &mut App, ui: &mut egui::Ui, cue_id: &str, cue_label: &str, cue
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             // 단추 셋(↶ ↷ 폴더) + 간격 4px
-            let w = (ui.available_width() - 3.0 * (theme::CTL_H + 4.0)).max(60.0);
+            let w = (ui.available_width() - 3.0 * (theme::ctl_h() + 4.0)).max(60.0);
             // select: sunken 바탕 · line 테두리 · 여백 6px 8px · 오른쪽 ▾
-            let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, theme::CTL_H), Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, theme::ctl_h()), Sense::click());
             let resp = resp.on_hover_text(tr("큐시트 고르기"));
             if ui.is_rect_visible(rect) {
                 let pt = ui.painter();
@@ -453,6 +469,8 @@ pub struct RowState {
     /// LIVE 인데 글자 숨김 (.air.hid → warn 띠)
     pub hidden: bool,
     pub time: Option<(String, i64)>,
+    /// 송출 중 순서보다 앞 (지나감, 흐리게)
+    pub done: bool,
 }
 
 /// 줄 한 개 결과
@@ -471,9 +489,135 @@ const EDIT_H: f32 = 24.0;
 const TITLE_LH: f32 = 20.3; // 14px × 1.45
 const SUB_LH: f32 = 17.4; // 12px × 1.45
 
+/// (나) 표 머리: # · 순서 · 시각 · 분 (.tbl .hd)
+pub fn table_head(ui: &mut egui::Ui) {
+    let p = pal();
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::hover());
+    widgets::mark("pro-cue-head", r);
+    let f = theme::font(10.5, Weight::SemiBold);
+    let pt = ui.painter();
+    pt.text(Pos2::new(r.left() + 28.0, r.center().y), Align2::RIGHT_CENTER, "#", f.clone(), p.muted2);
+    pt.text(Pos2::new(r.left() + 40.0, r.center().y), Align2::LEFT_CENTER, tr("순서"), f.clone(), p.muted2);
+    pt.text(Pos2::new(r.right() - PRO_MIN_W - PRO_TIME_W + 6.0, r.center().y), Align2::LEFT_CENTER, tr("시각"), f.clone(), p.muted2);
+    pt.text(Pos2::new(r.right() - 8.0, r.center().y), Align2::RIGHT_CENTER, tr("분"), f, p.muted2);
+    pt.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.line));
+}
+
+const PRO_TIME_W: f32 = 46.0;
+const PRO_MIN_W: f32 = 30.0;
+
+/// (나) 표 한 줄: 높이 30 · # · 종류 아이콘(작게) · 제목 + 흐린 본문 · 시각 · 분.
+/// 송출 중 = 어두운 빨강 바탕 + 왼쪽 3px 빨강 · 다음(미리보기) = 노란 위·아래 선 + 왼쪽 3px 노랑 · 지나감 = 흐리게
+fn row_pro(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
+    let p = pal();
+    let ty = it["type"].as_str().unwrap_or("");
+    let title = it["title"].as_str().unwrap_or("").to_string();
+    let det = detail(it);
+    let note = it["note"].as_str().unwrap_or("").trim().to_string();
+    let w = ui.available_width();
+    let h = theme::ROW_H;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click_and_drag());
+    let hovered = ui.rect_contains_pointer(rect);
+    let mut edit = false;
+    let mut send = false;
+    let ew = 24.0;
+    let edit_rect = Rect::from_min_size(Pos2::new(rect.right() - PRO_MIN_W - PRO_TIME_W - ew - 2.0, rect.top() + 3.0), Vec2::new(ew, h - 6.0));
+    let send_rect = edit_rect.translate(Vec2::new(-(ew + 2.0), 0.0));
+    let sr = hovered.then(|| ui.interact(send_rect, resp.id.with("send"), Sense::click()).on_hover_text(tr(if ty == "audio" { "이 음악 재생 (두 번 누르기와 같음)" } else { "이 순서 바로 송출 (두 번 누르기와 같음)" })));
+    if sr.as_ref().is_some_and(|r| r.clicked()) {
+        send = true;
+    }
+    let er = ui.interact(edit_rect, resp.id.with("edit"), Sense::click()).on_hover_text(tr("이 순서 고치기 (F2)"));
+    if er.clicked() {
+        edit = true;
+    }
+    #[cfg(test)]
+    if hovered {
+        crate::widgets::HOVER_SEEN.with(|m| {
+            let mut m = m.borrow_mut();
+            m.insert(format!("cue-edit-{i}"), edit_rect);
+            m.insert(format!("cue-send-{i}"), send_rect);
+        });
+    }
+    if ui.is_rect_visible(rect) {
+        let pt = ui.painter();
+        let bg = if st.air { p.live_dk } else if st.pv { p.next_bg } else if st.selected { p.sel } else if hovered { p.hover } else { p.panel };
+        pt.rect_filled(rect, 0.0, bg);
+        pt.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
+        if st.pv && !st.air {
+            pt.hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0, p.next));
+            pt.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, p.next));
+        }
+        let band = if st.air { Some(if st.hidden { p.warn } else { p.live }) } else if st.pv { Some(p.next) } else { None };
+        if let Some(c) = band {
+            pt.rect_filled(Rect::from_min_size(rect.min, Vec2::new(3.0, h)), 0.0, c);
+        }
+        let strong = st.air || st.pv;
+        let (c_no, c_t, c_d, c_tm) = if strong {
+            (Color32::WHITE, Color32::WHITE, theme::alpha(Color32::WHITE, 0.7), Color32::WHITE)
+        } else if st.done {
+            (p.muted2, p.muted2, p.muted2, p.muted2)
+        } else {
+            (p.muted2, p.text, p.muted2, p.muted)
+        };
+        let cy = rect.center().y;
+        widgets::text_at(ui, Pos2::new(rect.left() + 28.0, cy), Align2::RIGHT_CENTER, &(i + 1).to_string(), 12.5, if strong { Weight::Bold } else { Weight::Regular }, c_no);
+        // 종류 아이콘 (작게, 칩 없이)
+        let ico = Rect::from_center_size(Pos2::new(rect.left() + 46.0, cy), Vec2::splat(14.0));
+        icons::paint(ui, ico, icons::for_type(ty), if strong { Color32::WHITE } else if st.done { p.muted2 } else { theme::type_ink(ty) });
+        let x = rect.left() + 58.0;
+        let mut right = rect.right() - PRO_MIN_W - PRO_TIME_W - 4.0;
+        if hovered || st.selected {
+            right = if hovered { send_rect.left() - 4.0 } else { edit_rect.left() - 4.0 };
+        }
+        if let Some((t, dur)) = &st.time {
+            if !t.is_empty() {
+                widgets::text_at(ui, Pos2::new(rect.right() - PRO_MIN_W - PRO_TIME_W + 6.0, cy), Align2::LEFT_CENTER, t, 11.5, Weight::Regular, c_tm);
+            }
+            if *dur > 0 {
+                widgets::text_at(ui, Pos2::new(rect.right() - 8.0, cy), Align2::RIGHT_CENTER, &dur.to_string(), 11.5, Weight::Regular, c_tm);
+            }
+        }
+        let bw = (right - x).max(20.0);
+        let name = if title.is_empty() { tr(crate::center_ui::type_name(ty)) } else { title.clone() };
+        let tg = one_line(ui, &name, theme::font(12.5, if strong { Weight::Bold } else { Weight::Medium }), c_t, bw);
+        let tw = tg.size().x;
+        pt.galley(Pos2::new(x, cy - tg.size().y / 2.0), tg, c_t);
+        let mut x2 = x + tw + 8.0;
+        if !det.is_empty() && x2 < x + bw - 16.0 {
+            let g = one_line(ui, &det, theme::font(11.5, Weight::Regular), c_d, x + bw - x2);
+            let gw = g.size().x;
+            pt.galley(Pos2::new(x2, cy - g.size().y / 2.0), g, c_d);
+            x2 += gw + 6.0;
+        }
+        if !note.is_empty() && x2 < x + bw - 8.0 {
+            // 메모가 있으면 작은 금색 점 (글은 툴팁)
+            pt.circle_filled(Pos2::new(x2 + 3.0, cy), 3.0, p.gold);
+        }
+        if st.selected || hovered {
+            let (eb, ic) = if er.hovered() { (p.hover, p.text) } else { (theme::alpha(p.raised, 0.9), p.text2) };
+            pt.rect_filled(edit_rect, theme::cr(theme::Rad::Sm), eb);
+            icons::paint(ui, Rect::from_center_size(edit_rect.center(), Vec2::splat(13.0)), "pencil", ic);
+        }
+        if let Some(sr) = &sr {
+            let hv = sr.hovered();
+            pt.rect_filled(send_rect, theme::cr(theme::Rad::Sm), if hv { p.live } else { theme::alpha(p.raised, 0.9) });
+            icons::paint(ui, Rect::from_center_size(send_rect.center(), Vec2::splat(13.0)), "play", if hv { Color32::WHITE } else { p.text2 });
+        }
+    }
+    let resp = if note.is_empty() { resp } else { resp.on_hover_text(format!("{} {note}", tr("메모:"))) };
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    RowOut { resp, edit, send }
+}
+
 /// 순서 한 줄 (.cue-item: 여백 7px 6px · 테두리 1px + 왼쪽 4px · 둥글기 10 · 아래 2px)
 pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
     let p = pal();
+    if p.bevel {
+        return row_pro(ui, i, it, st);
+    }
     let ty = it["type"].as_str().unwrap_or("");
     let title = it["title"].as_str().unwrap_or("").to_string();
     let det = detail(it);
@@ -561,7 +705,7 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
             y += SUB_LH;
         }
         if !note.is_empty() {
-            let g = one_line(ui, &format!("📝 {note}"), theme::font(12.0, Weight::Regular), p.gold, bw);
+            let g = one_line(ui, &format!("{} {note}", tr("메모:")), theme::font(12.0, Weight::Regular), p.gold, bw);
             pt.galley(Pos2::new(x, y + (SUB_LH - g.size().y) / 2.0), g, p.gold);
         }
         if st.selected || hovered || er.hovered() {

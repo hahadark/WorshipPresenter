@@ -449,7 +449,8 @@ impl App {
         };
         egui::Area::new(Id::new("wp-toast"))
             .order(egui::Order::Foreground)
-            .anchor(Align2::RIGHT_BOTTOM, Vec2::new(-16.0, -72.0))
+            // (나) 아래 시간표·상태 줄 위에 뜨게 (prolayout 이 지난 프레임에 잰 아래쪽 높이)
+            .anchor(Align2::RIGHT_BOTTOM, Vec2::new(-16.0, -(ctx.data(|d| d.get_temp::<f32>(Id::new("pro-bottom-h"))).unwrap_or(60.0) + 12.0)))
             .interactable(true)
             .show(ctx, |ui| {
                 let fr = egui::Frame::new()
@@ -507,6 +508,30 @@ impl App {
                 });
             });
         });
+    }
+
+    /// (나) 송출 중 뷰어 화면 아래쪽에 겹치는 띠: "예배당 화면 꺼짐 — 회중에게 안 보임 [지금 켜기]"
+    pub(super) fn output_off_overlay(&mut self, ui: &mut Ui, screen: Rect, has_live: bool, acts: &mut Vec<Act>) {
+        if self.out.running() || !has_live {
+            return;
+        }
+        let p = pal();
+        let h = 30.0_f32.min(screen.height() * 0.4);
+        let band = Rect::from_min_max(Pos2::new(screen.left() + 3.0, screen.bottom() - 3.0 - h), Pos2::new(screen.right() - 3.0, screen.bottom() - 3.0));
+        ui.painter().rect_filled(band, theme::cr(theme::Rad::Sm), alpha(theme::mix(p.warn, 35.0, Color32::BLACK), 0.92));
+        let key = crate::keys::label(self.core.lock().settings.get(), "toggleOutputWindow", "Ctrl+Shift+F");
+        let bw = 82.0_f32.min(band.width() * 0.45);
+        let br = Rect::from_min_size(Pos2::new(band.right() - bw - 4.0, band.top() + 4.0), Vec2::new(bw, h - 8.0));
+        let r = ui.interact(br, Id::new("live-output-on"), Sense::click()).on_hover_text(format!("{} ({key})", tr("예배당 모니터에 전체 화면 출력을 켭니다")));
+        ui.painter().rect_filled(br, theme::cr(theme::Rad::Sm), if r.hovered() { Color32::WHITE } else { p.send_bg });
+        ui.painter().with_clip_rect(br).text(br.center(), Align2::CENTER_CENTER, tr("지금 켜기"), theme::font(11.5, Weight::Bold), p.send_fg);
+        widgets::mark("live-output-on", br);
+        if r.clicked() {
+            acts.push(Act::OutputToggle);
+        }
+        let tr_ = Rect::from_min_max(Pos2::new(band.left() + 8.0, band.top()), Pos2::new(br.left() - 6.0, band.bottom()));
+        icons::paint(ui, Rect::from_center_size(Pos2::new(tr_.left() + 7.0, band.center().y), Vec2::splat(14.0)), "monitor-off", Color32::WHITE);
+        ui.painter().with_clip_rect(tr_).text(Pos2::new(tr_.left() + 20.0, band.center().y), Align2::LEFT_CENTER, tr("예배당 화면 꺼짐 — 회중에게 안 보임"), theme::font(11.5, Weight::SemiBold), Color32::WHITE);
     }
 
     /// 송출했는데 예배당 화면이 꺼져 있고 자동으로 켜지도 않을 때, 꺼진 동안 한 번만 알림 + [예배당 화면 켜기]

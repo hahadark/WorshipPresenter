@@ -36,7 +36,9 @@ fn outside(h: &mut H) -> Pos2 {
     idle(h, 2);
     let pane = seen("pane-preview").expect("미리보기 화면");
     let ed = seen("se-canvas").expect("편집기 캔버스");
-    for p in [pane.center(), pane.left_top() + egui::vec2(6.0, 6.0), pane.right_top() + egui::vec2(-6.0, 6.0), pane.left_bottom() + egui::vec2(6.0, -6.0), pane.right_bottom() - egui::vec2(6.0, 6.0)] {
+    // (나) 배치에서는 미리보기 뷰어가 작아 편집기 창에 다 가릴 수 있다 → '보기'·인스펙터 판 머리, 큐시트 표 머리(메인 창의 누를 것 없는 자리)도 본다
+    let head = [seen("pro-view-head"), seen("pro-ins-head"), seen("pro-cue-head")].into_iter().flatten().map(|r| r.left_center() + egui::vec2(40.0, 0.0));
+    for p in [pane.center(), pane.left_top() + egui::vec2(6.0, 6.0), pane.right_top() + egui::vec2(-6.0, 6.0), pane.left_bottom() + egui::vec2(6.0, -6.0), pane.right_bottom() - egui::vec2(6.0, 6.0)].into_iter().chain(head) {
         let l = h.ctx.layer_id_at(p);
         if l.is_some_and(|l| l.order == egui::Order::Background) {
             return p;

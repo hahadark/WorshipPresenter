@@ -626,14 +626,19 @@ impl App {
     /// 큐시트 쪽 (Electron #cuePanel): 고르기 콤보 + 폴더 단추 · 순서 줄 · 넣기 단추 격자 · 도움말.
     /// 순서 옮기기·송출·지우기·편집칸은 오른쪽 클릭 메뉴와 본문 패널 편집칸에서 (원본 배치).
     pub(crate) fn cue_panel(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-        let cues: Vec<(String, String)> = s.cues.iter().map(|c| (c.id.clone(), format!("{}{}{} ({})", if c.pinned { "📌 " } else { "" }, if c.template { "📄 " } else { "" }, c.name, c.count))).collect();
+        let cues: Vec<(String, String)> = s.cues.iter().map(|c| (c.id.clone(), format!("{}{}{} ({})", if c.pinned { "[고정] " } else { "" }, if c.template { "[서식] " } else { "" }, c.name, c.count))).collect();
         let cue_label = cues.iter().find(|c| c.0 == s.cue_id).map(|c| c.1.clone()).unwrap_or_else(|| s.cue_name.clone());
         crate::cue_ui::head(self, ui, &s.cue_id, &cue_label, &cues, acts);
         ui.add_space(4.0);
         let live_idx = s.live.as_ref().filter(|l| l.deck.passage["cueId"] == json!(s.cue_id)).and_then(|l| l.deck.passage["cueIndex"].as_i64());
         let live_hidden = s.live.as_ref().is_some_and(|l| !l.visible);
         let pv_idx = s.preview.as_ref().filter(|p| p.passage["cueId"] == json!(s.cue_id)).and_then(|p| p.passage["cueIndex"].as_i64());
-        let times = { let c = self.core.lock(); if c.settings.get()["cueTimes"] == true { c.planned_times() } else { vec![] } };
+        // (나) 전문가용 표는 시각·분 칸이 늘 있다 (예전 테마는 설정 '예정 시각 보기' 일 때만)
+        let pro = crate::theme::pal().bevel;
+        let times = { let c = self.core.lock(); if pro || c.settings.get()["cueTimes"] == true { c.planned_times() } else { vec![] } };
+        if pro {
+            crate::cue_ui::table_head(ui);
+        }
         let list_h = crate::cue_ui::list_height(ui);
         // .cue-list { flex: 1; padding: 2px 6px }
         egui::ScrollArea::vertical().id_salt("items").max_height(list_h).min_scrolled_height(list_h).auto_shrink([false, false]).show(ui, |ui| {
@@ -644,7 +649,7 @@ impl App {
             // 목록에 키보드가 있을 때의 ↑↓ · Alt+↑↓ · Enter · Delete (cue.js:1271)
             crate::cue_ui::list_keys(self, ui, ui.clip_rect(), s.items.len(), pv_idx, acts);
             let key_scroll = crate::cue_ui::take_scroll(ui.ctx());
-            egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
+            egui::Frame::new().inner_margin(if pro { egui::Margin::ZERO } else { egui::Margin::symmetric(6, 2) }).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, it) in s.items.iter().enumerate() {
                     let st = crate::cue_ui::RowState {
@@ -652,10 +657,11 @@ impl App {
                         pv: pv_idx == Some(i as i64),
                         air: live_idx == Some(i as i64),
                         hidden: live_hidden,
-                        time: times.get(i).filter(|t| !t.is_empty()).map(|t| (t.clone(), it["duration"].as_i64().unwrap_or(0))),
+                        time: times.get(i).filter(|t| !t.is_empty() || pro).map(|t| (t.clone(), it["duration"].as_i64().unwrap_or(0))),
+                        done: live_idx.is_some_and(|l| (i as i64) < l),
                     };
                     let out = crate::cue_ui::row(ui, i, it, &st);
-                    ui.add_space(2.0); // .cue-item { margin-bottom: 2px }
+                    if !pro { ui.add_space(2.0); } // .cue-item { margin-bottom: 2px }
                     let r = out.resp;
                     crate::widgets::mark(&format!("cue-row-{i}"), r.rect);
                     crate::dnd::zone(crate::dnd::Zone::CueRow(i), r.rect);
@@ -1063,7 +1069,11 @@ impl App {
             // ---- .pane-head: 배지 · 제목 · (숨김 중) · 예배당 | OBS
             ui.horizontal(|ui| {
                 ui.set_min_height(26.0);
-                if is_live { widgets::badge(ui, "LIVE", Badge::Live); } else { widgets::badge(ui, &tr("미리보기"), Badge::Pv); }
+                if p.bevel {
+                    // (나) 뷰어 머리: '다음'(노랑) · '송출 중'(빨강) 굵은 글자만 (배지 없이)
+                    let (t, c) = if is_live { (tr("송출 중"), p.live_text) } else { (tr("다음"), p.next) };
+                    ui.add(egui::Label::new(theme::rich(t, 12.5, Weight::Bold, c)).selectable(false));
+                } else if is_live { widgets::badge(ui, "LIVE", Badge::Live); } else { widgets::badge(ui, &tr("미리보기"), Badge::Pv); }
                 let info = deck.map(|d| deck_info(d, is_live)).unwrap_or_default();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let view = if is_live { &mut self.views.live_obs } else { &mut self.views.preview_obs };
@@ -1071,11 +1081,12 @@ impl App {
                     widgets::segmented(ui, view, &[(false, main_label.as_str()), (true, "OBS")]);
                     if hidden { hidden_badge(ui, &tr("숨김 중")); }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        ui.add(egui::Label::new(theme::rich(info, 14.0, Weight::SemiBold, p.text)).truncate().selectable(false));
+                        ui.add(egui::Label::new(theme::rich(info, if p.bevel { 12.0 } else { 14.0 }, if p.bevel { Weight::Regular } else { Weight::SemiBold }, if p.bevel { p.muted } else { p.text })).truncate().selectable(false));
                     });
                 });
             });
-            if is_live { self.output_off_band(ui, deck.is_some(), acts); } // 예배당 화면 꺼짐 띠 [지금 켜기]
+            // 예배당 화면 꺼짐 띠 [지금 켜기] — (나) 에서는 화면 위에 겹쳐 그려 두 뷰어 크기를 같게 (아래 output_off_overlay)
+            if is_live && !p.bevel { self.output_off_band(ui, deck.is_some(), acts); }
             ui.add_space(8.0); // .pane-head { margin-bottom: 8px }
             // ---- .screen: 16:9, 2px 테두리 (미리보기 pv · LIVE live · 숨김이면 점선), 둥글기 6
             let tpl = match (is_live, self.views.obs(is_live)) {
@@ -1088,8 +1099,11 @@ impl App {
             let th = tpl["height"].as_f64().unwrap_or(1080.0) as f32;
             // 슬라이드(절) 번호 단추 줄 접기 (Electron control.js syncThumbsFold, 기억: 설정 thumbsFold { pv, lv })
             let fold_key = if is_live { "lv" } else { "pv" };
-            let folded = self.core.lock().settings.get()["thumbsFold"][fold_key].as_bool().unwrap_or(false);
-            let reserve = if is_live { 128.0 } else { 74.0 } - if folded && deck.is_some() { 34.0 } else { 0.0 };
+            let folded_saved = self.core.lock().settings.get()["thumbsFold"][fold_key].as_bool().unwrap_or(false);
+            // (나) 뷰어가 낮으면(작은 창) 절 단추 줄을 저절로 접는다 — 같은 단추는 아래 본문 판에도 있다
+            let auto_fold = p.bevel && ui.available_height() < 330.0;
+            let folded = folded_saved || auto_fold;
+            let reserve = if auto_fold { 40.0 + 34.0 } else if p.bevel { 112.0 } else if is_live { 128.0 } else { 74.0 } - if folded && deck.is_some() { 34.0 } else { 0.0 };
             let h = (w * th / tw).min(ui.available_height() - reserve).max(60.0);
             let w2 = h * tw / th;
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
@@ -1122,8 +1136,9 @@ impl App {
             if hidden {
                 dashed_rect(ui, rect.shrink(1.0), egui::Stroke::new(2.0, border));
             } else {
-                ui.painter().rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Md), egui::Stroke::new(2.0, border), egui::StrokeKind::Inside);
+                ui.painter().rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Md), egui::Stroke::new(if is_live && p.bevel { 3.0 } else { 2.0 }, border), egui::StrokeKind::Inside);
             }
+            if is_live && p.bevel { self.output_off_overlay(ui, rect, deck.is_some(), acts); }
             // ---- .pane-tools: (◀ n/m ▶) · 다음: … · 그리기
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -1151,7 +1166,7 @@ impl App {
                     let fr = ui.add(fb);
                     widgets::mark(&format!("{fold_key}-thumbs-fold"), fr.rect);
                     if fr.clicked() {
-                        self.core.lock().settings.update(|d| d["thumbsFold"][fold_key] = serde_json::json!(!folded));
+                        self.core.lock().settings.update(|d| d["thumbsFold"][fold_key] = serde_json::json!(!folded_saved));
                         ui.ctx().request_repaint();
                     }
                     if is_live && ui.add(Btn::new(tr("그리기")).icon("brush").height(30.0).selected(draw_on).tooltip(tr("LIVE 화면에 그리기·강조 — 예배당·OBS 화면에 같이 보입니다"))).clicked() {
@@ -1165,8 +1180,8 @@ impl App {
                     });
                 });
             });
-            // ---- .lv-layers: 지금 화면 (층마다 ✕)
-            if is_live {
+            // ---- .lv-layers: 지금 화면 (층마다 ✕) — 작은 창의 (나) 뷰어에서는 빼고 '지우기' 메뉴·오른쪽 클릭으로
+            if is_live && !auto_fold {
                 ui.add_space(2.0);
                 let top = ui.cursor().top();
                 ui.painter().hline(ui.max_rect().x_range(), top, egui::Stroke::new(1.0, p.line_soft));
@@ -1743,8 +1758,8 @@ impl App {
         }
         if let Some(a) = self.toast(&ctx, &s) { acts.push(a); }
         if std::mem::take(&mut self.editor_reveal) { self.reveal_editor_panel(); }
-        self.workspace_window(&ctx); // 작업공간 · 패널 배치 창 (고르기는 머리 줄)
-        egui::CentralPanel::default_margins().show(ui, |ui| { self.workspace_content(ui, &s, &mut acts); });
+        self.workspace_window(&ctx); // '배치' 창 (보기 메뉴): 큐시트 판 · 인스펙터 · 시간표 보이기, 크기 처음대로
+        self.pro_layout(ui, &s, &mut acts); // (나) 고정 배치 — prolayout_ui.rs (예전 독 작업공간 대신)
         if std::mem::take(&mut self.editor_reveal) {
             self.reveal_editor_panel();
             ctx.request_repaint();

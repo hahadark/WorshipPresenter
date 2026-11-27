@@ -16,6 +16,10 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 /// 기본 단추·입력칸 높이 (css `--ctl-h`)
 pub const CTL_H: f32 = 34.0;
+/// 지금 테마의 기본 단추·입력칸 높이 (전문가용은 28 — 시안의 촘촘한 판)
+pub fn ctl_h() -> f32 {
+    if pal().bevel { 28.0 } else { CTL_H }
+}
 /// (나) 전문가용: 판 머리 띠 높이 (.ph 30px)
 pub const HEAD_H: f32 = 30.0;
 /// (나) 전문가용: 표 줄 높이 (.r>span 30px)
@@ -426,8 +430,8 @@ pub fn style(s: &mut egui::Style, p: &Palette) {
     // 글자 크기: html 14px 기준
     s.text_styles = [
         (TextStyle::Small, FontId::new(12.0, FontFamily::Proportional)),
-        (TextStyle::Body, FontId::new(BASE, FontFamily::Proportional)),
-        (TextStyle::Button, FontId::new(BASE, FontFamily::Proportional)),
+        (TextStyle::Body, FontId::new(if p.bevel { 12.5 } else { BASE }, FontFamily::Proportional)),
+        (TextStyle::Button, FontId::new(if p.bevel { 12.5 } else { BASE }, FontFamily::Proportional)),
         (TextStyle::Heading, FontId::new(16.0, FontFamily::Name(BOLD.into()))),
         (TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace)),
     ]
@@ -443,6 +447,13 @@ pub fn style(s: &mut egui::Style, p: &Palette) {
     sp.icon_width_inner = 9.0;
     sp.icon_spacing = 6.0;
     sp.combo_height = 320.0;
+    if p.bevel {
+        // 전문가용: 촘촘한 판 (.fld · .pop 높이 22, 줄 사이 6)
+        sp.item_spacing = Vec2::new(6.0, 5.0);
+        sp.button_padding = Vec2::new(8.0, 3.0);
+        sp.interact_size = Vec2::new(36.0, 22.0);
+        sp.window_margin = Margin::same(12);
+    }
     // 얇은 스크롤바: 폭 10px, 손잡이는 3px 안쪽 여백(테두리 투명) → 보이는 막대 4px, 바탕 투명
     let sc = &mut sp.scroll;
     sc.floating = false;

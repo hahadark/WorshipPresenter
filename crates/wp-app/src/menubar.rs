@@ -54,7 +54,7 @@ pub fn menus() -> Vec<Menu> {
             it("b:draw", "화면에 그리기 · 강조", ""), // [트랙 B]
         ] },
         Menu { label: "보기", items: vec![
-            it("w:workspaces", "작업공간 · 패널 배치", ""),
+            it("w:workspaces", "배치 (판 보이기·숨기기)", ""),
             it("c:commentary", "주석 보기 · 가져오기", ""),
             it("c:templates", "출력 템플릿 편집", ""),
             it("c:themes", "출력 테마 관리", ""),

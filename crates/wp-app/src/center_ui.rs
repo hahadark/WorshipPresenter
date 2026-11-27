@@ -2371,8 +2371,8 @@ pub(crate) fn ce_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut eg
     let r = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         let g = ui.painter().layout(label.to_string(), theme::font(14.0, Weight::Regular), p.text2, lw);
-        let (r, _) = ui.allocate_exact_size(Vec2::new(lw, theme::CTL_H.max(g.size().y)), Sense::hover());
-        ui.painter().galley(Pos2::new(r.left(), r.top() + (theme::CTL_H - g.size().y).max(0.0) / 2.0), g, p.text2);
+        let (r, _) = ui.allocate_exact_size(Vec2::new(lw, theme::ctl_h().max(g.size().y)), Sense::hover());
+        ui.painter().galley(Pos2::new(r.left(), r.top() + (theme::ctl_h() - g.size().y).max(0.0) / 2.0), g, p.text2);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             add(ui)
@@ -2386,7 +2386,7 @@ pub(crate) fn ce_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut eg
 /// 이름표 칸 하나짜리 글 입력 (높이 --ctl-h)
 pub(crate) fn ce_text(ui: &mut egui::Ui, e: &mut Value, k: &str, hint: &str, width: f32) -> bool {
     let mut sv = e[k].as_str().unwrap_or("").to_string();
-    let r = ui.add(egui::TextEdit::singleline(&mut sv).desired_width(width).min_size(Vec2::new(0.0, theme::CTL_H - 8.0)).margin(Margin::symmetric(10, 6)).font(theme::font(14.0, Weight::Regular)).hint_text(tr(hint)));
+    let r = ui.add(egui::TextEdit::singleline(&mut sv).desired_width(width).min_size(Vec2::new(0.0, theme::ctl_h() - 8.0)).margin(Margin::symmetric(10, 6)).font(theme::font(14.0, Weight::Regular)).hint_text(tr(hint)));
     if r.changed() {
         e[k] = json!(sv);
         true

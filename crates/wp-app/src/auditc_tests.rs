@@ -36,6 +36,9 @@ impl H {
         core.b.undo = Default::default();
         core.toast = None;
         core.settings.update(|d| d["output"]["autoOnSend"] = json!(false));
+        // (나) 고정 배치: 이 합성 시험들은 본문 판(목록·격자)을 누르는 시험이라 시간표를 접고 본문 판을 넓게 둔다
+        // (예전 독 배치에서 본문 패널이 차지하던 높이와 비슷하게)
+        core.settings.update(|d| d["rsProLayout"] = json!({ "timeline": false, "viewers": 0.3 }));
         let core = std::sync::Arc::new(wp_core::lockcheck::Mutex::new(core));
         Self { ctx: egui::Context::default(), app: App::for_test(core, dir.clone()), dir, time: 0.0 }
     }

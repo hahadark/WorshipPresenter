@@ -37,21 +37,35 @@ impl WorkspaceUi {
     }
 }
 impl App {
-    /// 작업공간 · 패널 배치 창 (고르기는 머리 줄 topbar_ui::workspace_picker, 원본 .ws-pick)
+    /// '배치' 창 (보기 메뉴 · 예전 '작업공간 · 패널 배치'). (나) 고정 배치가 되면서 끌어서 바꾸던 작업공간 대신
+    /// 판 보이기·숨기기와 크기 처음대로만 남았다. 예전에 저장한 작업공간(설정 rsWorkspace)은 지우지 않고 그대로 둔다.
     pub(crate) fn workspace_window(&mut self, ctx: &egui::Context) {
         let mut open = self.workspace.open;
-        crate::widgets::close_on_outside(ctx, egui::Id::unique("wp-float-workspace"), &mut open);
-        egui::Window::new(tr("작업공간 · 패널 배치")).id(egui::Id::unique("wp-float-workspace")).default_pos(crate::widgets::float_pos(ctx, egui::Id::unique("wp-float-workspace"), 420.0)).open(&mut open).show(ctx,|ui|{
-   ui.label(tr("제목을 끌어 다른 패널의 좌·우·위·아래에 놓습니다. 경계선을 끌면 크기가 바뀝니다."));
-   ui.add_enabled_ui(!self.workspace.state.locked,|ui|{ui.horizontal_wrapped(|ui|{for p in Pane::ALL{let mut visible=self.workspace.state.visible(p);if ui.checkbox(&mut visible,tr(p.title())).changed(){self.workspace.state.toggle(p)}}});
-   if ui.button(tr("기본 배치로 복원")).clicked(){self.workspace.state.select("b-default")}});
-   ui.separator();ui.horizontal(|ui|{ui.text_edit_singleline(&mut self.workspace.name);if ui.button(tr("지금 배치로 새로 저장")).clicked(){self.workspace.state.save_as(&self.workspace.name);self.workspace.name.clear();}});
-   let mut use_id=None;let mut delete=None;let mut up=None;let layout=self.workspace.state.layout.clone();let floating=self.workspace.state.floating.clone();
-   for s in &mut self.workspace.state.saved{ui.horizontal(|ui|{ui.text_edit_singleline(&mut s.name);if s.name.trim().is_empty(){s.name=tr("작업공간")}s.name=s.name.chars().take(40).collect();if ui.button(tr("선택")).clicked(){use_id=Some(s.id.clone())}if ui.add_enabled(!s.name.trim().is_empty(),egui::Button::new(tr("배치 덮어쓰기"))).clicked(){s.layout=layout.clone();s.floating=floating.clone()}if ui.button(tr("위로")).clicked(){up=Some(s.id.clone())}if ui.button(tr("삭제")).clicked(){delete=Some(s.id.clone())}});}
-   if let Some(id)=up{self.workspace.state.move_up(&id)}
-   if let Some(id)=use_id{self.workspace.state.select(&id)}if let Some(id)=delete{self.workspace.state.delete(&id)}
-   ui.separator();ui.label(tr("Electron 배치는 원본을 보존하며 Rust 배치는 별도 저장합니다. 가운데 놓으면 탭 합치기, 가장자리에 놓으면 분할합니다. 탭 메뉴에서 띄우기·닫기가 가능합니다."));
-  });
+        let wid = egui::Id::unique("wp-float-workspace");
+        crate::widgets::close_on_outside(ctx, wid, &mut open);
+        egui::Window::new(tr("배치")).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 360.0)).open(&mut open).resizable(false).show(ctx, |ui| {
+            ui.label(tr("판을 접고 펴서 화면을 넓게 씁니다. 위 막대 양 끝의 단추와 같습니다."));
+            ui.add_space(6.0);
+            let mut side = self.pro_side_visible();
+            if ui.checkbox(&mut side, tr("왼쪽 큐시트 판 (순서 · 성경 책 · 라이브러리)")).changed() {
+                self.pro_toggle_side();
+            }
+            let mut ins = self.pro_inspector_visible();
+            if ui.checkbox(&mut ins, tr("오른쪽 인스펙터 (글자 · 무대 · 미디어)")).changed() {
+                self.pro_toggle_inspector();
+            }
+            let mut tl = self.pro_timeline_visible();
+            if ui.checkbox(&mut tl, tr("아래 예배 시간표")).changed() {
+                self.pro_toggle_timeline();
+            }
+            ui.add_space(6.0);
+            if ui.button(tr("크기·보이기 처음대로")).on_hover_text(tr("뷰어 높이를 처음 값으로, 세 판을 모두 보이게 (판 너비는 다음 실행부터)")).clicked() {
+                self.core.lock().settings.update(|s| s["rsProLayout"] = serde_json::json!({}));
+                // 판 너비는 egui 가 기억하므로 이번 실행에서는 그대로, 다음 실행부터 처음 너비
+            }
+            ui.add_space(8.0);
+            crate::widgets::muted(ui, &tr("예전의 끌어서 패널을 옮기던 작업공간은 고정 칸으로 바뀌었습니다. 저장해 둔 옛 배치는 지우지 않고 남겨 둡니다."));
+        });
         self.workspace.open = open;
     }
     pub(crate) fn workspace_content(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {

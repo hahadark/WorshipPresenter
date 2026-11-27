@@ -1,0 +1,285 @@
+//! (나) 아래 예배 시간표 — 보기 전용 (시안 docs/design/pro-main.html `.tl`).
+//!
+//! 실제 있는 자료만 그린다: 큐시트 시작 시각(`start_time`) + 순서마다 길이(`duration`, 분) → 순서 막대,
+//! 지금 시각 세로선(재생 헤드), 무대 타이머(지금 돌고 있는 것 + 순서의 '송출할 때 자동으로: 타이머 N분').
+//! 시안의 '음악 · OBS 장면' 줄은 예정 자료가 없어 넣지 않았다. 끌어서 길이 바꾸기 같은 조작도 없다.
+//! 좁은 창(높이 760 미만)에서는 머리 띠만 보이고, 머리의 단추로 펼친다.
+use crate::app::{App, Snap};
+use crate::theme::{self, Weight, alpha, mix, pal};
+use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
+use serde_json::Value;
+use wp_core::i18n::{tr, tr_args};
+
+const HEAD_H: f32 = 28.0;
+const RULER_H: f32 = 20.0;
+const LANE_H: f32 = 46.0;
+const LANE2_H: f32 = 32.0;
+const LABEL_W: f32 = 96.0;
+
+/// 순서 하나의 자리 (시작 분, 길이 분)
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Clip {
+    pub index: usize,
+    pub start: f64,
+    pub len: f64,
+}
+
+/// 시작 시각 "11:00" + 순서 길이 → 순서마다 (시작 분, 길이 분). 시작 시각이 없으면 None
+pub(crate) fn plan(start: &str, items: &[Value]) -> Option<(f64, Vec<Clip>)> {
+    let t0 = wp_core::localtime::parse_hm(start.trim())? as f64;
+    let mut t = t0;
+    let mut out = vec![];
+    for (i, it) in items.iter().enumerate() {
+        let d = match &it["duration"] {
+            Value::String(x) => x.trim().parse::<f64>().unwrap_or(0.0),
+            v => v.as_f64().unwrap_or(0.0),
+        };
+        let d = if d.is_finite() { d.max(0.0) } else { 0.0 };
+        out.push(Clip { index: i, start: t, len: d });
+        t += d;
+    }
+    Some((t0, out))
+}
+
+/// 'HH:MM' (하루 안 분)
+fn hm(min: f64) -> String {
+    let m = (min.round() as i64).rem_euclid(1440);
+    format!("{:02}:{:02}", m / 60, m % 60)
+}
+
+/// 눈금 간격(분): 10분에 50px 이상이면 5분 눈금 · 10분 글자, 아니면 더 성기게
+fn tick_step(px_per_min: f32) -> (f64, f64) {
+    if px_per_min * 10.0 >= 50.0 { (5.0, 10.0) } else if px_per_min * 20.0 >= 50.0 { (10.0, 20.0) } else { (15.0, 30.0) }
+}
+
+impl App {
+    pub(crate) fn timeline(&mut self, ui: &mut egui::Ui, s: &Snap) {
+        let p = pal();
+        let (start, live_idx) = {
+            let c = self.core.lock();
+            let st = c.cue.as_ref().map(|c| c.start_time.clone()).unwrap_or_default();
+            // 송출 중 순서가 지금 열린 큐시트의 것일 때만 순서 번호로 본다
+            let li = s.live.as_ref().filter(|l| l.deck.passage["cueId"].as_str() == Some(s.cue_id.as_str())).and_then(|l| l.deck.passage["cueIndex"].as_i64()).filter(|i| *i >= 0).map(|i| i as usize);
+            (st, li)
+        };
+        let next_idx = s.preview.as_ref().filter(|d| d.passage["cueId"].as_str() == Some(s.cue_id.as_str())).and_then(|d| d.passage["cueIndex"].as_i64()).filter(|i| *i >= 0).map(|i| i as usize).filter(|i| Some(*i) != live_idx).or_else(|| live_idx.map(|i| i + 1).filter(|i| *i < s.items.len()));
+        let planned = plan(&start, &s.items);
+        let total: f64 = planned.as_ref().map(|(_, c)| c.iter().map(|x| x.len).sum()).unwrap_or(0.0);
+        let now_min = (crate::probar_ui::local_ms().rem_euclid(86_400_000)) as f64 / 60_000.0;
+        // 늦음/빠름: 송출 중 순서의 예정 시작 ↔ 실제로 송출을 시작한 때
+        let delay = match (&planned, live_idx) {
+            (Some((_, clips)), Some(i)) if clips.get(i).is_some_and(|c| c.len > 0.0 || total > 0.0) => {
+                let at = ui.ctx().data(|d| d.get_temp::<(String, i64)>(Id::new("pro-live-start"))).map(|x| x.1).unwrap_or(0);
+                if at > 0 {
+                    let started = ((at + (crate::probar_ui::local_ms() - wp_core::util::now_ms())).rem_euclid(86_400_000)) as f64 / 60_000.0;
+                    let d = started - clips[i].start;
+                    (d.abs() < 180.0).then_some(d)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        // 높이: 창이 낮으면 머리만 (펼침 단추로 바꿈 — 이 실행 동안만 기억)
+        let small = ui.ctx().content_rect().height() < 760.0;
+        let open_id = Id::new("pro-tl-open");
+        let mut open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(!small);
+        // ---- 머리 띠
+        let (hr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), HEAD_H), Sense::hover());
+        ui.painter().rect_filled(hr, 0.0, p.head);
+        ui.painter().hline(hr.x_range(), hr.bottom() - 0.5, Stroke::new(1.0, p.edge));
+        let mut x = hr.left() + 10.0;
+        let g = ui.painter().layout_no_wrap(tr("예배 시간표"), theme::font(12.0, Weight::SemiBold), p.text);
+        let gw = g.size().x;
+        ui.painter().galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.text);
+        x += gw + 10.0;
+        let sub = match &planned {
+            Some((t0, _)) if total > 0.0 => tr_args("{1} – {2} · 계획대로면 {3} 마침", &[&hm(*t0), &hm(t0 + total), &hm(t0 + total)]),
+            Some(_) => tr("순서마다 길이(분)를 넣으면 막대로 보입니다"),
+            None if s.items.is_empty() => tr("큐시트가 비어 있습니다"),
+            None => tr("큐시트에 시작 시각을 넣으면 예정 시각이 보입니다 (큐시트 관리 · 편집칸)"),
+        };
+        ui.painter().with_clip_rect(hr).text(Pos2::new(x, hr.center().y), Align2::LEFT_CENTER, sub, theme::font(11.5, Weight::Regular), p.muted);
+        // 오른쪽: 늦음 · 접기 단추
+        let fold_r = Rect::from_center_size(Pos2::new(hr.right() - 22.0, hr.center().y), Vec2::new(28.0, 22.0));
+        let fr = ui.interact(fold_r, Id::new("pro-tl-fold"), Sense::click()).on_hover_text(if open { tr("시간표 접기") } else { tr("시간표 펼치기") });
+        if fr.hovered() {
+            ui.painter().rect_filled(fold_r, theme::cr(theme::Rad::Sm), p.hover);
+        }
+        crate::icons::paint(ui, Rect::from_center_size(fold_r.center(), Vec2::splat(15.0)), if open { "chevron-down" } else { "chevron-up" }, p.text2);
+        crate::widgets::mark("pro-tl-fold", fold_r);
+        if fr.clicked() {
+            open = !open;
+            ui.data_mut(|d| d.insert_temp(open_id, open));
+        }
+        if let Some(d) = delay {
+            let m = d.round() as i64;
+            let (t, c) = if m > 0 { (tr_args("지금 {1}분 늦음", &[&m]), p.warn) } else if m < 0 { (tr_args("지금 {1}분 빠름", &[&(-m)]), p.ok_text) } else { (tr("계획대로"), p.muted) };
+            ui.painter().text(Pos2::new(fold_r.left() - 10.0, hr.center().y), Align2::RIGHT_CENTER, t, theme::font(11.5, Weight::SemiBold), c);
+        }
+        if !open {
+            return;
+        }
+        // ---- 몸통: 눈금 · 순서 줄 · 무대 줄
+        let body_h = RULER_H + LANE_H + LANE2_H;
+        let (br, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), body_h), Sense::hover());
+        let pt = ui.painter().with_clip_rect(br);
+        let track = Rect::from_min_max(Pos2::new(br.left() + LABEL_W, br.top()), br.max);
+        let lane1 = Rect::from_min_size(Pos2::new(br.left(), br.top() + RULER_H), Vec2::new(br.width(), LANE_H));
+        let lane2 = Rect::from_min_size(Pos2::new(br.left(), lane1.bottom()), Vec2::new(br.width(), LANE2_H));
+        // 이름 칸
+        for (r, a, b) in [(lane1, tr("순서"), tr("예배당")), (lane2, tr("무대"), tr("타이머"))] {
+            let lr = Rect::from_min_size(r.min, Vec2::new(LABEL_W, r.height()));
+            pt.rect_filled(lr, 0.0, mix(p.head, 60.0, p.panel));
+            pt.vline(lr.right() - 0.5, lr.y_range(), Stroke::new(1.0, p.edge));
+            pt.text(Pos2::new(lr.left() + 10.0, lr.top() + 7.0), Align2::LEFT_TOP, a, theme::font(11.5, Weight::SemiBold), p.text2);
+            if r.height() > 36.0 {
+                pt.text(Pos2::new(lr.left() + 10.0, lr.top() + 23.0), Align2::LEFT_TOP, b, theme::font(11.0, Weight::Regular), p.muted);
+            } else {
+                pt.text(Pos2::new(lr.left() + 40.0, lr.top() + 7.0), Align2::LEFT_TOP, b, theme::font(11.0, Weight::Regular), p.muted);
+            }
+            pt.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
+        }
+        let ruler_lr = Rect::from_min_size(br.min, Vec2::new(LABEL_W, RULER_H));
+        pt.rect_filled(ruler_lr, 0.0, mix(p.head, 60.0, p.panel));
+        pt.hline(br.x_range(), br.top() + RULER_H - 0.5, Stroke::new(1.0, p.line));
+        let Some((t0, clips)) = planned.filter(|_| total > 0.0) else {
+            // 자료가 없으면 안내만 (막대를 지어내지 않는다)
+            let msg = if s.items.is_empty() { tr("큐시트를 열면 순서가 여기에 시간 막대로 놓입니다.") } else if start.trim().is_empty() { tr("큐시트 시작 시각(예: 11:00)과 순서마다 길이(분)를 넣으면 예배 시간표가 그려집니다.") } else { tr("순서마다 길이(분)를 넣으면 예배 시간표가 그려집니다. (편집칸 '길이')") };
+            pt.text(Pos2::new(track.left() + 12.0, lane1.center().y), Align2::LEFT_CENTER, msg, theme::font(12.0, Weight::Regular), p.muted);
+            self.timer_lane(ui, &pt, lane2, track, None, now_min);
+            return;
+        };
+        // 범위: 시작 ~ 마침 (지금이 조금 넘으면 지금까지)
+        let t1 = (t0 + total).max(t0 + 10.0);
+        let span = t1 - t0;
+        let ppm = (track.width() - 8.0) / span as f32;
+        let xof = |m: f64| track.left() + 2.0 + ((m - t0) as f32) * ppm;
+        let (minor, major) = tick_step(ppm);
+        let mut m = (t0 / minor).ceil() * minor;
+        while m <= t1 + 0.01 {
+            let x = xof(m);
+            pt.vline(x, (br.top() + RULER_H - 6.0)..=(br.top() + RULER_H), Stroke::new(1.0, p.line2));
+            if ((m / major).round() * major - m).abs() < 0.01 {
+                pt.text(Pos2::new(x + 3.0, br.top() + 4.0), Align2::LEFT_TOP, hm(m), theme::font(10.0, Weight::Regular), p.muted2);
+            }
+            m += minor;
+        }
+        // 순서 막대
+        let hover_pos = ui.ctx().pointer_hover_pos();
+        let mut tip: Option<String> = None;
+        for c in clips.iter().filter(|c| c.len > 0.0) {
+            let x0 = xof(c.start) + 1.0;
+            let x1 = xof(c.start + c.len) - 1.0;
+            let r = Rect::from_min_max(Pos2::new(x0, lane1.top() + 5.0), Pos2::new(x1.max(x0 + 2.0), lane1.bottom() - 5.0));
+            let done = live_idx.is_some_and(|l| c.index < l);
+            let live = live_idx == Some(c.index);
+            let next = next_idx == Some(c.index);
+            let (bg, fg, sub_c) = if live {
+                (mix(p.live, 55.0, p.panel), Color32::WHITE, alpha(Color32::WHITE, 0.75))
+            } else if next {
+                (mix(p.next, 30.0, p.panel), Color32::WHITE, alpha(Color32::WHITE, 0.75))
+            } else if done {
+                (mix(p.raised, 55.0, p.panel), p.muted2, p.muted2)
+            } else {
+                (p.raised, p.text, p.muted)
+            };
+            pt.rect_filled(r, theme::cr(theme::Rad::Sm), bg);
+            if live {
+                pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(2.0, p.live), egui::StrokeKind::Inside);
+            } else if next {
+                pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(2.0, p.next), egui::StrokeKind::Inside);
+            } else if !done {
+                pt.hline(r.x_range().shrink(2.0), r.top() + 0.5, Stroke::new(1.0, alpha(Color32::WHITE, 0.10)));
+            }
+            let it = &s.items[c.index];
+            let name = it["title"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| tr(crate::center_ui::type_name(it["type"].as_str().unwrap_or(""))));
+            let detail = crate::cue_ui::detail(it);
+            let clip_pt = pt.with_clip_rect(r.shrink2(Vec2::new(6.0, 0.0)));
+            let wide = r.width() > 34.0;
+            let label = if wide { format!("{} {}", c.index + 1, name) } else { format!("{}", c.index + 1) };
+            clip_pt.text(Pos2::new(r.left() + 6.0, r.top() + 4.0), Align2::LEFT_TOP, label, theme::font(11.5, Weight::Medium), fg);
+            if wide && !detail.is_empty() && r.width() > 60.0 {
+                clip_pt.text(Pos2::new(r.left() + 6.0, r.top() + 19.0), Align2::LEFT_TOP, &detail, theme::font(10.5, Weight::Regular), sub_c);
+            }
+            if hover_pos.is_some_and(|hp| r.contains(hp)) {
+                tip = Some(format!("{} {} · {} – {} ({}분){}", c.index + 1, name, hm(c.start), hm(c.start + c.len), c.len, if detail.is_empty() { String::new() } else { format!("\n{detail}") }));
+            }
+        }
+        if let Some(t) = tip {
+            ui.interact(lane1, Id::new("pro-tl-lane"), Sense::hover()).on_hover_text(t);
+        }
+        self.timer_lane(ui, &pt, lane2, track, Some((&clips, t0, ppm, s)), now_min);
+        // 지금 시각 세로선 (재생 헤드) — 범위 안일 때만
+        if now_min >= t0 && now_min <= t1 {
+            let x = xof(now_min);
+            pt.vline(x, (br.top() + RULER_H - 2.0)..=br.bottom(), Stroke::new(1.0, Color32::WHITE));
+            pt.add(egui::Shape::convex_polygon(vec![Pos2::new(x - 5.0, br.top() + RULER_H - 8.0), Pos2::new(x + 5.0, br.top() + RULER_H - 8.0), Pos2::new(x, br.top() + RULER_H - 1.0)], Color32::WHITE, Stroke::NONE));
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs(5));
+        }
+    }
+
+    /// 무대 타이머 줄: 순서의 '송출할 때 자동으로: 타이머 N분'(예정) + 지금 돌고 있는 타이머
+    fn timer_lane(&self, ui: &egui::Ui, pt: &egui::Painter, lane: Rect, track: Rect, plan: Option<(&[Clip], f64, f32, &Snap)>, now_min: f64) {
+        let p = pal();
+        let timer = self.core.lock().b.stage.timer.clone();
+        let mut drew = false;
+        if let Some((clips, t0, ppm, s)) = plan {
+            let xof = |m: f64| track.left() + 2.0 + ((m - t0) as f32) * ppm;
+            for c in clips {
+                let mins = s.items[c.index]["actions"]["timer"].as_f64().unwrap_or(0.0);
+                if mins <= 0.0 {
+                    continue;
+                }
+                let r = Rect::from_min_max(Pos2::new(xof(c.start) + 1.0, lane.top() + 5.0), Pos2::new((xof(c.start + mins) - 1.0).max(xof(c.start) + 3.0), lane.bottom() - 5.0));
+                pt.rect_filled(r, theme::cr(theme::Rad::Sm), p.raised);
+                pt.with_clip_rect(r.shrink2(Vec2::new(5.0, 0.0))).text(Pos2::new(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, tr_args("타이머 {1}:00", &[&(mins as i64)]), theme::font(10.5, Weight::Regular), p.text);
+                drew = true;
+            }
+            // 지금 돌고 있는 타이머 (예정과 따로, 빨간 테두리 없이 노란 글)
+            if timer.running || timer.remaining > 0 {
+                let left_ms = if timer.running { timer.end_at - wp_core::util::now_ms() } else { timer.remaining };
+                let start = now_min - (timer.duration - left_ms).max(0) as f64 / 60_000.0;
+                let end = now_min + left_ms.max(0) as f64 / 60_000.0;
+                let r = Rect::from_min_max(Pos2::new(xof(start).max(track.left()), lane.top() + 8.0), Pos2::new(xof(end).min(track.right()).max(xof(start) + 4.0), lane.bottom() - 8.0));
+                pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(1.5, p.next), egui::StrokeKind::Inside);
+                let sec = (left_ms.max(0) / 1000) as i64;
+                pt.with_clip_rect(r).text(Pos2::new(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, format!("{} {:02}:{:02}{}", tr("무대 타이머"), sec / 60, sec % 60, if timer.running { "" } else { " (멈춤)" }), theme::font(10.5, Weight::SemiBold), p.next);
+                ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+                drew = true;
+            }
+        } else if timer.running || timer.remaining > 0 {
+            let left_ms = if timer.running { timer.end_at - wp_core::util::now_ms() } else { timer.remaining };
+            let sec = (left_ms.max(0) / 1000) as i64;
+            pt.text(Pos2::new(track.left() + 12.0, lane.center().y), Align2::LEFT_CENTER, format!("{} {:02}:{:02}", tr("무대 타이머"), sec / 60, sec % 60), theme::font(11.0, Weight::SemiBold), p.next);
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+            drew = true;
+        }
+        if !drew {
+            pt.text(Pos2::new(track.left() + 12.0, lane.center().y), Align2::LEFT_CENTER, tr("무대 타이머 없음"), theme::font(11.0, Weight::Regular), p.muted2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn plan_from_start_and_durations() {
+        let items = vec![json!({"duration": 10}), json!({"duration": "2"}), json!({}), json!({"duration": 5})];
+        let (t0, c) = plan("11:00", &items).unwrap();
+        assert_eq!(t0, 660.0);
+        assert_eq!(c.iter().map(|x| (x.start, x.len)).collect::<Vec<_>>(), vec![(660.0, 10.0), (670.0, 2.0), (672.0, 0.0), (672.0, 5.0)]);
+        assert!(plan("", &items).is_none());
+        assert_eq!(hm(1445.0), "00:05");
+    }
+
+    #[test]
+    fn ticks_follow_width() {
+        assert_eq!(tick_step(23.0), (5.0, 10.0));
+        assert_eq!(tick_step(3.0), (10.0, 20.0));
+        assert_eq!(tick_step(1.0), (15.0, 30.0));
+    }
+}

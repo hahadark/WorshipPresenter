@@ -491,7 +491,10 @@ impl App {
 /// (나) 배치의 접기/펴기 (설정 `rsProLayout` {side, inspector, timeline}). 예전 작업공간 배치(`rsWorkspace`)는 읽기만 하고 건드리지 않는다
 impl App {
     fn pro_flag(&self, k: &str) -> bool {
-        self.core.lock().settings.get()["rsProLayout"][k].as_bool().unwrap_or(true)
+        // 사용자가 정하지 않았으면: 인스펙터는 창이 1280 보다 좁을 때 처음에 접어 둔다 (가운데 뷰어 자리)
+        let w = crate::prolayout_ui::LAST_W.load(std::sync::atomic::Ordering::Relaxed);
+        let def = !(k == "inspector" && w > 0 && w < 1280);
+        self.core.lock().settings.get()["rsProLayout"][k].as_bool().unwrap_or(def)
     }
     fn pro_set(&self, k: &str, on: bool) {
         self.core.lock().settings.update(|s| {
@@ -501,18 +504,25 @@ impl App {
             s["rsProLayout"][k] = json!(on);
         });
     }
-    // 2단계(배치는 아직 독): 사이드바 = 큐시트 패널, 인스펙터 = 빠른 설정 패널 보이기·숨기기
     pub(crate) fn pro_side_visible(&self) -> bool {
-        self.workspace.state.visible(wp_core::workspace::Pane::Cue)
+        self.pro_flag("side")
     }
     pub(crate) fn pro_toggle_side(&mut self) {
-        self.workspace.state.toggle(wp_core::workspace::Pane::Cue);
+        let on = self.pro_side_visible();
+        self.pro_set("side", !on);
+    }
+    /// 왼쪽 판을 펴기만 (Ctrl+B 등 '큐시트로 가기')
+    pub(crate) fn pro_show_side(&mut self) {
+        if !self.pro_side_visible() {
+            self.pro_set("side", true);
+        }
     }
     pub(crate) fn pro_inspector_visible(&self) -> bool {
-        self.workspace.state.visible(wp_core::workspace::Pane::Quick)
+        self.pro_flag("inspector")
     }
     pub(crate) fn pro_toggle_inspector(&mut self) {
-        self.workspace.state.toggle(wp_core::workspace::Pane::Quick);
+        let on = self.pro_inspector_visible();
+        self.pro_set("inspector", !on);
     }
     pub(crate) fn pro_timeline_visible(&self) -> bool {
         self.pro_flag("timeline")

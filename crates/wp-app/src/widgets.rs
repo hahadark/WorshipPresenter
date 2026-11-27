@@ -64,7 +64,7 @@ impl Size {
     fn metrics(self) -> (f32, f32, f32, f32, f32, f32) {
         match self {
             Size::Sm => (24.0, 13.0, 7.0, 14.0, 10.0, 4.0),
-            Size::Md => (theme::CTL_H, 14.0, 12.0, 16.0, 11.0, 4.0),
+            Size::Md => if theme::pal().bevel { (theme::ctl_h(), 13.0, 10.0, 15.0, 10.5, 4.0) } else { (theme::CTL_H, 14.0, 12.0, 16.0, 11.0, 4.0) },
             Size::Tall => (40.0, 14.0, 12.0, 16.0, 10.0, 4.0),
             Size::Big => (40.0, 15.0, 16.0, 18.0, 11.0, 6.0),
         }

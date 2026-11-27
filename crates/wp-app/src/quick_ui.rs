@@ -53,18 +53,48 @@ fn tc_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> 
     let r = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.set_min_height(28.0);
-        let (r, _) = ui.allocate_exact_size(Vec2::new(64.0, 28.0), Sense::hover());
-        let g = ui.painter().layout(tr(label), theme::font(12.0, Weight::Regular), pal().muted, 64.0);
-        ui.painter().galley(Pos2::new(r.left(), r.center().y - g.size().y / 2.0), g, pal().muted);
+        // (나) 인스펙터 양식: 이름표 칸 76px 오른쪽 맞춤 · 11.5px ('글꼴:' 처럼 맥 양식)
+        let pro = pal().bevel;
+        let lw = if pro { 76.0 } else { 64.0 };
+        let (r, _) = ui.allocate_exact_size(Vec2::new(lw, 28.0), Sense::hover());
+        let g = ui.painter().layout(tr(label), theme::font(if pro { 11.5 } else { 12.0 }, Weight::Regular), pal().muted, lw);
+        let x = if pro { r.right() - g.size().x } else { r.left() };
+        ui.painter().galley(Pos2::new(x, r.center().y - g.size().y / 2.0), g, pal().muted);
+        if pro {
+            ui.add_space(2.0);
+        }
         add(ui)
     });
-    ui.add_space(10.0);
+    ui.add_space(if pal().bevel { 4.0 } else { 10.0 });
     r.inner
 }
 
 /// 색 견본 동그라미 (.tc-sw: 24px, 2px line2 테두리 · 고르면 accent 고리)
 fn swatch(ui: &mut egui::Ui, c: &str, on: bool) -> Response {
     let p = pal();
+    if p.bevel {
+        // (나) 색 우물: 26×18 네모, 1px 검은 테두리 + 바깥 회색 고리, 고르면 노랑 2px 고리
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(26.0, 18.0), Sense::click());
+        let pt = ui.painter();
+        let rad = theme::cr(theme::Rad::Sm);
+        if c == "transparent" {
+            let cell = r.height() / 3.0;
+            for y in 0..3 {
+                for x in 0..5 {
+                    let rr = Rect::from_min_size(Pos2::new(r.left() + x as f32 * cell * 26.0 / 30.0, r.top() + y as f32 * cell), Vec2::new(cell * 26.0 / 30.0, cell));
+                    pt.rect_filled(rr, CornerRadius::ZERO, if (x + y) % 2 == 0 { p.muted2 } else { Color32::from_gray(0x22) });
+                }
+            }
+        } else {
+            pt.rect_filled(r, rad, crate::paint::parse_color(c).unwrap_or(Color32::WHITE));
+        }
+        pt.rect_stroke(r, rad, Stroke::new(1.0, Color32::from_gray(0x11)), egui::StrokeKind::Inside);
+        pt.rect_stroke(r.expand(1.0), rad, Stroke::new(if on { 2.0 } else { 1.0 }, if on { p.accent } else { p.line2 }), egui::StrokeKind::Outside);
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        return resp.on_hover_text(if c == "transparent" { tr("투명 (OBS 합성용)") } else { c.to_string() });
+    }
     let (r, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
     let pt = ui.painter();
     let ctr = r.center();
