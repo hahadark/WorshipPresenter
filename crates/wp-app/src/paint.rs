@@ -318,70 +318,86 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
     let to_screen = |r: Rect| Rect::from_min_size(rect.min + r.min.to_vec2() * sc, r.size() * sc);
     // 숨김 + '지우면 배경도 숨김' 템플릿: 배경층도 숨는다 (output.js render)
     let bg_off = hide_bg || (!visible && t["clearHidesBackground"].as_bool().unwrap_or(false));
-    // ---- 배경층 (backgroundCss) + 로고
-    let bg = &t["background"];
-    let bgt = bg["type"].as_str().unwrap_or("color");
-    if bg_off {
-        p.rect_filled(rect, 0.0, Color32::BLACK);
-    } else if bgt == "transparent" {
-        checker(&p, rect, sc);
-    } else {
-        let base = color(&bg["color"], Color32::BLACK);
-        let grad = bg["gradient"].as_str().unwrap_or("");
-        if bgt == "gradient" && !grad.is_empty() {
-            // background: <그라데이션> — 바탕색은 쓰지 않는다 (아래는 검은 창)
-            p.rect_filled(rect, 0.0, Color32::BLACK);
-            if !paint_css_gradient(&p, rect, grad, Vec2::new(tw, th), 0.0, Color32::WHITE) {
-                p.rect_filled(rect, 0.0, base);
-            }
-        } else {
-            p.rect_filled(rect, 0.0, base);
-            if bgt == "image" {
-                if let Some(u) = bg["image"].as_str().filter(|x| !x.is_empty()) {
-                    draw_image(ui, c, rect, u, bg["imageFit"].as_str() != Some("contain"));
+    // 소스 · 화면 구성 (docs/roadmap-sources.md): 기본 구성 'full' 의 차례대로 소스마다 층 하나를 그린다.
+    // 웹 출력(output.js)의 층 차례와 같다. 카메라 · 영상 · 오버레이 · 웹 소스는 예전처럼 egui 에서 그리지 않는다.
+    for layer in PAINT_LAYERS {
+        match layer {
+            "background" => {
+                // ---- 배경층 (backgroundCss) + 로고
+                let bg = &t["background"];
+                let bgt = bg["type"].as_str().unwrap_or("color");
+                if bg_off {
+                    p.rect_filled(rect, 0.0, Color32::BLACK);
+                } else if bgt == "transparent" {
+                    checker(&p, rect, sc);
+                } else {
+                    let base = color(&bg["color"], Color32::BLACK);
+                    let grad = bg["gradient"].as_str().unwrap_or("");
+                    if bgt == "gradient" && !grad.is_empty() {
+                        // background: <그라데이션> — 바탕색은 쓰지 않는다 (아래는 검은 창)
+                        p.rect_filled(rect, 0.0, Color32::BLACK);
+                        if !paint_css_gradient(&p, rect, grad, Vec2::new(tw, th), 0.0, Color32::WHITE) {
+                            p.rect_filled(rect, 0.0, base);
+                        }
+                    } else {
+                        p.rect_filled(rect, 0.0, base);
+                        if bgt == "image" {
+                            if let Some(u) = bg["image"].as_str().filter(|x| !x.is_empty()) {
+                                draw_image(ui, c, rect, u, bg["imageFit"].as_str() != Some("contain"));
+                            }
+                        }
+                    }
+                    // 움직이는 배경: 웹 출력(render.js motionLayer)과 같은 수식의 한 장면
+                    let mo = bg["motion"].as_str().unwrap_or("");
+                    if crate::motion::is_motion(mo) && matches!(bgt, "color" | "gradient" | "image" | "") {
+                        crate::motion::paint(&p, rect, mo, 0.0);
+                    }
+                    let dim = num(&bg["dim"], 0.0);
+                    if dim > 0.0 && matches!(bgt, "image" | "video" | "camera") {
+                        p.rect_filled(rect, 0.0, Color32::from_black_alpha((dim.min(1.0) * 255.0) as u8));
+                    }
                 }
-            }
-        }
-        // 움직이는 배경: 웹 출력(render.js motionLayer)과 같은 수식의 한 장면
-        let mo = bg["motion"].as_str().unwrap_or("");
-        if crate::motion::is_motion(mo) && matches!(bgt, "color" | "gradient" | "image" | "") {
-            crate::motion::paint(&p, rect, mo, 0.0);
-        }
-        let dim = num(&bg["dim"], 0.0);
-        if dim > 0.0 && matches!(bgt, "image" | "video" | "camera") {
-            p.rect_filled(rect, 0.0, Color32::from_black_alpha((dim.min(1.0) * 255.0) as u8));
-        }
-    }
-    // 로고: 배경층에 함께 (높이 = size, 폭 = 그림 비율). 투명 배경(OBS)에도 보인다
-    if !bg_off {
-        if let Some(u) = t["logo"]["image"].as_str().filter(|x| !x.is_empty()) {
-            if t["logo"]["show"].as_bool().unwrap_or(false) {
-                let aspect = image_size(ui, c, u).map(|s| s.x / s.y.max(1.0)).unwrap_or(1.0);
-                if let Some(lr) = crate::slide_layout::logo_rect(t, aspect) {
-                    let lr = to_screen(lr);
-                    hit_set(|h| h.logo = Some(lr));
-                    let op = num(&t["logo"]["opacity"], 1.0).clamp(0.0, 1.0);
-                    if let Some(uri) = image_uri(c, u) {
-                        egui::Image::new(uri).texture_options(IMG_OPTS).tint(Color32::WHITE.gamma_multiply(op)).paint_at(ui, lr);
+                // 로고: 배경층에 함께 (높이 = size, 폭 = 그림 비율). 투명 배경(OBS)에도 보인다
+                if !bg_off {
+                    if let Some(u) = t["logo"]["image"].as_str().filter(|x| !x.is_empty()) {
+                        if t["logo"]["show"].as_bool().unwrap_or(false) {
+                            let aspect = image_size(ui, c, u).map(|s| s.x / s.y.max(1.0)).unwrap_or(1.0);
+                            if let Some(lr) = crate::slide_layout::logo_rect(t, aspect) {
+                                let lr = to_screen(lr);
+                                hit_set(|h| h.logo = Some(lr));
+                                let op = num(&t["logo"]["opacity"], 1.0).clamp(0.0, 1.0);
+                                if let Some(uri) = image_uri(c, u) {
+                                    egui::Image::new(uri).texture_options(IMG_OPTS).tint(Color32::WHITE.gamma_multiply(op)).paint_at(ui, lr);
+                                }
+                            }
+                        }
                     }
                 }
             }
-        }
-    }
-    if let Some(s) = slide.filter(|_| visible) {
-        paint_content(ui, c, &p, rect, s, t, sc, version_name, hide_bg);
-    }
-    // ---- 로고 화면 (모든 것 위): 검은 바탕 가운데 로고 (원래 크기, 폭 45%·높이 55% 까지)
-    if logo {
-        p.rect_filled(rect, 0.0, Color32::BLACK);
-        let u = t["logo"]["image"].as_str().filter(|x| !x.is_empty()).unwrap_or("/shared/assets/sa-shield.png");
-        let natural = image_size(ui, c, u).map(|s| s * sc);
-        let lr = crate::slide_layout::logo_screen_rect(rect, natural.unwrap_or(Vec2::ZERO));
-        if !draw_image(ui, c, lr, u, false) {
-            p.text(rect.center(), Align2::CENTER_CENTER, "로고", FontId::proportional(rect.height() * 0.1), Color32::WHITE);
+            "live" => {
+                if let Some(s) = slide.filter(|_| visible) {
+                    paint_content(ui, c, &p, rect, s, t, sc, version_name, hide_bg);
+                }
+            }
+            "logo-screen" => {
+                // ---- 로고 화면 (모든 것 위): 검은 바탕 가운데 로고 (원래 크기, 폭 45%·높이 55% 까지)
+                if logo {
+                    p.rect_filled(rect, 0.0, Color32::BLACK);
+                    let u = t["logo"]["image"].as_str().filter(|x| !x.is_empty()).unwrap_or("/shared/assets/sa-shield.png");
+                    let natural = image_size(ui, c, u).map(|s| s * sc);
+                    let lr = crate::slide_layout::logo_screen_rect(rect, natural.unwrap_or(Vec2::ZERO));
+                    if !draw_image(ui, c, lr, u, false) {
+                        p.text(rect.center(), Align2::CENTER_CENTER, "로고", FontId::proportional(rect.height() * 0.1), Color32::WHITE);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
+
+/// 조작 화면이 그리는 소스 층 (기본 구성 차례에서 egui 로 그릴 수 있는 것만)
+const PAINT_LAYERS: [&str; 3] = ["background", "live", "logo-screen"];
 
 /// 본문층 (buildContent): 종류별
 #[allow(clippy::too_many_arguments)]

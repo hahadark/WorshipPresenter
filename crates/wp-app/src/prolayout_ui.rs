@@ -28,6 +28,8 @@ pub(crate) enum InsTab {
     Text,
     Stage,
     Media,
+    /// 소스 목록 (무엇이 있고 어디에 나가는지)
+    Sources,
 }
 
 /// 판 머리 띠 (.ph: 높이 30 · head 바탕 · 아래 edge 선 · 굵은 제목 + 흐린 부제). 오른쪽 칸은 `right` 가 채운다
@@ -168,7 +170,7 @@ impl App {
         }
     }
 
-    /// 오른쪽 인스펙터: 머리 '인스펙터' + [글자 | 무대 | 미디어], 그 아래 지금 다음(미리보기) 순서 이름
+    /// 오른쪽 인스펙터: 머리 '인스펙터' + [글자 | 무대 | 미디어 | 소스], 그 아래 지금 다음(미리보기) 순서 이름
     fn pro_inspector(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         let p = pal();
         // 안의 칸이 판을 밀어 넓히지 않게 (egui 옆 판은 내용 폭을 따라 커진다)
@@ -179,8 +181,8 @@ impl App {
         let mut tab = ui.data(|d| d.get_temp::<InsTab>(id)).unwrap_or(InsTab::Text);
         widgets::mark("pro-ins-head", Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), theme::HEAD_H)));
         pane_head(ui, &tr("인스펙터"), "", |ui| {
-            let (a, b, c) = (tr("글자"), tr("무대"), tr("미디어"));
-            let r = widgets::segmented_with(ui, &mut tab, &[(InsTab::Text, a.as_str()), (InsTab::Stage, b.as_str()), (InsTab::Media, c.as_str())], widgets::SegStyle::TINY);
+            let (a, b, c, d) = (tr("글자"), tr("무대"), tr("미디어"), tr("소스"));
+            let r = widgets::segmented_with(ui, &mut tab, &[(InsTab::Text, a.as_str()), (InsTab::Stage, b.as_str()), (InsTab::Media, c.as_str()), (InsTab::Sources, d.as_str())], widgets::SegStyle::TINY);
             widgets::mark("pro-ins-tabs", r.rect);
         });
         ui.data_mut(|d| d.insert_temp(id, tab));
@@ -209,6 +211,9 @@ impl App {
             InsTab::Text => self.quick_panel(ui, s, acts),
             InsTab::Stage => {
                 egui::ScrollArea::vertical().id_salt("pro-stage").auto_shrink([false, false]).show(ui, |ui| self.workspace_stage(ui));
+            }
+            InsTab::Sources => {
+                egui::ScrollArea::vertical().id_salt("pro-sources").auto_shrink([false, false]).show(ui, |ui| self.sources_panel(ui));
             }
             InsTab::Media => {
                 egui::ScrollArea::vertical().id_salt("pro-media").auto_shrink([false, false]).show(ui, |ui| {

@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod sources_ui; // 인스펙터 '소스' 탭 (로드맵 1단계)
 mod imgcache; // 그림 메모리: 줄여 읽기 · 상한(LRU)
 mod panel_ui;
 mod names_ui;

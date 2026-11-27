@@ -20,6 +20,89 @@
   let lastPayload = null;
   let drawState = null; // 화면에 그리기·강조
 
+  // ---------- 소스마다 층 하나 (docs/roadmap-sources.md) ----------
+  // 무대(.bc-stage) 바로 아래에는 층 상자(.wp-layer)만 둔다. 화면 구성(payload.scene.layers)의 차례가 곧 쌓는 차례이고,
+  // 배경 · 미디어 · 본문 · 오버레이 하나하나 · 로고 화면 · 그리기가 자기 층 안에만 그린다.
+  // 층 상자는 z-index · opacity · transform 을 주지 않아(칸 값이 없을 때) 쌓임 맥락을 새로 만들지 않는다 → 안의 z 10 · 20 · 50 이 전과 같다.
+  const slots = new Map(); // 칸 id → 층 상자
+  let sceneSources = {};
+  /** 옛 코어(scene 없음)와 같은 기본 차례 */
+  function defaultLayers(p) {
+    const l = id => ({ id, source: id });
+    const ov = (p.overlays || []).filter(o => o.id !== 'wpmessage').map(o => l('overlay:' + o.id));
+    return [l('background'), l('media'), l('slide-bg'), l('live'), ...ov, l('message'), l('logo-screen'), l('draw')];
+  }
+  function sceneLayers(p) {
+    const s = p && p.scene;
+    return (s && Array.isArray(s.layers) ? s.layers : defaultLayers(p || {})).filter(l => l && l.id && l.source !== 'pip'); // pip 는 무대 밖 (#bcPip)
+  }
+  /** 칸 모양: rect [x,y,w,h] · crop [l,t,r,b] (비율) · opacity — 값이 없으면 아무 스타일도 주지 않는다 (2단계에서 씀) */
+  function layerBox(el, l) {
+    const css = ['position:absolute', 'inset:0'];
+    const r = Array.isArray(l.rect) && l.rect.length === 4 ? l.rect.map(Number) : null;
+    if (r && r.every(Number.isFinite) && !(r[0] === 0 && r[1] === 0 && r[2] === 1 && r[3] === 1)) {
+      css[1] = `left:${r[0] * 100}%;top:${r[1] * 100}%;width:${r[2] * 100}%;height:${r[3] * 100}%;overflow:hidden`;
+    }
+    const c = Array.isArray(l.crop) && l.crop.length === 4 ? l.crop.map(Number) : null;
+    if (c && c.every(Number.isFinite) && c.some(x => x > 0)) css.push(`clip-path:inset(${c[1] * 100}% ${c[2] * 100}% ${c[3] * 100}% ${c[0] * 100}%)`);
+    if (l.opacity != null && Number(l.opacity) < 1) css.push(`opacity:${Math.max(0, Number(l.opacity) || 0)}`);
+    if (l.visible === false) css.push('display:none');
+    const s = css.join(';');
+    if (el.style.cssText !== s) el.style.cssText = s;
+  }
+  /** 구성 차례대로 층 상자를 맞춘다. 이미 있는 상자는 차례가 맞으면 옮기지 않는다 (옮기면 영상 · 카메라 · 웹 페이지가 끊긴다) */
+  function syncLayers(p) {
+    const want = sceneLayers(p);
+    const ids = new Set(want.map(l => l.id));
+    for (const [id, el] of [...slots]) if (!ids.has(id)) { el.remove(); slots.delete(id); }
+    let prev = null;
+    for (const l of want) {
+      let el = slots.get(l.id);
+      const at = prev ? prev.nextSibling : stage.firstChild;
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'wp-layer';
+        el.dataset.layer = l.id;
+        el.dataset.source = l.source;
+        slots.set(l.id, el);
+        stage.insertBefore(el, at);
+      } else if (el !== at) stage.insertBefore(el, at);
+      layerBox(el, l);
+      prev = el;
+    }
+  }
+  /** 이 소스를 그릴 층 (구성에 없으면 null — 그 소스는 이 화면에 그리지 않는다) */
+  function slot(source) {
+    for (const el of slots.values()) if (el.dataset.source === source) return el;
+    return null;
+  }
+
+  // ---------- 사용자 소스: 웹 페이지 · 화면 캡처 ----------
+  function renderUserSources(p) {
+    sceneSources = p.sources || {};
+    for (const el of slots.values()) {
+      const id = el.dataset.source;
+      const s = sceneSources[id];
+      if (!s) continue;
+      const key = JSON.stringify([s.kind, s.url, s.target, s.fit]);
+      if (el.dataset.key === key) { el.firstChild && (el.firstChild.style.opacity = String(s.opacity ?? 1)); continue; }
+      el.dataset.key = key;
+      el.innerHTML = '';
+      if (s.kind === 'web' && /^https?:\/\//i.test(s.url || '')) {
+        // 다른 사이트가 출력 화면을 다른 곳으로 옮기지 못하게 sandbox (top 이동 · 창 띄우기 막음). 누르기는 받지 않는다
+        const f = document.createElement('iframe');
+        f.className = 'wp-web';
+        f.src = s.url;
+        f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+        f.setAttribute('allow', 'autoplay');
+        f.setAttribute('referrerpolicy', 'no-referrer');
+        f.style.cssText = `position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;pointer-events:none;opacity:${s.opacity ?? 1}`;
+        el.appendChild(f);
+      }
+      // 화면 캡처(kind capture)는 출력 창에서 허락 창 없이 열 방법이 없어 아직 그리지 않는다 (docs/roadmap-sources.md (마))
+    }
+  }
+
   function setupStage(t) {
     const key = JSON.stringify(t);
     if (key === tplKey && stage) return false;
@@ -29,6 +112,12 @@
     vUrl = ''; vLayer = null;
     stage = R.buildStage(t);
     stage.style.setProperty('--bc-fade', fadeMs() + 'ms');
+    // 템플릿 배경(.bc-bg)은 'background' 층으로 옮겨 둔다
+    const bgEl = stage.firstChild;
+    slots.clear();
+    syncLayers(lastPayload);
+    const bgSlot = slot('background');
+    if (bgSlot) bgSlot.appendChild(bgEl); else bgEl.remove();
     screenEl.appendChild(stage);
     current = null;
     // 투명 템플릿이 아니고 OBS 가 아닌 창이면 여백(레터박스)을 검게
@@ -61,7 +150,9 @@
     layer.className = 'bc-vlayer';
     layer.style.opacity = '0';
     layer.innerHTML = `<video src="${R.safeUrl(url)}" autoplay muted loop playsinline preload="auto"></video>`;
-    stage.insertBefore(layer, mediaEl && mediaEl.isConnected ? mediaEl.nextSibling : (stage.children[1] || null)); // 템플릿 배경(·배경 미디어) 바로 위, 글자 아래
+    const sl = slot('slide-bg'); // 템플릿 배경 · 배경 미디어 위, 글자 아래 (구성 차례)
+    if (!sl) return;
+    sl.appendChild(layer);
     const v = layer.querySelector('video');
     const show = () => { layer.style.transition = `opacity ${ms}ms ease`; layer.style.opacity = '1'; };
     if (v.readyState >= 2) requestAnimationFrame(show); else { v.addEventListener('loadeddata', show, { once: true }); setTimeout(show, 1500); }
@@ -106,16 +197,20 @@
   }
 
   // 오버레이 층: 슬라이드 전환과 따로, 내용이 바뀔 때만 다시 그린다
-  let ovKey = '';
-  let ovLayer = null;
+  // 오버레이마다 자기 층 (overlay:<id>, 회중 메시지는 message): 바뀐 오버레이만 다시 그린다
   function renderOverlays(p, force) {
-    const list = p.overlays || [];
-    const key = JSON.stringify(list);
-    if (!force && key === ovKey && ovLayer && ovLayer.isConnected) return;
-    ovKey = key;
-    if (ovLayer) ovLayer.remove();
-    ovLayer = list.length ? R.buildOverlays(list, tpl) : null;
-    if (ovLayer) stage.appendChild(ovLayer);
+    for (const o of p.overlays || []) {
+      const el = slot(o.id === 'wpmessage' ? 'message' : 'overlay:' + o.id);
+      if (!el) continue;
+      const key = JSON.stringify([o, tpl.font && tpl.font.family]);
+      if (!force && el.dataset.key === key && el.firstChild) continue;
+      el.dataset.key = key;
+      el.innerHTML = '';
+      el.appendChild(R.buildOverlays([o], tpl));
+    }
+    // 내린 회중 메시지: 층은 구성에 늘 있으므로 비운다
+    const msg = slot('message');
+    if (msg && !(p.overlays || []).some(o => o.id === 'wpmessage') && msg.firstChild) { msg.innerHTML = ''; msg.dataset.key = ''; }
   }
 
   // ---------- 영상 재생 슬라이드 ----------
@@ -230,9 +325,11 @@
     mediaEl = null;
     if (old) { old.style.opacity = '0'; setTimeout(() => old.remove(), 450); }
     if (!m) return;
+    const sl = slot('media'); // 템플릿 배경 바로 위 (구성 차례)
+    if (!sl) return;
     const el = R.buildMediaLayer(m);
     el.style.opacity = '0';
-    stage.insertBefore(el, stage.children[1] || null); // 템플릿 배경 바로 위
+    sl.appendChild(el);
     mediaEl = el;
     requestAnimationFrame(() => requestAnimationFrame(() => { el.style.opacity = '1'; }));
   }
@@ -250,14 +347,14 @@
     applyMedia(L.media || null);
     const want = L.logo ? L.logoImage : '';
     if (logoEl && (!want || logoEl.dataset.img !== want)) { const old = logoEl; logoEl = null; old.style.opacity = '0'; setTimeout(() => old.remove(), 450); }
-    if (want && !logoEl) {
+    const ls = slot('logo-screen'); // 구성에서 본문 · 오버레이 위
+    if (want && !logoEl && ls) {
       logoEl = R.buildLogoScreen(want);
       logoEl.dataset.img = want;
       logoEl.style.opacity = '0';
-      stage.appendChild(logoEl);
+      ls.appendChild(logoEl);
       requestAnimationFrame(() => requestAnimationFrame(() => { if (logoEl) logoEl.style.opacity = '1'; }));
     }
-    if (logoEl && logoEl !== stage.lastChild) stage.appendChild(logoEl); // 늘 맨 위
   }
 
   /** OBS 자막: 글 없는 그림·악보 슬라이드를 우상단에 작게 (예배당 화면 모양 그대로) */
@@ -275,20 +372,26 @@
     el.innerHTML = '';
     R.renderInto(el, { ...p.slide, caption: '' }, t);
   }
+  function paintDrawLayer() {
+    const el = stage && tpl && drawState ? slot('draw') : null;
+    if (el) R.paintDraw(el, drawState, tpl);
+  }
   function render(p) {
     if (p.cameras) R.setCameraPrefs(p.cameras); // 카메라 해상도·프레임·밝기 (조작 화면과 같게)
-    queueMicrotask(() => { if (stage && tpl && drawState) R.paintDraw(stage, drawState, tpl); }); // 그리기 층은 늘 맨 위
+    queueMicrotask(() => paintDrawLayer()); // 그리기 층 (구성에서 맨 위)
     lastPayload = p;
     document.body.classList.toggle('nocursor', p.cursorHidden !== false);
     document.body.classList.toggle('held', !!p.held); // 보조 화면을 꺼서 OBS 화면도 숨김
     // 그림 우상단을 켰으면, 자막(가사만) 화면에서는 그림을 크게 그리지 않고 우상단에만 (가사가 있으면 가사는 아래에)
     if (p.pip && p.slide && (p.slide.kind === 'image' || p.slide.kind === 'score') && typeof p.slide.caption !== 'string') p = { ...p, slide: { ...p.slide, caption: '' } };
     const stageChanged = setupStage(p.template);
+    syncLayers(p); // 켜고 끈 오버레이 · 사용자 소스에 따라 층을 맞춘다
+    renderUserSources(p);
     const show = p.hasLive && p.visible && p.slide;
     applyPip(p, show);
     const key = show ? JSON.stringify([p.slide, p.versionName]) : '';
-    const bg = stage.firstChild;
-    bg.style.opacity = (!show && p.template.clearHidesBackground) ? '0' : '1';
+    const bg = stage.querySelector('.bc-bg');
+    if (bg) bg.style.opacity = (!show && p.template.clearHidesBackground) ? '0' : '1';
 
     renderOverlays(p, stageChanged);
     if (stageChanged) { logoEl = null; mediaEl = null; }
@@ -298,7 +401,8 @@
 
     const token = ++renderSeq;
     // 지금 무대에 있는 본문층은 모두 '이전 층' (전환 중에 또 넘겨도 남는 층이 없게)
-    const olds = [...stage.querySelectorAll(':scope > .bc-area')];
+    const liveSlot = slot('live');
+    const olds = liveSlot ? [...liveSlot.querySelectorAll(':scope > .bc-area')] : [];
     current = null;
     if (!show) {
       // 숨김: 디졸브면 서서히 사라짐
@@ -313,7 +417,8 @@
     const area = R.buildContent(p.slide, tpl, p.versionName, { videoBgLayer: true });
     area.style.transition = 'none';
     area.style.opacity = '0';
-    stage.appendChild(area); // 이전 층 위에 쌓인다
+    if (!liveSlot) { ack(p); return; } // 이 구성에는 순서 슬라이드 칸이 없다
+    liveSlot.appendChild(area); // 이전 층 위에 쌓인다
     R.fit(area, tpl);
     current = area;
     applyVideo(p);
@@ -352,7 +457,7 @@
       try { render(JSON.parse(e.data)); } catch (err) { console.error(err); }
     });
     es.addEventListener('draw', e => {
-      try { drawState = JSON.parse(e.data); if (stage && tpl) R.paintDraw(stage, drawState, tpl); } catch (err) { console.error(err); }
+      try { drawState = JSON.parse(e.data); paintDrawLayer(); } catch (err) { console.error(err); }
     });
     es.addEventListener('hello', e => {
       clientId = JSON.parse(e.data).id;

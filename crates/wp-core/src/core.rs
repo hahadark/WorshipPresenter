@@ -366,6 +366,9 @@ impl Core {
             "video": self.video_payload(), // [트랙 B]
             "cursorHidden": s["output"]["cursorHidden"].as_bool().unwrap_or(true),
             "cameras": s.get("cameras").cloned().unwrap_or(json!({})),
+            // 소스 · 화면 구성 (docs/roadmap-sources.md): 덧붙인 칸 — 옛 칸은 그대로, 옛 output.js 는 이 칸을 모른 채 그린다
+            "scene": self.scene_for(output),
+            "sources": crate::sources::payload_sources(output, &crate::sources::user_sources(s)),
         })
     }
 
