@@ -132,3 +132,40 @@ fn live_only_width_bounds() {
     assert_eq!(live_only_width(1000.0, Some(0.9)), 600.0, "비율 한도 0.6");
     assert!(live_only_width(2400.0, None) <= 864.0);
 }
+
+/// 홍보 캡처 중 발견: 예배 시간표 범위 밖(예배 전 · 뒤)에 무대 타이머를 켜면 시간표의 무대 줄이 비어 보였다
+#[test]
+fn timeline_shows_running_timer_outside_plan() {
+    let mut h = H::new(notices());
+    {
+        let mut c = h.app.core.lock();
+        c.settings.update(|d| d["rsProLayout"]["timeline"] = json!(true));
+        // 지금부터 5시간 전에 시작해 10분이면 끝나는 계획 (지금 시각은 시간표 범위 밖)
+        let now = (wp_core::util::now_ms() + wp_core::localtime::local_offset_ms()).div_euclid(60_000).rem_euclid(1440);
+        let st = (now - 300).rem_euclid(1440);
+        if let Some(q) = c.cue.as_mut() {
+            q.start_time = format!("{:02}:{:02}", st / 60, st % 60);
+            for it in q.items.iter_mut() {
+                it["duration"] = json!(5);
+            }
+        }
+        c.stage_timer("start", 5.0).unwrap();
+    }
+    idle(&mut h, 3);
+    let r = seen("timeline-timer").expect("무대 타이머가 시간표 무대 줄에 보여야 함");
+    let head = seen("pro-tl-fold").unwrap();
+    assert!(r.right() <= head.right() + 30.0 && r.left() >= 0.0, "줄 안에 보임: {r:?}");
+}
+
+/// 홍보 캡처 중 발견: 다른 곳(분 단추 · 리모컨 · /api/trigger/timer)으로 켠 타이머의 끝 시각이 무대 화면 창 '몇 시까지' 칸에 보여야 함
+#[test]
+fn stage_window_until_field_shows_actual_end() {
+    let mut h = H::new(notices());
+    h.app.core.lock().stage_timer("start", 30.0).unwrap();
+    let t = h.app.core.lock().b.stage.timer.clone();
+    let m = ((t.end_at + wp_core::localtime::local_offset_ms()).div_euclid(60_000)).rem_euclid(1440);
+    crate::track_c::handle_menu(&mut h.app, "b:stage");
+    idle(&mut h, 3);
+    assert!(seen("stage-timer-at").is_some(), "무대 화면 창의 '몇 시까지' 칸");
+    assert_eq!(h.app.tb.timer_at_for_test(), format!("{}:{:02}", m / 60, m % 60));
+}

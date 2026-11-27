@@ -308,10 +308,25 @@ impl App {
                 let left_ms = if timer.running { timer.end_at - wp_core::util::now_ms() } else { timer.remaining };
                 let start = now_min - (timer.duration - left_ms).max(0) as f64 / 60_000.0;
                 let end = now_min + left_ms.max(0) as f64 / 60_000.0;
-                let r = Rect::from_min_max(Pos2::new(xof(start).max(track.left()), lane.top() + 8.0), Pos2::new(xof(end).min(track.right()).max(xof(start) + 4.0), lane.bottom() - 8.0));
-                pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(1.5, p.next), egui::StrokeKind::Inside);
                 let sec = (left_ms.max(0) / 1000) as i64;
-                pt.with_clip_rect(r).text(Pos2::new(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, format!("{} {:02}:{:02}{}", tr("무대 타이머"), sec / 60, sec % 60, if timer.running { "" } else { " (멈춤)" }), theme::font(10.5, Weight::SemiBold), p.next);
+                let label = format!("{} {:02}:{:02}{}", tr("무대 타이머"), sec / 60, sec % 60, if timer.running { "" } else { " (멈춤)" });
+                let (x0, x1) = (xof(start).max(track.left()), xof(end).min(track.right()));
+                if x1 - x0 >= 40.0 {
+                    let r = Rect::from_min_max(Pos2::new(x0, lane.top() + 8.0), Pos2::new(x1, lane.bottom() - 8.0));
+                    crate::widgets::mark("timeline-timer", r);
+                    pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(1.5, p.next), egui::StrokeKind::Inside);
+                    pt.with_clip_rect(r).text(Pos2::new(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, label, theme::font(10.5, Weight::SemiBold), p.next);
+                } else {
+                    // 지금 시각이 시간표 범위 밖(예배 전 · 뒤)이거나 너무 짧아 칸이 안 보이면: 줄 끝 쪽에 글로 (예전에는 칸이 화면 밖에 그려져 줄이 비어 보였다)
+                    let past = xof(now_min) > track.right();
+                    let (pos, align) = if past { (Pos2::new(track.right() - 10.0, lane.center().y), Align2::RIGHT_CENTER) } else { (Pos2::new(track.left() + 12.0, lane.center().y), Align2::LEFT_CENTER) };
+                    let g = pt.layout_no_wrap(label, theme::font(10.5, Weight::SemiBold), p.next);
+                    let rr = align.anchor_size(pos, g.size()).expand2(Vec2::new(6.0, 3.0));
+                    pt.rect_filled(rr, theme::cr(theme::Rad::Sm), p.panel);
+                    pt.rect_stroke(rr, theme::cr(theme::Rad::Sm), Stroke::new(1.5, p.next), egui::StrokeKind::Inside);
+                    pt.galley(rr.min + Vec2::new(6.0, 3.0), g, p.next);
+                    crate::widgets::mark("timeline-timer", rr);
+                }
                 ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
                 drew = true;
             }

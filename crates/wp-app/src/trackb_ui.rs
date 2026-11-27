@@ -34,6 +34,8 @@ pub struct TbState {
     timer_min: String,
     /// 무대 타이머 '몇 시까지' 칸 ("11:00")
     timer_at: String,
+    /// '몇 시까지' 칸에 마지막으로 채워 넣은 실제 끝 시각 (타이머가 바뀌면 다시 채움)
+    timer_at_shown: Option<String>,
     stage_msg: String,
     pin_text: String,
     macro_name: String,
@@ -751,7 +753,27 @@ impl App {
             // 몇 시까지: 예배 시작 · 설교 끝 시각에 맞춰 (예: 11:00 → 지금부터 그 시각까지)
             ui.horizontal_wrapped(|ui| {
                 ui.label(tr("몇 시까지"));
-                let r = ui.add(egui::TextEdit::singleline(&mut self.tb.timer_at).desired_width(76.0).hint_text("11:00"));
+                // 타이머가 켜져 있으면 칸에 실제로 끝나는 시각을 보인다 (리모컨 · /api/trigger/timer · 분 단추로 켠 것도) — 고쳐 쓰는 중이면 그대로
+                let end_hm = {
+                    let t = self.core.lock().b.stage.timer.clone();
+                    let end = if t.running { Some(t.end_at) } else if t.remaining > 0 { Some(wp_core::util::now_ms() + t.remaining) } else { None };
+                    end.map(|e| {
+                        let m = ((e + wp_core::localtime::local_offset_ms()).div_euclid(60_000)).rem_euclid(1440);
+                        format!("{}:{:02}", m / 60, m % 60)
+                    })
+                };
+                let focus_id = egui::Id::new("stage-timer-at-edit");
+                let editing = ui.memory(|m| m.has_focus(focus_id));
+                if let Some(hm) = &end_hm {
+                    if !editing && self.tb.timer_at_shown.as_deref() != Some(hm.as_str()) {
+                        // 켠 시각이 바뀌었을 때만 칸을 채운다 (사용자가 적어 둔 글을 매 프레임 덮지 않게)
+                        self.tb.timer_at = hm.clone();
+                        self.tb.timer_at_shown = Some(hm.clone());
+                    }
+                } else {
+                    self.tb.timer_at_shown = None;
+                }
+                let r = ui.add(egui::TextEdit::singleline(&mut self.tb.timer_at).id(focus_id).desired_width(76.0).hint_text("11:00"));
                 crate::widgets::mark("stage-timer-at", r.rect);
                 let go = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let empty = self.tb.timer_at.trim().is_empty();
@@ -1255,6 +1277,10 @@ fn quick_remember(dir: &std::path::Path, text: &str) {
 
 #[cfg(test)]
 impl TbState {
+    #[cfg(test)]
+    pub(crate) fn timer_at_for_test(&self) -> &str {
+        &self.timer_at
+    }
     pub(crate) fn quick_text(&self) -> &str { &self.quick_text }
     pub(crate) fn set_quick_text(&mut self, s: &str) { self.quick_text = s.to_string(); }
 }

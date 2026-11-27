@@ -27,6 +27,7 @@ for (const w of ['1000x640', '1600x960', '1920x1080']) {
 }
 add('light-side-1600x960', ['--win', '1600x960', ...base], { 'rsProLayout.viewerMode': 'live', 'ui.theme': 'pro-light' });
 add('en-side-1600x960', ['--win', '1600x960', ...base], { 'rsProLayout.viewerMode': 'live', uiLang: 'en' });
+add('s150-side-1600x960', ['--win', '1600x960', ...base], { 'rsProLayout.viewerMode': 'live', 'ui.scale': 150 });
 add('menu-view-1600x960', ['--win', '1600x960', '--import-cue', cue, '--open-menu', '보기']);
 
 const list = only.length ? S.filter(s => only.some(o => s.id === o || s.id.startsWith(o))) : S;
