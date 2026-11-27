@@ -1,7 +1,7 @@
 # 새로 생긴 창 · 구획 전체 목록 — 소스 로드맵 1~4단계 + AI 도우미 7개 (2026-11-27, sources 가지)
 
 다음 작업(전체 인터페이스 다듬기)을 위한 목록. 모두 **아직 릴리스 전**(2.0.8 다음). 설계 · 쓰는 법은 `docs/roadmap-sources.md`, AI 는 `docs/ai-features.md`.
-캡처는 `docs/images/review/` (1600×960 창 `--win 1600x960`, 2400×1440 으로 찍힘 → jpg). 점검 자료는 가상(○○교회 · 홍길동).
+캡처는 `docs/images/review/` (1600×960 창 `--win 1600x960`, 2400×1440 으로 찍힘 → 1600px jpg). 표의 `review/…` = `docs/images/review/…`. 원본 png 는 `tmp\ui4\review\` (저장소 밖). 점검 자료는 가상(○○교회 · 홍길동).
 
 점검 실행 공통 (격리): `WP_LEGACY_DATA=<빈 폴더(Windows 경로, cygpath -w)>` + `target\debug\wp-app.exe --data <자료 복사본> --win 1600x960 … --shot <파일>`.
 자료는 `tools/scenes/e2e-auto.js` 가 만든 `tmp\auto-e2e\data` 를 복사해 구성 4개 · 추가 출력 '로비 화면' · 전환 지정을 넣어 썼다 (`tmp\ui4\data`, 큐시트 `tmp\ui4\cue.json` — `--import-cue`).
@@ -18,7 +18,7 @@
 | S6 | 뷰어 머리 **출력 고르기** [예배당 \| OBS \| 로비 화면 …] (다음 · 송출 중 각각) | 가운데 '보기' | `--item 1 --send` | `review/s6-main-timeline.jpg` | `app.rs` (3단계) |
 | S7 | 큐시트 줄 · 시간표 막대의 **작은 격자 아이콘** (출력 기본과 다른 구성, 툴팁) | 순서에 구성 지정이 있을 때 | 같음 | `review/s6-main-timeline.jpg` | `cue_ui.rs` · `timeline_ui.rs` (3단계) |
 | S8 | 예배 시간표 **구성 줄** (기본과 다른 구성 막대 · 기본 바꾸는 순서의 세로 금, 보기 전용) | 구성이 하나라도 있고 큐시트에 시작 시각 · 길이 | 같음 | `review/s6-main-timeline.jpg` | `timeline_ui.rs scene_lane` (4단계) |
-| S9 | 편집칸 '송출할 때 자동으로' 의 **화면 구성** 줄 (출력마다 [그대로 / 전체 / 구성]) | 순서 편집칸 → 송출할 때 자동으로 | `--edit-actions` | `review/s9-auto-actions.jpg` | `actions_ui.rs` (4단계) |
+| S9 | 편집칸 '송출할 때 자동으로' 의 **화면 구성** 줄 (출력마다 [그대로 / 전체 / 구성]) | 순서 편집칸 → 송출할 때 자동으로 | `--edit-actions` (캡처는 편집칸이 아래로 굴러 있어 '화면 구성' 줄이 OBS 줄 바로 위, 화면 밖) | `review/s9-auto-actions.jpg` | `actions_ui.rs` (4단계) |
 | S10 | 도구 → **카메라 동시 열기 시험** (카메라 고르기 · 시험 시작 · 곳마다 결과 · 결과 복사) | 도구 메뉴 | `--open-d camtest` | `review/s10-camtest.jpg` | `camtest_ui.rs` (3단계) |
 | S11 | 휴대폰 리모컨 · OBS 도킹의 **화면 구성** 카드 (출력마다 단추 · '계속 쓰기' · 되돌리기) | 휴대폰 리모컨(PIN) / OBS 도킹 `http://127.0.0.1:<포트>/dock/` | 브라우저 | `review/s11-remote-scenes.png` | `web/remote` · `remote.rs` (4단계) |
 | S12 | 웹 출력 화면 구성 · 전환 (옮겨 가는 중) | `/outputs/overlay` 등 | `tools/scenes/e2e-auto.js` | `review/s12-moving.jpg` · `review/s12-after.jpg` | `web/output/output.js` (2~4단계) |
