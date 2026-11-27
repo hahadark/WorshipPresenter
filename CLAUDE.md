@@ -147,3 +147,11 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - 코어 `outputs.rs`: 추가 출력 `extraOutputs[]`(/outputs/out-…, kind main|overlay 로 같은 종류 내장 출력처럼) · 종류별 기본 `typeScenes` · 순서 `scenes` · 소리 `output.audioOutput`. 구성 고르는 차례 = 순서 → 종류 기본 → 출력 기본 → full (`Core::scene_choice_for_deck`).
 - 조작 화면: 인스펙터 소스 탭 '화면 구성'(`sources_ui.rs scene_section`), 출력 설정 창 '출력' 구획 · 추가 출력 창(`outputs_ui.rs`), 도구 → 카메라 동시 열기 시험(`camtest_ui.rs` · 코어 `camtest.rs` · `/helper/camtest`), 구성 편집기 Alt+누름 = 겹친 아래 칸 차례로. 점검 인자 `--open-d camtest`.
 - 점검: `node tools/scenes/e2e-outputs.js --exe target\debug\wp-app.exe --data tmp\data --out tmp\outputs-e2e --fake-cam` (시험 기준: 성경봉독 · 찬양 순서마다 예배당 · 방송이 각자 바뀜, cue-next 로 넘김).
+
+## 2026-11-27 소스 · 화면 구성 로드맵 4단계 — 전환 · 자동화 + AI 도우미 7개 합침 (sources 가지, 아직 릴리스 전)
+
+- 쓰는 법 · 저장 형식 · 확인 · 제안: docs/roadmap-sources.md '4단계 한 것'. AI 는 docs/ai-features.md. 새 창 · 구획 전체 목록과 캡처(다음 인터페이스 다듬기용): **docs/ui-review-sources-ai.md** (docs/images/review/).
+- 코어 `scenectl.rs`: 전환(`sceneTransition` · `outputTransitions` · 구성 `transition`, 기본 move 0.4초), '지금 한 번'(`b.scene_once`, 다음 순서까지) · `/api/trigger/scene?output=&id=&hold=1`, 순서 동작 `actions.scene`(출력 기본, 남음). 고르는 차례 = 지금 한 번 → 순서 → 종류 → 출력 기본 → full.
+- 웹 출력: 카메라 · 웹 칸은 같은 요소 그대로 새 자리로(FLIP, Web Animations), 템플릿이 바뀌어도 옮김. `<body data-scene>` 점검용.
+- AI 5번 실시간 자막 = 소스 `caption` (띄운 동안만 기본 구성 칸, 구성에 넣을 수 있음). AI 메뉴 시험은 `ai_ui::dry()` 로 창을 열지 않음(전역 창 상태가 다른 화면 시험을 가렸음).
+- 점검: `node tools/scenes/e2e-auto.js --exe target\debug\wp-app.exe --data tmp\data --out tmp\auto-e2e --fake-cam` (20개).
