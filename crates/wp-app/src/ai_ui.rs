@@ -49,6 +49,9 @@ struct St {
 static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
 
 pub fn handle_menu(id: &str) -> bool {
+    if crate::sermon_ui::handle_menu(id) {
+        return true;
+    }
     let mut s = ST.lock();
     match id {
         "ai:settings" => {
@@ -107,8 +110,12 @@ pub fn ai_button(ui: &mut egui::Ui, app: &App, label: &str, busy: bool) -> bool 
 
 pub fn show(app: &mut App, ctx: &egui::Context) {
     static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(open_from_args);
+    ONCE.call_once(|| {
+        open_from_args();
+        crate::sermon_ui::open_from_args();
+    });
     consent_win(app, ctx);
+    crate::sermon_ui::show(app, ctx);
     settings_win(app, ctx);
     check_win(app, ctx);
 }

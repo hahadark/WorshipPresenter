@@ -14,7 +14,9 @@ pub mod splitedit; // [갈래 C] PPT 나누기 창: 손으로 고치기 (cue.js 
 pub mod pptsheets; // [트랙 A] 모아보기 그림
 pub mod sermonpoints; // [트랙 A] 설교 포인트
 pub mod aihelp; // AI 도우미 공통 (OpenAI 호환 주소 · 동의 · 시험용 가짜 응답)
+pub mod refscan; // 글·음성 인식 글 속 성경 장절 찾기
 pub mod cuecheck; // 예배 전 큐시트 점검 (규칙 + AI 선택)
+pub mod sermonslides; // 설교 원고 → 슬라이드 묶음 (제목 · 성경 · 설교 포인트 · 인용)
 pub mod preservice; // [트랙 A] 예배 전 화면
 pub mod homefeed; // [트랙 A] 홈페이지 주보
 pub mod parity_a; // [트랙 A] 기능 대조에서 빠진 작은 것들
