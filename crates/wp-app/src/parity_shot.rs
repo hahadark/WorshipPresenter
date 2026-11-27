@@ -78,6 +78,16 @@ fn resolve(app: &App, cases: &[Value]) -> Vec<Value> {
             "name": case["name"], "output": output, "template": tpl, "slide": slide, "versionName": ver,
             "hideBg": case["hideBg"].as_bool().unwrap_or(false), "logo": case["logo"].as_bool().unwrap_or(false),
             "pipTemplate": if case["pip"].as_bool().unwrap_or(false) { c.template_for_deck("main", deck.as_ref()) } else { Value::Null },
+            // 화면 구성 (로드맵 2단계): 칸의 tplId 를 템플릿 값으로 (출력 데이터의 layer.template 와 같게)
+            "scene": if case["scene"].is_object() {
+                let mut sc = case["scene"].clone();
+                for l in sc["layers"].as_array_mut().into_iter().flatten() {
+                    if let Some(t) = l["tplId"].as_str().and_then(|id| c.settings.template(id)) {
+                        l["template"] = t;
+                    }
+                }
+                sc
+            } else { Value::Null },
         }));
     }
     out
@@ -120,7 +130,11 @@ pub fn run(app: &App, ui: &mut egui::Ui) -> bool {
     ui.painter().rect_filled(rect, 0.0, egui::Color32::BLACK);
     let c = crate::paint::Ctx { web_dir: &app.web_dir, data_dir: &app.data_dir };
     let slide = case["slide"].is_object().then_some(&case["slide"]);
-    crate::paint::paint_slide(ui, &c, rect, slide, &case["template"], case["versionName"].as_str().unwrap_or(""), true, case["logo"].as_bool().unwrap_or(false), case["hideBg"].as_bool().unwrap_or(false));
+    if case["scene"].is_object() {
+        crate::paint::paint_scene(ui, &c, rect, &case["scene"], slide, &case["template"], case["versionName"].as_str().unwrap_or(""), true, case["logo"].as_bool().unwrap_or(false), case["hideBg"].as_bool().unwrap_or(false), &|s: &str| s.to_string());
+    } else {
+        crate::paint::paint_slide(ui, &c, rect, slide, &case["template"], case["versionName"].as_str().unwrap_or(""), true, case["logo"].as_bool().unwrap_or(false), case["hideBg"].as_bool().unwrap_or(false));
+    }
     if case["pipTemplate"].is_object() {
         let mut sl = case["slide"].clone();
         sl["caption"] = json!("");

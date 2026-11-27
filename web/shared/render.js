@@ -647,6 +647,62 @@
     return el;
   }
 
+  // ---------- 화면 구성 칸 (로드맵 2단계, docs/roadmap-sources.md) ----------
+  // 칸 = 무대(템플릿 크기) 위의 상자. rect [x,y,w,h] · crop [l,t,r,b] 는 비율, radius · border.width 는 무대 px.
+  // 상자가 필요 없는 칸(전체 · 자르기 없음 · 같은 템플릿 · 둥글기/테두리 없음)은 예전처럼 무대에 바로 그린다 → 기본 구성과 화소까지 같음.
+  const isFull = r => !r || (r[0] === 0 && r[1] === 0 && r[2] === 1 && r[3] === 1);
+  function sceneRect(l) {
+    const r = Array.isArray(l.rect) && l.rect.length === 4 ? l.rect.map(Number) : null;
+    return r && r.every(Number.isFinite) ? r : [0, 0, 1, 1];
+  }
+  function sceneCrop(l) {
+    const c = Array.isArray(l.crop) && l.crop.length === 4 ? l.crop.map(Number) : null;
+    return c && c.every(Number.isFinite) && c.some(x => x > 0) ? c : null;
+  }
+  function sceneNeedsBox(l) {
+    return !isFull(sceneRect(l)) || !!sceneCrop(l) || !!(l.template && typeof l.template === 'object') || Number(l.radius) > 0 || Number(l.border && l.border.width) > 0;
+  }
+  /** 칸 상자 크기에 맞춘 템플릿 (wp-core scenes::box_template 과 같다): 높이 그대로, 폭은 칸 비율 → 글자는 칸 높이에 비례, 넘치면 fit 이 줄임 */
+  function sceneTemplate(t, w, h) {
+    const th = Number(t.height) || 1080;
+    return w > 0 && h > 0 ? { ...t, width: Math.max(1, Math.round(th * w / h)), height: th } : t;
+  }
+  /** 칸 상자의 스타일 (무대 안 자리 · 투명도 · 둥글기 · 보이기) */
+  function sceneBoxCss(l) {
+    const css = ['position:absolute'];
+    const r = sceneRect(l);
+    css.push(isFull(r) ? 'inset:0' : `left:${r[0] * 100}%;top:${r[1] * 100}%;width:${r[2] * 100}%;height:${r[3] * 100}%`);
+    if (sceneNeedsBox(l)) css.push('overflow:hidden');
+    if (Number(l.radius) > 0) css.push(`border-radius:${Number(l.radius)}px`);
+    if (l.opacity != null && Number(l.opacity) < 1) css.push(`opacity:${Math.max(0, Number(l.opacity) || 0)}`);
+    if (l.visible === false) css.push('display:none');
+    return css.join(';');
+  }
+  /**
+   * 상자가 필요한 칸: 상자(box) 안에 그릴 자리(host)를 만든다. 자르기만큼 키워 상자 밖은 잘리고,
+   * host 는 칸 템플릿(l.template 또는 무대 템플릿)을 칸 크기에 맞춘 무대 크기 → scale 로 줄인다.
+   * 돌려줌 { host, t } — t 로 buildContent · fit · buildStage 를 부르면 칸 크기에 맞춰 글자를 다시 맞춘다.
+   */
+  function sceneHost(box, l, stageT) {
+    const r = sceneRect(l), c = sceneCrop(l) || [0, 0, 0, 0];
+    const bw = stageT.width * r[2], bh = stageT.height * r[3];
+    const iw = bw / Math.max(0.05, 1 - c[0] - c[2]), ih = bh / Math.max(0.05, 1 - c[1] - c[3]);
+    const t = sceneTemplate(l.template && typeof l.template === 'object' ? l.template : stageT, iw, ih);
+    const host = document.createElement('div');
+    host.className = 'wp-host';
+    const k = ih / t.height;
+    host.style.cssText = `position:absolute;left:${-c[0] * iw}px;top:${-c[1] * ih}px;width:${t.width}px;height:${t.height}px;transform:scale(${k});transform-origin:0 0;overflow:hidden`;
+    box.appendChild(host);
+    const bwid = Number(l.border && l.border.width) || 0;
+    if (bwid > 0) {
+      const f = document.createElement('div');
+      f.className = 'wp-frame';
+      f.style.cssText = `position:absolute;inset:0;box-sizing:border-box;border:${bwid}px solid ${esc((l.border && l.border.color) || '#ffffff')};border-radius:${Number(l.radius) || 0}px;pointer-events:none;z-index:1`;
+      box.appendChild(f);
+    }
+    return { host, t };
+  }
+
   /** 컨테이너 크기에 맞춰 stage 를 축소/확대 */
   function scaleStage(stage, container, t) {
     const cw = container.clientWidth, ch = container.clientHeight;
@@ -847,5 +903,5 @@
     svg.innerHTML = spot + lines;
   }
 
-  global.BCRender = { MOTIONS, motionFrame, buildMediaLayer, attachCameras, cameraStream, cameraInfo, setCameraPrefs, openCameras, closeCamera, paintDraw, editFor, esc, buildLogoScreen, syncVideo, safeUrl, isVideo, lyricsOnly, buildOverlays, clockText, countdownText, buildContent, buildStage, scaleStage, fit, fitsAt, renderInto, backgroundCss, contentRect };
+  global.BCRender = { sceneNeedsBox, sceneTemplate, sceneBoxCss, sceneHost, MOTIONS, motionFrame, buildMediaLayer, attachCameras, cameraStream, cameraInfo, setCameraPrefs, openCameras, closeCamera, paintDraw, editFor, esc, buildLogoScreen, syncVideo, safeUrl, isVideo, lyricsOnly, buildOverlays, clockText, countdownText, buildContent, buildStage, scaleStage, fit, fitsAt, renderInto, backgroundCss, contentRect };
 })(window);

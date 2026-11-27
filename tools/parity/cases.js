@@ -45,6 +45,12 @@ cases.push({ name: 'obs-pip-image', item: 2, tpl: 'theme-sa-redshield-overlay', 
 cases.push({ name: 'obs-pip-score', item: 7, tpl: 'overlay-lyrics', output: 'overlay', pip: true });
 cases.push({ name: 'video-slide', slideJson: { kind: 'video', ref: '광고 영상', image: '/lib/file?p=C%3A%5Cnone.mp4', parts: [] }, tpl: R });
 cases.push({ name: 'camera-slide', slideJson: { kind: 'camera', ref: '카메라', camera: { deviceId: '' }, parts: [] }, tpl: R });
+// 화면 구성 (로드맵 2단계): 칸 자리 · 칸 크기 글자 맞춤 · 다른 글 모양(아래 띠) · 자르기 · 둥글기/테두리
+const L = (source, rect, more) => ({ id: 'l-' + source + rect.join('_'), source, rect, ...(more || {}) });
+cases.push({ name: 'scene-split', slideJson: bible2, tpl: R, scene: { id: 'sc-split', layers: [L('background', [0, 0, 1, 1]), L('live', [0.5, 0, 0.5, 1])] } });
+cases.push({ name: 'scene-pip-live', slideJson: bible2, tpl: R, scene: { id: 'sc-pip', layers: [L('background', [0, 0, 1, 1]), L('live', [0.6, 0.6, 0.36, 0.36], { radius: 24, border: { width: 6, color: '#ffffff' } })] } });
+cases.push({ name: 'scene-lower-overlay', slideJson: bible2, tpl: R, scene: { id: 'sc-lower', layers: [L('background', [0, 0, 1, 1]), L('live', [0, 0, 1, 1], { tplId: 'overlay' })] } });
+cases.push({ name: 'scene-three-crop', item: 6, tpl: R, scene: { id: 'sc-three', layers: [L('background', [0, 0, 1, 1]), L('live', [0, 0, 2 / 3, 1]), L('background', [2 / 3, 0, 1 / 3, 0.5], { crop: [0.2, 0, 0.2, 0] })] } });
 require('fs').writeFileSync(process.argv[2] || 'tmp/cases-all.json', JSON.stringify(cases, null, 1));
 console.log(cases.length);
 

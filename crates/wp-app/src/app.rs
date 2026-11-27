@@ -107,6 +107,10 @@ pub(crate) struct Snap {
     pub(crate) hide_bg: bool,
     /// OBS 자막에 그림·악보 슬라이드를 우상단에 작게 (output.obsPip, 'OBS 전체' 가 아닐 때)
     pub(crate) obs_pip: bool,
+    /// 화면 구성 (로드맵 2단계): [LIVE 예배당, LIVE OBS, 미리보기 예배당, 미리보기 OBS] — 기본이면 id 'full'
+    pub(crate) scenes: [Value; 4],
+    /// 칸 자리 표시에 쓸 소스 이름 (camera:… · src-… → 이름)
+    pub(crate) source_names: Vec<(String, String)>,
 }
 
 /// 고른 것을 넣은 결과로 왼쪽 큐시트의 고른 순서를 맞춘다 (넣은 자리 또는 이미 있던 순서)
@@ -227,6 +231,17 @@ impl App {
             logo: c.layers.logo,
             hide_bg: c.layers.hide_bg,
             obs_pip: !c.obs_full && s["output"]["obsPip"].as_bool().unwrap_or(false),
+            scenes: {
+                let pv = c.pres.preview.as_ref();
+                let any = s["outputScenes"].as_object().is_some_and(|m| !m.is_empty());
+                if any {
+                    [c.scene_for("main"), c.scene_for("overlay"), c.scene_for_deck("main", pv), c.scene_for_deck("overlay", pv)]
+                } else {
+                    let f = || json!({ "id": wp_core::scenes::FULL });
+                    [f(), f(), f(), f()]
+                }
+            },
+            source_names: if s["outputScenes"].as_object().is_some_and(|m| !m.is_empty()) { crate::scene_ui::source_names(&c) } else { vec![] },
         }
     }
 
@@ -1112,7 +1127,10 @@ impl App {
             let version = deck.map(|d| d.passage["versionName"].as_str().unwrap_or("").to_string()).unwrap_or_default();
             let (visible, logo, hide_bg) = match live { Some(l) => (l.visible, s.logo, s.hide_bg), None if is_live => (true, s.logo, s.hide_bg), None => (true, false, false) };
             ui.painter().rect_filled(rect, crate::theme::cr(crate::theme::Rad::Md), Color32::BLACK);
-            paint_slide(ui, &c, rect.shrink(2.0), slide, tpl, &version, visible, logo, hide_bg);
+            // 화면 구성 (로드맵 2단계): 고른 구성의 칸 자리 · 자르기대로 (기본 구성이면 paint_slide 그대로)
+            let scene = &s.scenes[match (is_live, self.views.obs(is_live)) { (true, false) => 0, (true, true) => 1, (false, false) => 2, (false, true) => 3 }];
+            let names = |id: &str| s.source_names.iter().find(|(k, _)| k == id).map(|(_, n)| n.clone()).unwrap_or_else(|| id.to_string());
+            paint::paint_scene(ui, &c, rect.shrink(2.0), scene, slide, tpl, &version, visible, logo, hide_bg, &names);
             // OBS 자막 + 그림 우상단 켬: 그림·악보 슬라이드를 예배당 모양 그대로 오른쪽 위에 작게 (output index.html .bc-pip)
             if self.views.obs(is_live) && s.obs_pip && visible && slide.is_some_and(|x| matches!(x["kind"].as_str(), Some("image" | "score"))) {
                 let main_t = if is_live { &s.tpl_main } else { &s.preview_main };

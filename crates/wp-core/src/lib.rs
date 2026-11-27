@@ -52,6 +52,7 @@ pub mod camhelper; // 카메라 찾기·미리보기 도우미 페이지
 pub mod thumbs; // [트랙 B]
 pub mod overlays; // [트랙 B]
 pub mod sources; // 소스 · 화면 구성 (로드맵 1단계, docs/roadmap-sources.md)
+pub mod scenes; // 화면 구성 편집 (로드맵 2단계)
 pub mod songs; // [트랙 B]
 pub mod trackb; // [트랙 B]
 pub mod flow; // [트랙 C]

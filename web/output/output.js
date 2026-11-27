@@ -36,25 +36,27 @@
     const s = p && p.scene;
     return (s && Array.isArray(s.layers) ? s.layers : defaultLayers(p || {})).filter(l => l && l.id && l.source !== 'pip'); // pip 는 무대 밖 (#bcPip)
   }
-  /** 칸 모양: rect [x,y,w,h] · crop [l,t,r,b] (비율) · opacity — 값이 없으면 아무 스타일도 주지 않는다 (2단계에서 씀) */
+  /** 칸 상자 모양 (render.js sceneBoxCss): 기본 구성의 칸은 'position:absolute;inset:0' 뿐 → 쌓임 맥락을 새로 만들지 않는다 */
   function layerBox(el, l) {
-    const css = ['position:absolute', 'inset:0'];
-    const r = Array.isArray(l.rect) && l.rect.length === 4 ? l.rect.map(Number) : null;
-    if (r && r.every(Number.isFinite) && !(r[0] === 0 && r[1] === 0 && r[2] === 1 && r[3] === 1)) {
-      css[1] = `left:${r[0] * 100}%;top:${r[1] * 100}%;width:${r[2] * 100}%;height:${r[3] * 100}%;overflow:hidden`;
-    }
-    const c = Array.isArray(l.crop) && l.crop.length === 4 ? l.crop.map(Number) : null;
-    if (c && c.every(Number.isFinite) && c.some(x => x > 0)) css.push(`clip-path:inset(${c[1] * 100}% ${c[2] * 100}% ${c[3] * 100}% ${c[0] * 100}%)`);
-    if (l.opacity != null && Number(l.opacity) < 1) css.push(`opacity:${Math.max(0, Number(l.opacity) || 0)}`);
-    if (l.visible === false) css.push('display:none');
-    const s = css.join(';');
+    const s = R.sceneBoxCss(l);
     if (el.style.cssText !== s) el.style.cssText = s;
   }
-  /** 구성 차례대로 층 상자를 맞춘다. 이미 있는 상자는 차례가 맞으면 옮기지 않는다 (옮기면 영상 · 카메라 · 웹 페이지가 끊긴다) */
+  /** 상자 안 그릴 자리를 다시 만들어야 하는 값 (자리 · 자르기 · 글 모양 · 둥글기 · 테두리 · 무대 크기) */
+  function hostKey(l) {
+    if (!R.sceneNeedsBox(l)) return '';
+    const t = l.template && typeof l.template === 'object' ? l.template : null;
+    return JSON.stringify([l.rect, l.crop, l.radius, l.border, t ? JSON.stringify(t) : '', tpl && tpl.width, tpl && tpl.height]);
+  }
+  /** 구성 차례대로 층 상자를 맞춘다. 이미 있는 상자는 차례가 맞으면 옮기지 않는다 (옮기면 영상 · 카메라 · 웹 페이지가 끊긴다).
+   *  자리 · 자르기 · 글 모양이 바뀐 칸은 상자를 새로 만들고 그 소스를 다시 그린다 (돌려줌: 새로 만든 칸의 소스들) */
   function syncLayers(p) {
     const want = sceneLayers(p);
     const ids = new Set(want.map(l => l.id));
-    for (const [id, el] of [...slots]) if (!ids.has(id)) { el.remove(); slots.delete(id); }
+    const fresh = new Set();
+    for (const [id, el] of [...slots]) {
+      const l = want.find(x => x.id === id);
+      if (!l || el.dataset.source !== l.source || (el.dataset.hostKey || '') !== hostKey(l)) { el.remove(); slots.delete(id); if (l) fresh.add(l.source); }
+    }
     let prev = null;
     for (const l of want) {
       let el = slots.get(l.id);
@@ -64,30 +66,75 @@
         el.className = 'wp-layer';
         el.dataset.layer = l.id;
         el.dataset.source = l.source;
+        el.dataset.hostKey = hostKey(l);
+        if (el.dataset.hostKey) { const h = R.sceneHost(el, l, tpl); el._host = h.host; el._tpl = h.t; }
         slots.set(l.id, el);
         stage.insertBefore(el, at);
+        fresh.add(l.source);
       } else if (el !== at) stage.insertBefore(el, at);
+      el._layer = l;
       layerBox(el, l);
       prev = el;
     }
+    return fresh;
   }
-  /** 이 소스를 그릴 층 (구성에 없으면 null — 그 소스는 이 화면에 그리지 않는다) */
-  function slot(source) {
+  /** 이 소스를 그릴 자리 (구성에 없으면 null — 그 소스는 이 화면에 그리지 않는다). 상자가 있는 칸이면 상자 안 그릴 자리 */
+  function slotEl(source) {
     for (const el of slots.values()) if (el.dataset.source === source) return el;
     return null;
+  }
+  function slot(source) {
+    const el = slotEl(source);
+    return el ? (el._host || el) : null;
+  }
+  /** 이 소스를 그릴 때 쓰는 템플릿 (칸 크기에 맞춘 것, 없으면 무대 템플릿) */
+  function slotTpl(source) {
+    const el = slotEl(source);
+    return (el && el._tpl) || tpl;
+  }
+  /** 템플릿 배경을 'background' 칸에: 무대에 바로면 무대의 배경, 상자 칸이면 그 칸 크기 템플릿으로 새로 */
+  let stageBg = null;
+  function placeBackground() {
+    const el = slotEl('background');
+    if (!el) { if (stageBg) stageBg.remove(); return; }
+    const host = el._host || el;
+    if (host.querySelector(':scope > .bc-bg')) return;
+    const bg = el._host ? R.buildStage(el._tpl).firstChild : stageBg;
+    if (bg) host.insertBefore(bg, host.firstChild);
+  }
+  /** 카메라 칸 (camera:<deviceId>): 칸마다 영상 하나 — 같은 카메라는 페이지 안에서 스트림 하나를 같이 쓴다 (render.js cameraStream) */
+  function renderCams() {
+    for (const el of slots.values()) {
+      const src = el.dataset.source || '';
+      if (!src.startsWith('camera:')) continue;
+      const l = el._layer || {};
+      const key = JSON.stringify([src, l.fit]);
+      const host = el._host || el;
+      if (host.dataset.camKey === key && host.querySelector('.wp-cam')) continue;
+      host.dataset.camKey = key;
+      host.querySelectorAll('.wp-cam').forEach(x => x.remove());
+      const m = R.buildMediaLayer({ type: 'camera', deviceId: src.slice(7), fit: l.fit === 'contain' ? 'contain' : 'cover' });
+      m.className = 'wp-cam'; // 배경 끄기(.hide-bg .bc-medialayer)에 숨지 않게 — 구성에 직접 넣은 카메라
+      m.style.cssText = 'position:absolute;inset:0;overflow:hidden';
+      host.appendChild(m);
+    }
   }
 
   // ---------- 사용자 소스: 웹 페이지 · 화면 캡처 ----------
   function renderUserSources(p) {
     sceneSources = p.sources || {};
-    for (const el of slots.values()) {
+    for (let el of slots.values()) {
       const id = el.dataset.source;
       const s = sceneSources[id];
       if (!s) continue;
-      const key = JSON.stringify([s.kind, s.url, s.target, s.fit]);
-      if (el.dataset.key === key) { el.firstChild && (el.firstChild.style.opacity = String(s.opacity ?? 1)); continue; }
-      el.dataset.key = key;
-      el.innerHTML = '';
+      const box = el;
+      const hostEl = box._host || box;
+      const fit = (box._layer && box._layer.fit) || s.fit;
+      const key = JSON.stringify([s.kind, s.url, s.target, fit]);
+      if (hostEl.dataset.key === key) { hostEl.firstChild && (hostEl.firstChild.style.opacity = String(s.opacity ?? 1)); continue; }
+      hostEl.dataset.key = key;
+      hostEl.innerHTML = '';
+      el = hostEl;
       if (s.kind === 'web' && /^https?:\/\//i.test(s.url || '')) {
         // 다른 사이트가 출력 화면을 다른 곳으로 옮기지 못하게 sandbox (top 이동 · 창 띄우기 막음). 누르기는 받지 않는다
         const f = document.createElement('iframe');
@@ -113,11 +160,11 @@
     stage = R.buildStage(t);
     stage.style.setProperty('--bc-fade', fadeMs() + 'ms');
     // 템플릿 배경(.bc-bg)은 'background' 층으로 옮겨 둔다
-    const bgEl = stage.firstChild;
+    stageBg = stage.firstChild;
+    stageBg.remove();
     slots.clear();
     syncLayers(lastPayload);
-    const bgSlot = slot('background');
-    if (bgSlot) bgSlot.appendChild(bgEl); else bgEl.remove();
+    placeBackground();
     screenEl.appendChild(stage);
     current = null;
     // 투명 템플릿이 아니고 OBS 가 아닌 창이면 여백(레터박스)을 검게
@@ -176,8 +223,8 @@
   }
 
   /** 이 슬라이드가 화면을 꽉 채우는(불투명한) 그림인가 */
-  function coversScreen(slide) {
-    if (R.lyricsOnly(tpl) && typeof slide.caption === 'string') return false; // 가사만 출력
+  function coversScreen(slide, t) {
+    if (R.lyricsOnly(t || tpl) && typeof slide.caption === 'string') return false; // 가사만 출력
     if (slide.kind === 'score') return !!slide.bg;
     if (slide.kind === 'image' || slide.kind === 'video') return true;
     if (slide.kind === 'blank') return slide.mode !== 'background';
@@ -384,9 +431,16 @@
     document.body.classList.toggle('held', !!p.held); // 보조 화면을 꺼서 OBS 화면도 숨김
     // 그림 우상단을 켰으면, 자막(가사만) 화면에서는 그림을 크게 그리지 않고 우상단에만 (가사가 있으면 가사는 아래에)
     if (p.pip && p.slide && (p.slide.kind === 'image' || p.slide.kind === 'score') && typeof p.slide.caption !== 'string') p = { ...p, slide: { ...p.slide, caption: '' } };
-    const stageChanged = setupStage(p.template);
-    syncLayers(p); // 켜고 끈 오버레이 · 사용자 소스에 따라 층을 맞춘다
+    let stageChanged = setupStage(p.template);
+    const fresh = syncLayers(p); // 켜고 끈 오버레이 · 사용자 소스 · 화면 구성에 따라 층을 맞춘다
+    // 화면 구성을 고쳐 상자를 새로 만든 칸: 그 소스를 다시 그린다
+    if (fresh.has('background')) placeBackground();
+    if (fresh.has('live')) lastKey = '';
+    if (fresh.has('media')) mediaEl = null;
+    if (fresh.has('slide-bg')) { vUrl = ''; vLayer = null; }
+    if (fresh.has('logo-screen')) logoEl = null;
     renderUserSources(p);
+    renderCams();
     const show = p.hasLive && p.visible && p.slide;
     applyPip(p, show);
     const key = show ? JSON.stringify([p.slide, p.versionName]) : '';
@@ -412,14 +466,15 @@
       return;
     }
     // 순서 배경이 영상이면 영상 층에서 재생 (가사 화면 등 글자 슬라이드)
-    const wantVid = p.slide.bg && R.isVideo(p.slide.bg) && !(R.lyricsOnly(tpl) && typeof p.slide.caption === 'string') ? p.slide.bg : '';
+    const lt = slotTpl('live'); // 칸 크기 · 칸 글 모양에 맞춘 템플릿 (기본 구성이면 무대 템플릿 그대로)
+    const wantVid = p.slide.bg && R.isVideo(p.slide.bg) && !(R.lyricsOnly(lt) && typeof p.slide.caption === 'string') ? p.slide.bg : '';
     setVideoBg(wantVid);
-    const area = R.buildContent(p.slide, tpl, p.versionName, { videoBgLayer: true });
+    const area = R.buildContent(p.slide, lt, p.versionName, { videoBgLayer: true });
     area.style.transition = 'none';
     area.style.opacity = '0';
     if (!liveSlot) { ack(p); return; } // 이 구성에는 순서 슬라이드 칸이 없다
     liveSlot.appendChild(area); // 이전 층 위에 쌓인다
-    R.fit(area, tpl);
+    R.fit(area, lt);
     current = area;
     applyVideo(p);
     // 그림(악보·PPT·배경)을 다 불러온 뒤에 바꾼다 → 빈 화면이 잠깐 보이는 깜빡임 방지
@@ -427,7 +482,7 @@
       if (token !== renderSeq) return; // 그 사이 다음 슬라이드가 왔으면 그쪽이 처리
       const ms = fadeMs();
       if (!ms) { area.style.opacity = '1'; olds.forEach(o => o.remove()); return; }
-      if (coversScreen(p.slide)) {
+      if (coversScreen(p.slide, lt)) {
         // 화면을 꽉 채우는 그림: 이전 화면 위로 새 화면이 서서히 덮는다 (진짜 디졸브)
         fadeIn(area, ms, 0);
         olds.forEach(o => { o.style.transition = 'none'; });

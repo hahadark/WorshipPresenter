@@ -304,6 +304,83 @@ fn tpl_family(ctx: &egui::Context, t: &Value, weight: f32) -> FontFamily {
 /// 슬라이드 하나를 rect 에 그린다 (웹 출력 render.js buildStage + buildContent + fit 과 같은 규칙).
 /// visible=false 면 글자는 숨기고 배경만 (LIVE 숨김 상태), logo = '로고 화면', hide_bg = 배경 끄기
 pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t: &Value, version_name: &str, visible: bool, logo: bool, hide_bg: bool) {
+    paint_slide_layers(ui, c, rect, slide, t, version_name, visible, logo, hide_bg, &PAINT_LAYERS);
+}
+
+/// 화면 구성(scene) 대로 그린다 (웹 output.js 와 같은 차례 · 자리 · 자르기 · 칸 크기 글자 맞춤).
+/// 기본 구성(full)이면 paint_slide 그대로 (그림이 2.0.8 과 같음). 카메라 · 웹 페이지 칸은 이름 상자(자리 표시)만,
+/// 배경 미디어 · 순서 배경 영상 · 오버레이 · 회중 메시지 · 그리기는 예전처럼 그리지 않는다.
+#[allow(clippy::too_many_arguments)]
+pub fn paint_scene(ui: &egui::Ui, c: &Ctx, rect: Rect, scene: &Value, slide: Option<&Value>, t: &Value, version_name: &str, visible: bool, logo: bool, hide_bg: bool, name_of: &dyn Fn(&str) -> String) {
+    let layers = scene["layers"].as_array();
+    if scene["id"] == wp_core::scenes::FULL || layers.is_none() {
+        paint_slide(ui, c, rect, slide, t, version_name, visible, logo, hide_bg);
+        return;
+    }
+    let (tw, th) = crate::slide_layout::stage_size(t);
+    let canvas = {
+        let fit = letterbox(rect, tw / th.max(1.0));
+        ui.painter_at(rect).rect_filled(rect, 0.0, Color32::BLACK);
+        fit
+    };
+    let sc = canvas.width() / tw.max(1.0);
+    for l in layers.into_iter().flatten() {
+        if l["visible"] == false {
+            continue;
+        }
+        let src = l["source"].as_str().unwrap_or("");
+        let auto = l["auto"] == true;
+        if auto && src != "logo-screen" {
+            continue;
+        }
+        let (bx, inner, v) = scene_box(canvas, l, t);
+        let mut child = egui::Ui::new(ui.ctx().clone(), ui.id().with(("wp-scene-layer", l["id"].as_str().unwrap_or(""))), egui::UiBuilder::new().max_rect(inner).layer_id(ui.layer_id()));
+        child.set_clip_rect(bx.intersect(canvas).intersect(ui.clip_rect()));
+        let op = l["opacity"].as_f64().unwrap_or(1.0).clamp(0.0, 1.0) as f32;
+        if op < 1.0 {
+            child.multiply_opacity(op);
+        }
+        match src {
+            "background" => paint_slide_layers(&child, c, inner, None, &v, "", visible, false, hide_bg, &["background"]),
+            "live" => paint_slide_layers(&child, c, inner, slide, &v, version_name, visible, false, hide_bg, &["live"]),
+            "logo-screen" => paint_slide_layers(&child, c, inner, None, &v, "", visible, logo, hide_bg, &["logo-screen"]),
+            s if s.starts_with("camera:") || s.starts_with("src-") => {
+                // 자리 표시: 어두운 상자 + 이름 (실제 영상 · 웹 페이지는 출력 화면에서만)
+                let p = child.painter_at(bx);
+                p.rect_filled(bx, 0.0, Color32::from_rgb(28, 30, 36));
+                let fs = (bx.height() * 0.09).clamp(9.0, 22.0);
+                let name = name_of(s);
+                p.text(bx.center(), Align2::CENTER_CENTER, name, FontId::proportional(fs), Color32::from_gray(170));
+            }
+            _ => {}
+        }
+        let bw = l["border"]["width"].as_f64().unwrap_or(0.0) as f32;
+        if bw > 0.0 {
+            let col = l["border"]["color"].as_str().and_then(parse_color).unwrap_or(Color32::WHITE);
+            let r = (l["radius"].as_f64().unwrap_or(0.0) as f32 * sc).min(bx.width().min(bx.height()) / 2.0);
+            let w = (bw * sc).max(1.0);
+            child.painter_at(bx).rect_stroke(bx.shrink(w / 2.0), r, Stroke::new(w, col.gamma_multiply(op)), egui::StrokeKind::Middle);
+        }
+    }
+}
+
+/// 칸 하나의 화면 자리: (상자, 자르기만큼 키운 그릴 자리, 그 자리 크기에 맞춘 템플릿) — 웹 render.js sceneHost 와 같은 계산
+pub fn scene_box(canvas: Rect, l: &Value, stage_t: &Value) -> (Rect, Rect, Value) {
+    let (tw, th) = crate::slide_layout::stage_size(stage_t);
+    let r = wp_core::scenes::rect_of(l).map(|x| x as f32);
+    let cr = wp_core::scenes::crop_of(l).map(|x| x as f32);
+    let bx = Rect::from_min_size(canvas.min + Vec2::new(r[0] * canvas.width(), r[1] * canvas.height()), Vec2::new(r[2] * canvas.width(), r[3] * canvas.height()));
+    let kx = (1.0 - cr[0] - cr[2]).max(0.05);
+    let ky = (1.0 - cr[1] - cr[3]).max(0.05);
+    let inner = Rect::from_min_size(bx.min - Vec2::new(cr[0] * bx.width() / kx, cr[1] * bx.height() / ky), Vec2::new(bx.width() / kx, bx.height() / ky));
+    let lt = if l["template"].is_object() { &l["template"] } else { stage_t };
+    let v = if wp_core::scenes::needs_box(l) { wp_core::scenes::box_template(lt, (tw * r[2] / kx) as f64, (th * r[3] / ky) as f64) } else { lt.clone() };
+    (bx, inner, v)
+}
+
+/// paint_slide 의 몸통: 기본 구성 차례에서 고른 층만 그린다
+#[allow(clippy::too_many_arguments)]
+pub fn paint_slide_layers(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t: &Value, version_name: &str, visible: bool, logo: bool, hide_bg: bool, layers: &[&str]) {
     let (tw, th) = crate::slide_layout::stage_size(t);
     // 템플릿 비율(예: 4:3)이 그릴 칸(16:9 썸네일 등)과 다르면 가운데에 맞추고 남는 곳은 검게 — 웹 출력 scaleStage 의 레터박스와 같다
     let rect = {
@@ -320,7 +397,7 @@ pub fn paint_slide(ui: &egui::Ui, c: &Ctx, rect: Rect, slide: Option<&Value>, t:
     let bg_off = hide_bg || (!visible && t["clearHidesBackground"].as_bool().unwrap_or(false));
     // 소스 · 화면 구성 (docs/roadmap-sources.md): 기본 구성 'full' 의 차례대로 소스마다 층 하나를 그린다.
     // 웹 출력(output.js)의 층 차례와 같다. 카메라 · 영상 · 오버레이 · 웹 소스는 예전처럼 egui 에서 그리지 않는다.
-    for layer in PAINT_LAYERS {
+    for layer in layers.iter().copied() {
         match layer {
             "background" => {
                 // ---- 배경층 (backgroundCss) + 로고

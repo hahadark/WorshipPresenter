@@ -3,6 +3,35 @@
  *       개발자 도구 콘솔에 이 파일 내용을 붙여 넣은 뒤 parityRender(<resolved.json 의 한 항목>) → 화면을 찍어 rust-<이름>.png 와 나란히 비교.
  * (조작 화면 그림과 웹 출력이 같은 규칙인지 보는 도구. 2026-11-15 docs/slide-parity.md)
  */
+/* 화면 구성 (로드맵 2단계): output.js 와 같은 방식 — 무대 위 칸 상자, 상자가 필요하면 render.js sceneHost 로 칸 크기 템플릿 */
+async function parityScene(host, c) {
+  const R = window.BCRender, t = c.template;
+  const stage = R.buildStage(t);
+  const bg = stage.firstChild; bg.remove();
+  if (t.background.type === 'transparent') stage.classList.add('bc-checker');
+  host.appendChild(stage);
+  let size = 0;
+  for (const l of c.scene.layers) {
+    if (l.visible === false) continue;
+    const box = document.createElement('div');
+    box.className = 'wp-layer';
+    box.style.cssText = R.sceneBoxCss(l);
+    stage.appendChild(box);
+    let target = box, lt = t;
+    if (R.sceneNeedsBox(l)) { const h = R.sceneHost(box, l, t); target = h.host; lt = h.t; }
+    if (l.source === 'background') target.insertBefore(target === box ? bg : R.buildStage(lt).firstChild, target.firstChild);
+    if (l.source === 'live' && c.slide && c.slide.kind) {
+      const area = R.buildContent(c.slide, lt, c.versionName);
+      target.appendChild(area);
+      size = R.fit(area, lt).size;
+    }
+  }
+  R.scaleStage(stage, host, t);
+  await document.fonts.ready;
+  await Promise.all([...host.querySelectorAll('img')].map(i => (i.decode ? i.decode().catch(() => {}) : 0)));
+  return size;
+}
+
 window.parityRender = async function (c) {
   let host = document.getElementById('parityHost');
   if (!host) {
@@ -13,6 +42,7 @@ window.parityRender = async function (c) {
   }
   host.innerHTML = '';
   const t = c.template;
+  if (c.scene && Array.isArray(c.scene.layers)) return parityScene(host, c);
   const r = window.BCRender.renderInto(host, c.slide && c.slide.kind ? c.slide : null, t, {
     versionName: c.versionName, checker: true,
     layers: { hideBg: c.hideBg, logo: c.logo, logoImage: (t.logo && t.logo.image) || '/shared/assets/sa-shield.png' },

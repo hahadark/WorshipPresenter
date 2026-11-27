@@ -189,6 +189,31 @@ pub fn payload_sources(output: &str, user: &[Value]) -> Value {
     Value::Object(m)
 }
 
+/// 출력 데이터의 `sources` (2단계): 켜 둔 것 + 이 출력이 쓰는 구성에 넣은 사용자 소스
+pub fn payload_sources_for(output: &str, user: &[Value], scene_id: &str, settings: &Value) -> Value {
+    let mut v = payload_sources(output, user);
+    if scene_id == crate::scenes::FULL {
+        return v;
+    }
+    let Some(sc) = crate::scenes::find_scene(settings, scene_id) else { return v };
+    let m = v.as_object_mut().unwrap();
+    for id in crate::scenes::used_user_sources(&sc) {
+        if m.contains_key(&id) {
+            continue;
+        }
+        if let Some(s) = user.iter().find(|s| s["id"] == id.as_str()) {
+            let mut o = json!({ "kind": s["kind"], "name": s["name"], "opacity": s["opacity"], "fit": s["fit"] });
+            if s["kind"] == "web" {
+                o["url"] = s["url"].clone();
+            } else {
+                o["target"] = s["target"].clone();
+            }
+            m.insert(id, o);
+        }
+    }
+    v
+}
+
 /// 조작 화면 '소스' 목록의 한 줄
 #[derive(Clone, Debug, PartialEq)]
 pub struct SourceRow {
@@ -239,9 +264,75 @@ impl Core {
         OUTPUTS.iter().copied().filter(|o| self.outputs.values().any(|c| c.client == *o)).collect()
     }
 
-    /// 이 출력의 화면 구성 (1단계: 늘 기본 구성)
+    /// 이 출력의 화면 구성: 고른 구성(설정 outputScenes) → 없으면 기본 구성 `full` (2.0.8 과 같음)
     pub fn scene_for(&self, output: &str) -> Value {
-        default_scene(output, &self.overlays_for(output), &user_sources(self.settings.get()))
+        self.scene_for_deck(output, self.pres.live.as_ref().map(|l| &l.deck))
+    }
+
+    /// 미리보기처럼 LIVE 가 아닌 묶음의 구성 (칸의 글 모양 'main' · 'overlay' 를 그 묶음의 템플릿으로)
+    pub fn scene_for_deck(&self, output: &str, deck: Option<&crate::presentation::Deck>) -> Value {
+        let s = self.settings.get();
+        let id = crate::scenes::output_scene_id(s, output);
+        let overlays = self.overlays_for(output);
+        match crate::scenes::find_scene(s, &id) {
+            Some(sc) => self.effective_scene_for(&sc, output, deck),
+            None => default_scene(output, &overlays, &user_sources(s)),
+        }
+    }
+
+    /// 구성 하나(편집 중인 것 포함)를 이 출력에 보낼 모양으로: 맨 위 칸을 붙이고 칸 글 모양을 템플릿으로
+    pub fn effective_scene_for(&self, sc: &Value, output: &str, deck: Option<&crate::presentation::Deck>) -> Value {
+        let overlays = self.overlays_for(output);
+        // 무대 템플릿: output_payload 의 template 과 같게 ('OBS 전체' 면 OBS 도 예배당 템플릿)
+        let stage_out = if output == "overlay" && self.obs_full { "main" } else { output };
+        let stage_id = self.template_for_deck(stage_out, deck)["id"].clone();
+        let resolve = |t: &str| -> Option<Value> {
+            let v = match t {
+                "main" | "overlay" => self.template_for_deck(t, deck),
+                id => self.settings.template(id)?,
+            };
+            // 무대 템플릿과 같으면 붙이지 않는다 → 웹 출력이 무대에 바로 그림 (기본 구성과 같은 그림)
+            (!v.is_null() && v["id"] != stage_id).then_some(v)
+        };
+        crate::scenes::effective_scene(sc, output, &overlays, &resolve)
+    }
+
+    pub fn scenes(&self) -> Vec<Value> {
+        crate::scenes::user_scenes(self.settings.get())
+    }
+
+    pub fn output_scene(&self, output: &str) -> String {
+        crate::scenes::output_scene_id(self.settings.get(), output)
+    }
+
+    pub fn save_scene(&mut self, v: &Value) -> Result<Value> {
+        let mut out = Ok(Value::Null);
+        self.settings.update(|d| out = crate::scenes::save_scene(d, v));
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+        out
+    }
+
+    pub fn delete_scene(&mut self, id: &str) {
+        self.settings.update(|d| crate::scenes::delete_scene(d, id));
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+    }
+
+    pub fn duplicate_scene(&mut self, id: &str) -> Result<Value> {
+        let mut out = Ok(Value::Null);
+        self.settings.update(|d| out = crate::scenes::duplicate_scene(d, id));
+        self.emit(Ev::Ui);
+        out
+    }
+
+    /// 출력(main · overlay)에 구성 고르기 ("" · full = 기본)
+    pub fn set_output_scene(&mut self, output: &str, id: &str) -> Result<()> {
+        let mut out = Ok(());
+        self.settings.update(|d| out = crate::scenes::set_output_scene(d, output, id));
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+        out
     }
 
     pub fn user_sources(&self) -> Vec<Value> {
@@ -351,7 +442,15 @@ impl Core {
             }
             v
         };
-        let (um, uo) = (used("main"), used("overlay"));
+        let (mut um, mut uo) = (used("main"), used("overlay"));
+        // 고른 화면 구성에 넣은 카메라
+        let scene_of = |o: &str| crate::scenes::find_scene(s, &crate::scenes::output_scene_id(s, o));
+        if let Some(sc) = scene_of("main") {
+            um.extend(crate::scenes::used_cameras(&sc));
+        }
+        if let Some(sc) = scene_of("overlay") {
+            uo.extend(crate::scenes::used_cameras(&sc));
+        }
         for id in um.iter().chain(uo.iter()) {
             if !cam_ids.iter().any(|(d, _)| d == id) {
                 cam_ids.push((id.clone(), if id.is_empty() { "기본 카메라".into() } else { id.chars().take(12).collect() }));
@@ -364,7 +463,15 @@ impl Core {
         }
         // 사용자 소스 (웹 페이지 · 화면 캡처)
         for u in user_sources(s) {
-            let on: Vec<&'static str> = if u["on"] == true { OUTPUTS.iter().copied().filter(|x| u["outputs"].as_array().is_some_and(|a| a.iter().any(|y| y == x))).collect() } else { vec![] };
+            let uid = u["id"].as_str().unwrap_or("");
+            let on: Vec<&'static str> = OUTPUTS
+                .iter()
+                .copied()
+                .filter(|x| match scene_of(x) {
+                    Some(sc) => crate::scenes::used_user_sources(&sc).iter().any(|y| y == uid),
+                    None => u["on"] == true && u["outputs"].as_array().is_some_and(|a| a.iter().any(|y| y == x)),
+                })
+                .collect();
             let detail = if u["kind"] == "web" { u["url"].as_str().unwrap_or("").to_string() } else { u["target"]["name"].as_str().unwrap_or("").to_string() };
             rows.push(SourceRow {
                 id: u["id"].as_str().unwrap_or("").into(),

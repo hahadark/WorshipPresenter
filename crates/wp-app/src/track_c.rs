@@ -16,6 +16,8 @@ pub struct TrackC {
     pub themes: crate::theme_ui::ThemeUi,
     pub import: crate::import_ui::ImportUi,
     pub commentary: crate::commentary_ui::CommentaryUi,
+    /// 화면 구성 편집 창 (로드맵 2단계)
+    pub scenes: crate::scene_ui::SceneUi,
 }
 
 /// 메뉴에서 고른 트랙 C 항목
@@ -29,6 +31,10 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "c:about" => app.tc.history.about_open = true,
         "c:slideedit" => app.tc.slideedit.open = true,
         "c:themes" => app.tc.themes.open = true,
+        "c:scenes" => {
+            let id = app.core.lock().output_scene("overlay");
+            app.tc.scenes.open_with(&id);
+        }
         // 화면 언어 (Electron: 보기 > Language · 언어 → updateSettings uiLang). 다음 프레임에 trackd_ui::frame 이 set_lang
         "c:lang-ko" | "c:lang-en" => {
             let lang = if id == "c:lang-en" { "en" } else { "ko" };
@@ -106,6 +112,7 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                         }
                     });
                 }
+                if menubar::item_row(ui, Some("layout-grid"), &tr("화면 구성 편집…"), "", None).clicked() { handle_menu_later(ui.ctx(), "c:scenes"); ui.close(); }
                 menubar::sub_row(ui, Some("copy"), &tr("OBS 주소 복사"), |ui| {
                     for (label, path) in [("예배당 화면 그대로", "/outputs/main"), ("투명 자막", "/outputs/overlay"), ("무대 화면", "/outputs/stage")] {
                         let url = format!("http://127.0.0.1:{port}{path}");
@@ -119,6 +126,14 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     if let Some(id) = picked {
         handle_menu(app, id);
     }
+    if let Some(id) = ui.ctx().data_mut(|d| d.remove_temp::<&'static str>(egui::Id::new("wp-menu-later"))) {
+        handle_menu(app, id);
+    }
+}
+
+/// 메뉴 줄 안(앱을 빌린 동안)에서 고른 항목을 메뉴 줄을 다 그린 뒤에 연다
+fn handle_menu_later(ctx: &egui::Context, id: &'static str) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("wp-menu-later"), id));
 }
 
 /// OBS 주소를 복사한 뒤 알림 (보기 메뉴 · 출력 설정 창 공용)
@@ -153,6 +168,7 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
         handle_menu(app, id);
     }
     app.tc.templates.show(ctx, &core, &app.web_dir, &app.data_dir);
+    app.tc.scenes.show(ctx, &core, &app.web_dir, &app.data_dir);
     app.tc.history.show(ctx, &core, acts);
     if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::E))) { app.tc.slideedit.open = !app.tc.slideedit.open; }
     let (sel, wd, dd) = (app.sel, app.web_dir.clone(), app.data_dir.clone());

@@ -46,6 +46,46 @@ impl App {
         egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 4 }).show(ui, |ui| {
             ui.add(egui::Label::new(theme::rich(tr("화면에 나올 수 있는 것과 지금 나가고 있는 곳입니다. 빨간 표시가 송출 중입니다."), 11.5, Weight::Regular, p.muted)).wrap());
         });
+        // 화면 구성 (로드맵 2단계): 출력마다 쓰는 구성 · 편집 창 열기
+        if crate::prolayout_ui::section(ui, "src-scenes", &tr("화면 구성"), true) {
+            let (names, used) = {
+                let c = self.core.lock();
+                let names: Vec<(String, String)> = c.scenes().iter().map(|s| (s["id"].as_str().unwrap_or("").to_string(), s["name"].as_str().unwrap_or("").to_string())).collect();
+                (names, [c.output_scene("main"), c.output_scene("overlay")])
+            };
+            let mut open: Option<String> = None;
+            egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 10, top: 4, bottom: 6 }).show(ui, |ui| {
+                for (i, (o, label)) in [("main", "예배당"), ("overlay", "방송 (OBS)")].into_iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.set_min_height(24.0);
+                        ui.add(egui::Label::new(theme::rich(tr(label), 12.0, Weight::Regular, p.muted)).selectable(false));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let cur = used[i].clone();
+                            let shown = names.iter().find(|(k, _)| *k == cur).map(|(_, n)| n.clone()).unwrap_or_else(|| tr("전체 화면 (기본)"));
+                            let mut pick = cur.clone();
+                            egui::ComboBox::from_id_salt(("src-scene-pick", o)).width(170.0).selected_text(shown).show_ui(ui, |ui| {
+                                ui.selectable_value(&mut pick, wp_core::scenes::FULL.to_string(), tr("전체 화면 (기본)"));
+                                for (k, n) in &names {
+                                    ui.selectable_value(&mut pick, k.clone(), n);
+                                }
+                            });
+                            if pick != cur {
+                                let r = self.core.lock().set_output_scene(o, &pick);
+                                if let Err(e) = r {
+                                    self.core.lock().notify(e.to_string(), "error");
+                                }
+                            }
+                        });
+                    });
+                }
+                if ui.add(widgets::Btn::new(tr("화면 구성 편집…")).icon("layout-grid").size(widgets::Size::Sm)).clicked() {
+                    open = Some(used[1].clone());
+                }
+            });
+            if let Some(id) = open {
+                self.tc.scenes.open_with(&id);
+            }
+        }
         for (gi, g) in GROUPS.iter().enumerate() {
             let list: Vec<&SourceRow> = rows.iter().filter(|r| group_of(r) == gi).collect();
             if !crate::prolayout_ui::section(ui, &format!("src-{gi}"), &tr(g), true) {

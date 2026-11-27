@@ -127,3 +127,11 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - web/output/output.js: 무대 아래는 소스마다 `.wp-layer` 하나, 구성 차례대로. 층 상자는 z-index·opacity 를 안 줘서 그림이 2.0.8 과 화소까지 같음 (확인함). 있는 층은 차례가 맞으면 옮기지 않는다 (옮기면 영상·카메라·iframe 이 끊김).
 - 조작 화면: 인스펙터 [글자 | 무대 | 미디어 | 소스]. 점검 인자 `--ins-tab sources`.
 - 화면 캡처는 WebView2 가 허락 창 없이 할 수 없어 넣지 않음. 카메라 동시 열기는 가상 카메라로만 확인 (실제 UVC 는 교회 PC 에서 시험 필요).
+
+## 2026-11-27 소스 · 화면 구성 로드맵 2단계 — 화면 구성 편집기 (sources 가지, 아직 릴리스 전)
+
+- 쓰는 법 · 저장 형식 · 그리는 규칙 · 확인 · 3단계 전에 정할 것: docs/roadmap-sources.md '2단계 한 것'.
+- 코어 `scenes.rs`: 설정 `scenes[]` · `outputScenes` {main, overlay} (덧붙인 키), 기본 틀 5개, `effective_scene`(맨 위 오버레이 · 메시지 · 로고 화면 · 그리기 자동), `box_template`(칸 크기 글자 맞춤). `Core::scene_for` 가 고른 구성 → 없으면 기본 full.
+- 조작 화면 `scene_ui.rs` (별도 창, 보기 → 화면 구성 편집…, 점검 인자 `--scene-open [full|split|pip|lower|three]`), 뷰어는 `paint::paint_scene`.
+- 웹: render.js `sceneNeedsBox · sceneTemplate · sceneBoxCss · sceneHost`, output.js 칸 상자 · 카메라 칸(`.wp-cam`). 기본 구성은 무대에 바로 그려 2.0.8 과 화소까지 같음.
+- 점검: `node tools/scenes/e2e.js --exe targetdebugwp-app.exe --old-exe <2.0.8 web 을 옆에 둔 exe> --data tmpdata --out tmpscene-e2e --fake-cam`. **이 PC 의 OBS Virtual Camera 는 화면 내용을 내보낼 수 있으니 캡처는 --fake-cam 으로.**
