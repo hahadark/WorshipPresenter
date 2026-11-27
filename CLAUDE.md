@@ -46,7 +46,7 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 ## 2026-11-27 밤: 예배송출 제안 일곱 가지 넣음 (아직 릴리스 전 — 주인이 "릴리즈"라고 하면 2.0.8)
 
 - 예배 틀 묶음(큐시트 관리 '예배 틀에서…') · 다른 콘티 .json 가져오기(contijson.rs) · 손상 자동 복구(sync.rs recover_from_backup, 원본은 damaged\ 에) · 웹 편집기 PIN(webedit.rs · web/editor, 기본 꺼짐, PIN 없으면 127.0.0.1 만) · 유튜브 주소 재생(youtube.rs · render.js 임베드 · output.js syncYouTube) · 움직이는 배경(템플릿 background.motion, render.js motionLayer · wp-app motion.rs) · PDF(pdf.rs, Windows.Data.Pdf · 맥 PDFKit). 쓰는 법 · 한계 · 확인 못 한 것은 docs/worshipcaster-ideas.md '2차'.
-- 시험 wp-core 315 (19 제외) · wp-app 229 통과. 점검 도구 tools/webedit/e2e.js · tools/youtube/e2e.js. 점검 인자 `--frame <열쇠>` · `--pdf <파일>` · `--tool webedit`.
+- 시험 wp-core 315 (19 제외) · wp-app 229 통과. parity 43/44 (obs-pip-image 72/46 은 2.0.7 코드로도 같음). 점검 도구 tools/webedit/e2e.js · tools/youtube/e2e.js. 점검 인자 `--frame <열쇠>` · `--pdf <파일>` · `--tool webedit`.
 - 점검 격리 주의: Git Bash 에서 `WP_LEGACY_DATA` 를 `/c/...` 꼴로 주면 무시되고 실제 1.x 자료를 본다 → `cygpath -w` 로 Windows 경로를 줄 것.
 - 새 화면 문구는 en.json 맨 앞에 넣었다. 웹 편집기 페이지(web/editor)는 한국어만 (영어 사전을 붙이지 않음).
 

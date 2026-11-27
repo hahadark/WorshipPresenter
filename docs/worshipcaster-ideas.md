@@ -74,6 +74,8 @@
 | 움직이는 배경 | 템플릿 편집 → 배경 → 움직임: 없음 · 오로라 · 물결 · 별빛 · 빛망울 (단색 · 그라데이션 · 그림 위) | `render.js motionFrame · motionLayer` (캔버스 반 크기 · 30fps, 시각 Date.now()), `wp-app motion.rs` (같은 수식 · 같은 mulberry32 로 t=0 한 장면), `tpl_inspect.rs` | background.motion 이 없으면 예전과 같음 |
 | PDF | 순서 넣기 → 더보기 → PDF… (다른 스레드에서 쪽마다 그림 → 슬라이드쇼 순서, 자동 넘김 없음) | `pdf.rs` (Windows.Data.Pdf · 맥 PDFKit JXA, 자료 폴더 `pdf\<이름>-<지문>\page-NNN.png`, 화면 배율로 커진 것은 가로 1920 으로 줄임, 300쪽·300MB) | 새 순서만 |
 
+parity(tools\parity, 46 경우, 점검 자료 audit-integrated-parity-data 사본): 글자 크기 43/44 같음. 다른 하나 obs-pip-image(조작 72 · 웹 46)는 2.0.7 코드(origin/rust 55316db)를 따로 빌드해 같은 자료로 돌려도 똑같이 나와 이번 변경과 무관 — 그림은 눈으로 같음. 움직이는 배경 · 유튜브는 parity 경우에 넣지 않음(움직이므로).
+
 점검 도구: `tools/webedit/e2e.js`(PIN · 403 · 저장 · 409), `tools/youtube/e2e.js`(재생 · 멈춤 · 위치 · OBS 와 같은 위치). 점검 인자: `--frame <열쇠>`, `--pdf <파일>`, `--tool webedit`.
 
 ### 2차에서 실제로 확인하지 못한 것
