@@ -292,6 +292,11 @@ fn save_cue(c: &mut Core, v: &Value) -> Result<Value, String> {
     Ok(cue_json(&cue))
 }
 
+/// 웹 편집기(webedit.rs)도 같은 검증으로 저장한다
+pub(crate) fn save_cue_json(c: &mut Core, v: &Value) -> Result<Value, String> {
+    save_cue(c, v)
+}
+
 /// 글자 수로 자르기 (Electron String.slice)
 fn cut(v: &Value, n: usize) -> String {
     let t = match v { Value::String(t) => t.clone(), Value::Number(x) => x.to_string(), _ => String::new() };

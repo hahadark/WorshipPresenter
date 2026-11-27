@@ -340,12 +340,14 @@ pub fn init(core: Shared) {
         sync(core.clone()).await;
         crate::lan::sync(core.clone()).await;
         crate::phonecam::sync(core.clone()).await;
+        crate::webedit::sync(core.clone()).await;
         loop {
             match rx.recv().await {
                 Ok(Ev::Ui) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                     sync(core.clone()).await;
                     crate::lan::sync(core.clone()).await;
                     crate::phonecam::sync(core.clone()).await;
+                    crate::webedit::sync(core.clone()).await;
                 }
                 Ok(_) => {}
                 Err(_) => break,

@@ -14,6 +14,7 @@ pub enum Tool {
     Devices,
     Lan,
     PhoneCam,
+    WebEdit,
 }
 
 #[derive(Default)]
@@ -105,7 +106,7 @@ pub fn show(ctx: &egui::Context, core: &Shared) {
         let a: Vec<String> = std::env::args().collect();
         for (i, x) in a.iter().enumerate() {
             if x == "--tool" {
-                match a.get(i + 1).map(|s| s.as_str()) { Some("remote") => open(Tool::Remote), Some("trigger") => open(Tool::Trigger), Some("devices") => open(Tool::Devices), Some("lan") => open(Tool::Lan), Some("phonecam") => open(Tool::PhoneCam), _ => {} }
+                match a.get(i + 1).map(|s| s.as_str()) { Some("remote") => open(Tool::Remote), Some("trigger") => open(Tool::Trigger), Some("devices") => open(Tool::Devices), Some("lan") => open(Tool::Lan), Some("phonecam") => open(Tool::PhoneCam), Some("webedit") => open(Tool::WebEdit), _ => {} }
             }
         }
     });
@@ -121,6 +122,7 @@ pub fn show(ctx: &egui::Context, core: &Shared) {
             Tool::Devices => "Companion·장비",
             Tool::Lan => "내부망 출력",
             Tool::PhoneCam => "휴대폰 카메라",
+            Tool::WebEdit => "웹 편집기",
         };
         // 떠 있는 창 기본 자리 (widgets::float_pos) · 제목 번역
         let wid = egui::Id::unique(("wp-float", title));
@@ -131,6 +133,7 @@ pub fn show(ctx: &egui::Context, core: &Shared) {
             Tool::Devices => devices(ui, core),
             Tool::Lan => lan(ui, core),
             Tool::PhoneCam => phonecam(ui, core),
+            Tool::WebEdit => webedit(ui, core),
         });
         if !keep {
             ST.lock().open.retain(|x| *x != t);
@@ -197,6 +200,65 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
     ui.separator();
     ui.label(RichText::new(wp_core::i18n::tr("OBS 도킹 (이 PC 안에서 PIN 없이): OBS → 도킹 → 사용자 정의 브라우저 도킹에 넣기")).small());
     copy_row(ui, "", &format!("http://127.0.0.1:{port}/dock"));
+}
+
+/// 웹 편집기 (webedit.rs): 켜기 · PIN · 주소. PIN 을 비우면 이 PC 의 브라우저에서만 (PIN 을 묻지 않음)
+fn webedit(ui: &mut egui::Ui, core: &Shared) {
+    let tr = wp_core::i18n::tr;
+    let st = wp_core::webedit::status(&core.lock());
+    let mut en = st["enabled"].as_bool().unwrap_or(false);
+    ui.label(tr("다른 컴퓨터(찬양팀 · 방송실)의 브라우저에서 큐시트를 고칩니다: 순서 차례 · 제목 · 가사 · 장절 · 공지 글 · 메모. 저장하면 이 화면에도 바로 들어갑니다."));
+    let r = ui.checkbox(&mut en, tr("웹 편집기 켜기"));
+    crate::widgets::mark("we-on", r.rect);
+    if r.changed() {
+        changed(core, |d| d["webEditor"]["enabled"] = json!(en));
+    }
+    let mut pin = st["pin"].as_str().unwrap_or("").to_string();
+    ui.horizontal(|ui| {
+        ui.label("PIN");
+        let r = ui.add(egui::TextEdit::singleline(&mut pin).desired_width(110.0).font(egui::TextStyle::Monospace).hint_text(tr("없음")));
+        crate::widgets::mark("we-pin", r.rect);
+        if r.changed() {
+            let p: String = pin.chars().filter(|c| c.is_ascii_alphanumeric()).take(12).collect();
+            changed(core, |d| d["webEditor"]["pin"] = json!(p));
+        }
+        if ui.button(tr("새 PIN")).clicked() {
+            changed(core, |d| d["webEditor"]["pin"] = json!(wp_core::remote::new_pin()));
+        }
+        if !pin.is_empty() && ui.button(tr("PIN 지우기")).clicked() {
+            changed(core, |d| d["webEditor"]["pin"] = json!(""));
+        }
+        ui.separator();
+        ui.label(tr("포트"));
+        let mut p = st["port"].as_u64().unwrap_or(wp_core::webedit::DEFAULT_PORT as u64).to_string();
+        if ui.add(egui::TextEdit::singleline(&mut p).desired_width(70.0)).lost_focus() {
+            if let Ok(n) = p.trim().parse::<u16>() {
+                changed(core, |d| d["webEditor"]["port"] = json!(n));
+            }
+        }
+    });
+    ui.label(RichText::new(if pin.is_empty() { tr("PIN 이 없으면 이 PC 의 브라우저에서만 열리고 PIN 을 묻지 않습니다. 다른 컴퓨터에서 쓰려면 PIN 을 정하세요.") } else { tr("PIN 을 정했으므로 같은 내부망의 다른 컴퓨터에서 열 수 있고, 열 때 PIN 을 묻습니다 (5번 틀리면 30초 막음).") }).small().color(Color32::GRAY));
+    let err = st["error"].as_str().unwrap_or("");
+    if !err.is_empty() {
+        ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), err);
+    }
+    if en && !pin.is_empty() {
+        crate::firewall_ui::row(ui);
+    }
+    if st["running"] == json!(true) {
+        let urls: Vec<String> = st["urls"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+        for u in &urls {
+            ui.horizontal(|ui| {
+                copy_row(ui, "", u);
+                if ui.small_button(tr("열기")).clicked() {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(u));
+                }
+            });
+        }
+        ui.label(RichText::new(tr("같은 큐시트를 조작 화면과 브라우저에서 함께 고치면, 나중에 저장하는 쪽이 '다시 불러오기' 를 하라는 안내를 받습니다 (서로 덮어쓰지 않음).")).small().color(Color32::GRAY));
+    } else if en {
+        ui.label(RichText::new(tr("서버를 켜는 중…")).small());
+    }
 }
 
 fn trigger(ui: &mut egui::Ui, core: &Shared) {
