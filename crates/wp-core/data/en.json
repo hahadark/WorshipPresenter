@@ -1,4 +1,11 @@
 {
+ "PDF…": "PDF…",
+ "PDF 를 쪽마다 그림으로 바꾸는 중…": "Converting each PDF page to an image…",
+ "PDF 를 넣지 못했습니다: {1}": "Could not add the PDF: {1}",
+ "PDF 가 너무 큽니다 (300MB 까지).": "The PDF is too large (up to 300 MB).",
+ "쪽이 너무 많습니다 ({1}쪽, {2}쪽까지).": "Too many pages ({1}; up to {2}).",
+ "PDF 를 그림으로 바꾸지 못했습니다 (암호가 걸렸거나 손상된 PDF 일 수 있습니다).": "Could not convert the PDF to images (it may be password-protected or damaged).",
+ "이 운영체제에서는 PDF 를 열 수 없습니다.": "PDFs cannot be opened on this operating system.",
  "움직임": "Motion",
  "오로라": "Aurora",
  "물결": "Waves",

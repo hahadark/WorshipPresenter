@@ -31,6 +31,7 @@ pub mod cues; // [트랙 B]
 pub mod cuemgr; // [갈래 C] 큐시트 관리 창 (목록·찾기·정렬·새로·복제·휴지통·내보내기)
 pub mod contijson; // 다른 콘티 프로그램 .json 가져오기
 pub mod contistudio; // 찬양 콘티 스튜디오 콘티(.worship) 가져오기
+pub mod pdf; // PDF 보여 주기 (운영체제의 PDF 그리기로 쪽마다 그림)
 pub mod youtube; // 유튜브 주소 재생 (영상 순서, 임베드)
 pub mod webedit; // 웹 편집기 (다른 컴퓨터의 브라우저에서 큐시트 고치기, PIN)
 pub mod phonecam; // 휴대폰을 카메라로 (https · WebRTC 이어 주기)

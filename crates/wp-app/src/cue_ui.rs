@@ -648,6 +648,16 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     ui.painter().hline(r0..=r0 + full, top, Stroke::new(1.0, p.line));
     ui.add_space(8.0);
     let more_id = id("cue-more-open");
+    // PDF 를 다른 스레드에서 그림으로 바꾼 결과 → 순서 넣기
+    if let Some(r) = PDF_DONE.lock().take() {
+        match r {
+            Ok(it) => acts.push(Act::AddItem("slideshow", Some(it))),
+            Err(e) => app.core.lock().notify(e, "error"),
+        }
+    }
+    if PDF_BUSY.load(std::sync::atomic::Ordering::Relaxed) {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+    }
     inset(ui, 8.0, |ui| {
         let cw = ((ui.available_width() - 10.0) / 3.0).floor();
         let main: [(&str, &str, &str); 6] = [
@@ -685,6 +695,7 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 ("image", "image", "이미지"),
                 ("video", "clapperboard", "영상"),
                 ("youtube", "video", "유튜브 주소"),
+                ("pdf", "file-text", "PDF…"),
                 ("audio", "volume-2", "음악"),
                 ("slideshow", "images", "슬라이드쇼"),
                 ("camera", "camera", "카메라"),
@@ -718,6 +729,26 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     ui.data_mut(|d| d.insert_temp(id(BOTTOM_H), h));
 }
 
+static PDF_DONE: parking_lot::Mutex<Option<Result<Value, String>>> = parking_lot::Mutex::new(None);
+static PDF_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// PDF 고르기 → 다른 스레드에서 쪽마다 그림(wp_core::pdf) → 다음 프레임에 슬라이드쇼 순서로 넣는다
+fn pick_pdf(app: &mut App) {
+    if PDF_BUSY.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let Some(f) = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).pick_file() else { return };
+    let dir = app.core.lock().data_dir.clone();
+    app.core.lock().notify(tr("PDF 를 쪽마다 그림으로 바꾸는 중…"), "ok");
+    PDF_BUSY.store(true, std::sync::atomic::Ordering::Relaxed);
+    std::thread::spawn(move || {
+        let title = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "PDF".into());
+        let r = wp_core::pdf::render(&dir, &f).map(|pages| wp_core::pdf::item(&title, &pages)).map_err(|e| tr_args("PDF 를 넣지 못했습니다: {1}", &[&tr(&e.to_string())]));
+        *PDF_DONE.lock() = Some(r);
+        PDF_BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
+    });
+}
+
 /// 넣기 단추 동작 (Electron cue.js #cueAdd click)
 pub(crate) fn add(app: &mut App, ctx: &egui::Context, ty: &str, acts: &mut Vec<Act>) {
     match ty {
@@ -736,6 +767,7 @@ pub(crate) fn add(app: &mut App, ctx: &egui::Context, ty: &str, acts: &mut Vec<A
         "slideshow" => acts.push(Act::AddItem("slideshow", Some(json!({ "title": tr("예배 전 화면"), "images": [], "body": "", "autoSec": 8, "autoLoop": true, "countdown": "", "countdownLabel": tr("예배 시작까지") })))),
         "video" => acts.push(Act::AddItem("video", Some(json!({ "title": tr("영상"), "file": "", "sound": true, "volume": 1, "endAction": "hold", "loop": false })))),
         // 유튜브: 영상 순서에 주소를 넣는다 (편집칸이 열리면 주소 칸에 붙여 넣기)
+        "pdf" => pick_pdf(app),
         "youtube" => acts.push(Act::AddItem("video", Some(json!({ "title": tr("유튜브"), "file": "", "sound": true, "volume": 1, "endAction": "hold", "loop": false })))),
         "audio" => acts.push(Act::AddItem("audio", Some(json!({ "title": tr("음악"), "file": "" })))),
         "blank" => acts.push(Act::AddItem("blank", Some(json!({ "mode": "background" })))),

@@ -1522,6 +1522,16 @@ impl App {
                     self.core.lock().open_saved_cue(&first);
                 }
             }
+            // 점검용 --pdf <파일>: PDF 를 쪽마다 그림으로 바꿔 슬라이드쇼 순서로 넣는다 (순서 넣기 → 더보기 → PDF… 와 같은 길)
+            if let Some(f) = std::env::args().position(|x| x == "--pdf").and_then(|i| std::env::args().nth(i + 1)) {
+                let dir = self.core.lock().data_dir.clone();
+                let r = wp_core::pdf::render(&dir, std::path::Path::new(&f));
+                log::info!("점검: PDF {f} → {:?}", r.as_ref().map(|v| v.len()));
+                if let Ok(pages) = r {
+                    if self.core.lock().cue.is_none() { acts.push(Act::NewCue); }
+                    acts.push(Act::AddItem("slideshow", Some(wp_core::pdf::item("PDF", &pages))));
+                }
+            }
             // 점검용 --frame <열쇠>: 미리 만든 예배 틀(sunday · communion · wednesday · friday · dawn)로 새 큐시트
             if let Some(k) = std::env::args().position(|x| x == "--frame").and_then(|i| std::env::args().nth(i + 1)) {
                 let r = self.core.lock().new_cue_from_frame(&k, false);
