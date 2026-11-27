@@ -24,6 +24,7 @@ pub struct TrackC {
 pub fn handle_menu(app: &mut App, id: &str) {
     match id {
         "w:workspaces" => app.workspace.open = true,
+        "w:viewers" => app.pro_toggle_viewers(),
         "c:settings" => app.tc.settings.open = true,
         "c:templates" => app.tc.templates.open = true,
         "c:history" => app.tc.history.open = true,

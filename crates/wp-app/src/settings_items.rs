@@ -160,6 +160,7 @@ pub static ITEMS: &[Item] = &[
     val("ui.theme", Cat::Ui, &["ui", "theme"], "테마", "조작 화면의 색입니다. 예배당 화면 모양과는 상관없습니다.", "색 어둡게 밝게 다크 라이트 고대비 화면 색", Kind::Choice(THEMES)),
     val("ui.scale", Cat::Ui, &["ui", "scale"], "글자 크기", "조작 화면의 글자와 단추 크기입니다. 막대를 놓으면 적용됩니다.", "확대 축소 크게 작게 배율 줌 폰트", Kind::Slider { lo: 70.0, hi: 200.0, step: 5.0, unit: "%", recommend: 100.0 }),
     keep("uiLang", Cat::Ui, &["uiLang"], "Language · 언어", "조작 화면과 출력 화면 안내 글의 언어입니다.", "한국어 영어 English Korean language", Kind::Choice(LANGS)),
+    val("ui.directLiveOnly", Cat::Ui, &["ui", "directLiveOnly"], "바로 송출 모드에서는 자동으로 송출 뷰어만", "미리보기를 끄고 바로 송출할 때는 '다음' 뷰어가 쓸모없으니 송출 중 뷰어 하나만 보이고 본문·편집 자리를 넓힙니다. 미리보기 모드로 돌아오면 원래 고른 보기 방식으로 돌아갑니다.", "뷰어 하나 송출 중만 미리보기 프리뷰 프로그램 바로 송출 작업 공간 넓게", Kind::Toggle),
     link("workspaces", Cat::Ui, "w:workspaces", "작업공간 · 패널 배치", "작업공간 열기", "패널을 옮기고 크기를 바꾼 배치를 이름 붙여 저장하고 불러옵니다.", "레이아웃 패널 배치 도킹 창 배열"),
     // ---------------- 단축키 (목록은 settings_keys.rs 가 그린다) ----------------
     val("globalShortcuts", Cat::Keys, &["globalShortcuts"], "전역 단축키 (창이 안 보여도 F5·F6 등)", "OBS 같은 다른 프로그램을 쓰는 중에도 이전·다음·송출·숨김 네 가지 키가 듣습니다.", "글로벌 핫키 다른 프로그램 창 밖", Kind::Toggle),

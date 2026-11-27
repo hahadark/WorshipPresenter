@@ -81,6 +81,8 @@ pub struct App {
     test: Option<(Instant, Option<String>, bool, Option<String>, u8)>,
     pub(crate) workspace: crate::workspace_ui::WorkspaceUi,
     pub(crate) tc: crate::track_c::TrackC, // [트랙 C]
+    /// 바로 송출에서 저절로 '송출 중만' 일 때 이번만 둘 다 보기로 바꿈 (미리보기 모드로 돌아오면 지움, 저장 안 함)
+    pub(crate) viewer_direct_both: bool,
 }
 
 pub(crate) struct Snap {
@@ -219,7 +221,7 @@ impl App {
         let mut workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
         // 원본 dock.js:409 — 미리보기 끔(바로 송출)이면 미리보기 패널을 닫는다
         sync_preview_pane(&mut workspace.state, core.lock().settings.get()["previewMode"].as_bool().unwrap_or(true));
-        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */ }
+        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */, viewer_direct_both: false }
     }
 
     pub(crate) fn snap(&self) -> Snap {
@@ -639,6 +641,9 @@ impl App {
         if on("previewChapterStart", "Ctrl+Home") { wp_core::flow::preview_chapter_start(&mut self.core.lock()) }
         if on("cueEdit", "F2") {
             if let Some(i) = self.sel { self.show_item_editor(i); }
+        }
+        if on("toggleViewers", crate::prolayout_ui::VIEWERS_KEY) {
+            self.pro_toggle_viewers();
         }
         if on("toggleEditor", "Ctrl+Shift+E") {
             self.editor_on = !self.editor_on;
@@ -1319,6 +1324,62 @@ impl App {
         });
     }
 
+    /// '송출 중만' 보기에서 미리보기 뷰어 대신 쓰는 노랑 '다음' 줄 (미리보기 모드일 때만):
+    /// 작은 그림(오른쪽 클릭 = 미리보기 메뉴 · 두 번 누르면 송출) · 제목 · ◀ n/m ▶ (PageUp/PageDown 과 같음)
+    pub(crate) fn next_strip(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+        use crate::theme::{self, pal, Weight};
+        use crate::widgets::{self, Btn};
+        use wp_core::i18n::tr;
+        let p = pal();
+        let deck = s.preview.as_ref();
+        let nc = if p.bevel { p.next } else { p.pv };
+        let top = ui.cursor().top();
+        ui.painter().hline(ui.max_rect().x_range(), top + 0.5, egui::Stroke::new(1.0, p.line));
+        egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 8 }).show(ui, |ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(10.0, 0.0);
+            ui.horizontal_top(|ui| {
+                let tw = (ui.available_width() * 0.42).clamp(96.0, 176.0);
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(tw, tw * 9.0 / 16.0), Sense::click());
+                ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Sm), Color32::BLACK);
+                if let Some(d) = deck {
+                    let c = paint::Ctx { web_dir: &self.web_dir, data_dir: &self.data_dir };
+                    let version = d.passage["versionName"].as_str().unwrap_or("").to_string();
+                    let names = |id: &str| s.source_names.iter().find(|(k, _)| k == id).map(|(_, n)| n.clone()).unwrap_or_else(|| id.to_string());
+                    paint::paint_scene(ui, &c, r.shrink(1.0), &s.scenes[2], d.slides.get(d.index), &s.preview_main, &version, true, false, false, &names);
+                } else {
+                    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, tr("비어 있음"), theme::font(11.0, Weight::Regular), p.muted2);
+                }
+                ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Sm), egui::Stroke::new(2.0, nc), egui::StrokeKind::Inside);
+                widgets::mark("next-mini", r);
+                let resp = resp.on_hover_text(tr("다음(미리보기)에 올라간 화면 — 두 번 누르면 송출, 오른쪽 클릭은 미리보기 메뉴"));
+                if deck.is_some() && resp.double_clicked() {
+                    acts.push(Act::SendPreview);
+                }
+                crate::ctx_ui::pane_menu(self, &resp, false, acts);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(6.0, 4.0);
+                    ui.add(egui::Label::new(theme::rich(tr("다음"), 12.0, Weight::Bold, nc)).selectable(false));
+                    let info = deck.map(|d| deck_info(d, false)).unwrap_or_else(|| tr("미리보기에 띄운 본문이 없습니다"));
+                    ui.add(egui::Label::new(theme::rich(info, 12.0, Weight::Regular, if deck.is_some() { p.text2 } else { p.muted })).truncate().selectable(false));
+                    ui.horizontal(|ui| {
+                        let n = deck.map(|d| d.slides.len()).unwrap_or(0);
+                        let i = deck.map(|d| d.index).unwrap_or(0);
+                        let why = if deck.is_none() { Some(tr("미리보기에 띄운 본문이 없습니다")) } else { None };
+                        let prev_tip = why.clone().unwrap_or_else(|| if i == 0 { tr("첫 슬라이드입니다") } else { tr("미리보기 이전 슬라이드 (PageUp)") });
+                        let pr = ui.add(Btn::icon_only("chevron-left").size(widgets::Size::Sm).height(26.0).enabled(deck.is_some() && i > 0).tooltip(prev_tip));
+                        widgets::mark("next-prev", pr.rect);
+                        if pr.clicked() && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
+                        count_label(ui, deck.map(|d| format!("{} / {}", d.index + 1, d.slides.len())).unwrap_or_default());
+                        let next_tip = why.unwrap_or_else(|| if i + 1 >= n { tr("마지막 슬라이드입니다") } else { tr("미리보기 다음 슬라이드 (PageDown)") });
+                        let nr = ui.add(Btn::icon_only("chevron-right").size(widgets::Size::Sm).height(26.0).enabled(deck.is_some() && i + 1 < n).tooltip(next_tip));
+                        widgets::mark("next-next", nr.rect);
+                        if nr.clicked() && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
+                    });
+                });
+            });
+        });
+    }
+
     /// 지금 예배당 화면에 떠 있는 것 (Electron core.js screenPayload + control.js renderScreenLayers)
     fn screen_layers(&self, s: &Snap, deck: Option<&Deck>, live: Option<&Live>) -> Vec<Layer> {
         use wp_core::i18n::tr;
@@ -1954,6 +2015,9 @@ mod dnd_tests;
 #[path = "dbl_tests.rs"]
 mod dbl_tests;
 #[cfg(test)]
+#[path = "viewers_tests.rs"]
+mod viewers_tests;
+#[cfg(test)]
 #[path = "auditd_tests.rs"]
 mod auditd_tests;
 #[cfg(test)]
@@ -1976,7 +2040,7 @@ impl App {
     /// 시험용 App (출력 창·점검 인자 없이)
     pub(crate) fn for_test(core: Shared, dir: std::path::PathBuf) -> Self {
         let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
-        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir: dir.clone(), data_dir: dir, search: String::new(), result: Value::Null, versions: vec![], sel: None, edit: None, out: crate::outwin::OutWin::for_test(), monitor: 0, last_flush: Instant::now(), focus_search: false, test: None, tb: Default::default(), tc: Default::default() }
+        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir: dir.clone(), data_dir: dir, search: String::new(), result: Value::Null, versions: vec![], sel: None, edit: None, out: crate::outwin::OutWin::for_test(), monitor: 0, last_flush: Instant::now(), focus_search: false, test: None, tb: Default::default(), tc: Default::default(), viewer_direct_both: false }
     }
 }
 /// 머리 줄 · 아래 송출 줄 · 상태 · 알림 (Snap 의 private 필드를 읽도록 자식 모듈)

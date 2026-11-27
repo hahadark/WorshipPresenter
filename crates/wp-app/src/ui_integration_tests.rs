@@ -168,6 +168,7 @@ fn headless_app(h: &Harness) -> super::App {
         test: None,
         tb: Default::default(),
         tc: Default::default(),
+        viewer_direct_both: false,
         workspace: crate::workspace_ui::WorkspaceUi::new(h.core.lock().settings.get()),
     }
 }

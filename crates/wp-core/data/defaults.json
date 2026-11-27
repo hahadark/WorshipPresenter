@@ -604,7 +604,8 @@
   "webLyrics": "Ctrl+L",
   "quickText": "Ctrl+T",
   "messages": "Ctrl+M",
-  "printCue": "Ctrl+P"
+  "printCue": "Ctrl+P",
+  "toggleViewers": "Ctrl+Shift+L"
  },
  "globalShortcuts": false,
  "reservedKeys": "",
@@ -660,7 +661,8 @@
  "imageFolders": [],
  "ui": {
   "theme": "pro",
-  "scale": 100
+  "scale": 100,
+  "directLiveOnly": true
  },
  "droppedFiles": [],
  "uiLang": "ko",

@@ -12,10 +12,10 @@ use wp_core::core::Shared;
 use wp_core::i18n::{tr, tr_args};
 
 /// 보여 주는 차례 (송출 → 미리보기 → 큐시트 → 창)
-const ORDER: [&str; 23] = [
+const ORDER: [&str; 24] = [
     "prevSlide", "nextSlide", "sendPreview", "sendNow", "toggleClear", "toggleOutputWindow", "outputOff",
     "previewPrevSlide", "previewNextSlide", "previewPrevVerse", "previewNextVerse", "previewChapterStart",
-    "cuePrev", "cueNext", "cueEdit", "toggleEditor",
+    "cuePrev", "cueNext", "cueEdit", "toggleEditor", "toggleViewers",
     "focusSearch", "openBooks", "openHistory", "quickText", "messages", "webLyrics", "printCue",
 ];
 

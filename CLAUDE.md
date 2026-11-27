@@ -176,3 +176,8 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - 1차 제안 전부: 전문가 테마 선택색 회색 · 접힌 판 손잡이 · 송출 중 꺼짐 알림 하나(뷰어 띠 + 상태 줄 칸) · 메뉴 괄호 설명 오른쪽 흐린 글 · 새 테마 '전문가 밝게'(pro-light) · 큐시트 관리 · 테마 관리 · 템플릿 편집 · 음성 인식 모델 · 주 화면 크기 맞춤. 세부 · 잰 값 표 · 쌍 비교: docs/ui-polish.md '2차 다듬기'.
 - 새 공용: `widgets::segmented_cells`(칸마다 사각형 → 시험 표시), `theme::lift` · `theme::strong_text`(밝은 전문가 테마에서 흰 글 · 흰 hover 를 쓰지 말 것), `menubar::split_desc`.
 - 전문가 테마(어둡게 · 밝게) 공통 규칙: `p.bevel` 로 가르고, 밝은 쪽은 `p.dark == false`. 노랑(accent · next)은 '다음' 에만, '켜짐 · 고름' 은 sel · text2 회색.
+
+## 2026-11-27 뷰어 하나만 보기 (rust 가지, 릴리스 전)
+
+- 보기 방식 [둘 다 | 송출 중만]: 뷰어 머리 구획 단추 · 보기 메뉴 · Ctrl+Shift+L(단축키 id `toggleViewers`) · 설정 `rsProLayout.viewerMode`. 바로 송출이면 저절로 송출 중만(`ui.directLiveOnly`, 기본 켜짐).
+- '송출 중만' = 송출 뷰어를 가운데 판 오른쪽 칸(`prolayout_ui.rs pro_center_live_only`), 본문·편집은 왼쪽 전체 높이, 미리보기 조작은 노랑 '다음' 줄(`app.rs next_strip`). 비교 · 까닭 · 시험: docs/viewer-single.md, 캡처 `node tools/viewers/shots.js`.

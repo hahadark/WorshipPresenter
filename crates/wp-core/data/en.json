@@ -1,4 +1,12 @@
 {
+ "둘 다": "Both",
+ "송출 중만": "Live only",
+ "뷰어 보기 방식: 다음 · 송출 중 둘 다, 또는 송출 중 하나만 (본문·편집 자리 넓히기)": "Viewer layout: Next and Live side by side, or Live only (more room for the content and editor)",
+ "다음(미리보기)에 올라간 화면 — 두 번 누르면 송출, 오른쪽 클릭은 미리보기 메뉴": "What is up Next (preview) — double-click to send, right-click for the preview menu",
+ "뷰어: 둘 다 · 송출 중만 바꾸기 (본문 자리 넓히기)": "Viewers: switch Both / Live only (more room for content)",
+ "뷰어 보기: 둘 다 · 송출 중만 바꾸기": "Viewers: switch Both / Live only",
+ "바로 송출 모드에서는 자동으로 송출 뷰어만": "In direct send mode, show only the Live viewer",
+ "미리보기를 끄고 바로 송출할 때는 '다음' 뷰어가 쓸모없으니 송출 중 뷰어 하나만 보이고 본문·편집 자리를 넓힙니다. 미리보기 모드로 돌아오면 원래 고른 보기 방식으로 돌아갑니다.": "When preview is off and clicks go live directly, the Next viewer has no use, so only the Live viewer is shown and the content and editor get more room. Back in preview mode, your chosen viewer layout returns.",
  "큐시트 판 펴기": "Show cue sheet panel",
  "인스펙터 펴기": "Show inspector",
  "전문가 밝게": "Pro light",

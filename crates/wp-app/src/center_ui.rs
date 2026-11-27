@@ -2331,6 +2331,8 @@ pub(crate) struct CeHead {
 pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved: &str, big_on: bool) -> CeHead {
     let p = pal();
     let mut h = CeHead::default();
+    // 좁은 본문 판('송출 중만' 보기 · 작은 창): 글자 단추를 아이콘만으로 (이름은 툴팁) — 제목을 덮지 않게
+    let narrow = ui.available_width() < 620.0;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         let (r, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
@@ -2348,7 +2350,8 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved:
             // 오른쪽부터: ✕ · 크게 | 순서 삭제 | 복제 · 슬라이드 편집 · ▼ · ▲ · 저장 표시
             let sm = |t: &str| Btn::new(t).size(Size::Sm).height(26.0);
             h.close = ui.add(Btn::icon_only("x").size(Size::Sm).height(26.0).tooltip(tr("편집칸 닫기"))).clicked();
-            let br = ui.add(sm(&if big_on { tr("작게") } else { tr("크게") }).icon("maximize").selected(big_on).tooltip(if big_on { tr("편집칸을 원래 높이로 (검색 결과가 다시 보임)") } else { tr("편집칸이 본문 패널 전체를 쓰게 (긴 가사·공지 고칠 때)") }));
+            let big_t = if big_on { tr("작게") } else { tr("크게") };
+            let br = ui.add(if narrow { Btn::icon_only("maximize").size(Size::Sm).height(26.0) } else { sm(&big_t).icon("maximize") }.selected(big_on).tooltip(if big_on { tr("편집칸을 원래 높이로 (검색 결과가 다시 보임)") } else { tr("편집칸이 본문 패널 전체를 쓰게 (긴 가사·공지 고칠 때)") }));
             widgets::mark("editor-big", br.rect);
             h.big = br.clicked();
             widgets::vsep(ui, 20.0);
@@ -2367,7 +2370,7 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved:
                         h.del = true;
                     }
                 } else {
-                    let dr = ui.add(sm(&tr("순서 삭제")).icon("trash-2").tooltip(tr("이 순서를 큐시트에서 삭제 (누르면 한 번 더 묻습니다 · Delete 키는 바로) — 알림의 [되돌리기] 나 Ctrl+Z 로 되살림")));
+                    let dr = ui.add(if narrow { Btn::icon_only("trash-2").size(Size::Sm).height(26.0) } else { sm(&tr("순서 삭제")).icon("trash-2") }.tooltip(tr("이 순서를 큐시트에서 삭제 (누르면 한 번 더 묻습니다 · Delete 키는 바로) — 알림의 [되돌리기] 나 Ctrl+Z 로 되살림")));
                     widgets::mark("editor-del", dr.rect);
                     if dr.clicked() {
                         widgets::confirm_arm(ui, cid, true);
@@ -2379,9 +2382,9 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved:
             h.del = dr.clicked();
             }
             widgets::vsep(ui, 20.0);
-            h.dup = ui.add(sm(&tr("복제")).tooltip(tr("이 순서 복제"))).clicked();
+            h.dup = ui.add(if narrow { Btn::icon_only("copy").size(Size::Sm).height(26.0) } else { sm(&tr("복제")) }.tooltip(tr("이 순서 복제"))).clicked();
             if ty != "audio" {
-                h.slide_edit = ui.add(sm(&tr("슬라이드 편집")).icon("square-pen").kind(crate::widgets::Kind::Primary).tooltip(tr("슬라이드마다 글상자 위치·꾸미기, 글·그림·도형 덧붙이기 (Ctrl+E)"))).clicked();
+                h.slide_edit = ui.add(if narrow { Btn::icon_only("square-pen").size(Size::Sm).height(26.0) } else { sm(&tr("슬라이드 편집")).icon("square-pen") }.kind(crate::widgets::Kind::Primary).tooltip(tr("슬라이드마다 글상자 위치·꾸미기, 글·그림·도형 덧붙이기 (Ctrl+E)"))).clicked();
             }
             h.down = ui.add(Btn::icon_only("chevron-down").size(Size::Sm).height(26.0).tooltip(tr("아래로 (Alt+↓)"))).clicked();
             h.up = ui.add(Btn::icon_only("chevron-up").size(Size::Sm).height(26.0).tooltip(tr("위로 (Alt+↑)"))).clicked();

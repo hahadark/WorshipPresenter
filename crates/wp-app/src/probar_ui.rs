@@ -560,4 +560,35 @@ impl App {
         let on = self.pro_timeline_visible();
         self.pro_set("timeline", !on);
     }
+    /// 고른 뷰어 보기 방식 (설정 `rsProLayout.viewerMode`: "both" 둘 다 · "live" 송출 중만, 기본 둘 다)
+    pub(crate) fn pro_viewer_saved_live(&self) -> bool {
+        self.core.lock().settings.get()["rsProLayout"]["viewerMode"] == "live"
+    }
+    /// 바로 송출 모드에서 저절로 송출 뷰어만 보일 때 (설정 `ui.directLiveOnly`, 기본 켜짐) — 이때는 고른 방식을 덮어쓴다
+    fn pro_viewer_auto(&self) -> bool {
+        let c = self.core.lock();
+        c.direct_mode() && c.settings.get()["ui"]["directLiveOnly"].as_bool().unwrap_or(true)
+    }
+    /// 지금 송출 중 뷰어 하나만 보이는가 (미리보기 뷰어 · 그 슬라이드 줄을 숨김)
+    pub(crate) fn pro_live_only(&self) -> bool {
+        if self.pro_viewer_auto() { !self.viewer_direct_both } else { self.pro_viewer_saved_live() }
+    }
+    /// 보기 방식 바꾸기 (뷰어 머리 단추 · 보기 메뉴 · 단축키). 바로 송출에서 저절로 하나만일 때는 이번 바로 송출 동안만 둘 다로
+    /// (미리보기 모드로 돌아오면 원래 고른 방식, 저장된 값은 건드리지 않음)
+    pub(crate) fn pro_set_live_only(&mut self, on: bool) {
+        if self.pro_viewer_auto() {
+            self.viewer_direct_both = !on;
+            return;
+        }
+        self.core.lock().settings.update(|s| {
+            if !s["rsProLayout"].is_object() {
+                s["rsProLayout"] = json!({});
+            }
+            s["rsProLayout"]["viewerMode"] = json!(if on { "live" } else { "both" });
+        });
+    }
+    pub(crate) fn pro_toggle_viewers(&mut self) {
+        let on = self.pro_live_only();
+        self.pro_set_live_only(!on);
+    }
 }

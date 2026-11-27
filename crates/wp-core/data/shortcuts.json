@@ -22,7 +22,8 @@
   "webLyrics": "웹에서 가사 찾기 (고른 찬양 순서에 넣기)",
   "quickText": "즉석 자막 (글을 써서 바로 송출)",
   "messages": "회중 메시지 (유아실 호출 · 차량 이동)",
-  "printCue": "큐시트 인쇄"
+  "printCue": "큐시트 인쇄",
+  "toggleViewers": "뷰어 보기: 둘 다 · 송출 중만 바꾸기"
  },
  "defaults": {
   "focusSearch": "Ctrl+K",
@@ -47,6 +48,7 @@
   "webLyrics": "Ctrl+L",
   "quickText": "Ctrl+T",
   "messages": "Ctrl+M",
-  "printCue": "Ctrl+P"
+  "printCue": "Ctrl+P",
+  "toggleViewers": "Ctrl+Shift+L"
  }
 }

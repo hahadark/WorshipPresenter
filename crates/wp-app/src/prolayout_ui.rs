@@ -266,6 +266,20 @@ impl App {
         }
     }
 
+    /// 뷰어 머리 오른쪽 [둘 다 | 송출 중만] 구획 단추. 바꿨으면 새 값
+    fn viewer_mode_buttons(&self, ui: &mut egui::Ui, live_only: bool) -> Option<bool> {
+        let mut v = live_only;
+        let key = crate::keys::label(self.core.lock().settings.get(), "toggleViewers", VIEWERS_KEY);
+        let (a, b) = (tr("둘 다"), tr("송출 중만"));
+        let (r, cells) = widgets::segmented_cells(ui, &mut v, &[(false, a.as_str()), (true, b.as_str())], widgets::SegStyle::TINY);
+        widgets::mark("pro-viewer-mode", r.rect);
+        widgets::mark("pro-viewer-both", cells[0]);
+        widgets::mark("pro-viewer-live", cells[1]);
+        let tip = if key.is_empty() { tr("뷰어 보기 방식: 다음 · 송출 중 둘 다, 또는 송출 중 하나만 (본문·편집 자리 넓히기)") } else { format!("{} ({key})", tr("뷰어 보기 방식: 다음 · 송출 중 둘 다, 또는 송출 중 하나만 (본문·편집 자리 넓히기)")) };
+        let r = r.on_hover_text(tip);
+        (r.changed() && v != live_only).then_some(v)
+    }
+
     /// 가운데: 머리 '보기' · 뷰어 둘(다음 | 송출 중) · 끌어서 높이 · 본문·편집
     fn pro_center(&mut self, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
         let p = pal();
@@ -273,13 +287,25 @@ impl App {
         let full = ui.available_rect_before_wrap();
         // 뷰어 높이 비율 (설정 rsProLayout.viewers, 0.3~0.75). 편집칸 '크게' 면 본문이 판 전체
         let big = crate::app::editor_big(ui.ctx());
+        // 바로 송출에서 '이번만 둘 다' 는 미리보기 모드로 돌아오면 지운다 (원래 고른 방식으로)
+        if !self.core.lock().direct_mode() {
+            self.viewer_direct_both = false;
+        }
+        if !big && self.pro_live_only() {
+            self.pro_center_live_only(ui, s, full, acts);
+            return;
+        }
         let ratio = self.core.lock().settings.get()["rsProLayout"]["viewers"].as_f64().unwrap_or(if full.height() < 520.0 { 0.6 } else { 0.56 }).clamp(0.25, 0.8) as f32;
         let vh = if big { 0.0 } else { ((full.height() - 6.0) * ratio).clamp(180.0_f32.min(full.height() * 0.5), (full.height() - 160.0).max(180.0)) };
         if vh > 0.0 {
             let top = Rect::from_min_size(full.min, Vec2::new(full.width(), vh));
             ui.scope_builder(UiBuilder::new().max_rect(top).id_salt("pro-viewers"), |ui| {
                 ui.set_clip_rect(top.intersect(ui.clip_rect()));
-                pane_head(ui, &tr("보기"), &tr("예배당 화면"), |_| {});
+                let mut pick = None;
+                pane_head(ui, &tr("보기"), &tr("예배당 화면"), |ui| pick = self.viewer_mode_buttons(ui, false));
+                if let Some(v) = pick {
+                    self.pro_set_live_only(v);
+                }
                 widgets::mark("pro-view-head", Rect::from_min_size(top.min, Vec2::new(top.width(), theme::HEAD_H)));
                 let body = Rect::from_min_max(Pos2::new(top.left(), top.top() + theme::HEAD_H), top.max);
                 let half = (body.width() - 1.0) / 2.0;
@@ -323,6 +349,77 @@ impl App {
         let bottom = Rect::from_min_max(Pos2::new(full.left(), full.top() + if vh > 0.0 { vh + 6.0 } else { 0.0 }), full.max);
         ui.scope_builder(UiBuilder::new().max_rect(bottom).id_salt("pro-main"), |ui| {
             ui.set_clip_rect(bottom.intersect(ui.clip_rect()));
+            ui.spacing_mut().item_spacing.y = 4.0;
+            self.main_panel(ui, s, acts);
+        });
+        ui.allocate_rect(full, Sense::hover());
+    }
+}
+
+/// 뷰어 보기 방식 단축키 기본값 (설정 shortcuts.toggleViewers)
+pub(crate) const VIEWERS_KEY: &str = "Ctrl+Shift+L";
+
+/// '송출 중만' 보기에서 송출 뷰어 칸의 폭 (가운데 판 폭 w 에서). 설정 rsProLayout.liveW 비율(0.25~0.6)을 쓰고, 없으면 36%
+pub(crate) fn live_only_width(w: f32, saved: Option<f64>) -> f32 {
+    let r = saved.map(|x| x.clamp(0.25, 0.6) as f32).unwrap_or(0.36);
+    (w * r).clamp(260.0_f32.min(w * 0.5), 640.0_f32.max(w * 0.25)).min(w * 0.6)
+}
+
+impl App {
+    /// '송출 중만': 송출 뷰어를 가운데 판 오른쪽 칸(위에서 아래까지)에 작게 두고, 본문·편집이 왼쪽 전체 높이를 쓴다.
+    /// (2026-11-27 비교: '뷰어 줄 높이만 줄이기' 보다 1000x640 · 1600x960 · 1920x1080 모두 본문 목록이 더 많이 보였다 — docs/viewer-single.md)
+    /// 미리보기 모드면 송출 뷰어 아래에 노랑 '다음' 줄(작은 그림 · ◀ n/m ▶ · 오른쪽 클릭 = 미리보기 메뉴)을 둔다.
+    fn pro_center_live_only(&mut self, ui: &mut egui::Ui, s: &Snap, full: Rect, acts: &mut Vec<Act>) {
+        let p = pal();
+        let saved = self.core.lock().settings.get()["rsProLayout"]["liveW"].as_f64();
+        let direct = self.core.lock().direct_mode();
+        let vw = live_only_width(full.width(), saved);
+        let right = Rect::from_min_max(Pos2::new(full.right() - vw, full.top()), full.max);
+        let div = Rect::from_min_max(Pos2::new(right.left() - 6.0, full.top()), Pos2::new(right.left(), full.bottom()));
+        let left = Rect::from_min_max(full.min, Pos2::new(div.left(), full.bottom()));
+        // ---- 오른쪽 칸: 머리 '보기' [둘 다 | 송출 중만] · 송출 뷰어 · (미리보기 모드) 노랑 '다음' 줄
+        ui.scope_builder(UiBuilder::new().max_rect(right).id_salt("pro-viewers"), |ui| {
+            ui.set_clip_rect(right.intersect(ui.clip_rect()));
+            let mut pick = None;
+            pane_head(ui, &tr("보기"), "", |ui| pick = self.viewer_mode_buttons(ui, true));
+            if let Some(v) = pick {
+                self.pro_set_live_only(v);
+            }
+            widgets::mark("pro-view-head", Rect::from_min_size(right.min, Vec2::new(right.width(), theme::HEAD_H)));
+            let body = Rect::from_min_max(Pos2::new(right.left(), right.top() + theme::HEAD_H), right.max);
+            ui.painter().rect_filled(body, 0.0, theme::mix(p.panel, 80.0, p.bg));
+            ui.scope_builder(UiBuilder::new().max_rect(body).id_salt(("pro-viewer", true)), |ui| {
+                ui.set_clip_rect(body.intersect(ui.clip_rect()));
+                egui::ScrollArea::vertical().id_salt(("pro-viewer-scroll", true)).auto_shrink([false, false]).show(ui, |ui| {
+                    // 뷰어 높이는 칸 폭이 정한다 (16:9) — 칸 높이 전체를 주면 화면이 아래로 늘지 않게 deck_view 가 폭에 맞춘다
+                    self.deck_view(ui, &tr("LIVE"), s.live.as_ref().map(|l| &l.deck), true, s.live.as_ref(), s, acts);
+                    if !direct {
+                        self.next_strip(ui, s, acts);
+                    }
+                });
+            });
+        });
+        // ---- 끌어서 폭 바꾸기 (6px 세로 띠, 설정 rsProLayout.liveW)
+        let resp = ui.interact(div, Id::new("pro-live-split"), Sense::drag());
+        widgets::mark("pro-live-split", div);
+        ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.accent, 0.45) } else { p.edge });
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        }
+        if resp.dragged() {
+            if let Some(pos) = resp.interact_pointer_pos() {
+                let r = ((full.right() - pos.x) / full.width().max(1.0)).clamp(0.25, 0.6);
+                self.core.lock().settings.update(|d| {
+                    if !d["rsProLayout"].is_object() {
+                        d["rsProLayout"] = json!({});
+                    }
+                    d["rsProLayout"]["liveW"] = json!((r * 100.0).round() / 100.0);
+                });
+            }
+        }
+        // ---- 왼쪽: 본문·편집 (위에서 아래까지)
+        ui.scope_builder(UiBuilder::new().max_rect(left).id_salt("pro-main"), |ui| {
+            ui.set_clip_rect(left.intersect(ui.clip_rect()));
             ui.spacing_mut().item_spacing.y = 4.0;
             self.main_panel(ui, s, acts);
         });

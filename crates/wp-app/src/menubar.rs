@@ -55,6 +55,7 @@ pub fn menus() -> Vec<Menu> {
         ] },
         Menu { label: "보기", items: vec![
             it("w:workspaces", "배치 (판 보이기·숨기기)", ""),
+            it("w:viewers", "뷰어: 둘 다 · 송출 중만 바꾸기 (본문 자리 넓히기)", "Ctrl+Shift+L"),
             it("c:commentary", "주석 보기 · 가져오기", ""),
             it("c:templates", "출력 템플릿 편집", ""),
             it("c:themes", "출력 테마 관리", ""),
@@ -121,6 +122,7 @@ pub fn menus_with_shortcuts(settings: &serde_json::Value) -> Vec<Menu> {
                 "b:quick" => Some("quickText"),
                 "b:message" => Some("messages"),
                 "b:print" => Some("printCue"),
+                "w:viewers" => Some("toggleViewers"),
                 _ => None,
             };
             if let Some(id) = id { item.key = crate::keys::label(settings, id, &item.key); }
@@ -169,6 +171,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "b:macros" => "layers",
         "b:draw" => "brush",
         "w:workspaces" => "columns-2",
+        "w:viewers" => "monitor",
         "c:commentary" => "book-open",
         "c:templates" => "palette",
         "c:themes" => "palette",
