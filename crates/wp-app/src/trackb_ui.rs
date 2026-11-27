@@ -368,7 +368,7 @@ impl App {
         }
         for f in &folders {
             ui.horizontal(|ui| {
-                ui.label(wp_core::i18n::tr_args("📁 {1} ({2}개){3}", &[&(f["name"].as_str().unwrap_or("")), &(f["count"]), &(if f["exists"] == false { wp_core::i18n::tr_s(" · 폴더 없음") } else { "" })]));
+                ui.label(wp_core::i18n::tr_args("{1} ({2}개){3}", &[&(f["name"].as_str().unwrap_or("")), &(f["count"]), &(if f["exists"] == false { wp_core::i18n::tr_s(" · 폴더 없음") } else { "" })]));
                 if ui.small_button(wp_core::i18n::tr("빼기")).clicked() { self.core.lock().remove_lib_folder(&kind, f["path"].as_str().unwrap_or("")); }
             });
         }
@@ -956,8 +956,8 @@ impl App {
         let mut act: Option<(&str, f64)> = None;
         ui.horizontal(|ui| {
             ui.label(RichText::new(wp_core::i18n::tr("영상")).strong().color(crate::theme::type_ink("camera")));
-            if ui.button(if v.playing { wp_core::i18n::tr_s("⏸ 멈춤") } else { wp_core::i18n::tr_s("▶ 재생") }).clicked() { act = Some((if v.playing { "pause" } else { "play" }, 0.0)); }
-            if ui.button(wp_core::i18n::tr("⏮ 처음부터")).clicked() { act = Some(("restart", 0.0)); }
+            if ui.button(if v.playing { wp_core::i18n::tr_s("멈춤") } else { wp_core::i18n::tr_s("재생") }).clicked() { act = Some((if v.playing { "pause" } else { "play" }, 0.0)); }
+            if ui.button(wp_core::i18n::tr("처음부터")).clicked() { act = Some(("restart", 0.0)); }
             if ui.button(wp_core::i18n::tr("정지")).clicked() { act = Some(("stop", 0.0)); }
             if ui.button(wp_core::i18n::tr("페이드아웃")).clicked() { act = Some(("fadeout", 3000.0)); }
             let pos = v.position();
@@ -1107,7 +1107,7 @@ fn actions_ko(a: &Value, music: bool) -> String {
     let mut out: Vec<String> = vec![];
     let s = |k: &str| a[k].as_str().unwrap_or("");
     if music { out.push("배경 음악".into()); }
-    if let Some(m) = a["timer"].as_f64().filter(|x| *x > 0.0) { out.push(format!("⏱ 타이머 {m}분")); }
+    if let Some(m) = a["timer"].as_f64().filter(|x| *x > 0.0) { out.push(format!("타이머 {m}분")); }
     if !s("stageMsg").is_empty() { out.push(format!("무대 메시지 '{}'", s("stageMsg").chars().take(12).collect::<String>())); }
     if a["clearStage"] == true { out.push("무대 메시지 지움".into()); }
     match s("logo") { "on" => out.push(wp_core::i18n::tr_s("로고 켜기").into()), "off" => out.push(wp_core::i18n::tr_s("로고 끄기").into()), _ => {} }

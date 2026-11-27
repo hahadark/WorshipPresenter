@@ -237,7 +237,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(m.title.clone()).strong().color(crate::theme::pal().ok_text));
                 let paused = !m.playing();
-                if ui.button(if paused { "▶" } else { "⏸" }).clicked() { m.toggle(); }
+                if ui.button(if paused { "재생" } else { "멈춤" }).clicked() { m.toggle(); }
                 if ui.button("■").on_hover_text(wp_core::i18n::tr("정지")).clicked() { m.stop(); return; }
                 if ui.button(wp_core::i18n::tr("페이드아웃")).on_hover_text(wp_core::i18n::tr("3초 동안 줄이며 끄기")).clicked() { m.fade_out(3000); }
                 let pos = m.position().as_secs();

@@ -764,7 +764,7 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
         });
     }
     // 개발자 용어(actions·obsScene) 대신 화면에 보이는 이름으로 (휴리스틱 평가 12번)
-    ui.label(RichText::new(wp_core::i18n::tr("순서 편집칸의 '⚡ 송출할 때 자동으로'에서 OBS 장면·방송·녹화를 고르면, 그 순서를 송출할 때 OBS 도 함께 바뀝니다.")).small().color(crate::theme::pal().muted));
+    ui.label(RichText::new(wp_core::i18n::tr("순서 편집칸의 '송출할 때 자동으로'에서 OBS 장면·방송·녹화를 고르면, 그 순서를 송출할 때 OBS 도 함께 바뀝니다.")).small().color(crate::theme::pal().muted));
 }
 
 /// 한글 입력 자동 전환 (설정 imeAuto, 윈도우): 글 입력칸에 새로 들어가면 입력기를 한글로.

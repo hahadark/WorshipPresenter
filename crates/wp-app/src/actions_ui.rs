@@ -131,7 +131,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
         if music.is_empty() {
             ui.label(gray(tr("없음")));
         } else {
-            ui.label(format!("🔊 {}", file_name(&music)));
+            ui.label(file_name(&music));
             let mut vol = e["musicVolume"].as_f64().unwrap_or(0.8) as f32;
             if ui.add(egui::Slider::new(&mut vol, 0.0..=1.0).step_by(0.05).show_value(false)).on_hover_text(tr("소리 크기")).changed() {
                 e["musicVolume"] = json!((vol as f64 * 100.0).round() / 100.0);
@@ -142,7 +142,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
                 ch = true;
             }
         }
-        if ui.button(if music.is_empty() { tr("🔊 고르기…") } else { tr("🔊 바꾸기…") }).clicked() {
+        if ui.button(if music.is_empty() { tr("음악 고르기…") } else { tr("음악 바꾸기…") }).clicked() {
             if let Some(url) = pick_audio_url() {
                 e["music"] = json!(url);
                 ch = true;
@@ -157,7 +157,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
     let mut st = ST.lock();
     ui.label(RichText::new(tr("자동 동작")).small());
     ui.horizontal_wrapped(|ui| {
-        let head = format!("⚡ {}{} {}", tr("송출할 때 자동으로"), if n > 0 { format!(" ({n})") } else { String::new() }, if st.open { "▴" } else { "▾" });
+        let head = format!("{}{} {}", tr("송출할 때 자동으로"), if n > 0 { format!(" ({n})") } else { String::new() }, if st.open { "▴" } else { "▾" });
         let b = egui::Button::new(if n > 0 { RichText::new(head).color(crate::theme::pal().warn) } else { RichText::new(head) });
         if ui.add(b).clicked() {
             st.open = !st.open;
@@ -239,7 +239,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
             if st.macro_name.is_none() {
                 if ui.button(tr("이 동작을 매크로로 저장…")).on_hover_text(tr("지금 이 순서의 자동 동작 묶음에 이름을 붙여 단추 하나로 (도구 → 매크로 · Alt+1~9)")).clicked() {
                     if wp_core::actions::count(e) == 0 {
-                        core.lock().notify(tr("먼저 ⚡ 송출할 때 자동으로 에서 동작을 정하세요."), "warn");
+                        core.lock().notify(tr("먼저 '송출할 때 자동으로' 에서 동작을 정하세요."), "warn");
                     } else {
                         st.macro_name = Some(e["title"].as_str().unwrap_or("").to_string());
                     }

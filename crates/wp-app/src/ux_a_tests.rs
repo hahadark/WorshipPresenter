@@ -94,7 +94,14 @@ fn seen(name: &str) -> Option<Rect> {
 fn cue(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
     app.cue_panel(ui, s, acts);
 }
-fn toast(app: &mut App, ctx: &egui::Context, _: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+fn toast(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    // (나) 전문가 테마(기본)는 알림이 아래 상태 줄 안에 (toast_inline)
+    if crate::theme::pal().bevel {
+        ui.horizontal(|ui| {
+            app.toast_inline(ui, s, acts);
+        });
+        return;
+    }
     if let Some(a) = app.toast(ctx, s) {
         acts.push(a);
     }
@@ -353,7 +360,7 @@ fn toast_body_click_dismisses() {
     h.app.core.lock().notify("시험 알림", "info");
     h.frame(vec![], toast);
     h.frame(vec![], toast);
-    let r = h.ctx.memory(|m| m.area_rect(egui::Id::new("wp-toast"))).expect("알림이 그려져야 함");
+    let r = if crate::theme::pal().bevel { seen("toast-msg").expect("알림이 그려져야 함") } else { h.ctx.memory(|m| m.area_rect(egui::Id::new("wp-toast"))).expect("알림이 그려져야 함") };
     let p = r.left_center() + Vec2::new(24.0, 0.0);
     h.frame(vec![Event::PointerMoved(p)], toast);
     for pressed in [true, false] {

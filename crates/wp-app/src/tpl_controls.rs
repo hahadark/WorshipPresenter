@@ -143,6 +143,27 @@ pub fn seg_widget(ui: &mut egui::Ui, cur: &mut String, items: &[(&str, &str)]) -
 /// 색 견본 동그라미 (24px). transparent 는 체크무늬
 pub fn swatch(ui: &mut egui::Ui, c: Color32, on: bool, tip: &str) -> Response {
     let p = pal();
+    if p.bevel {
+        // (나) 색 우물 26×18 (quick_ui::swatch 와 같은 모양)
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(26.0, 18.0), Sense::click());
+        let pt = ui.painter();
+        let rad = crate::theme::cr(crate::theme::Rad::Sm);
+        if c.a() < 255 {
+            for y in 0..3 {
+                for x in 0..4 {
+                    let rr = Rect::from_min_size(Pos2::new(r.left() + x as f32 * 6.5, r.top() + y as f32 * 6.0), Vec2::new(6.5, 6.0));
+                    pt.rect_filled(rr, CornerRadius::ZERO, if (x + y) % 2 == 0 { p.muted2 } else { p.sunken });
+                }
+            }
+        }
+        pt.rect_filled(r, rad, c);
+        pt.rect_stroke(r, rad, Stroke::new(1.0, Color32::from_gray(0x11)), egui::StrokeKind::Inside);
+        pt.rect_stroke(r.expand(1.0), rad, Stroke::new(if on { 2.0 } else { 1.0 }, if on { p.accent } else if resp.hovered() { p.muted } else { p.line2 }), egui::StrokeKind::Outside);
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        return if tip.is_empty() { resp } else { resp.on_hover_text(tip) };
+    }
     let (r, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
     let ctr = r.center();
     let pt = ui.painter();

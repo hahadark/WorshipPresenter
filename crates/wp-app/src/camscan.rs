@@ -83,7 +83,7 @@ fn watch(core: &Shared) {
 /// 카메라 미리보기 창 (작은 창, 사용자가 닫는다)
 pub fn preview(core: &Shared, id: &str, label: &str) {
     let port = core.lock().port;
-    let title = format!("📷 {}", if label.is_empty() { tr("기본 카메라") } else { label.to_string() });
+    let title = format!("{}", if label.is_empty() { tr("기본 카메라") } else { label.to_string() });
     reap();
     match spawn(&["--windowed", "--title", &title, "--url", &preview_url(port, id, label)]) {
         Ok(child) => KIDS.lock().previews.push(child),
@@ -148,7 +148,7 @@ pub fn scan_bar(ui: &mut egui::Ui, core: &Shared) {
 
 /// 목록 한 줄의 표시 이름: 연결·설정 상태 표시를 붙인다
 pub fn display_name(c: &Choice) -> String {
-    let mut s = format!("📷 {}", c.label);
+    let mut s = c.label.clone();
     if c.connected {
         s.push_str(tr_s(" · 연결됨"));
     }
@@ -195,8 +195,8 @@ mod tests {
     #[test]
     fn display_marks() {
         let c = Choice { device_id: "a".into(), label: "캠".into(), connected: true, configured: false };
-        assert_eq!(display_name(&c), "📷 캠 · 연결됨");
+        assert_eq!(display_name(&c), "캠 · 연결됨");
         let c2 = Choice { configured: true, ..c };
-        assert_eq!(display_name(&c2), "📷 캠 · 연결됨 · 설정됨");
+        assert_eq!(display_name(&c2), "캠 · 연결됨 · 설정됨");
     }
 }

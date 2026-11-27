@@ -356,7 +356,7 @@ impl App {
             let (id, label) = (c.device_id.clone(), c.label.clone());
             let on = self.core.lock().layers.media.as_ref().is_some_and(|m| m["type"] == "camera" && m["deviceId"].as_str().unwrap_or("") == id);
             ui.group(|ui| {
-                let name = if id.is_empty() { format!("📷 {label}") } else { crate::camscan::display_name(&c) };
+                let name = if id.is_empty() { label.to_string() } else { crate::camscan::display_name(&c) };
                 // library.js:381 카메라 칸을 두 번 누르면 송출 배경으로 바로 (같은 것을 다시 두 번 누르면 끄기)
                 let head = ui.add(egui::Label::new(if on { format!("{name} · ● {}", tr("LIVE 배경")) } else { name }).sense(egui::Sense::click())).on_hover_text(tr("두 번 누르면 송출 화면의 배경으로 바로 나갑니다 (다시 두 번 누르면 끄기)"));
                 crate::widgets::mark(&format!("cam-{}", if id.is_empty() { "default" } else { id.as_str() }), head.rect);

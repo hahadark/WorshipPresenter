@@ -281,7 +281,7 @@ impl App {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let mut on = times_on;
-                    let r = ui.checkbox(&mut on, tr("⏰ 예배 진행 시계")).on_hover_text(tr("큐시트 위 ⏰ 시작 시각 · 순서별 예정 시간 · 몇 분 늦음"));
+                    let r = ui.checkbox(&mut on, tr("예배 진행 시계")).on_hover_text(tr("큐시트 위 시작 시각 · 순서별 예정 시간 · 몇 분 늦음"));
                     widgets::mark("cm-times", r.rect);
                     if r.changed() {
                         self.core.lock().settings.update(|d| d["cueTimes"] = json!(on));
@@ -420,10 +420,10 @@ impl App {
                                 let x = rect.left() + 34.0;
                                 let mut head = String::new();
                                 if c["pinned"] == true {
-                                    head.push_str("📌 ");
+                                    head.push_str("[고정] ");
                                 }
                                 if c["template"] == true {
-                                    head.push_str("📄 ");
+                                    head.push_str("[서식] ");
                                 }
                                 head.push_str(name);
                                 let when = if st.view == "trash" { tr_args("지운 지 {1}", &[&cuemgr::ago(c["deletedAt"].as_str().unwrap_or(""), now)]) } else { cuemgr::ago(c["updatedAt"].as_str().unwrap_or(""), now) };
@@ -441,7 +441,7 @@ impl App {
                                 }
                                 let date = c["serviceDate"].as_str().unwrap_or("");
                                 let d = if date.is_empty() { tr("날짜 없음") } else { format!("{date} ({})", tr(cuemgr::day_of(date))) };
-                                let sub = format!("{d} · {}{}", tr_args("{1}개 순서", &[&c["count"]]), if c["memo"].as_str().is_some_and(|m| !m.is_empty()) { " · 📝" } else { "" });
+                                let sub = format!("{d} · {}{}", tr_args("{1}개 순서", &[&c["count"]]), if c["memo"].as_str().is_some_and(|m| !m.is_empty()) { " · 메모" } else { "" });
                                 let sg = pt.layout_no_wrap(sub, crate::theme::font(11.5, Weight::Regular), p.muted);
                                 pt.galley(egui::pos2(x, rect.top() + 24.0), sg, p.muted);
                             }
@@ -553,14 +553,14 @@ impl App {
         if !trashed {
             ui.horizontal_wrapped(|ui| {
                 let mut pin = c["pinned"] == true;
-                let r = ui.checkbox(&mut pin, tr("📌 맨 위에 고정"));
+                let r = ui.checkbox(&mut pin, tr("맨 위에 고정"));
                 widgets::mark("cm-pin", r.rect);
                 if r.changed() {
                     meta["pinned"] = json!(pin);
                     changed = true;
                 }
                 let mut tpl = c["template"] == true;
-                let r = ui.checkbox(&mut tpl, tr("📄 서식으로 쓰기")).on_hover_text(tr("새 큐시트를 만들 때 바탕으로 고를 수 있습니다 (예: 주일 낮 예배 · 수요 예배 · 새벽 예배 순서)"));
+                let r = ui.checkbox(&mut tpl, tr("서식으로 쓰기")).on_hover_text(tr("새 큐시트를 만들 때 바탕으로 고를 수 있습니다 (예: 주일 낮 예배 · 수요 예배 · 새벽 예배 순서)"));
                 widgets::mark("cm-tpl", r.rect);
                 if r.changed() {
                     meta["template"] = json!(tpl);

@@ -105,7 +105,14 @@ impl Drop for H {
 fn seen(name: &str) -> Option<Rect> {
     crate::widgets::HOVER_SEEN.with(|m| m.borrow().get(name).copied())
 }
-fn toast(app: &mut App, ctx: &egui::Context, _: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+fn toast(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    // (나) 전문가 테마(기본)는 알림이 아래 상태 줄 안에 (toast_inline)
+    if crate::theme::pal().bevel {
+        ui.horizontal(|ui| {
+            app.toast_inline(ui, s, acts);
+        });
+        return;
+    }
     if let Some(a) = app.toast(ctx, s) {
         acts.push(a);
     }

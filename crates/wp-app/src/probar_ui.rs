@@ -456,10 +456,24 @@ impl App {
         self.video_bar(ui);
         let bar = ui.interact(ui.available_rect_before_wrap(), ui.id().with("footer-menu"), Sense::click());
         crate::ctx_ui::footer_menu(self, &bar, acts);
+        // 알림이 떠 있으면 상태 줄 바탕을 그 종류 색으로 살짝 (눈에 띄게)
+        if let Some((_, kind, at)) = s.toast.as_ref() {
+            let life = if s.toast_act.is_some() { 12000 } else { 8000 };
+            if wp_core::util::now_ms() - at < life {
+                let p = pal();
+                let c = match *kind { "error" => p.live, "warn" => p.warn, "ok" => p.ok_text, _ => p.line2 };
+                let r = ui.max_rect().expand2(Vec2::new(10.0, 2.0));
+                ui.painter().rect_filled(r, 0.0, theme::mix(c, 22.0, p.head));
+            }
+        }
         ui.horizontal(|ui| {
             ui.set_min_height(22.0);
             ui.spacing_mut().item_spacing.x = 8.0;
             let p = pal();
+            let toast = self.toast_inline(ui, s, acts);
+            if toast {
+                widgets::vsep(ui, 14.0);
+            }
             // 누르면: [미리보기 | 바로 송출]
             ui.add(egui::Label::new(theme::rich(tr("누르면"), 11.5, Weight::Regular, p.muted)).selectable(false));
             let mut pv = s.preview_mode;

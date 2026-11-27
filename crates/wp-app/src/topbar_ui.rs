@@ -448,49 +448,8 @@ impl App {
             _ => p.accent_bg,
         };
         if p.bevel {
-            // (나): 컨트롤 막대 바로 아래 가운데 한 줄 띠 (내용·편집칸을 가리지 않게, 판 머리 높이만 덮음)
-            let y = ctx.data(|d| d.get_temp::<f32>(Id::new("pro-top-y"))).unwrap_or(90.0);
-            let (fill, edge) = match *kind {
-                "error" => (theme::mix(p.live, 30.0, p.bar), p.live),
-                "warn" => (theme::mix(p.warn, 28.0, p.bar), p.warn),
-                "ok" => (theme::mix(p.ok_text, 18.0, p.bar), p.ok_text),
-                _ => (p.raised, p.line2),
-            };
-            let w = (ctx.content_rect().width() * 0.6).clamp(380.0, 760.0);
-            egui::Area::new(Id::new("wp-toast"))
-                .order(egui::Order::Foreground)
-                .fixed_pos(egui::pos2(ctx.content_rect().center().x - w / 2.0, y + 2.0))
-                .interactable(true)
-                .show(ctx, |ui| {
-                    egui::Frame::new().fill(fill).stroke(Stroke::new(1.0, edge)).corner_radius(theme::cr(theme::Rad::Sm)).inner_margin(egui::Margin::symmetric(10, 2)).show(ui, |ui| {
-                        ui.set_width(w - 20.0);
-                        ui.horizontal(|ui| {
-                            ui.set_height(22.0);
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                let xr = ui.add(Btn::icon_only("x").kind(Kind::Ghost).size(Size::Sm).height(18.0).tooltip(tr("닫기")));
-                                if xr.clicked() {
-                                    out = Some(Act::ToastDismiss);
-                                }
-                                if let Some(a) = s.toast_act {
-                                    let (label, icon) = toast_button(a);
-                                    let br = ui.add(Btn::new(label).icon(icon).size(Size::Sm).height(18.0));
-                                    widgets::mark("toast-act", br.rect);
-                                    if br.clicked() {
-                                        out = Some(Act::ToastAct(a));
-                                    }
-                                }
-                                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                                    let lr = ui.add(egui::Label::new(theme::rich(wp_core::i18n::tr_dyn(msg), 12.0, Weight::SemiBold, p.text)).truncate().selectable(false).sense(Sense::click())).on_hover_text(tr("눌러서 닫기"));
-                                    if lr.clicked() {
-                                        out = Some(Act::ToastDismiss);
-                                    }
-                                });
-                            });
-                        });
-                    });
-                });
-            return out;
+            // (나): 알림은 아래 상태 줄 안에 한 줄로 (probar_ui::status_strip → toast_inline). 떠 있는 창·편집칸을 가리지 않는다
+            return None;
         }
         egui::Area::new(Id::new("wp-toast"))
             .order(egui::Order::Foreground)
@@ -658,6 +617,48 @@ impl App {
                 }
             });
         });
+    }
+}
+
+impl App {
+    /// (나) 상태 줄 안의 알림: 종류 색 점 · 글(누르면 닫힘) · [동작 단추] · ✕. 떠 있으면 Some(바탕색)을 먼저 알려 준다
+    pub(crate) fn toast_inline(&self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) -> bool {
+        let Some((msg, kind, at)) = s.toast.as_ref() else { return false };
+        let life = if s.toast_act.is_some() { 12000 } else { 8000 };
+        if wp_core::util::now_ms() - at >= life {
+            return false;
+        }
+        let p = pal();
+        let c = match *kind {
+            "error" => p.live,
+            "warn" => p.warn,
+            "ok" => p.ok_text,
+            _ => p.text2,
+        };
+        let (dot, _) = ui.allocate_exact_size(Vec2::new(10.0, 18.0), Sense::hover());
+        ui.painter().circle_filled(dot.center(), 4.0, c);
+        let room = (ui.available_width() * 0.6).max(120.0);
+        let lr = ui.scope(|ui| {
+            ui.set_max_width(room);
+            ui.add(egui::Label::new(theme::rich(wp_core::i18n::tr_dyn(msg), 12.0, Weight::SemiBold, p.text)).truncate().selectable(false).sense(Sense::click()))
+        }).inner.on_hover_text(format!("{}\n({})", wp_core::i18n::tr_dyn(msg), tr("눌러서 닫기")));
+        widgets::mark("toast-msg", lr.rect);
+        if lr.clicked() {
+            acts.push(Act::ToastDismiss);
+        }
+        if let Some(a) = s.toast_act {
+            let (label, icon) = toast_button(a);
+            let br = ui.add(Btn::new(label).icon(icon).size(Size::Sm).height(18.0));
+            widgets::mark("toast-act", br.rect);
+            if br.clicked() {
+                acts.push(Act::ToastAct(a));
+            }
+        }
+        if ui.add(Btn::icon_only("x").kind(Kind::Ghost).size(Size::Sm).height(18.0).tooltip(tr("닫기"))).clicked() {
+            acts.push(Act::ToastDismiss);
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+        true
     }
 }
 
