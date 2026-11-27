@@ -587,7 +587,9 @@ impl SceneUi {
             let label = if hidden { tr_args("{1} (숨김)", &[&label]) } else { label };
             let g = painter.layout_no_wrap(label, theme::font(10.5, Weight::SemiBold), if sel && p.bevel { Color32::from_gray(24) } else { Color32::WHITE });
             let chip = Rect::from_min_size(r.min + Vec2::new(3.0, 3.0), g.size() + Vec2::new(8.0, 4.0));
-            if chip.width() < r.width() - 4.0 {
+            // 화면 전체 칸의 이름표는 고른 때만 (작은 칸 이름표와 같은 구석에 겹치지 않게)
+            let full = scenes::rect_of(l) == [0.0, 0.0, 1.0, 1.0];
+            if chip.width() < r.width() - 4.0 && (sel || !full || layers.len() == 1) {
                 painter.rect_filled(chip, 3.0, if sel { sel_col } else { Color32::from_black_alpha(150) });
                 painter.galley(chip.min + Vec2::new(4.0, 2.0), g, Color32::WHITE);
             }
