@@ -54,6 +54,7 @@ pub mod overlays; // [트랙 B]
 pub mod sources; // 소스 · 화면 구성 (로드맵 1단계, docs/roadmap-sources.md)
 pub mod scenes; // 화면 구성 편집 (로드맵 2단계)
 pub mod outputs; // 출력 목록 · 출력마다 다른 구성 (로드맵 3단계)
+pub mod scenectl; // 화면 구성 전환 · 자동화 (로드맵 4단계)
 pub mod camtest; // 카메라 동시 열기 시험 (로드맵 3단계)
 pub mod songs; // [트랙 B]
 pub mod trackb; // [트랙 B]

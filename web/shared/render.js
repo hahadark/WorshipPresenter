@@ -684,15 +684,20 @@
    * 돌려줌 { host, t } — t 로 buildContent · fit · buildStage 를 부르면 칸 크기에 맞춰 글자를 다시 맞춘다.
    */
   function sceneHost(box, l, stageT) {
+    const host = document.createElement('div');
+    host.className = 'wp-host';
+    box.appendChild(host);
+    return { host, t: sceneHostFit(box, host, l, stageT) };
+  }
+  /** 이미 있는 칸 상자 · 그릴 자리를 새 칸 값(자리 · 자르기 · 테두리)에 맞춘다 — 안의 영상 · 카메라 · 웹 페이지는 그대로 (로드맵 4단계 옮겨 가기). 돌려줌: 칸 템플릿 */
+  function sceneHostFit(box, host, l, stageT) {
     const r = sceneRect(l), c = sceneCrop(l) || [0, 0, 0, 0];
     const bw = stageT.width * r[2], bh = stageT.height * r[3];
     const iw = bw / Math.max(0.05, 1 - c[0] - c[2]), ih = bh / Math.max(0.05, 1 - c[1] - c[3]);
     const t = sceneTemplate(l.template && typeof l.template === 'object' ? l.template : stageT, iw, ih);
-    const host = document.createElement('div');
-    host.className = 'wp-host';
     const k = ih / t.height;
     host.style.cssText = `position:absolute;left:${-c[0] * iw}px;top:${-c[1] * ih}px;width:${t.width}px;height:${t.height}px;transform:scale(${k});transform-origin:0 0;overflow:hidden`;
-    box.appendChild(host);
+    box.querySelectorAll(':scope > .wp-frame').forEach(x => x.remove());
     const bwid = Number(l.border && l.border.width) || 0;
     if (bwid > 0) {
       const f = document.createElement('div');
@@ -700,7 +705,7 @@
       f.style.cssText = `position:absolute;inset:0;box-sizing:border-box;border:${bwid}px solid ${esc((l.border && l.border.color) || '#ffffff')};border-radius:${Number(l.radius) || 0}px;pointer-events:none;z-index:1`;
       box.appendChild(f);
     }
-    return { host, t };
+    return t;
   }
 
   /** 컨테이너 크기에 맞춰 stage 를 축소/확대 */
@@ -903,5 +908,5 @@
     svg.innerHTML = spot + lines;
   }
 
-  global.BCRender = { sceneNeedsBox, sceneTemplate, sceneBoxCss, sceneHost, MOTIONS, motionFrame, buildMediaLayer, attachCameras, cameraStream, cameraInfo, setCameraPrefs, openCameras, closeCamera, paintDraw, editFor, esc, buildLogoScreen, syncVideo, safeUrl, isVideo, lyricsOnly, buildOverlays, clockText, countdownText, buildContent, buildStage, scaleStage, fit, fitsAt, renderInto, backgroundCss, contentRect };
+  global.BCRender = { sceneNeedsBox, sceneTemplate, sceneHostFit, sceneRect, sceneBoxCss, sceneHost, MOTIONS, motionFrame, buildMediaLayer, attachCameras, cameraStream, cameraInfo, setCameraPrefs, openCameras, closeCamera, paintDraw, editFor, esc, buildLogoScreen, syncVideo, safeUrl, isVideo, lyricsOnly, buildOverlays, clockText, countdownText, buildContent, buildStage, scaleStage, fit, fitsAt, renderInto, backgroundCss, contentRect };
 })(window);

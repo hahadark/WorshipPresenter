@@ -37,6 +37,10 @@
   .cue button { display: flex; width: 100%; text-align: left; gap: 8px; margin-bottom: 6px; padding: 12px; }
   .cue button.on { border-color: var(--live); background: #3a1d20; }
   .cue .n { color: var(--muted); min-width: 1.6em; }
+  .scout { margin-top: 8px; }
+  .scout button { flex: 0 1 auto; }
+  .scout button.on { border-color: var(--accent); background: #1f3a63; }
+  .scout button.base:not(.on) { border-style: dashed; }
   .names button { flex: 0 1 auto; text-align: left; }
   .names button small { display: block; color: var(--muted); font-size: 12px; }
   .names button.on { border-color: var(--live); background: #4a2427; }
@@ -82,6 +86,11 @@
   <div class="card" style="margin-top:12px">
     <b>큐시트</b> <span class="muted" id="cueName"></span> <span class="muted">— 누르면 송출</span>
     <div class="cue" id="cue" style="margin-top:8px"></div>
+  </div>
+  <div class="card" id="scenesCard" hidden>
+    <b>화면 구성</b> <label class="muted" style="float:right"><input type="checkbox" id="scHold" style="padding:0;width:auto"> 계속 쓰기</label>
+    <div class="muted">누르면 다음 순서로 넘어갈 때까지 · '계속 쓰기' 를 켜면 그 출력의 기본으로</div>
+    <div id="scenes"></div>
   </div>
   <div class="card" id="namesCard" hidden>
     <b>이름 자막</b> <span class="muted" id="nameNow"></span>

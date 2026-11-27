@@ -362,6 +362,13 @@ impl Core {
 
     pub fn scene_choice_for_deck(&self, output: &str, deck: Option<&crate::presentation::Deck>) -> (String, crate::outputs::From) {
         let s = self.settings.get();
+        // 외부 단추 · 리모컨의 '지금 한 번' (로드맵 4단계): 송출 중인 묶음에만, 다음 순서로 넘어갈 때까지
+        let is_live = matches!((deck, self.pres.live.as_ref()), (Some(d), Some(l)) if std::ptr::eq(d, &l.deck));
+        if is_live {
+            if let Some(id) = self.scene_once_for(output) {
+                return (id, crate::outputs::From::Once);
+            }
+        }
         let p = deck.map(|d| {
             let p = &d.passage;
             let mut v = json!({ "itemType": p["itemType"], "scenes": p["scenes"] });

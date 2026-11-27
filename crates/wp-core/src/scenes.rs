@@ -144,6 +144,15 @@ pub fn normalize_scene(v: &Value) -> Result<Value> {
         }
     }
     o.insert("layers".into(), json!(layers));
+    // 이 구성으로 바뀔 때의 전환 (로드맵 4단계) — 맞지 않는 값은 지움 (따라감)
+    match crate::scenectl::normalize(&v["transition"]) {
+        Some(t) => {
+            o.insert("transition".into(), t);
+        }
+        None => {
+            o.remove("transition");
+        }
+    }
     Ok(Value::Object(o))
 }
 

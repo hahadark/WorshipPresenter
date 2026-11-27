@@ -558,6 +558,19 @@ impl SceneUi {
             let items: Vec<(String, &str)> = list.iter().map(|(k, n)| (k.clone(), n.as_str())).collect();
             widgets::segmented(ui, &mut v, &items);
             self.view = v;
+            // 이 구성으로 바뀔 때의 전환 (로드맵 4단계): 비우면 출력 · 전체 기본을 따라감
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let cur = wp_core::scenectl::normalize(&self.draft["transition"]);
+                if let Some(nv) = crate::outputs_ui::transition_pick(ui, "scene", cur.as_ref(), Some(&tr("출력 설정 따라감"))) {
+                    match nv {
+                        Some(t) => self.draft["transition"] = t,
+                        None => {
+                            self.draft.as_object_mut().map(|o| o.remove("transition"));
+                        }
+                    }
+                }
+                ui.label(theme::rich(tr("이 구성으로 바뀔 때"), 12.0, Weight::Regular, p.muted));
+            });
         });
         ui.add_space(6.0);
         // 캔버스

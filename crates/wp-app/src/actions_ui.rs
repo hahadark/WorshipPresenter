@@ -81,6 +81,35 @@ fn dev_action_of(e: &Value, device: &str) -> String {
     e["actions"]["dev"].as_array().into_iter().flatten().find(|x| x["device"] == device).and_then(|x| x["action"].as_str()).unwrap_or("").to_string()
 }
 
+/// 순서 동작 '구성 바꾸기' 의 출력 하나: actions.scene[출력] (빈 값 = 바꾸지 않음 → 칸을 지움)
+pub fn set_scene_action(e: &mut Value, output: &str, id: &str) {
+    let mut m = e["actions"]["scene"].as_object().cloned().unwrap_or_default();
+    if id.is_empty() {
+        m.remove(output);
+    } else {
+        m.insert(output.to_string(), json!(id));
+    }
+    set_action(e, "scene", if m.is_empty() { Value::Null } else { Value::Object(m) });
+}
+
+fn scene_combo(ui: &mut egui::Ui, e: &mut Value, output: &str, opts: &[(String, String)]) -> bool {
+    let cur = e["actions"]["scene"][output].as_str().unwrap_or("").to_string();
+    let mut sel = cur.clone();
+    let label = opts.iter().find(|(v, _)| *v == cur).map(|(_, t)| t.clone()).unwrap_or_else(|| if cur.is_empty() { opts[0].1.clone() } else { "?".into() });
+    let r = egui::ComboBox::from_id_salt(("act-scene", output)).selected_text(label).width(150.0).show_ui(ui, |ui| {
+        for (v, t) in opts {
+            ui.selectable_value(&mut sel, v.clone(), t);
+        }
+    });
+    crate::widgets::mark(&format!("act-scene-{output}"), r.response.rect);
+    if sel != cur {
+        set_scene_action(e, output, &sel);
+        true
+    } else {
+        false
+    }
+}
+
 /// 콤보 한 개: (값, 표시) 목록에서 고르기. 바뀌었으면 true. 빈 값(첫 항목)은 키를 지운다.
 fn combo(ui: &mut egui::Ui, e: &mut Value, k: &str, opts: &[(String, String)], width: f32) -> bool {
     let cur = e["actions"][k].as_str().unwrap_or("").to_string();
@@ -287,6 +316,21 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
             ch |= combo(ui, e, "stagePin", &sp, 200.0);
         }
         ui.end_row();
+        // 화면 구성 바꾸기 (로드맵 4단계): 출력 기본을 바꾸는 남는 동작 — 구성이 있을 때만
+        let user_scenes = wp_core::scenes::user_scenes(&settings);
+        if !user_scenes.is_empty() {
+            ui.label(tr("화면 구성")).on_hover_text(tr("이 순서를 송출할 때 출력의 기본 화면 구성을 바꿉니다. 다음 순서에서도 그대로 남습니다 (이 순서에서만 바꾸려면 인스펙터 '소스' 탭)"));
+            ui.horizontal_wrapped(|ui| {
+                let mut opts = vec![keep.clone(), (wp_core::scenes::FULL.to_string(), tr("전체 화면 (기본)"))];
+                opts.extend(user_scenes.iter().map(|x| (x["id"].as_str().unwrap_or("").to_string(), x["name"].as_str().unwrap_or("").to_string())));
+                for (o, n) in wp_core::outputs::list(&settings) {
+                    let shown = if o == "main" || o == "overlay" { tr(&n) } else { n.clone() };
+                    ui.label(&shown);
+                    ch |= scene_combo(ui, e, &o, &opts);
+                }
+            });
+            ui.end_row();
+        }
         // OBS (Electron obsActHtml): 연결돼 있으면 장면 목록 콤보, 아니면 글 입력
         ui.label("OBS").on_hover_text(tr("이 순서를 송출할 때 OBS 장면을 바꾸거나 방송·녹화를 시작·종료합니다"));
         ui.horizontal_wrapped(|ui| {
@@ -383,6 +427,18 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scene_action_adds_and_drops() {
+        let mut e = json!({ "type": "bible" });
+        set_scene_action(&mut e, "overlay", "sc-a");
+        assert_eq!(e["actions"], json!({ "scene": { "overlay": "sc-a" } }));
+        set_scene_action(&mut e, "main", "full");
+        set_scene_action(&mut e, "overlay", "");
+        assert_eq!(e["actions"]["scene"], json!({ "main": "full" }));
+        set_scene_action(&mut e, "main", "");
+        assert!(e.get("actions").is_none());
+    }
 
     #[test]
     fn set_action_removes_empty_and_actions_key() {

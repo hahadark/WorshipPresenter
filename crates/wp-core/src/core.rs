@@ -385,6 +385,8 @@ impl Core {
             "sources": crate::sources::payload_sources_for(output, &crate::sources::user_sources(s), &scene_id, s),
             // 소리 내는 출력 (로드맵 3단계, 설정 output.audioOutput · 기본 예배당). 옛 output.js 는 이 칸을 모르고 예배당 창에서만 소리를 낸다 (같은 결과)
             "audio": crate::outputs::audio_output(s) == output,
+            // 구성이 바뀔 때의 전환 (로드맵 4단계). 옛 output.js 는 모른 채 바로 바꾼다 (예전과 같음)
+            "sceneTransition": self.scene_transition_for(output, &scene_id),
         })
     }
 
@@ -738,6 +740,7 @@ impl Core {
         self.unclear_bg();
         self.obs_hold = false;
         if self.pres.send_live(Some(d)) {
+            self.scene_once_after_send(); // 다른 순서로 넘어가면 '지금 한 번' 구성은 끝
             self.add_history();
             crate::trackd::on_send(self); // [트랙 D] 예배당 창 자동 켜기 · 순서 자동 동작
             self.emit(Ev::Live);

@@ -56,6 +56,19 @@
     L.labels.forEach((l, i) => { const k = l.replace(/-\d+$/, ''); if (k && !/^\d+$/.test(k) && (i === 0 || L.labels[i - 1].replace(/-\d+$/, '') !== k)) groups.push({ k, i }); });
     const gc = k => (window.BCGroup ? window.BCGroup.color(k) : '');
     $('labels').innerHTML = groups.map(g => `<button data-goto="${g.i}" class="${L.index >= g.i && (groups.find(x => x.i > g.i)?.i ?? 1e9) > L.index ? 'on' : ''}" style="${gc(g.k) ? `border-left:5px solid ${gc(g.k)}` : ''}">${esc(g.k)}</button>`).join('');
+    // 화면 구성 (출력마다): 누르면 다음 순서까지, '계속 쓰기' 를 켜면 그 출력의 기본으로
+    const sc = r.scenes;
+    $('scenesCard').hidden = !sc;
+    if (sc) {
+      const sk = JSON.stringify(sc);
+      if ($('scenes').dataset.k !== sk) {
+        $('scenes').dataset.k = sk;
+        const opts = [{ id: 'full', name: '전체 화면 (기본)' }, ...sc.list];
+        $('scenes').innerHTML = sc.outputs.map(o => `<div class="scout"><div class="muted">${esc(o.name)}${o.once ? ' — 다음 순서까지' : ''}</div><div class="row">` +
+          opts.map(x => `<button data-out="${esc(o.id)}" data-sc="${esc(x.id)}" class="${o.now === x.id ? 'on' : ''}${o.base === x.id ? ' base' : ''}">${esc(x.name)}</button>`).join('') +
+          (o.once ? `<button data-out="${esc(o.id)}" data-clear="1">되돌리기</button>` : '') + '</div></div>').join('');
+      }
+    }
     // 큐시트
     const cueKey = JSON.stringify([r.cue, L.cueIndex]);
     if (cueKey !== lastCue) {
@@ -88,6 +101,7 @@
   $('dFull').onclick = () => act({ action: 'obsFull' });
   $('labels').onclick = e => { const b = e.target.closest('[data-goto]'); if (b) act({ action: 'goto', index: +b.dataset.goto }); };
   $('names').onclick = e => { const b = e.target.closest('[data-name]'); if (!b) return; act({ action: 'name', index: b.classList.contains('on') ? -1 : +b.dataset.name }); };
+  $('scenes').onclick = e => { const b = e.target.closest('[data-out]'); if (!b) return; act(b.dataset.clear ? { action: 'scene', output: b.dataset.out, clear: true } : { action: 'scene', output: b.dataset.out, id: b.dataset.sc, hold: $('scHold').checked }); };
   $('cue').onclick = e => { const b = e.target.closest('[data-cue]'); if (b) act({ action: 'cue', index: +b.dataset.cue }); };
   $('msgSend').onclick = () => act({ action: 'message', text: $('msg').value });
   $('msgClear').onclick = () => { $('msg').value = ''; act({ action: 'message', text: '' }); };

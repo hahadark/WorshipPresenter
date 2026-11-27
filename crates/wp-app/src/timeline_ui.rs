@@ -14,6 +14,8 @@ const HEAD_H: f32 = 28.0;
 const RULER_H: f32 = 20.0;
 const LANE_H: f32 = 46.0;
 const LANE2_H: f32 = 32.0;
+/// 화면 구성 줄 (로드맵 4단계): 사용자 구성이 있을 때만
+const LANE3_H: f32 = 26.0;
 const LABEL_W: f32 = 96.0;
 
 /// 순서 하나의 자리 (시작 분, 길이 분)
@@ -50,6 +52,50 @@ fn hm(min: f64) -> String {
 /// 눈금 간격(분): 10분에 50px 이상이면 5분 눈금 · 10분 글자, 아니면 더 성기게
 fn tick_step(px_per_min: f32) -> (f64, f64) {
     if px_per_min * 10.0 >= 50.0 { (5.0, 10.0) } else if px_per_min * 20.0 >= 50.0 { (10.0, 20.0) } else { (15.0, 30.0) }
+}
+
+/// 화면 구성 줄 (보기 전용): 기본과 다른 구성을 쓰는 순서는 막대, 기본을 바꾸는 순서는 앞에 작은 표시
+fn scene_lane(ui: &egui::Ui, pt: &egui::Painter, lane: Rect, clips: &[Clip], xof: &dyn Fn(f64) -> f32, s: &Snap) {
+    let p = pal();
+    let hover = ui.ctx().pointer_hover_pos();
+    let mut tip: Option<String> = None;
+    let mut drew = false;
+    for c in clips.iter().filter(|c| c.len > 0.0) {
+        let x0 = xof(c.start) + 1.0;
+        let x1 = (xof(c.start + c.len) - 1.0).max(x0 + 2.0);
+        let r = Rect::from_min_max(Pos2::new(x0, lane.top() + 5.0), Pos2::new(x1, lane.bottom() - 5.0));
+        let mark = s.scene_marks.get(c.index).cloned().unwrap_or_default();
+        let act = s.scene_acts.get(c.index).cloned().unwrap_or_default();
+        if !mark.is_empty() {
+            pt.rect_filled(r, theme::cr(theme::Rad::Sm), p.raised);
+            pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(1.0, p.line2), egui::StrokeKind::Inside);
+            let short = mark.split(" · ").map(|x| x.split(": ").nth(1).unwrap_or(x)).collect::<Vec<_>>().join(" · ");
+            pt.with_clip_rect(r.shrink2(Vec2::new(5.0, 0.0))).text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, short, theme::font(10.5, Weight::Regular), p.text);
+            crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 8.0, r.center().y), Vec2::splat(10.0)), "layout-grid", p.text2);
+            drew = true;
+        }
+        if !act.is_empty() {
+            // 기본을 바꾸는 곳: 막대 왼쪽 끝 세로 금
+            pt.vline(x0, lane.top() + 3.0..=lane.bottom() - 3.0, Stroke::new(2.0, p.text2));
+            drew = true;
+        }
+        if (!mark.is_empty() || !act.is_empty()) && hover.is_some_and(|h| r.expand2(Vec2::new(3.0, 0.0)).contains(h)) {
+            let mut t = vec![];
+            if !mark.is_empty() {
+                t.push(tr_args("이 순서 동안: {1}", &[&mark]));
+            }
+            if !act.is_empty() {
+                t.push(tr_args("송출할 때 기본을 바꿈: {1}", &[&act]));
+            }
+            tip = Some(t.join("\n"));
+        }
+    }
+    if !drew {
+        pt.text(Pos2::new(lane.left() + LABEL_W + 12.0, lane.center().y), Align2::LEFT_CENTER, tr("모든 순서가 출력 기본 구성을 씁니다"), theme::font(10.5, Weight::Regular), p.muted2);
+    }
+    if let Some(t) = tip {
+        ui.interact(lane, Id::new("pro-tl-scene-lane"), Sense::hover()).on_hover_text(t);
+    }
 }
 
 impl App {
@@ -121,14 +167,20 @@ impl App {
             return;
         }
         // ---- 몸통: 눈금 · 순서 줄 · 무대 줄
-        let body_h = RULER_H + LANE_H + LANE2_H;
+        let has_scenes = !s.scene_marks.is_empty();
+        let body_h = RULER_H + LANE_H + LANE2_H + if has_scenes { LANE3_H } else { 0.0 };
         let (br, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), body_h), Sense::hover());
         let pt = ui.painter().with_clip_rect(br);
         let track = Rect::from_min_max(Pos2::new(br.left() + LABEL_W, br.top()), br.max);
         let lane1 = Rect::from_min_size(Pos2::new(br.left(), br.top() + RULER_H), Vec2::new(br.width(), LANE_H));
         let lane2 = Rect::from_min_size(Pos2::new(br.left(), lane1.bottom()), Vec2::new(br.width(), LANE2_H));
+        let lane3 = Rect::from_min_size(Pos2::new(br.left(), lane2.bottom()), Vec2::new(br.width(), if has_scenes { LANE3_H } else { 0.0 }));
+        let mut lanes = vec![(lane1, tr("순서"), tr("예배당")), (lane2, tr("무대"), tr("타이머"))];
+        if has_scenes {
+            lanes.push((lane3, tr("구성"), String::new()));
+        }
         // 이름 칸
-        for (r, a, b) in [(lane1, tr("순서"), tr("예배당")), (lane2, tr("무대"), tr("타이머"))] {
+        for (r, a, b) in lanes {
             let lr = Rect::from_min_size(r.min, Vec2::new(LABEL_W, r.height()));
             pt.rect_filled(lr, 0.0, mix(p.head, 60.0, p.panel));
             pt.vline(lr.right() - 0.5, lr.y_range(), Stroke::new(1.0, p.edge));
@@ -148,6 +200,9 @@ impl App {
             let msg = if s.items.is_empty() { tr("큐시트를 열면 순서가 여기에 시간 막대로 놓입니다.") } else if start.trim().is_empty() { tr("큐시트 시작 시각(예: 11:00)과 순서마다 길이(분)를 넣으면 예배 시간표가 그려집니다.") } else { tr("순서마다 길이(분)를 넣으면 예배 시간표가 그려집니다. (편집칸 '길이')") };
             pt.text(Pos2::new(track.left() + 12.0, lane1.center().y), Align2::LEFT_CENTER, msg, theme::font(12.0, Weight::Regular), p.muted);
             self.timer_lane(ui, &pt, lane2, track, None, now_min);
+            if has_scenes {
+                pt.text(Pos2::new(track.left() + 12.0, lane3.center().y), Align2::LEFT_CENTER, tr("순서 길이를 넣으면 기본과 다른 화면 구성이 여기에 보입니다."), theme::font(11.0, Weight::Regular), p.muted2);
+            }
             return;
         };
         // 범위: 시작 ~ 마침 (지금이 조금 넘으면 지금까지)
@@ -218,6 +273,9 @@ impl App {
             ui.interact(lane1, Id::new("pro-tl-lane"), Sense::hover()).on_hover_text(t);
         }
         self.timer_lane(ui, &pt, lane2, track, Some((&clips, t0, ppm, s)), now_min);
+        if has_scenes {
+            scene_lane(ui, &pt, lane3, &clips, &xof, s);
+        }
         // 지금 시각 세로선 (재생 헤드) — 범위 안일 때만
         if now_min >= t0 && now_min <= t1 {
             let x = xof(now_min);

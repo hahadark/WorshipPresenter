@@ -28,6 +28,7 @@ pub const TRIGGERS: &[(&str, &str)] = &[
     ("message", "무대 메시지 (?text=…, 비우면 지움)"),
     ("draw-clear", "화면에 그린 것 지우기"),
     ("macro", "매크로 실행 (?name=매크로 이름)"),
+    ("scene", "화면 구성 바꾸기 (?output=overlay&id=구성 id 또는 이름, 다음 순서까지 · &hold=1 이면 계속)"),
 ];
 
 pub fn actions() -> Value {
@@ -136,6 +137,17 @@ pub fn run(core: &mut Core, action: &str, q: &HashMap<String, String>) -> Result
             core.run_macro(&key).map_err(|e| e.to_string())?;
         }
         "draw-clear" => core.draw_clear(), // [트랙 B]
+        // 화면 구성 (로드맵 4단계): 기본은 지금 한 번(다음 순서로 넘어갈 때까지), hold=1 이면 출력 기본을 바꿈. id 를 비우면(또는 clear=1) 한 번 지정 풀기
+        "scene" => {
+            let output = q.get("output").map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).unwrap_or_else(|| "overlay".into());
+            let id = q.get("id").or(q.get("name")).cloned().unwrap_or_default();
+            let hold = q.get("hold").is_some_and(|x| matches!(x.as_str(), "1" | "true" | "yes"));
+            if q.get("clear").is_some_and(|x| x == "1") || (id.trim().is_empty() && !hold) {
+                core.clear_scene_once(&output);
+            } else {
+                core.trigger_scene(&output, &id, hold).map_err(|e| e.to_string())?;
+            }
+        }
         _ => return Err(crate::i18n::tr_args("알 수 없는 동작: {1}", &[&action])),
     }
     Ok(Value::Bool(true))
@@ -167,7 +179,7 @@ mod tests {
         assert!(safe_eq("abc", "abc"));
         assert!(!safe_eq("abc", "abd"));
         assert!(!safe_eq("", ""));
-        assert_eq!(TRIGGERS.len(), 16);
+        assert_eq!(TRIGGERS.len(), 17);
     }
 }
 

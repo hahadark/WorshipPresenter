@@ -78,6 +78,10 @@ pub fn normalize_actions(a: &Value) -> Value {
             act.insert(k.into(), a[k].clone());
         }
     }
+    // 화면 구성 바꾸기 (로드맵 4단계): { <출력>: <구성 id | "full"> } — 출력 기본을 바꾸는 남는 동작
+    if let Some(sc) = crate::scenectl::normalize_action(&a["scene"]) {
+        act.insert("scene".into(), sc);
+    }
     if act.is_empty() { Value::Null } else { Value::Object(act) }
 }
 
@@ -168,6 +172,7 @@ pub fn summary(settings: &Value, it: &Value) -> String {
     if !s("obsRecord").is_empty() {
         out.push(if s("obsRecord") == "start" { tr("OBS 녹화 시작") } else { tr("OBS 녹화 끝") });
     }
+    out.extend(crate::scenectl::action_summary(settings, &a["scene"]));
     out.join(" · ")
 }
 

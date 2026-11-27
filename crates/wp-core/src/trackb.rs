@@ -30,6 +30,8 @@ pub struct TrackB {
     pub draw: crate::draw::Draw,
     /// 연결된 카메라 실시간 목록 (출력 창 도우미가 보낸 마지막 결과)
     pub cams: crate::cameras::DeviceList,
+    /// 화면 구성 '지금 한 번' (로드맵 4단계, 다음 순서로 넘어갈 때까지)
+    pub scene_once: crate::scenectl::SceneOnce,
 }
 
 impl Core {

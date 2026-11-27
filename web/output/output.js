@@ -43,37 +43,117 @@
     const s = R.sceneBoxCss(l);
     if (el.style.cssText !== s) el.style.cssText = s;
   }
+  /** 그 자리에서 옮겨 갈 수 있는 소스 (안의 그림이 템플릿 · 칸 크기와 상관없음): 카메라 · 사용자 소스(웹 페이지).
+   *  이 칸은 늘 그릴 자리(host)를 두어, 자리 · 자르기가 바뀌어도 같은 video · iframe 요소를 그대로 쓴다 (로드맵 4단계) */
+  function movable(l, p) {
+    const src = l.source || '';
+    return src.startsWith('camera:') || !!((p && p.sources) || sceneSources)[src];
+  }
   /** 상자 안 그릴 자리를 다시 만들어야 하는 값 (자리 · 자르기 · 글 모양 · 둥글기 · 테두리 · 무대 크기) */
-  function hostKey(l) {
-    if (!R.sceneNeedsBox(l)) return '';
+  function hostKey(l, mv) {
+    if (!R.sceneNeedsBox(l) && !mv) return '';
     const t = l.template && typeof l.template === 'object' ? l.template : null;
     return JSON.stringify([l.rect, l.crop, l.radius, l.border, t ? JSON.stringify(t) : '', tpl && tpl.width, tpl && tpl.height]);
   }
-  /** 구성 차례대로 층 상자를 맞춘다. 이미 있는 상자는 차례가 맞으면 옮기지 않는다 (옮기면 영상 · 카메라 · 웹 페이지가 끊긴다).
-   *  자리 · 자르기 · 글 모양이 바뀐 칸은 상자를 새로 만들고 그 소스를 다시 그린다 (돌려줌: 새로 만든 칸의 소스들) */
+  // ---------- 구성이 바뀔 때의 전환 (로드맵 4단계, 코어 payload.sceneTransition) ----------
+  // move(옮겨 가기, 기본): 같은 소스는 같은 요소 그대로 새 자리로 미끄러지고, 새로 생기거나 사라지는 칸은 서서히.
+  // fade(서서히): 바뀐 칸은 모두 서서히 (카메라도 같은 스트림으로 겹쳐 바뀜). cut(바로).
+  // 처음 그릴 때 · 같은 구성 안에서 칸을 고칠 때(구성 편집기)는 전환 없이 바로 — 2.0.8 과 같은 그림.
+  let sceneId = null;
+  const opacityOf = l => (l && l.opacity != null && Number(l.opacity) < 1 ? Math.max(0, Number(l.opacity) || 0) : 1);
+  function enter(el, l, ms) {
+    if (!ms || !el.animate) return;
+    el.animate([{ opacity: 0 }, { opacity: opacityOf(l) }], { duration: ms, easing: 'ease' });
+  }
+  function leave(el, ms) {
+    el._leaving = true;
+    if (!ms || !el.animate) { el.remove(); return; }
+    const a = el.animate([{ opacity: opacityOf(el._layer) }, { opacity: 0 }], { duration: ms, easing: 'ease', fill: 'forwards' });
+    a.onfinish = () => el.remove();
+    setTimeout(() => el.remove(), ms + 200);
+  }
+  /** 옮겨 가기: 새 자리에 놓은 상자를 예전 자리 모양에서 시작해 새 자리로 (transform 만 — 안의 요소는 그대로) */
+  function glide(el, from, to, ms) {
+    if (!ms || !el.animate || !tpl) return;
+    const a = R.sceneRect(from), b = R.sceneRect(to);
+    if (a.every((x, i) => Math.abs(x - b[i]) < 1e-6)) return;
+    const sx = a[2] / Math.max(1e-4, b[2]), sy = a[3] / Math.max(1e-4, b[3]);
+    const tx = (a[0] - b[0]) * tpl.width, ty = (a[1] - b[1]) * tpl.height;
+    el.animate([
+      { transformOrigin: '0 0', transform: `translate(${tx}px,${ty}px) scale(${sx},${sy})`, opacity: opacityOf(from) },
+      { transformOrigin: '0 0', transform: 'none', opacity: opacityOf(to) },
+    ], { duration: ms, easing: 'ease-in-out' });
+  }
+  /** 서서히 바꿀 때 예전 자리의 카메라를 잠깐 남겨 둔다 (같은 스트림 — 다시 열지 않음) */
+  function camGhost(el, l, ms) {
+    if (!ms || !String(l.source).startsWith('camera:')) return;
+    const g = document.createElement('div');
+    g.className = 'wp-layer';
+    g.dataset.ghost = '1';
+    g.style.cssText = R.sceneBoxCss(l);
+    const h = R.sceneHost(g, l, tpl).host;
+    const m = R.buildMediaLayer({ type: 'camera', deviceId: String(l.source).slice(7), fit: l.fit === 'contain' ? 'contain' : 'cover' });
+    m.className = 'wp-cam';
+    m.style.cssText = 'position:absolute;inset:0;overflow:hidden';
+    h.appendChild(m);
+    g._layer = l;
+    stage.insertBefore(g, el);
+    leave(g, ms);
+  }
+  /** 구성 차례대로 층 상자를 맞춘다. 이미 있는 상자는 차례가 맞으면 옮기지 않는다 (옮기면 웹 페이지가 다시 열린다).
+   *  짝 맞추기: 같은 칸 id + 같은 소스 → 없으면 같은 소스 (구성이 바뀌어도 같은 카메라 · 웹 페이지 요소를 그대로).
+   *  자리 · 자르기 · 글 모양이 바뀐 칸: 옮겨 갈 수 있는 소스는 그 상자를 새 자리에 맞추고, 나머지는 상자를 새로 만들어 그 소스를 다시 그린다
+   *  (돌려줌: 새로 만든 칸의 소스들) */
   function syncLayers(p) {
     const want = sceneLayers(p);
-    const ids = new Set(want.map(l => l.id));
+    const sid = p && p.scene ? String(p.scene.id || '') : '';
+    const changed = !!sceneId && !!sid && sid !== sceneId; // 처음 그릴 때(이전 구성 없음)는 전환 없이
+    sceneId = sid;
+    if (sid) document.body.dataset.scene = sid; // 점검용 (그림에는 안 씀)
+    const tr = (changed && p && p.sceneTransition) || { type: 'cut', ms: 0 };
+    const type = ['move', 'fade', 'cut'].includes(tr.type) ? tr.type : 'cut';
+    const ms = type === 'cut' ? 0 : Math.max(0, Math.min(3000, Number(tr.ms) || 0));
     const fresh = new Set();
-    for (const [id, el] of [...slots]) {
-      const l = want.find(x => x.id === id);
-      if (!l || el.dataset.source !== l.source || (el.dataset.hostKey || '') !== hostKey(l)) { el.remove(); slots.delete(id); if (l) fresh.add(l.source); }
+    const pool = new Map(slots);
+    const match = new Map();
+    for (const l of want) { const el = pool.get(l.id); if (el && el.dataset.source === l.source) { match.set(l.id, el); pool.delete(l.id); } }
+    for (const l of want) {
+      if (match.has(l.id)) continue;
+      for (const [id, el] of pool) if (el.dataset.source === l.source) { match.set(l.id, el); pool.delete(id); break; }
     }
+    for (const el of pool.values()) leave(el, ms); // 사라지는 칸
+    slots.clear();
     let prev = null;
     for (const l of want) {
-      let el = slots.get(l.id);
-      const at = prev ? prev.nextSibling : stage.firstChild;
+      let el = match.get(l.id);
+      const mv = movable(l, p);
+      const hk = hostKey(l, mv);
+      if (el && (el.dataset.hostKey || '') !== hk) {
+        if (mv && el._host) {
+          // 같은 요소를 새 자리로: 상자 · 그릴 자리만 고친다
+          const from = el._layer || l;
+          el._tpl = R.sceneHostFit(el, el._host, l, tpl);
+          el.dataset.hostKey = hk;
+          el.style.cssText = R.sceneBoxCss(l);
+          if (type === 'move') glide(el, from, l, ms);
+          else if (type === 'fade') { camGhost(el, from, ms); enter(el, l, ms); }
+        } else { leave(el, ms); el = null; }
+      }
       if (!el) {
         el = document.createElement('div');
         el.className = 'wp-layer';
-        el.dataset.layer = l.id;
         el.dataset.source = l.source;
-        el.dataset.hostKey = hostKey(l);
-        if (el.dataset.hostKey) { const h = R.sceneHost(el, l, tpl); el._host = h.host; el._tpl = h.t; }
-        slots.set(l.id, el);
-        stage.insertBefore(el, at);
+        el.dataset.hostKey = hk;
+        if (hk) { const h = R.sceneHost(el, l, tpl); el._host = h.host; el._tpl = h.t; }
         fresh.add(l.source);
-      } else if (el !== at) stage.insertBefore(el, at);
+        el.style.cssText = R.sceneBoxCss(l);
+        enter(el, l, ms);
+      }
+      el.dataset.layer = l.id;
+      slots.set(l.id, el);
+      let at = prev ? prev.nextSibling : stage.firstChild;
+      while (at && (at._leaving || at.dataset.ghost)) at = at.nextSibling;
+      if (el !== at) stage.insertBefore(el, at);
       el._layer = l;
       layerBox(el, l);
       prev = el;
@@ -101,6 +181,7 @@
     if (!el) { if (stageBg) stageBg.remove(); return; }
     const host = el._host || el;
     if (host.querySelector(':scope > .bc-bg')) return;
+    if (stageBg && stageBg.isConnected && !el.contains(stageBg)) stageBg = R.buildStage(tpl).firstChild; // 예전 배경은 사라지는 칸과 함께 서서히
     const bg = el._host ? R.buildStage(el._tpl).firstChild : stageBg;
     if (bg) host.insertBefore(bg, host.firstChild);
   }
@@ -157,7 +238,9 @@
     if (key === tplKey && stage) return false;
     tplKey = key;
     tpl = t;
-    screenEl.innerHTML = '';
+    // 템플릿이 바뀌어도 카메라 · 웹 페이지 칸(옮겨 갈 수 있는 소스)은 같은 요소를 새 무대로 옮긴다
+    // (로드맵 4단계 — 순서가 바뀌며 템플릿이 달라져도 카메라가 끊기지 않게). hostKey '-' = 새 무대 크기에 다시 맞춤
+    const keep = [...slots].filter(([, el]) => el._host && movable(el._layer || { source: el.dataset.source }, lastPayload));
     vUrl = ''; vLayer = null;
     stage = R.buildStage(t);
     stage.style.setProperty('--bc-fade', fadeMs() + 'ms');
@@ -165,6 +248,8 @@
     stageBg = stage.firstChild;
     stageBg.remove();
     slots.clear();
+    for (const [id, el] of keep) { el.dataset.hostKey = '-'; slots.set(id, el); stage.appendChild(el); }
+    screenEl.innerHTML = '';
     syncLayers(lastPayload);
     placeBackground();
     screenEl.appendChild(stage);

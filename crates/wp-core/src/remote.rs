@@ -127,7 +127,26 @@ pub fn state_for(core: &Core) -> Value {
         // 이름 자막: 명단과 지금 떠 있는 사람
         "names": { "people": core.people(), "on": core.name_tag_on() },
         "obs": { "pip": s["output"]["obsPip"].as_bool().unwrap_or(false), "full": core.obs_full },
+        // 화면 구성 단추 (로드맵 4단계): 사용자 구성이 있을 때만
+        "scenes": scenes_state(core),
     })
+}
+
+/// 리모컨의 화면 구성 줄: 출력마다 지금 구성 · '지금 한 번' 인지, 고를 수 있는 구성
+pub fn scenes_state(core: &Core) -> Value {
+    let s = core.settings.get();
+    let list = crate::scenes::user_scenes(s);
+    if list.is_empty() {
+        return Value::Null;
+    }
+    let outs: Vec<Value> = crate::outputs::list(s)
+        .into_iter()
+        .map(|(id, name)| {
+            let (now, from) = core.scene_choice(&id, true);
+            json!({ "id": id, "name": crate::i18n::tr(&name), "now": now, "once": from == crate::outputs::From::Once, "base": crate::scenes::output_scene_id(s, &id) })
+        })
+        .collect();
+    json!({ "outputs": outs, "list": list.iter().map(|x| json!({ "id": x["id"], "name": x["name"] })).collect::<Vec<_>>() })
 }
 
 /// 리모컨에서 할 수 있는 일만
@@ -160,6 +179,16 @@ pub fn act(core: &mut Core, a: &Value) -> Result<Value, String> {
         },
         "timer" if a["op"] == "until" => core.stage_timer_until(a["at"].as_str().unwrap_or("")).map_err(|e| e.to_string())?, // 몇 시까지
         "timer" => core.stage_timer(a["op"].as_str().unwrap_or(""), a["minutes"].as_f64().unwrap_or(0.0)).map_err(|e| e.to_string())?,
+        // 화면 구성 (로드맵 4단계): 기본 지금 한 번, hold 면 출력 기본
+        "scene" => {
+            let out = a["output"].as_str().unwrap_or("overlay");
+            let id = a["id"].as_str().unwrap_or("");
+            if a["clear"] == true {
+                core.clear_scene_once(out);
+            } else {
+                core.trigger_scene(out, id, a["hold"] == true).map_err(|e| e.to_string())?;
+            }
+        }
         "obsFull" => { let f = a["on"].as_bool().unwrap_or(!core.obs_full); crate::themes::set_obs_view(core, Some(f), None); } // [트랙 C]
         _ => return Err(crate::i18n::tr("알 수 없는 조작입니다.").into()),
     }

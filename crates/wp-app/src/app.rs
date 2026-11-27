@@ -115,6 +115,8 @@ pub(crate) struct Snap {
     pub(crate) extra_views: Vec<ExtraView>,
     /// 순서마다 '출력 기본과 다른 화면 구성' 툴팁 글 (items 와 같은 차례, 비면 표시 없음)
     pub(crate) scene_marks: Vec<String>,
+    /// 순서마다 '송출할 때 자동으로: 화면 구성 바꾸기' 요약 (로드맵 4단계, 시간표 구성 줄)
+    pub(crate) scene_acts: Vec<String>,
 }
 
 /// 뷰어가 추가 출력을 그릴 때 쓸 것 (LIVE · 미리보기 따로)
@@ -260,6 +262,7 @@ impl App {
             },
             source_names: if s["scenes"].as_array().is_some_and(|a| !a.is_empty()) { crate::scene_ui::source_names(&c) } else { vec![] },
             scene_marks: if s["scenes"].as_array().is_some_and(|a| !a.is_empty()) { crate::sources_ui::scene_marks(&c) } else { vec![] },
+            scene_acts: c.cue.as_ref().map(|q| q.items.iter().map(|it| wp_core::scenectl::action_summary(s, &it["actions"]["scene"]).join(" · ")).collect()).unwrap_or_default(),
             extra_views: {
                 let pv = c.pres.preview.as_ref();
                 let lv = c.pres.live.as_ref().map(|l| &l.deck);

@@ -459,6 +459,9 @@ pub fn run_item_actions(c: &mut Core, a: &Value, depth: u8) {
     } else if !s("ovOff").is_empty() {
         let _ = c.toggle_overlay(&s("ovOff"), Some(false));
     }
+    if a["scene"].is_object() {
+        c.run_scene_action(&a["scene"]); // 화면 구성 바꾸기 (출력 기본, 남음)
+    }
     match s("stagePin").as_str() {
         "" => {}
         "live" => { let _ = c.stage_pin_set(None); }

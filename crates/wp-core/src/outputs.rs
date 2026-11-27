@@ -54,6 +54,12 @@ pub fn normalize_extra(v: &Value) -> Result<Value> {
     o.insert("template".into(), json!(if t.len() <= 64 && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') { t } else { "" }));
     o.insert("monitor".into(), json!(v["monitor"].as_i64().filter(|m| (0..64).contains(m)).unwrap_or(-1)));
     o.insert("window".into(), json!(v["window"].as_bool().unwrap_or(false)));
+    // 예배당 화면과 함께 켜고 끄기 (로드맵 4단계, 기본 꺼짐 — 없으면 칸을 넣지 않아 옛 모양 그대로)
+    if v["followMain"] == true {
+        o.insert("followMain".into(), json!(true));
+    } else {
+        o.remove("followMain");
+    }
     Ok(Value::Object(o))
 }
 
@@ -177,6 +183,7 @@ pub fn delete_extra(settings: &mut Value, id: &str) {
     if settings["output"]["audioOutput"] == id {
         settings["output"].as_object_mut().map(|o| o.remove("audioOutput"));
     }
+    crate::scenectl::forget_output(settings, id);
 }
 
 /// 구성을 어디에서 골랐나 (조작 화면 표시용)
@@ -190,6 +197,8 @@ pub enum From {
     Output,
     /// 아무것도 안 고름 → full
     Default,
+    /// 외부 단추 · 리모컨이 '지금 한 번' 고름 (로드맵 4단계, 다음 순서까지)
+    Once,
 }
 
 /// 칸 값 하나 → 쓸 수 있는 구성 id ("full" 은 그대로, 없는 구성 · 빈 값은 None)
