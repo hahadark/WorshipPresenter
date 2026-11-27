@@ -133,7 +133,7 @@ impl HistoryUi {
                         if i == self.sel {
                             // .row.sel — 키보드가 목록에 있을 때만 진하게
                             let c = if key_owner { pal().accent } else { pal().line2 };
-                            ui.painter().rect_stroke(r.rect.expand2(egui::vec2(3.0, 1.0)), egui::CornerRadius::same(4), egui::Stroke::new(1.5, c), egui::StrokeKind::Outside);
+                            ui.painter().rect_stroke(r.rect.expand2(egui::vec2(3.0, 1.0)), crate::theme::cr(crate::theme::Rad::Sm), egui::Stroke::new(1.5, c), egui::StrokeKind::Outside);
                             if std::mem::take(&mut self.scroll_sel) {
                                 r.scroll_to_me(None);
                             }

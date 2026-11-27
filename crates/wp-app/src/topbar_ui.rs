@@ -12,7 +12,7 @@ use crate::icons;
 use crate::menubar;
 use crate::theme::{self, Weight, alpha, pal};
 use crate::widgets::{self, Btn, Kind, Size};
-use eframe::egui::{self, Align, Align2, Color32, CornerRadius, Id, Key, Layout, Pos2, Rect, Response, RichText, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
+use eframe::egui::{self, Align, Align2, Color32, Id, Key, Layout, Pos2, Rect, Response, RichText, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::json;
 use wp_core::i18n::tr;
 use wp_core::workspace::Workspace;
@@ -39,7 +39,7 @@ fn select_at(ui: &mut Ui, rect: Rect, id: Id, text: &str, tip: &str) -> Response
     let (cx, cy) = (rect.right() - 9.0, rect.center().y + 1.0);
     pt.add(Shape::convex_polygon(vec![Pos2::new(cx - 4.0, cy - 2.0), Pos2::new(cx + 4.0, cy - 2.0), Pos2::new(cx, cy + 2.0)], p.muted, Stroke::NONE));
     if resp.has_focus() {
-        pt.rect_stroke(rect.shrink(2.0), CornerRadius::same(4), Stroke::new(2.0, p.accent), StrokeKind::Inside);
+        pt.rect_stroke(rect.shrink(2.0), crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(2.0, p.accent), StrokeKind::Inside);
     }
     resp
 }
@@ -60,8 +60,8 @@ fn hgroup_frame(ui: &Ui, rect: Rect, idx: egui::layers::ShapeIdx) {
     ui.painter().set(
         idx,
         Shape::Vec(vec![
-            Shape::rect_filled(rect, CornerRadius::same(theme::RADIUS), p.sunken),
-            Shape::rect_stroke(rect, CornerRadius::same(theme::RADIUS), Stroke::new(p.border_w, if hov { p.line2 } else { p.line }), StrokeKind::Inside),
+            Shape::rect_filled(rect, crate::theme::cr(crate::theme::Rad::Md), p.sunken),
+            Shape::rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Md), Stroke::new(p.border_w, if hov { p.line2 } else { p.line }), StrokeKind::Inside),
         ]),
     );
 }
@@ -166,13 +166,21 @@ impl App {
 
     /// 넓은 검색칸 (#q: 높이 40 · 17px · 왼쪽 38px 돋보기 · 둥글기 8 · 포커스 때 accent 테두리 + 3px 번짐)
     pub(crate) fn search_bar(&mut self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) {
-        let p = pal();
         let w = ui.available_width().max(160.0);
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 40.0), Sense::hover());
+        self.search_box(ui, s, acts, w, 40.0, 17.0, &tr("검색 — 요3:16 · 사랑 · 31장 · 찬양 제목 · 이미지 이름   (Ctrl+K)"));
+    }
+
+    /// 찾기칸 (크기를 받아서). (나) 컨트롤 막대는 높이 26 · 글자 12.5
+    pub(crate) fn search_box(&mut self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>, w: f32, h: f32, fs: f32, hint_text: &str) {
+        let p = pal();
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
         let bg = ui.painter().add(Shape::Noop);
         let id = Id::new("search-box");
-        let text_rect = Rect::from_min_max(Pos2::new(rect.left() + 38.0, rect.top() + 1.0), Pos2::new(rect.right() - 12.0, rect.bottom() - 1.0));
-        let hint = RichText::new(tr("검색 — 요3:16 · 사랑 · 31장 · 찬양 제목 · 이미지 이름   (Ctrl+K)")).color(p.muted2).font(theme::font(17.0, Weight::Regular));
+        let small = h < 32.0;
+        let icon_x = if small { 8.0 } else { 12.0 };
+        let icon_s = if small { 13.0 } else { 18.0 };
+        let text_rect = Rect::from_min_max(Pos2::new(rect.left() + icon_x + icon_s + 7.0, rect.top() + 1.0), Pos2::new(rect.right() - if small { 6.0 } else { 12.0 }, rect.bottom() - 1.0));
+        let hint = RichText::new(hint_text).color(p.muted2).font(theme::font(fs, Weight::Regular));
         let r = ui.put(
             text_rect,
             egui::TextEdit::singleline(&mut self.search)
@@ -180,7 +188,7 @@ impl App {
                 .frame(egui::Frame::NONE)
                 .margin(egui::Margin::ZERO)
                 .hint_text(hint)
-                .font(theme::font(17.0, Weight::Regular))
+                .font(theme::font(fs, Weight::Regular))
                 .text_color(p.text)
                 .vertical_align(Align::Center)
                 // Esc 를 egui 의 '초점 놓기' 로 넘기지 않고 이 칸이 받는다 (아래: 내용 모두 고르기, control.js:1077)
@@ -199,14 +207,23 @@ impl App {
         let focused = r.has_focus();
         let hov = ui.rect_contains_pointer(rect);
         let mut shapes = vec![];
+        let rad = if small { crate::theme::cr(crate::theme::Rad::Md) } else { crate::theme::cr(crate::theme::Rad::Lg) };
         if focused {
             // box-shadow: 0 0 0 3px accent 25%
-            shapes.push(Shape::rect_stroke(rect, CornerRadius::same(8), Stroke::new(3.0, alpha(p.accent, 0.25)), StrokeKind::Outside));
+            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(3.0, alpha(p.accent, 0.25)), StrokeKind::Outside));
         }
-        shapes.push(Shape::rect_filled(rect, CornerRadius::same(8), p.sunken));
-        shapes.push(Shape::rect_stroke(rect, CornerRadius::same(8), Stroke::new(p.border_w, if focused { p.accent } else if hov { p.line2 } else { p.line }), StrokeKind::Inside));
+        shapes.push(Shape::rect_filled(rect, rad, p.sunken));
+        if p.bevel && !focused {
+            // 입력칸: 안쪽 위 1px 어두운 선 (box-shadow: inset 0 1px 1px #000)
+            shapes.push(Shape::hline(rect.x_range().shrink(3.0), rect.top() + 0.5, Stroke::new(1.0, Color32::from_black_alpha(200))));
+            if hov {
+                shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(1.0, p.line2), StrokeKind::Inside));
+            }
+        } else {
+            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(p.border_w, if focused { p.accent } else if hov { p.line2 } else { p.line }), StrokeKind::Inside));
+        }
         ui.painter().set(bg, Shape::Vec(shapes));
-        icons::paint(ui, Rect::from_center_size(Pos2::new(rect.left() + 12.0 + 9.0, rect.center().y), Vec2::splat(18.0)), "search", p.muted);
+        icons::paint(ui, Rect::from_center_size(Pos2::new(rect.left() + icon_x + icon_s / 2.0, rect.center().y), Vec2::splat(icon_s)), "search", p.muted);
         if ui.rect_contains_pointer(rect) && !r.hovered() && ui.input(|i| i.pointer.primary_clicked()) {
             r.request_focus(); // 돋보기·여백을 눌러도 칸으로
         }
@@ -438,7 +455,7 @@ impl App {
                 let fr = egui::Frame::new()
                     .fill(fill)
                     .stroke(Stroke::new(1.0, alpha(Color32::WHITE, 0.12)))
-                    .corner_radius(CornerRadius::same(8))
+                    .corner_radius(crate::theme::cr(crate::theme::Rad::Lg))
                     .inner_margin(egui::Margin::symmetric(16, 11))
                     .shadow(egui::Shadow { offset: [0, 10], blur: 30, spread: 0, color: alpha(Color32::BLACK, 0.55) })
                     .show(ui, |ui| {
@@ -474,7 +491,7 @@ impl App {
         }
         let p = pal();
         ui.add_space(6.0);
-        egui::Frame::new().fill(p.warn_bg).stroke(Stroke::new(1.0, p.warn)).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(10, 4)).show(ui, |ui| {
+        egui::Frame::new().fill(p.warn_bg).stroke(Stroke::new(1.0, p.warn)).corner_radius(crate::theme::cr(crate::theme::Rad::Md)).inner_margin(egui::Margin::symmetric(10, 4)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 icons::show(ui, "monitor-off", 16.0, p.warn);

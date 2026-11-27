@@ -104,7 +104,7 @@ pub fn shortcut_conflicts(s: &Value) -> Vec<(String, String)> {
 /// 조작 화면 테마·글자 크기 적용 (어둡게가 기본, 밝은 테마는 고를 때만)
 pub fn apply_ui_prefs(ctx: &egui::Context, s: &Value) {
     // control.css 테마 5개 (dark·light·contrast·warm·navy) → crate::theme (같은 테마면 아무것도 안 함)
-    crate::theme::apply(ctx, crate::theme::ThemeId::from_setting(s["ui"]["theme"].as_str().unwrap_or("dark")));
+    crate::theme::apply(ctx, crate::theme::ThemeId::from_setting(s["ui"]["theme"].as_str().unwrap_or("pro")));
     let scale = s["ui"]["scale"].as_f64().unwrap_or(100.0).clamp(70.0, 200.0) as f32 / 100.0;
     if (ctx.zoom_factor() - scale).abs() > 0.001 {
         ctx.set_zoom_factor(scale);
@@ -437,7 +437,7 @@ impl SettingsUi {
         let focused = self.focus.is_some_and(|(id, t)| id == it.id && now - t < 2.5 && now >= t);
         let frame = egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(8, 6))
-            .corner_radius(6)
+            .corner_radius(crate::theme::cr(crate::theme::Rad::Md))
             .fill(if focused { p.accent_bg } else { egui::Color32::TRANSPARENT })
             .stroke(if focused { egui::Stroke::new(1.5, p.accent) } else { egui::Stroke::NONE });
         let r = frame

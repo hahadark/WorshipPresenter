@@ -6,7 +6,7 @@ use crate::form;
 use crate::theme::{self, pal, Weight};
 use crate::tpl_controls::{self as tc, b, f, s, set};
 use crate::widgets::{Btn, Size};
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 use serde_json::{json, Value};
 use std::path::Path;
 use wp_core::i18n::tr;
@@ -128,7 +128,7 @@ fn file_label(url: &str) -> String {
 fn thumb(ui: &mut egui::Ui, pc: &crate::paint::Ctx, url: &str, size: Vec2, icon: &str) {
     let p = pal();
     let (r, _) = ui.allocate_exact_size(size, Sense::hover());
-    ui.painter().rect(r, CornerRadius::same(6), p.sunken, Stroke::new(1.0, p.line), StrokeKind::Inside);
+    ui.painter().rect(r, crate::theme::cr(crate::theme::Rad::Md), p.sunken, Stroke::new(1.0, p.line), StrokeKind::Inside);
     if url.is_empty() || !crate::paint::draw_image_pub(ui, pc, r.shrink(1.0), url, false) {
         crate::icons::paint(ui, Rect::from_center_size(r.center(), Vec2::splat(22.0)), icon, p.muted2);
     }
@@ -312,7 +312,7 @@ fn grad_dirs(ui: &mut egui::Ui, cur: &str, c1: &str, c2: &str) -> Option<String>
         }
         ui.painter().add(mesh);
         let on = v == cur;
-        ui.painter().rect_stroke(r, CornerRadius::same(5), Stroke::new(if on { 2.0 } else { 1.0 }, if on { p.accent } else if resp.hovered() { p.line2 } else { p.line }), StrokeKind::Inside);
+        ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(if on { 2.0 } else { 1.0 }, if on { p.accent } else if resp.hovered() { p.line2 } else { p.line }), StrokeKind::Inside);
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }

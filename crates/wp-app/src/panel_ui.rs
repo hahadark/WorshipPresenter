@@ -77,7 +77,7 @@ fn lib_tab_row(ui: &mut egui::Ui, tab: &mut String) {
     let fr = Rect::from_center_size(Pos2::new(row.right() - 6.0 - 14.0, row.center().y), Vec2::splat(28.0));
     let resp = ui.interact(fr, egui::Id::new("lib-fold"), Sense::click()).on_hover_text(tr("검색·단추 줄 접기/펴기"));
     if resp.hovered() {
-        ui.painter().rect_filled(fr, egui::CornerRadius::same(crate::theme::RADIUS), p.hover);
+        ui.painter().rect_filled(fr, crate::theme::cr(crate::theme::Rad::Md), p.hover);
     }
     crate::icons::paint(ui, fr.shrink(6.5), if off { "chevron-down" } else { "chevron-up" }, if resp.hovered() { p.text } else { p.muted });
     if resp.clicked() {

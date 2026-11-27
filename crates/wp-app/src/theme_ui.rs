@@ -10,7 +10,7 @@
 use crate::paint::{self, paint_slide};
 use crate::theme::{self, alpha, pal, Weight};
 use crate::widgets::{self, Btn, Kind, Size};
-use eframe::egui::{self, Align2, Color32, CornerRadius, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Align2, Color32, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
 use serde_json::{json, Value};
 use wp_core::core::Shared;
 use wp_core::i18n::{tr, tr_args};
@@ -127,7 +127,7 @@ fn btn(ui: &mut egui::Ui, name: &str, b: Btn) -> bool {
 fn chip(ui: &mut egui::Ui, text: &str, col: Color32) {
     let g = ui.painter().layout_no_wrap(text.to_string(), theme::font(11.0, Weight::SemiBold), col);
     let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x + 12.0, g.size().y + 5.0), Sense::hover());
-    ui.painter().rect(r, CornerRadius::same(4), alpha(col, 0.16), Stroke::new(1.0, alpha(col, 0.55)), StrokeKind::Inside);
+    ui.painter().rect(r, crate::theme::cr(crate::theme::Rad::Sm), alpha(col, 0.16), Stroke::new(1.0, alpha(col, 0.55)), StrokeKind::Inside);
     ui.painter().galley(r.center() - g.size() / 2.0, g, col);
 }
 
@@ -582,7 +582,7 @@ impl ThemeUi {
         let hovered = resp.hovered();
         let bg = if selected { p.sel } else if hovered { p.hover } else { p.panel2 };
         let border = if selected { p.accent } else if hovered { p.line2 } else { p.line };
-        ui.painter().rect(r, CornerRadius::same(8), bg, Stroke::new(if selected { 2.0 } else { 1.0 }, border), StrokeKind::Inside);
+        ui.painter().rect(r, crate::theme::cr(crate::theme::Rad::Lg), bg, Stroke::new(if selected { 2.0 } else { 1.0 }, border), StrokeKind::Inside);
         let thumb = Rect::from_min_size(r.min + Vec2::new(6.0, 6.0), Vec2::new(CARD_W - 12.0, THUMB_H - 6.0));
         let slot = SLOTS.iter().find(|o| t["slots"][**o].is_object()).copied().unwrap_or("main");
         paint_slide(ui, pc, thumb, Some(smp), &t["slots"][slot], "개역개정", true, false, false);
@@ -600,7 +600,7 @@ impl ThemeUi {
         for (label, col) in badges {
             let g = clip.layout_no_wrap(label, theme::font(10.5, Weight::SemiBold), col);
             let br = Rect::from_min_size(Pos2::new(x, y), Vec2::new(g.size().x + 10.0, g.size().y + 3.0));
-            clip.rect(br, CornerRadius::same(4), alpha(col, 0.16), Stroke::new(1.0, alpha(col, 0.55)), StrokeKind::Inside);
+            clip.rect(br, crate::theme::cr(crate::theme::Rad::Sm), alpha(col, 0.16), Stroke::new(1.0, alpha(col, 0.55)), StrokeKind::Inside);
             clip.galley(br.center() - g.size() / 2.0, g, col);
             x = br.right() + 4.0;
         }
@@ -660,7 +660,7 @@ impl ThemeUi {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(pw, pw * 9.0 / 16.0), Sense::hover());
                 widgets::mark(&format!("theme-preview-{o}"), r);
                 paint_slide(ui, pc, r, Some(&smp), &t["slots"][o], "개역개정", true, false, false);
-                ui.painter().rect_stroke(r, CornerRadius::same(3), Stroke::new(1.0, p.line2), StrokeKind::Outside);
+                ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(1.0, p.line2), StrokeKind::Outside);
             });
         };
         if t["slots"]["main"].is_object() {

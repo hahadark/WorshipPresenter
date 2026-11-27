@@ -84,10 +84,10 @@ pub fn row(ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         let state = result.as_ref().and_then(|r| r["state"].as_str()).unwrap_or("");
         let (mark, col) = match state {
-            "ok" => ("✔", Color32::from_rgb(0x8a, 0xe0, 0xa8)),
-            "blocked" => ("✖", Color32::from_rgb(0xff, 0x6b, 0x6b)),
-            "none" => ("!", Color32::from_rgb(0xff, 0xb0, 0x4a)),
-            _ => ("…", Color32::GRAY),
+            "ok" => ("✔", crate::theme::pal().ok_text),
+            "blocked" => ("✖", crate::theme::pal().danger_text),
+            "none" => ("!", crate::theme::pal().warn),
+            _ => ("…", crate::theme::pal().muted),
         };
         ui.label(RichText::new(mark).strong().color(col));
         ui.label(RichText::new(tr("방화벽")).strong());

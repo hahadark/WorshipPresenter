@@ -5,7 +5,7 @@
 //! - 라이브러리 음악 ▶ 바로 재생 · 위 도구 줄 아래 재생 줄 (재생·멈춤 · 정지 · 페이드아웃 · 위치 · 소리)
 
 use crate::app::App;
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use rodio::{Decoder, MixerDeviceSink, Player};
 use serde_json::Value;
 use std::cell::RefCell;
@@ -227,7 +227,7 @@ impl App {
         MUSIC.with_borrow_mut(|m| {
             if !m.err.is_empty() {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(wp_core::i18n::tr_dyn(&m.err)).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+                    ui.label(RichText::new(wp_core::i18n::tr_dyn(&m.err)).small().color(crate::theme::pal().danger_text));
                     if ui.small_button(wp_core::i18n::tr("닫기")).clicked() { m.err.clear(); }
                 });
             }
@@ -235,7 +235,7 @@ impl App {
                 return;
             }
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("🔊 {}", m.title)).strong().color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+                ui.label(RichText::new(m.title.clone()).strong().color(crate::theme::pal().ok_text));
                 let paused = !m.playing();
                 if ui.button(if paused { "▶" } else { "⏸" }).clicked() { m.toggle(); }
                 if ui.button("■").on_hover_text(wp_core::i18n::tr("정지")).clicked() { m.stop(); return; }

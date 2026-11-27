@@ -308,7 +308,7 @@ impl SlideEditUi {
 
             ui.horizontal(|ui| {
                 ui.label(RichText::new(it["title"].as_str().unwrap_or("")).strong());
-                ui.label(RichText::new(wp_core::i18n::tr_args("슬라이드 {1}장", &[&(slides.len())])).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr_args("슬라이드 {1}장", &[&(slides.len())])).small().color(crate::theme::pal().muted));
                 ui.checkbox(&mut self.common, wp_core::i18n::tr("모든 슬라이드에 공통(*)"));
                 if multi_on {
                     // se-multi-note

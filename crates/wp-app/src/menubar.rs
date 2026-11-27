@@ -4,7 +4,7 @@
 
 use crate::icons;
 use crate::theme::{self, Weight, alpha, pal};
-use eframe::egui::{self, Align2, CornerRadius, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Align2, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
 
 pub struct Item {
     pub id: &'static str,
@@ -207,7 +207,7 @@ pub fn drop_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(p.panel2)
         .stroke(Stroke::new(1.0, p.line))
-        .corner_radius(CornerRadius::same(8))
+        .corner_radius(crate::theme::cr(crate::theme::Rad::Lg))
         .inner_margin(egui::Margin::same(6))
         .shadow(egui::Shadow { offset: [0, 10], blur: 30, spread: 0, color: alpha(egui::Color32::BLACK, if p.dark { 0.6 } else { 0.18 }) })
 }
@@ -221,7 +221,7 @@ fn top_button(ui: &mut Ui, id: egui::Id, text: &str, open: bool) -> Response {
     let resp = ui.interact(rect, id, Sense::click());
     if ui.is_rect_visible(rect) {
         if open || resp.hovered() {
-            ui.painter().rect_filled(rect, CornerRadius::same(4), p.hover);
+            ui.painter().rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), p.hover);
         }
         ui.painter().galley(rect.center() - g.size() / 2.0, g, p.text2);
     }
@@ -240,7 +240,7 @@ pub fn item_row(ui: &mut Ui, icon: Option<&str>, label: &str, key: &str, check: 
     let hov = resp.hovered() || resp.has_focus();
     let pt = ui.painter();
     if hov {
-        pt.rect_filled(rect, CornerRadius::same(4), p.sel);
+        pt.rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), p.sel);
     }
     let ic_rect = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 9.0, rect.center().y), Vec2::splat(16.0));
     let ic_col = if hov { p.text } else { p.muted };

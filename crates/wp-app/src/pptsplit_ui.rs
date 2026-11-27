@@ -7,7 +7,7 @@ use crate::app::App;
 use crate::paint;
 use crate::theme::{self, pal, rich, Weight};
 use crate::widgets::{self, Btn, Click, Kind, Size};
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 use serde_json::Value;
 use wp_core::i18n::{tr, tr_args};
 use wp_core::pptsplit::{self, Part};
@@ -295,7 +295,7 @@ impl App {
                             None if resp.hovered() => p.hover,
                             None => p.sunken,
                         };
-                        ui.painter().rect_filled(r, CornerRadius::same(5), bg);
+                        ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Sm), bg);
                         let screen = Rect::from_min_size(r.min + Vec2::splat(3.0), Vec2::new(cw - 6.0, sh));
                         let s = &st.all[k];
                         let has_img = s["image"].as_str().is_some_and(|x| !x.is_empty()) && s["kind"] != "video";
@@ -323,7 +323,7 @@ impl App {
                         }
                         let in_sel = sel_range.is_some_and(|(a, b)| n >= a && n <= b);
                         let border = if in_sel { p.pv } else if resp.hovered() { p.line2 } else { Color32::TRANSPARENT };
-                        ui.painter().rect_stroke(r, CornerRadius::same(5), Stroke::new(2.5, border), StrokeKind::Inside);
+                        ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(2.5, border), StrokeKind::Inside);
                     }
                     ui.add_space(gap - ui.spacing().item_spacing.y.min(gap));
                 }

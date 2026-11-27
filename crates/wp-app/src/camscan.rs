@@ -7,7 +7,7 @@
 //! 반드시 출력 창과 같은 실행 파일·같은 주소(127.0.0.1:포트)로 열어야 출력이 그 id 로 카메라를 연다.
 //! 미리보기는 `wp-output --windowed` 로 `/helper/camera?id=…` 를 연다 (출력과 같은 render.js 카메라 설정 적용).
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::process::{Child, Command};
@@ -139,7 +139,7 @@ pub fn scan_bar(ui: &mut egui::Ui, core: &Shared) {
         if ui.add_enabled(!probing, egui::Button::new(tr("카메라 찾기"))).on_hover_text(tr("예배당 화면과 같은 브라우저로 연결된 카메라를 찾습니다. 카메라를 잠깐 켜고 바로 끕니다.")).clicked() {
             probe(core);
         }
-        ui.label(RichText::new(text).small().color(if is_err { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::GRAY }));
+        ui.label(RichText::new(text).small().color(if is_err { crate::theme::pal().danger_text } else { crate::theme::pal().muted }));
     });
     if probing {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));

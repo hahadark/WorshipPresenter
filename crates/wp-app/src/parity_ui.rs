@@ -181,7 +181,7 @@ pub fn cue_row_menu(app: &mut App, r: &egui::Response, i: usize, it: &Value, n: 
             app.edit = None;
             ui.close();
         }
-        if ui.button(RichText::new(wp_core::i18n::tr("지우기")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
+        if ui.button(RichText::new(wp_core::i18n::tr("지우기")).color(crate::theme::pal().danger_text)).clicked() {
             acts.push(Act::RemoveItem(i));
             ui.close();
         }
@@ -377,7 +377,7 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, known_cameras: &[(String, String
             });
         }
         _ => {
-            ui.label(RichText::new(wp_core::i18n::tr("이 종류는 아직 Rust 판에서 고칠 수 없습니다.")).color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("이 종류는 아직 Rust 판에서 고칠 수 없습니다.")).color(crate::theme::pal().muted));
         }
     }
     changed
@@ -426,7 +426,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ui.end_row();
             }
         });
-        ui.label(RichText::new(wp_core::i18n::tr("단축키는 설정 → 단축키에서 바꿀 수 있습니다.")).small().color(Color32::GRAY));
+        ui.label(RichText::new(wp_core::i18n::tr("단축키는 설정 → 단축키에서 바꿀 수 있습니다.")).small().color(crate::theme::pal().muted));
     });
     *KEYS_OPEN.lock() = open;
 }

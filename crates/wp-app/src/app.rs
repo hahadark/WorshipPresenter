@@ -86,27 +86,27 @@ pub struct App {
 pub(crate) struct Snap {
     pub(crate) preview: Option<Deck>,
     pub(crate) live: Option<Live>,
-    cue_name: String,
+    pub(crate) cue_name: String,
     pub(crate) cue_id: String,
     pub(crate) items: Vec<Value>,
-    cues: Vec<CueSummary>,
-    templates: Vec<(String, String)>,
+    pub(crate) cues: Vec<CueSummary>,
+    pub(crate) templates: Vec<(String, String)>,
     pub(crate) tpl_main: Value,
-    tpl_overlay: Value,
-    preview_main: Value,
-    preview_overlay: Value,
-    active_main: String,
-    active_overlay: String,
-    version: String,
-    preview_mode: bool,
-    toast: Option<(String, &'static str, i64)>,
-    toast_act: Option<&'static str>,
-    outputs: Vec<(String, String)>,
-    port: u16,
-    logo: bool,
-    hide_bg: bool,
+    pub(crate) tpl_overlay: Value,
+    pub(crate) preview_main: Value,
+    pub(crate) preview_overlay: Value,
+    pub(crate) active_main: String,
+    pub(crate) active_overlay: String,
+    pub(crate) version: String,
+    pub(crate) preview_mode: bool,
+    pub(crate) toast: Option<(String, &'static str, i64)>,
+    pub(crate) toast_act: Option<&'static str>,
+    pub(crate) outputs: Vec<(String, String)>,
+    pub(crate) port: u16,
+    pub(crate) logo: bool,
+    pub(crate) hide_bg: bool,
     /// OBS 자막에 그림·악보 슬라이드를 우상단에 작게 (output.obsPip, 'OBS 전체' 가 아닐 때)
-    obs_pip: bool,
+    pub(crate) obs_pip: bool,
 }
 
 /// 고른 것을 넣은 결과로 왼쪽 큐시트의 고른 순서를 맞춘다 (넣은 자리 또는 이미 있던 순서)
@@ -133,7 +133,7 @@ fn type_info(t: &str) -> (&'static str, Color32) {
         "camera" => ("카메라", Color32::from_rgb(0xd9, 0x6a, 0x6a)),
         "video" => ("영상", Color32::from_rgb(0xd9, 0x6a, 0x6a)),
         "slideshow" => ("슬라이드쇼", Color32::from_rgb(0x9b, 0x87, 0xf5)),
-        _ => ("순서", Color32::GRAY),
+        _ => ("순서", crate::theme::pal().muted),
     }
 }
 
@@ -178,6 +178,19 @@ mod preview_pane_tests {
 impl App {
     pub fn new(core: Shared, web_dir: std::path::PathBuf, data_dir: std::path::PathBuf) -> Self {
         let versions = core.lock().store.list_versions();
+        // 새 디자인 (나) 2026-11-27: 예전 기본 테마('어둡게')를 쓰던 자료는 한 번만 새 기본('전문가')으로 바꾼다.
+        // 다른 테마를 직접 고른 사람은 그대로. 다시 '어둡게'를 고르면 그 뒤로는 바꾸지 않는다(ui.proDesign 표시).
+        {
+            let mut c = core.lock();
+            if c.settings.get()["ui"]["proDesign"].is_null() {
+                c.settings.update(|s| {
+                    if !s["ui"].is_object() { s["ui"] = serde_json::json!({}); }
+                    let t = s["ui"]["theme"].as_str().unwrap_or("").to_string();
+                    if t.is_empty() || t == "dark" { s["ui"]["theme"] = serde_json::json!("pro"); }
+                    s["ui"]["proDesign"] = serde_json::json!(1);
+                });
+            }
+        }
         let out = OutWin::new();
         let saved = core.lock().settings.get()["rsOutputMonitor"].as_u64().map(|x| x as usize);
         let monitor = saved.filter(|m| out.monitors.iter().any(|x| x.index == *m)).unwrap_or_else(|| out.default_monitor());
@@ -1084,7 +1097,7 @@ impl App {
             let slide = deck.and_then(|d| d.slides.get(d.index));
             let version = deck.map(|d| d.passage["versionName"].as_str().unwrap_or("").to_string()).unwrap_or_default();
             let (visible, logo, hide_bg) = match live { Some(l) => (l.visible, s.logo, s.hide_bg), None if is_live => (true, s.logo, s.hide_bg), None => (true, false, false) };
-            ui.painter().rect_filled(rect, egui::CornerRadius::same(6), Color32::BLACK);
+            ui.painter().rect_filled(rect, crate::theme::cr(crate::theme::Rad::Md), Color32::BLACK);
             paint_slide(ui, &c, rect.shrink(2.0), slide, tpl, &version, visible, logo, hide_bg);
             // OBS 자막 + 그림 우상단 켬: 그림·악보 슬라이드를 예배당 모양 그대로 오른쪽 위에 작게 (output index.html .bc-pip)
             if self.views.obs(is_live) && s.obs_pip && visible && slide.is_some_and(|x| matches!(x["kind"].as_str(), Some("image" | "score"))) {
@@ -1109,7 +1122,7 @@ impl App {
             if hidden {
                 dashed_rect(ui, rect.shrink(1.0), egui::Stroke::new(2.0, border));
             } else {
-                ui.painter().rect_stroke(rect, egui::CornerRadius::same(6), egui::Stroke::new(2.0, border), egui::StrokeKind::Inside);
+                ui.painter().rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Md), egui::Stroke::new(2.0, border), egui::StrokeKind::Inside);
             }
             // ---- .pane-tools: (◀ n/m ▶) · 다음: … · 그리기
             ui.add_space(6.0);
@@ -1322,7 +1335,7 @@ fn hidden_badge(ui: &mut egui::Ui, text: &str) {
     let p = crate::theme::pal();
     let g = ui.painter().layout_no_wrap(text.to_string(), crate::theme::font(12.0, crate::theme::Weight::Bold), Color32::BLACK);
     let (r, _) = ui.allocate_exact_size(g.size() + Vec2::new(16.0, 4.0), Sense::hover());
-    ui.painter().rect_filled(r, egui::CornerRadius::same(4), p.warn);
+    ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Sm), p.warn);
     ui.painter().galley(r.center() - g.size() / 2.0, g, Color32::BLACK);
 }
 
@@ -1418,7 +1431,7 @@ fn thumb_chip(ui: &mut egui::Ui, text: &str, on: bool, is_live: bool) -> egui::R
         _ if resp.hovered() => (p.hover, p.line2),
         _ => (p.panel2, p.line),
     };
-    ui.painter().rect(r, egui::CornerRadius::same(crate::theme::RADIUS), bg, egui::Stroke::new(p.border_w, border), egui::StrokeKind::Inside);
+    ui.painter().rect(r, crate::theme::cr(crate::theme::Rad::Md), bg, egui::Stroke::new(p.border_w, border), egui::StrokeKind::Inside);
     ui.painter().galley(r.center() - g.size() / 2.0, g, p.text);
     if resp.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
     resp
@@ -1451,7 +1464,7 @@ fn layer_chip(ui: &mut egui::Ui, ly: &Layer) -> egui::Response {
     let pt = ui.painter();
     let bg = if hovered { p.hover } else { p.panel2 };
     let border = if ly.on { p.live } else if hovered { p.line2 } else { p.line };
-    let cr = egui::CornerRadius::same(12);
+    let cr = crate::theme::cr(crate::theme::Rad::Xl);
     if ly.on {
         pt.rect(r, cr, bg, egui::Stroke::new(p.border_w, border), egui::StrokeKind::Inside);
     } else {
@@ -1471,7 +1484,7 @@ fn layer_chip(ui: &mut egui::Ui, ly: &Layer) -> egui::Response {
     x += tg.size().x + 5.0;
     let xr = egui::Rect::from_min_size(egui::Pos2::new(x, r.center().y - 9.0), Vec2::new(xw, 18.0));
     let (xbg, xfg) = if ly.on && hovered { (p.live, Color32::WHITE) } else { (alpha(Color32::from_gray(127), 0.18), fg) };
-    pt.rect_filled(xr, egui::CornerRadius::same(9), xbg);
+    pt.rect_filled(xr, crate::theme::cr(crate::theme::Rad::Lg), xbg);
     pt.galley(xr.center() - xg.size() / 2.0, xg, xfg);
     if hovered { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
     resp.on_hover_text(ly.tip.clone())
@@ -1705,11 +1718,14 @@ impl App {
         // 송출 기록에서 다시 띄운 본문: 검색칸 글과 절 목록도 그 본문으로 (control.js:1362 `$('#q').value = …; loadPassage`)
         self.take_history_loaded();
         let s = self.snap(); // [트랙 C] 창에서 바뀐 것 반영
-        // 머리 줄 (header.top: panel 바탕 · 아래 line) — topbar_ui.rs
-        let pf = crate::theme::pal().panel;
-        egui::Panel::top("top").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::TOP_MARGIN)).show(ui, |ui| {
-            self.top_bar(ui, &s, &mut acts);
-        });
+        // (나) 위 컨트롤 막대 (bar 색 · 아래 1px edge) — probar_ui.rs
+        {
+            let p = crate::theme::pal();
+            egui::Panel::top("top").frame(egui::Frame::new().fill(p.bar).inner_margin(egui::Margin::ZERO).stroke(egui::Stroke::NONE)).show(ui, |ui| {
+                self.control_bar(ui, &s, &mut acts);
+                ui.painter().hline(ui.max_rect().x_range(), ui.max_rect().bottom() - 0.5, egui::Stroke::new(1.0, p.edge));
+            });
+        }
         if !s.preview_mode {
             // 바로 송출 중: 주황 띠를 계속 보인다 (조작 실수 막기)
             let p = crate::theme::pal();
@@ -1717,10 +1733,14 @@ impl App {
                 self.direct_band(ui, &mut acts);
             });
         }
-        // 아래 송출 줄 (footer.bottom: 창 맨 아래 전체 폭, panel 바탕 · 위 line) — topbar_ui.rs
-        egui::Panel::bottom("status").frame(egui::Frame::new().fill(pf).inner_margin(topbar_ui::BOTTOM_MARGIN)).show(ui, |ui| {
-            self.bottom_bar(ui, &s, &mut acts);
-        });
+        // 아래 상태 줄: 미리보기/바로 송출 · 출력 연결 상태 · 영상·음악 조작 (예전 송출 줄의 단추는 위 컨트롤 막대로)
+        {
+            let p = crate::theme::pal();
+            egui::Panel::bottom("status").frame(egui::Frame::new().fill(p.head).inner_margin(egui::Margin::symmetric(10, 2))).show(ui, |ui| {
+                ui.painter().hline(ui.max_rect().x_range(), ui.max_rect().top() - 2.0, egui::Stroke::new(1.0, p.edge));
+                self.status_strip(ui, &s, &mut acts);
+            });
+        }
         if let Some(a) = self.toast(&ctx, &s) { acts.push(a); }
         if std::mem::take(&mut self.editor_reveal) { self.reveal_editor_panel(); }
         self.workspace_window(&ctx); // 작업공간 · 패널 배치 창 (고르기는 머리 줄)

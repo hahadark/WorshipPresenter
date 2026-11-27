@@ -33,6 +33,6 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value) -> bool {
             ch = true;
         }
     });
-    ui.label(RichText::new(wp_core::i18n::tr("자동 넘김 2초 이상만 동작 · 0 = 끔")).small().color(egui::Color32::GRAY));
+    ui.label(RichText::new(wp_core::i18n::tr("자동 넘김 2초 이상만 동작 · 0 = 끔")).small().color(crate::theme::pal().muted));
     ch
 }

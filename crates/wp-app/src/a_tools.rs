@@ -2,7 +2,7 @@
 //! 메뉴 도구 → 'a:points' · 'a:preservice' · 'a:home'. 오래 걸리는 일(AI · 홈페이지 받기)은 다른 스레드에서, 결과는 여기 상태로.
 
 use crate::app::{Act, App};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -135,7 +135,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     let mut open = true;
     let p = &mut st.points;
     crate::widgets::float_window(ctx, "sermon-points", wp_core::i18n::tr("설교 포인트 슬라이드"), [720.0, 640.0]).open(&mut open).show(ctx, |ui| {
-        ui.label(RichText::new(wp_core::i18n::tr("설교 원고(또는 자막)에서 대지를 뽑아, 예배 중에 띄울 '제목' 순서 하나로 만듭니다.")).small().color(Color32::GRAY));
+        ui.label(RichText::new(wp_core::i18n::tr("설교 원고(또는 자막)에서 대지를 뽑아, 예배 중에 띄울 '제목' 순서 하나로 만듭니다.")).small().color(crate::theme::pal().muted));
         ui.horizontal(|ui| {
             if ui.button(wp_core::i18n::tr("원고 파일 열기…")).clicked() {
                 if let Some(f) = rfd::FileDialog::new().add_filter("설교 원고", &["hwp", "hwpx", "docx", "txt", "md", "srt", "vtt"]).pick_file() {
@@ -145,7 +145,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                     }
                 }
             }
-            ui.label(RichText::new("hwp · hwpx · docx · txt · md · srt · vtt").small().color(Color32::GRAY));
+            ui.label(RichText::new("hwp · hwpx · docx · txt · md · srt · vtt").small().color(crate::theme::pal().muted));
         });
         egui::ScrollArea::vertical().id_salt("pt-text").max_height(160.0).show(ui, |ui| {
             ui.add(egui::TextEdit::multiline(&mut p.text).desired_rows(7).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("설교 원고를 붙여 넣으세요 (AI 답 JSON 을 붙여 넣어도 됩니다)")));
@@ -212,7 +212,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
         });
         ui.separator();
         let Some(d) = p.data.as_mut() else {
-            ui.label(RichText::new(wp_core::i18n::tr("대지를 찾으면 여기서 고칠 수 있습니다.")).color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("대지를 찾으면 여기서 고칠 수 있습니다.")).color(crate::theme::pal().muted));
             return;
         };
         egui::ScrollArea::vertical().id_salt("pt-data").max_height(240.0).show(ui, |ui| {
@@ -294,7 +294,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
     }
     let mut open = true;
     crate::widgets::float_window(ctx, "preservice", wp_core::i18n::tr("예배 전 화면 만들기"), [640.0, 560.0]).open(&mut open).show(ctx, |ui| {
-        ui.label(RichText::new(wp_core::i18n::tr("지난주 말씀카드 + 이번 주 QT 첫날 본문 → 자동으로 넘기며 반복하는 슬라이드쇼 순서 (큐시트 맨 앞에)")).small().color(Color32::GRAY));
+        ui.label(RichText::new(wp_core::i18n::tr("지난주 말씀카드 + 이번 주 QT 첫날 본문 → 자동으로 넘기며 반복하는 슬라이드쇼 순서 (큐시트 맨 앞에)")).small().color(crate::theme::pal().muted));
         ui.label(RichText::new(wp_core::i18n::tr("말씀카드 그림")).strong());
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut p.card_folder).hint_text(wp_core::i18n::tr("설교쇼츠 편집기에서 카드 PNG 를 저장한 폴더")).desired_width(360.0));
@@ -351,7 +351,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
             }
         });
         if let Some(q) = &p.qt {
-            ui.label(RichText::new(wp_core::i18n::tr_args("{1} · {2}절", &[&(q["passage"]["title"].as_str().unwrap_or("")), &(q["passage"]["verses"].as_array().map(|a| a.len()).unwrap_or(0))])).color(Color32::from_rgb(0xff, 0xd4, 0x79)));
+            ui.label(RichText::new(wp_core::i18n::tr_args("{1} · {2}절", &[&(q["passage"]["title"].as_str().unwrap_or("")), &(q["passage"]["verses"].as_array().map(|a| a.len()).unwrap_or(0))])).color(crate::theme::pal().gold));
         }
         ui.separator();
         ui.horizontal(|ui| {
@@ -393,7 +393,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     }
     let mut open = true;
     crate::widgets::float_window(ctx, "web-bulletin", wp_core::i18n::tr("홈페이지 주보"), [620.0, 520.0]).open(&mut open).show(ctx, |ui| {
-        ui.label(RichText::new(wp_core::i18n::tr("교회 홈페이지의 주보 JSON → 큐시트 · 광고 슬라이드")).small().color(Color32::GRAY));
+        ui.label(RichText::new(wp_core::i18n::tr("교회 홈페이지의 주보 JSON → 큐시트 · 광고 슬라이드")).small().color(crate::theme::pal().muted));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut h.url).hint_text(wp_core::i18n::tr("https://교회주소/bulletin/feed.json")).desired_width(420.0));
             if ui.add_enabled(!h.busy, egui::Button::new(if h.busy { wp_core::i18n::tr_s("받는 중…") } else { wp_core::i18n::tr_s("받기") })).clicked() {
@@ -429,7 +429,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             }
         });
         let Some(f) = h.feed.clone() else {
-            ui.label(RichText::new(wp_core::i18n::tr("주소를 넣고 받기를 누르세요.")).color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("주소를 넣고 받기를 누르세요.")).color(crate::theme::pal().muted));
             return;
         };
         let list = f["bulletins"].as_array().cloned().unwrap_or_default();

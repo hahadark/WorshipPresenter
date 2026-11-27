@@ -193,14 +193,14 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     }
     if src == "ppt" {
         if folders.is_empty() {
-            ui.label(RichText::new(wp_core::i18n::tr("찬송가 PPT(.pps .ppt .pptx) 폴더를 넣으세요.")).small().color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("찬송가 PPT(.pps .ppt .pptx) 폴더를 넣으세요.")).small().color(crate::theme::pal().muted));
         }
         for f in &folders {
             ui.horizontal(|ui| {
                 let name = f["name"].as_str().unwrap_or("");
                 let path = f["path"].as_str().unwrap_or("").to_string();
                 let warn = !f["exists"].as_bool().unwrap_or(false);
-                ui.label(RichText::new(wp_core::i18n::tr_args("{1} {2}개{3}", &[&name, &(f["count"]), &(if warn { wp_core::i18n::tr_s(" (폴더 없음)") } else { "" })])).small().color(if warn { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::GRAY }));
+                ui.label(RichText::new(wp_core::i18n::tr_args("{1} {2}개{3}", &[&name, &(f["count"]), &(if warn { wp_core::i18n::tr_s(" (폴더 없음)") } else { "" })])).small().color(if warn { crate::theme::pal().danger_text } else { crate::theme::pal().muted }));
                 // 폴더별 읽는 방식
                 let cur = f["render"].as_str().unwrap_or("auto").to_string();
                 let label = |r: &str| match r {
@@ -231,10 +231,10 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     } else {
         let books = hymnal::books(&app.core.lock());
         if books.is_empty() {
-            ui.label(RichText::new(wp_core::i18n::tr("베들레헴 성경의 찬송가 파일을 찾지 못했습니다. '가져오기…' 로 BethlehemWin 폴더를 고르세요.")).small().color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("베들레헴 성경의 찬송가 파일을 찾지 못했습니다. '가져오기…' 로 BethlehemWin 폴더를 고르세요.")).small().color(crate::theme::pal().muted));
         } else {
             let t = books.iter().map(|b| format!("{} {}장{}", b["name"].as_str().unwrap_or(""), b["count"], if b["scores"].as_bool().unwrap_or(false) { " · 악보" } else { "" })).collect::<Vec<_>>().join("  ");
-            ui.label(RichText::new(t).small().color(Color32::GRAY));
+            ui.label(RichText::new(t).small().color(crate::theme::pal().muted));
         }
     }
     if refresh { sel = 0; }
@@ -290,7 +290,7 @@ fn search_inner(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
 fn default_bg_row(app: &mut App, ui: &mut egui::Ui) {
     let cur = hymns::default_bg(&app.core.lock());
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(wp_core::i18n::tr("기본 배경")).small().color(Color32::GRAY)).on_hover_text(wp_core::i18n::tr("악보는 투명 그림이라 어떤 배경 위에도 겹쳐 보입니다. 악보 글씨가 검은색이라 밝은 배경을 권합니다. 순서마다 따로 바꿀 수도 있습니다 (편집칸의 '배경')."));
+        ui.label(RichText::new(wp_core::i18n::tr("기본 배경")).small().color(crate::theme::pal().muted)).on_hover_text(wp_core::i18n::tr("악보는 투명 그림이라 어떤 배경 위에도 겹쳐 보입니다. 악보 글씨가 검은색이라 밝은 배경을 권합니다. 순서마다 따로 바꿀 수도 있습니다 (편집칸의 '배경')."));
         let custom = !matches!(cur.as_str(), "original" | "#ffffff" | "template");
         let name = |v: &str| -> String {
             match v {
@@ -346,9 +346,9 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
     let file = it["file"].as_str().unwrap_or("").to_string();
     let title = it["title"].as_str().unwrap_or("").to_string();
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("PPT:").small().color(Color32::GRAY));
+        ui.label(RichText::new("PPT:").small().color(crate::theme::pal().muted));
         if hymns::is_building(&file) {
-            ui.label(RichText::new(wp_core::i18n::tr("그림 만드는 중…")).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+            ui.label(RichText::new(wp_core::i18n::tr("그림 만드는 중…")).small().color(crate::theme::pal().warn));
         }
         // cue.js pptTextRow: 아직 안 꺼냈으면 '요소 따로 꺼내기' 하나, 꺼냈으면 'N장을 요소로 · 다시 꺼내기 · 원래대로' (+ 배경 그림이 없으면 '배경 다시 만들기')
         // 다시 꺼내기·원래대로는 고친 PPT 글·그림이 사라지므로 Electron 처럼 묻고 진행한다 (confirm → 줄 아래 예/아니요)
@@ -362,7 +362,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
         } else {
             let missing = hymns::layer_bgs_missing(&app.core.lock(), &file);
             if missing {
-                ui.label(RichText::new(wp_core::i18n::tr("요소를 숨긴 배경 그림이 없습니다 (다른 PC · 캐시 지움)")).small().color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+                ui.label(RichText::new(wp_core::i18n::tr("요소를 숨긴 배경 그림이 없습니다 (다른 PC · 캐시 지움)")).small().color(crate::theme::pal().danger_text));
                 if ui.small_button(wp_core::i18n::tr("배경 다시 만들기")).on_hover_text(wp_core::i18n::tr("요소를 숨긴 PPT 배경 그림만 다시 만듭니다 (고친 것은 그대로)")).clicked() {
                     let mut c = app.core.lock();
                     match hymns::ppt_text_layers(&c, &file, (1920.0, 1080.0), true) {
@@ -371,7 +371,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
                     }
                 }
             } else {
-                ui.label(RichText::new(wp_core::i18n::tr_args("{1}장을 요소로", &[&on])).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr_args("{1}장을 요소로", &[&on])).small().color(crate::theme::pal().muted));
             }
             if ui.small_button(wp_core::i18n::tr("다시 꺼내기")).on_hover_text(wp_core::i18n::tr("PPT 에서 요소를 다시 꺼냄 (고친 PPT 글·그림은 원래대로)")).clicked() {
                 confirm = format!("again:{item_id}");
@@ -467,7 +467,7 @@ fn ppt_tools(app: &mut App, ui: &mut egui::Ui, i: usize, it: &Value) {
         };
         let (kind, _id) = (kind.to_string(), id.to_string());
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(wp_core::i18n::tr(q)).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+            ui.label(RichText::new(wp_core::i18n::tr(q)).small().color(crate::theme::pal().warn));
             if ui.small_button(wp_core::i18n::tr("예")).clicked() {
                 set(ui, CONFIRM, String::new());
                 if kind == "again" {
@@ -661,7 +661,7 @@ pub fn editor(ui: &mut egui::Ui, e: &mut Value, core: &wp_core::core::Shared) ->
             }
         }
     });
-    ui.label(RichText::new(wp_core::i18n::tr("등록한 찬송가 폴더·붙여 넣은 슬라이드 폴더 안의 파일과 여기서 고른 파일이 열립니다")).small().color(Color32::GRAY));
+    ui.label(RichText::new(wp_core::i18n::tr("등록한 찬송가 폴더·붙여 넣은 슬라이드 폴더 안의 파일과 여기서 고른 파일이 열립니다")).small().color(crate::theme::pal().muted));
     ui.label(RichText::new(wp_core::i18n::tr("배경 (악보 그림일 때)")).small());
     let mut bg = e["background"].as_str().unwrap_or("default").to_string();
     // '설정대로' 에는 지금 기본 배경 이름을 같이 (cue.js hymnBgSel: "기본값 (원래 배경)")
@@ -731,7 +731,7 @@ fn online_settings(app: &mut App, ui: &mut egui::Ui) {
                     }
                 }
             });
-            ui.label(RichText::new(wp_core::i18n::tr(hint)).small().color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr(hint)).small().color(crate::theme::pal().muted));
             if changed { app.core.lock().settings.update(|d| d[key] = json!(value.trim())); }
         }
     });

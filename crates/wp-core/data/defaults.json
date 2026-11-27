@@ -659,7 +659,7 @@
  "songDownloadDir": "",
  "imageFolders": [],
  "ui": {
-  "theme": "dark",
+  "theme": "pro",
   "scale": 100
  },
  "droppedFiles": [],

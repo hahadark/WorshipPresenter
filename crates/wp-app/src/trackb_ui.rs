@@ -364,7 +364,7 @@ impl App {
         let kind = self.tb.lib_kind.clone();
         let folders = wp_core::library::folders(self.core.lock().settings.get(), &kind);
         if folders.is_empty() {
-            ui.label(RichText::new(wp_core::i18n::tr_args("등록한 {1} 폴더가 없습니다. '폴더 더하기…' 로 교회 {2} 폴더를 등록하세요.", &[&(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("그림·영상") }), &(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("사진") })])).color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr_args("등록한 {1} 폴더가 없습니다. '폴더 더하기…' 로 교회 {2} 폴더를 등록하세요.", &[&(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("그림·영상") }), &(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("사진") })])).color(crate::theme::pal().muted));
         }
         for f in &folders {
             ui.horizontal(|ui| {
@@ -454,7 +454,7 @@ impl App {
                         ui.horizontal(|ui| {
                             let mut on = o["on"].as_bool().unwrap_or(false);
                             if ui.checkbox(&mut on, o["name"].as_str().unwrap_or("")).changed() { let _ = self.core.lock().toggle_overlay(&id, Some(on)); }
-                            ui.label(RichText::new(ov_type_ko(o["type"].as_str().unwrap_or(""))).small().color(Color32::GRAY));
+                            ui.label(RichText::new(ov_type_ko(o["type"].as_str().unwrap_or(""))).small().color(crate::theme::pal().muted));
                             for (out, lb) in [("main", "예배당"), ("overlay", "OBS")] {
                                 let mut has = o["outputs"].as_array().is_some_and(|a| a.iter().any(|x| x == out));
                                 if ui.checkbox(&mut has, lb).changed() {
@@ -847,7 +847,7 @@ impl App {
                         let mut c = self.core.lock();
                         if let Err(e) = c.run_macro(&id) { c.notify(e.to_string(), "warn"); }
                     }
-                    ui.label(RichText::new(actions_ko(&wp_core::overlays::macro_actions(m), m["music"].as_str().is_some_and(|x| !x.is_empty()))).small().color(Color32::GRAY));
+                    ui.label(RichText::new(actions_ko(&wp_core::overlays::macro_actions(m), m["music"].as_str().is_some_and(|x| !x.is_empty()))).small().color(crate::theme::pal().muted));
                     let q = wp_core::i18n::tr_args("'{1}' 매크로를 지웁니다.", &[&(m["name"].as_str().unwrap_or(""))]);
                     if crate::widgets::confirm_delete(ui, egui::Id::unique(("macro-del", &id)), &wp_core::i18n::tr("지우기"), &q) { self.core.lock().delete_macro(&id); }
                 });
@@ -947,7 +947,7 @@ impl App {
         self.music_bar(ui);
         if !self.tb.note.is_empty() {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(wp_core::i18n::tr_dyn(&self.tb.note)).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                ui.label(RichText::new(wp_core::i18n::tr_dyn(&self.tb.note)).small().color(crate::theme::pal().warn));
                 if ui.small_button(wp_core::i18n::tr("닫기")).clicked() { self.tb.note.clear(); }
             });
         }
@@ -1031,8 +1031,8 @@ fn message_preview(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let w = ui.available_width().min(260.0);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, w * 9.0 / 16.0), egui::Sense::hover());
     let pt = ui.painter();
-    pt.rect_filled(rect, egui::CornerRadius::same(4), p.sunken);
-    pt.rect_stroke(rect, egui::CornerRadius::same(4), egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
+    pt.rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), p.sunken);
+    pt.rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Sm), egui::Stroke::new(1.0, p.line), egui::StrokeKind::Inside);
     pt.text(rect.center() - egui::vec2(0.0, rect.height() * 0.12), egui::Align2::CENTER_CENTER, wp_core::i18n::tr("(지금 슬라이드는 그대로)"), font(11.0, Weight::Regular), p.muted2);
     if text.trim().is_empty() {
         return resp.on_hover_text(wp_core::i18n::tr("글을 쓰면 여기에 보일 모습이 나옵니다"));
@@ -1203,7 +1203,7 @@ fn song_row(ui: &mut egui::Ui, title: &str, first: &str, selected: bool) -> (egu
     y += th;
     if let Some(g) = fg { pt.galley(Pos2::new(tx, y), g, p.muted); }
     let (bg, border) = if edit.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
-    ui.painter().rect(er, eframe::egui::CornerRadius::same(crate::theme::RADIUS), bg, Stroke::new(p.border_w, border), eframe::egui::StrokeKind::Inside);
+    ui.painter().rect(er, crate::theme::cr(crate::theme::Rad::Md), bg, Stroke::new(p.border_w, border), eframe::egui::StrokeKind::Inside);
     ui.painter().galley(er.center() - eg.size() / 2.0, eg, p.text);
     if row.hovered() || edit.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
     let add = hot && crate::widgets::overlay_btn(ui, row.id.with("add"), ar, "file-plus", &wp_core::i18n::tr("큐시트에 넣기 (고른 순서 다음, 두 번 눌러도)"), false).clicked();

@@ -199,7 +199,7 @@ fn drag_update(ui: &egui::Ui, st: &mut CenterState, s: &Snap, item: usize, cells
             for (k, r) in cells {
                 if d.ks.contains(k) {
                     // .drag-src { opacity: .4 }
-                    pt.rect_filled(*r, CornerRadius::same(4), theme::alpha(pl.panel, 0.6));
+                    pt.rect_filled(*r, crate::theme::cr(crate::theme::Rad::Sm), theme::alpha(pl.panel, 0.6));
                 }
             }
             d.to = None;
@@ -214,7 +214,7 @@ fn drag_update(ui: &egui::Ui, st: &mut CenterState, s: &Snap, item: usize, cells
                     let y = if after { r.bottom() } else { r.top() };
                     Rect::from_min_max(Pos2::new(r.left(), y - 1.5), Pos2::new(r.right(), y + 1.5))
                 };
-                pt.rect_filled(bar, CornerRadius::same(2), pl.accent);
+                pt.rect_filled(bar, crate::theme::cr(crate::theme::Rad::Xs), pl.accent);
                 #[cfg(test)]
                 widgets::HOVER_SEEN.with(|m| m.borrow_mut().insert("drop-mark".into(), bar));
             }
@@ -753,7 +753,7 @@ fn slide_row(ui: &mut egui::Ui, c: &paint::Ctx, label: &str, gc: Option<Color32>
             Lay::Thumb(img, isz, g) => {
                 // .sboth: 그림과 가사를 세로 가운데로, 사이 16px
                 let ir = Rect::from_min_size(Pos2::new(rect.left() + x_text, top + (content_h - isz.y) / 2.0), isz);
-                pt.rect_filled(ir, CornerRadius::same(4), Color32::WHITE);
+                pt.rect_filled(ir, crate::theme::cr(crate::theme::Rad::Sm), Color32::WHITE);
                 if let Some(img) = img {
                     img.corner_radius(4).paint_at(ui, ir);
                 }
@@ -994,7 +994,7 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             let pt = ui.painter();
             let ms = msel(k);
             // .sg-cell.msel: accent 16% 바탕
-            pt.rect_filled(r, CornerRadius::same(6), if ms { theme::mix(p.accent, 16.0, p.sunken) } else if hot { p.hover } else { p.sunken });
+            pt.rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), if ms { theme::mix(p.accent, 16.0, p.sunken) } else if hot { p.hover } else { p.sunken });
             let screen = Rect::from_min_size(r.min + Vec2::splat(3.0), Vec2::new(cw - 6.0, sh));
             paint::paint_slide(ui, c, screen, Some(s), tpl, version, true, false, false); // logo=로고 화면(F 로고 켜기) 아님
             let lab = slide_label(s);
@@ -1006,13 +1006,13 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             ui.painter().galley(Pos2::new(r.left() + 9.0, screen.bottom() + 3.0), lg, p.muted);
             let (is_pv, is_live) = (pv == Some(k), live == Some(k));
             let border = if is_live { p.live } else if is_pv { p.pv } else if hot { p.line2 } else { Color32::TRANSPARENT };
-            ui.painter().rect_stroke(r, CornerRadius::same(6), Stroke::new(3.0, border), StrokeKind::Inside);
+            ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Md), Stroke::new(3.0, border), StrokeKind::Inside);
             if is_pv && is_live {
-                ui.painter().rect_stroke(r.expand(3.0), CornerRadius::same(8), Stroke::new(2.0, p.pv), StrokeKind::Inside);
+                ui.painter().rect_stroke(r.expand(3.0), crate::theme::cr(crate::theme::Rad::Lg), Stroke::new(2.0, p.pv), StrokeKind::Inside);
             }
             if ms {
                 // outline: 3px solid accent
-                ui.painter().rect_stroke(r, CornerRadius::same(6), Stroke::new(3.0, p.accent), StrokeKind::Inside);
+                ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Md), Stroke::new(3.0, p.accent), StrokeKind::Inside);
             }
             if let Some(op) = widgets::hover_ops(ui, id.with(("ops", k)), r, &ops(s)) {
                 out = Some(Hit::Op(k, op));
@@ -2272,7 +2272,7 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool, msel: 
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click_and_drag());
     if ui.is_rect_visible(rect) {
         let pt = ui.painter();
-        pt.rect_filled(rect, CornerRadius::same(4), if msel { theme::mix(p.accent, 16.0, p.sunken) } else { p.sunken });
+        pt.rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), if msel { theme::mix(p.accent, 16.0, p.sunken) } else { p.sunken });
         let y0 = rect.top() + 5.0 + (14.0 * 1.4 - 12.0 * 1.3) / 2.0;
         pt.galley(Pos2::new(rect.left() + 8.0 + 12.0 * 1.6 - kg.size().x, y0), kg, p.hl);
         if let Some(g) = lg {
@@ -2286,16 +2286,16 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool, msel: 
         pt.galley(Pos2::new(rect.left() + x_text, rect.top() + 5.0), tg, p.text);
         // .sg-cell: hover line2 · in-pv pv · on-air live(+1px) · 둘 다면 live 테두리 + 바깥 2px pv
         let border = if live { p.live } else if pv { p.pv } else if resp.contains_pointer() { p.line2 } else { Color32::TRANSPARENT };
-        pt.rect_stroke(rect, CornerRadius::same(4), Stroke::new(2.0, border), StrokeKind::Inside);
+        pt.rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(2.0, border), StrokeKind::Inside);
         if live {
-            pt.rect_stroke(rect, CornerRadius::same(4), Stroke::new(1.0, p.live), StrokeKind::Outside);
+            pt.rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(1.0, p.live), StrokeKind::Outside);
         }
         if pv && live {
-            pt.rect_stroke(rect.expand(1.0), CornerRadius::same(5), Stroke::new(2.0, p.pv), StrokeKind::Outside);
+            pt.rect_stroke(rect.expand(1.0), crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(2.0, p.pv), StrokeKind::Outside);
         }
         if msel {
             // #cueGrid .msel: outline 3px accent
-            pt.rect_stroke(rect, CornerRadius::same(4), Stroke::new(3.0, p.accent), StrokeKind::Inside);
+            pt.rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(3.0, p.accent), StrokeKind::Inside);
         }
     }
     if resp.hovered() {
@@ -2326,7 +2326,7 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved:
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         let (r, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
-        ui.painter().rect_filled(r, CornerRadius::same(6), p.sunken);
+        ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), p.sunken);
         icons::paint(ui, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icons::for_type(ty), p.hl);
         // 목록에서 누른 이름 그대로 ('6. 설교') + 종류 꼬리표 (평가 20번). 이름이 없으면 예전처럼 'N번 종류'
         let title = title.trim();

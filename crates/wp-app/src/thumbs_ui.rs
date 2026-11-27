@@ -203,7 +203,7 @@ impl App {
             }
         });
         if files.is_empty() {
-            ui.label(RichText::new(wp_core::i18n::tr("찾는 그림·영상이 없습니다.")).color(Color32::GRAY));
+            ui.label(RichText::new(wp_core::i18n::tr("찾는 그림·영상이 없습니다.")).color(crate::theme::pal().muted));
         }
         if let Some((what, f)) = act {
             let url = f["url"].as_str().unwrap_or("").to_string();

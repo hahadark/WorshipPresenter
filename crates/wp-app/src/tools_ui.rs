@@ -173,7 +173,7 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
     });
     let err = st["error"].as_str().unwrap_or("");
     if !err.is_empty() {
-        ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), err);
+        ui.colored_label(crate::theme::pal().danger_text, err);
     }
     if en {
         crate::firewall_ui::row(ui);
@@ -190,7 +190,7 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
                     copy_row(ui, "", u);
                 }
                 if urls.is_empty() {
-                    ui.label(RichText::new(wp_core::i18n::tr("이 PC 의 내부망 주소를 찾지 못했습니다 (Wi-Fi·유선 연결 확인).")).small().color(Color32::GRAY));
+                    ui.label(RichText::new(wp_core::i18n::tr("이 PC 의 내부망 주소를 찾지 못했습니다 (Wi-Fi·유선 연결 확인).")).small().color(crate::theme::pal().muted));
                 }
             });
         });
@@ -424,7 +424,7 @@ fn lan(ui: &mut egui::Ui, core: &Shared) {
     });
     let err = st["error"].as_str().unwrap_or("");
     if !err.is_empty() {
-        ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), err);
+        ui.colored_label(crate::theme::pal().danger_text, err);
     }
     for (k, label) in [("main", "예배당 화면"), ("overlay", "투명 자막"), ("stage", "무대 화면")] {
         for u in st[k].as_array().into_iter().flatten() {
@@ -473,7 +473,7 @@ fn phonecam(ui: &mut egui::Ui, core: &Shared) {
     });
     let err = st["error"].as_str().unwrap_or("");
     if !err.is_empty() {
-        ui.colored_label(Color32::from_rgb(0xff, 0x8a, 0x8a), err);
+        ui.colored_label(crate::theme::pal().danger_text, err);
     }
     if !en {
         return;
@@ -491,7 +491,7 @@ fn phonecam(ui: &mut egui::Ui, core: &Shared) {
                     copy_row(ui, "", u);
                 }
                 if urls.is_empty() {
-                    ui.label(RichText::new(tr("이 PC 의 내부망 주소를 찾지 못했습니다 (Wi-Fi·유선 연결 확인).")).small().color(Color32::GRAY));
+                    ui.label(RichText::new(tr("이 PC 의 내부망 주소를 찾지 못했습니다 (Wi-Fi·유선 연결 확인).")).small().color(crate::theme::pal().muted));
                 }
                 ui.add_space(4.0);
                 ui.label(RichText::new(tr("처음 한 번 '연결이 비공개로 설정되어 있지 않습니다' 안내가 나옵니다. 이 PC 가 스스로 만든 인증서라서 나오는 것이니 [고급] → [… (으)로 이동(안전하지 않음)]을 누르세요 (아이폰: [세부사항 보기] → [이 웹 사이트 방문]).")).small().color(Color32::LIGHT_GRAY));
@@ -501,12 +501,12 @@ fn phonecam(ui: &mut egui::Ui, core: &Shared) {
     ui.separator();
     let phones = st["phones"].as_array().cloned().unwrap_or_default();
     if phones.is_empty() {
-        ui.label(RichText::new(tr("아직 연결된 휴대폰이 없습니다.")).small().color(Color32::GRAY));
+        ui.label(RichText::new(tr("아직 연결된 휴대폰이 없습니다.")).small().color(crate::theme::pal().muted));
     }
     for p in phones {
         ui.horizontal_wrapped(|ui| {
             let online = p["online"].as_bool().unwrap_or(false);
-            ui.label(RichText::new(if online { "●" } else { "○" }).color(if online { Color32::from_rgb(0x8a, 0xe0, 0xa8) } else { Color32::GRAY }));
+            ui.label(RichText::new(if online { "●" } else { "○" }).color(if online { crate::theme::pal().ok_text } else { crate::theme::pal().muted }));
             ui.label(RichText::new(format!("휴대폰 · {}", p["name"].as_str().unwrap_or(""))).strong());
             let viewers = p["viewers"].as_u64().unwrap_or(0);
             let size = p["size"].as_str().unwrap_or("");
@@ -527,7 +527,7 @@ fn phonecam(ui: &mut egui::Ui, core: &Shared) {
             }
         });
     }
-    ui.label(RichText::new(tr("다른 곳에서도 이 휴대폰을 고를 수 있습니다: 카메라 순서 · 템플릿 배경 · 화면 층의 카메라 목록에 '휴대폰 · 이름' 으로 나옵니다.")).small().color(Color32::GRAY));
+    ui.label(RichText::new(tr("다른 곳에서도 이 휴대폰을 고를 수 있습니다: 카메라 순서 · 템플릿 배경 · 화면 층의 카메라 목록에 '휴대폰 · 이름' 으로 나옵니다.")).small().color(crate::theme::pal().muted));
     let msg = ST.lock().msg.clone();
     if !msg.is_empty() {
         ui.label(RichText::new(msg).small().color(Color32::LIGHT_GRAY));

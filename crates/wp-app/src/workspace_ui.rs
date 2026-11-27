@@ -264,7 +264,7 @@ impl App {
                     let pl = crate::theme::pal();
                     ui.painter().rect(
                         rect,
-                        egui::CornerRadius::same(crate::theme::CARD_RADIUS),
+                        crate::theme::cr(crate::theme::Rad::Xl),
                         pl.panel,
                         egui::Stroke::new(1.0, pl.line_soft),
                         egui::StrokeKind::Inside,

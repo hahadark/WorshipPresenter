@@ -7,7 +7,7 @@ use crate::app::{Act, App};
 use crate::icons;
 use crate::theme::{self, pal, rich, Weight};
 use crate::widgets::{self, Btn};
-use eframe::egui::{self, Align2, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 use serde_json::{json, Value};
 use wp_core::i18n::{tr, tr_args};
 
@@ -293,7 +293,7 @@ pub fn head(app: &mut App, ui: &mut egui::Ui, cue_id: &str, cue_label: &str, cue
             if ui.is_rect_visible(rect) {
                 let pt = ui.painter();
                 let border = if resp.hovered() { p.line2 } else { p.line };
-                pt.rect(rect, CornerRadius::same(theme::RADIUS), p.sunken, Stroke::new(p.border_w, border), StrokeKind::Inside);
+                pt.rect(rect, crate::theme::cr(crate::theme::Rad::Md), p.sunken, Stroke::new(p.border_w, border), StrokeKind::Inside);
                 let text = if cue_label.is_empty() { tr("(큐시트 없음)") } else { cue_label.to_string() };
                 let g = one_line(ui, &text, theme::font(14.0, Weight::Regular), p.text, rect.width() - 8.0 - 24.0);
                 pt.galley(Pos2::new(rect.left() + 9.0, rect.center().y - g.size().y / 2.0), g, p.text);
@@ -514,7 +514,7 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
     }
     if ui.is_rect_visible(rect) {
         let pt = ui.painter();
-        let radius = CornerRadius::same(theme::RADIUS_LG);
+        let radius = crate::theme::cr(crate::theme::Rad::Lg);
         let bg = if st.air { p.live_bg } else if st.selected { p.sel } else if hovered || er.hovered() { p.hover } else { p.panel };
         let border = if st.selected { p.line2 } else { Color32::TRANSPARENT };
         pt.rect(rect, radius, bg, Stroke::new(1.0, border), StrokeKind::Inside);
@@ -527,7 +527,7 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         if st.air {
             let inner = rect.shrink(1.0);
             let c = if st.hidden { p.warn } else { p.live };
-            pt.with_clip_rect(Rect::from_min_max(Pos2::new(inner.right() - 4.0, inner.top()), inner.max)).rect_filled(inner, CornerRadius::same(theme::RADIUS_LG - 1), c);
+            pt.with_clip_rect(Rect::from_min_max(Pos2::new(inner.right() - 4.0, inner.top()), inner.max)).rect_filled(inner, crate::theme::cr_n(crate::theme::radius(crate::theme::Rad::Lg).saturating_sub(1)), c);
         }
         let top = rect.top() + 1.0 + 7.0;
         let mut x = rect.left() + 4.0 + 6.0;
@@ -537,7 +537,7 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         // 종류 아이콘 칩 (28×28, 둥글기 8, 아이콘 16)
         let ico = Rect::from_min_size(Pos2::new(x, top), Vec2::splat(ICO));
         let (chip, ink) = if st.air { (p.live, Color32::WHITE) } else { (theme::type_chip_bg(ty, st.selected || st.pv), theme::type_ink(ty)) };
-        pt.rect_filled(ico, CornerRadius::same(8), chip);
+        pt.rect_filled(ico, crate::theme::cr(crate::theme::Rad::Lg), chip);
         icons::paint(ui, Rect::from_center_size(ico.center(), Vec2::splat(16.0)), icons::for_type(ty), ink);
         x += ICO + GAP;
         // 오른쪽: 연필 단추 자리 + 예정 시각
@@ -566,13 +566,13 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         }
         if st.selected || hovered || er.hovered() {
             let (eb, ebd) = if er.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
-            pt.rect(edit_rect, CornerRadius::same(theme::RADIUS), eb, Stroke::new(p.border_w, ebd), StrokeKind::Inside);
+            pt.rect(edit_rect, crate::theme::cr(crate::theme::Rad::Md), eb, Stroke::new(p.border_w, ebd), StrokeKind::Inside);
             icons::paint(ui, Rect::from_center_size(edit_rect.center(), Vec2::splat(16.0)), "pencil", p.text);
         }
         if let Some(sr) = &sr {
             let h = sr.hovered();
             let (eb, ebd) = if h { (p.live, p.live) } else { (p.panel2, p.line) };
-            pt.rect(send_rect, CornerRadius::same(theme::RADIUS), eb, Stroke::new(p.border_w, ebd), StrokeKind::Inside);
+            pt.rect(send_rect, crate::theme::cr(crate::theme::Rad::Md), eb, Stroke::new(p.border_w, ebd), StrokeKind::Inside);
             icons::paint(ui, Rect::from_center_size(send_rect.center(), Vec2::splat(16.0)), "play", if h { Color32::WHITE } else { p.text });
         }
     }
@@ -608,7 +608,7 @@ fn add_btn(ui: &mut egui::Ui, w: f32, ic: Option<&str>, ink: Color32, label: &st
         let (bg, bd) = if hov { (p.hover, p.line2) } else { (p.panel2, p.line) };
         let (bd, fg) = if active { (p.accent, p.accent) } else { (bd, p.text) };
         let pt = ui.painter();
-        pt.rect(r, CornerRadius::same(theme::RADIUS), bg, Stroke::new(p.border_w, bd), StrokeKind::Inside);
+        pt.rect(r, crate::theme::cr(crate::theme::Rad::Md), bg, Stroke::new(p.border_w, bd), StrokeKind::Inside);
         let mut g = ui.painter().layout_no_wrap(label.to_string(), theme::font(12.0, Weight::Regular), fg);
         let icw = if ic.is_some() { 15.0 + 5.0 } else { 0.0 };
         let endw = if more { 2.0 + 13.0 } else { 0.0 };
@@ -948,7 +948,7 @@ pub fn books(app: &mut App, ui: &mut egui::Ui) {
                             }
                             if focus_ring && chap_cur == Some((bid, ch)) {
                                 // :focus-visible 테두리
-                                ui.painter().rect_stroke(r.rect.expand(1.0), CornerRadius::same(theme::RADIUS), Stroke::new(2.0, p.accent), StrokeKind::Outside);
+                                ui.painter().rect_stroke(r.rect.expand(1.0), crate::theme::cr(crate::theme::Rad::Md), Stroke::new(2.0, p.accent), StrokeKind::Outside);
                                 if moved {
                                     r.scroll_to_me(None);
                                 }
@@ -991,7 +991,7 @@ fn book_btn(ui: &mut egui::Ui, name: &str, short: &str, on: bool) -> egui::Respo
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     if ui.is_rect_visible(rect) {
         if on || resp.hovered() {
-            ui.painter().rect_filled(rect, CornerRadius::same(4), p.sel);
+            ui.painter().rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), p.sel);
         }
         let a = widgets::text_at(ui, Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, name, 14.0, Weight::Regular, p.text);
         if !short.is_empty() {

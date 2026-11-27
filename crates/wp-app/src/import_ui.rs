@@ -1,6 +1,6 @@
 //! [트랙 C] 성경 번역본 창 (파일 → 성경 번역본 가져오기): 번역본 목록·삭제, 파일 분석 보고서 → 정보 입력 → 가져오기
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use wp_core::core::Shared;
@@ -46,10 +46,10 @@ impl ImportUi {
             egui::Grid::new("ver-list").num_columns(3).striped(true).show(ui, |ui| {
                 for v in &versions {
                     ui.label(format!("{}{}", v.name, if v.id == cur { wp_core::i18n::tr_s("  (쓰는 중)") } else { "" }));
-                    ui.label(RichText::new(wp_core::i18n::tr_args("{1} · {2}절", &[&v.id, &v.verse_count])).small().color(Color32::GRAY));
+                    ui.label(RichText::new(wp_core::i18n::tr_args("{1} · {2}절", &[&v.id, &v.verse_count])).small().color(crate::theme::pal().muted));
                     if self.confirm_del.as_deref() == Some(&v.id) {
                         ui.horizontal(|ui| {
-                            if ui.button(RichText::new(wp_core::i18n::tr("정말 지우기")).color(Color32::from_rgb(0xff, 0x8a, 0x8a))).clicked() {
+                            if ui.button(RichText::new(wp_core::i18n::tr("정말 지우기")).color(crate::theme::pal().danger_text)).clicked() {
                                 let mut c = core.lock();
                                 self.msg = match importer::delete_version(&mut c, &v.id) { Ok(()) => wp_core::i18n::tr_args("{1} 을(를) 지웠습니다.", &[&v.name]), Err(e) => wp_core::i18n::tr_args("지우기 실패: {1}", &[&e]) };
                                 self.confirm_del = None;
@@ -74,7 +74,7 @@ impl ImportUi {
                         std::thread::spawn(move || { let _ = tx.send(importer::analyze_file(&p)); });
                     }
                 }
-                ui.label(RichText::new(wp_core::i18n::tr("JSON · CSV/TSV · Zefania XML · 베들레헴 .bdb")).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("JSON · CSV/TSV · Zefania XML · 베들레헴 .bdb")).small().color(crate::theme::pal().muted));
             });
             // 베들레헴 성경 폴더에서 여러 개 한꺼번에
             ui.horizontal(|ui| {
@@ -92,7 +92,7 @@ impl ImportUi {
                 }
             });
             if let Some(dirs) = &mut self.beth {
-                if dirs.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("BethlehemWin 폴더를 찾지 못했습니다. '폴더 고르기'로 직접 고르세요.")).small().color(Color32::GRAY)); }
+                if dirs.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("BethlehemWin 폴더를 찾지 못했습니다. '폴더 고르기'로 직접 고르세요.")).small().color(crate::theme::pal().muted)); }
                 let mut run: Option<(std::path::PathBuf, Vec<String>)> = None;
                 for (d, list) in dirs.iter_mut() {
                     ui.label(RichText::new(d.to_string_lossy()).small());
@@ -112,7 +112,7 @@ impl ImportUi {
                 let st = &r["stats"];
                 ui.label(wp_core::i18n::tr_args("구절 {1} · 책 {2} · 표제 {3} · 각주 {4}", &[&(st["verses"]), &(st["books"]), &(st["headings"]), &(st["notes"])]));
                 egui::ScrollArea::vertical().id_salt("imp-rep").max_height(160.0).show(ui, |ui| {
-                    for (k, col) in [("errors", Color32::from_rgb(0xff, 0x8a, 0x8a)), ("warnings", Color32::from_rgb(0xff, 0xb0, 0x4a)), ("notes", Color32::GRAY)] {
+                    for (k, col) in [("errors", crate::theme::pal().danger_text), ("warnings", crate::theme::pal().warn), ("notes", crate::theme::pal().muted)] {
                         for m in r[k].as_array().into_iter().flatten() {
                             ui.label(RichText::new(m.as_str().unwrap_or("")).small().color(col));
                         }
@@ -135,7 +135,7 @@ impl ImportUi {
                     };
                 }
             }
-            if !self.msg.is_empty() { ui.label(RichText::new(&self.msg).color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
+            if !self.msg.is_empty() { ui.label(RichText::new(&self.msg).color(crate::theme::pal().ok_text)); }
         });
         self.open = open;
     }

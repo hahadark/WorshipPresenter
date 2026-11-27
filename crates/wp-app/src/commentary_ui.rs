@@ -1,6 +1,6 @@
 //! [트랙 C] 주석 창: 미리보기 중인 성경 범위의 주석 보기 · 주석(EPUB) 가져오기 · 지우기
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use wp_core::commentary::{self, Analysis};
@@ -55,7 +55,7 @@ impl CommentaryUi {
             let list = commentary::list(&core.lock().store.db);
             if self.tab == 0 {
                 if list.is_empty() {
-                    ui.label(RichText::new(wp_core::i18n::tr("가져온 주석이 없습니다. '주석 가져오기'에서 EPUB 주석서를 넣으세요.")).color(Color32::GRAY));
+                    ui.label(RichText::new(wp_core::i18n::tr("가져온 주석이 없습니다. '주석 가져오기'에서 EPUB 주석서를 넣으세요.")).color(crate::theme::pal().muted));
                     return;
                 }
                 ui.horizontal(|ui| {
@@ -67,13 +67,13 @@ impl CommentaryUi {
                     });
                 });
                 let Some((b, sc, sv, ec, ev, label)) = preview_range(core) else {
-                    ui.label(RichText::new(wp_core::i18n::tr("성경 본문을 미리보기에 띄우면 그 범위의 주석이 여기 나옵니다.")).color(Color32::GRAY));
+                    ui.label(RichText::new(wp_core::i18n::tr("성경 본문을 미리보기에 띄우면 그 범위의 주석이 여기 나옵니다.")).color(crate::theme::pal().muted));
                     return;
                 };
-                ui.label(RichText::new(label).strong().color(Color32::from_rgb(0xff, 0xd4, 0x79)));
+                ui.label(RichText::new(label).strong().color(crate::theme::pal().gold));
                 let only = (!self.only.is_empty()).then_some(self.only.as_str());
                 let rows = commentary::commentary_for(&core.lock().store.db, b, sc, sv, ec, ev, only);
-                if rows.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("이 범위의 주석이 없습니다.")).color(Color32::GRAY)); }
+                if rows.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("이 범위의 주석이 없습니다.")).color(crate::theme::pal().muted)); }
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     let mut cur = String::new();
                     for r in rows {
@@ -81,7 +81,7 @@ impl CommentaryUi {
                         if cn != cur { ui.add_space(6.0); ui.label(RichText::new(&cn).strong()); cur = cn; }
                         let range = if r["sc"] == r["ec"] && r["sv"] == r["ev"] { format!("{}:{}", r["sc"], r["sv"]) } else if r["sc"] == r["ec"] { format!("{}:{}-{}", r["sc"], r["sv"], r["ev"]) } else { format!("{}:{}-{}:{}", r["sc"], r["sv"], r["ec"], r["ev"]) };
                         let art = r["kind"] == "article";
-                        ui.label(RichText::new(format!("{}{}  {}", if art { wp_core::i18n::tr("[글] ") } else { String::new() }, range, r["title"].as_str().unwrap_or(""))).color(Color32::from_rgb(0x8f, 0xb8, 0xff)));
+                        ui.label(RichText::new(format!("{}{}  {}", if art { wp_core::i18n::tr("[글] ") } else { String::new() }, range, r["title"].as_str().unwrap_or(""))).color(crate::theme::pal().hl));
                         ui.add(egui::Label::new(r["text"].as_str().unwrap_or("")).wrap());
                         ui.separator();
                     }
@@ -106,13 +106,13 @@ impl CommentaryUi {
                         std::thread::spawn(move || { let _ = tx.send(commentary::analyze_epub(&p).map_err(|e| e.to_string())); });
                     }
                 }
-                ui.label(RichText::new(wp_core::i18n::tr("OCR 로 만든 주석서는 절 표시(1:1)로 항목을 나눕니다. 결과는 참고용입니다.")).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("OCR 로 만든 주석서는 절 표시(1:1)로 항목을 나눕니다. 결과는 참고용입니다.")).small().color(crate::theme::pal().muted));
                 if self.busy.is_some() { ui.spinner(); }
                 if let Some(a) = self.analysis.clone() {
                     let s = commentary::summary(&a);
                     ui.label(wp_core::i18n::tr_args("{1} — 항목 {2} · 글 {3} · 책 {4}권", &[&s["title"].as_str().unwrap_or(""), &s["entries"], &s["articles"], &s["books"]]));
                     let weak: Vec<&str> = s["weak"].as_array().into_iter().flatten().filter_map(|x| x.as_str()).collect();
-                    if !weak.is_empty() && weak.len() < 66 { ui.label(RichText::new(wp_core::i18n::tr_args("장이 많이 빠진 책: {1}", &[&weak.join(", ")])).small().color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
+                    if !weak.is_empty() && weak.len() < 66 { ui.label(RichText::new(wp_core::i18n::tr_args("장이 많이 빠진 책: {1}", &[&weak.join(", ")])).small().color(crate::theme::pal().warn)); }
                     egui::Grid::new("cm-meta").num_columns(2).show(ui, |ui| {
                         for (k, l) in [("id", "주석 ID (영문)"), ("name", "이름"), ("source", "출처"), ("license", "사용 허가")] {
                             ui.label(wp_core::i18n::tr(l));
@@ -129,7 +129,7 @@ impl CommentaryUi {
                     }
                 }
             }
-            if !self.msg.is_empty() { ui.label(RichText::new(&self.msg).color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
+            if !self.msg.is_empty() { ui.label(RichText::new(&self.msg).color(crate::theme::pal().ok_text)); }
         });
         self.open = open;
     }

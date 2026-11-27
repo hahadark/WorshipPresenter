@@ -105,7 +105,7 @@ pub fn switch_widget(ui: &mut egui::Ui, on: &mut bool) -> Response {
     }
     let k = ui.ctx().animate_bool(resp.id, *on);
     let bg = if *on { p.accent } else if resp.hovered() { p.line2 } else { p.line };
-    ui.painter().rect_filled(r, CornerRadius::same(10), bg);
+    ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Xl), bg);
     let x = egui::lerp(r.left() + 10.0..=r.right() - 10.0, k);
     ui.painter().circle_filled(Pos2::new(x, r.center().y), 7.0, p.text);
     if resp.hovered() {
@@ -263,10 +263,10 @@ fn paint_align_icon(ui: &egui::Ui, r: Rect, kind: &str, col: Color32) {
             "hanging" => (r.left() + 6.0, if i == 0 { 12.0 } else { *w - 2.0 }),
             _ => (r.center().x - w / 2.0, *w),
         };
-        pt.rect_filled(Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 2.0)), CornerRadius::same(1), col);
+        pt.rect_filled(Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 2.0)), crate::theme::cr(crate::theme::Rad::Xs), col);
     }
     if kind == "hanging" {
-        pt.rect_filled(Rect::from_min_size(Pos2::new(r.left() + 1.0, r.top() + 3.5), Vec2::new(3.0, 3.0)), CornerRadius::same(1), col);
+        pt.rect_filled(Rect::from_min_size(Pos2::new(r.left() + 1.0, r.top() + 3.5), Vec2::new(3.0, 3.0)), crate::theme::cr(crate::theme::Rad::Xs), col);
     }
 }
 
@@ -312,7 +312,7 @@ pub fn pos_grid(ui: &mut egui::Ui, salt: &str, cells: &[&[(&str, &str)]], cur: &
     let rows = cells.len() as f32;
     let size = Vec2::new(cw * cols + gap * (cols - 1.0) + pad * 2.0, chh * rows + gap * (rows - 1.0) + pad * 2.0);
     let (r, _) = ui.allocate_exact_size(size, Sense::hover());
-    ui.painter().rect(r, CornerRadius::same(6), p.sunken, Stroke::new(1.0, p.line), StrokeKind::Inside);
+    ui.painter().rect(r, crate::theme::cr(crate::theme::Rad::Md), p.sunken, Stroke::new(1.0, p.line), StrokeKind::Inside);
     let mut out = None;
     for (y, line) in cells.iter().enumerate() {
         for (x, (v, tip)) in line.iter().enumerate() {
@@ -320,14 +320,14 @@ pub fn pos_grid(ui: &mut egui::Ui, salt: &str, cells: &[&[(&str, &str)]], cur: &
             let resp = ui.interact(cr, ui.scope_id().with((salt, y, x)), Sense::click());
             let on = *v == cur;
             let (bg, border) = if on { (p.accent, p.accent) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
-            ui.painter().rect(cr, CornerRadius::same(3), bg, Stroke::new(1.0, border), StrokeKind::Inside);
+            ui.painter().rect(cr, crate::theme::cr(crate::theme::Rad::Sm), bg, Stroke::new(1.0, border), StrokeKind::Inside);
             // 칸 안 작은 막대: 그 칸에 글이 놓이는 모양
             let bar_x = match x {
                 0 => cr.left() + 4.0,
                 _ if x as f32 == cols - 1.0 => cr.right() - 14.0,
                 _ => cr.center().x - 5.0,
             };
-            ui.painter().rect_filled(Rect::from_min_size(Pos2::new(bar_x, cr.center().y - 1.0), Vec2::new(10.0, 2.0)), CornerRadius::same(1), if on { Color32::WHITE } else { p.muted2 });
+            ui.painter().rect_filled(Rect::from_min_size(Pos2::new(bar_x, cr.center().y - 1.0), Vec2::new(10.0, 2.0)), crate::theme::cr(crate::theme::Rad::Xs), if on { Color32::WHITE } else { p.muted2 });
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
@@ -356,7 +356,7 @@ pub fn section<R>(ui: &mut egui::Ui, id: &str, icon: &str, title: &str, force: O
     let open = state.is_open();
     let pt = ui.painter();
     if resp.hovered() {
-        pt.rect_filled(r, CornerRadius::same(6), p.hover);
+        pt.rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), p.hover);
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 10.0, r.center().y), Vec2::splat(14.0)), if open { "chevron-down" } else { "chevron-right" }, p.muted);

@@ -2,7 +2,7 @@
 //! 고른 찬양 순서에 넣기 · 찬양 라이브러리에 저장 · 새 찬양 순서로. 네트워크는 백그라운드 스레드에서.
 
 use crate::app::App;
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -167,7 +167,7 @@ impl App {
                 let r = ui.add(egui::TextEdit::singleline(&mut st.query).hint_text(wp_core::i18n::tr("곡 제목 (가수 이름을 붙이면 더 정확)")).desired_width(330.0));
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { search = true; }
                 if ui.button(wp_core::i18n::tr("찾기")).clicked() { search = true; }
-                ui.label(RichText::new(wp_core::i18n::tr("벅스·지니·멜론")).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("벅스·지니·멜론")).small().color(crate::theme::pal().muted));
             });
             if search && !st.query.trim().is_empty() {
                 let q = st.query.trim().to_string();
@@ -175,8 +175,8 @@ impl App {
                 run_search(ctx.clone(), q, data_dir.clone());
                 st = ST.lock();
             }
-            if !st.busy.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&st.busy)).color(Color32::from_rgb(0xff, 0xb0, 0x4a))); }
-            for e in &st.errors { ui.label(RichText::new(wp_core::i18n::tr_args("못 읽음 · {1}", &[&e])).small().color(Color32::GRAY)); }
+            if !st.busy.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&st.busy)).color(crate::theme::pal().warn)); }
+            for e in &st.errors { ui.label(RichText::new(wp_core::i18n::tr_args("못 읽음 · {1}", &[&e])).small().color(crate::theme::pal().muted)); }
             if !st.failed.is_empty() {
                 ui.horizontal_wrapped(|ui| {
                     for (name, url) in &st.failed {
@@ -256,8 +256,8 @@ impl App {
                 }
             });
             let note = ST.lock().note.clone();
-            if !note.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&note)).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
-            ui.label(RichText::new(wp_core::i18n::tr("고른 곡 하나씩만 읽습니다. 사이트 구조가 바뀌어 못 읽으면 가사를 복사해 붙여 넣으세요.")).small().color(Color32::GRAY));
+            if !note.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&note)).small().color(crate::theme::pal().ok_text)); }
+            ui.label(RichText::new(wp_core::i18n::tr("고른 곡 하나씩만 읽습니다. 사이트 구조가 바뀌어 못 읽으면 가사를 복사해 붙여 넣으세요.")).small().color(crate::theme::pal().muted));
         });
         ST.lock().open = open;
     }

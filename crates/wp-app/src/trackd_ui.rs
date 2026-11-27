@@ -210,7 +210,7 @@ pub fn toggled(core: &Shared, before: bool, after: bool) {
 
 fn note(ui: &mut egui::Ui, s: &St) {
     if !s.msg.is_empty() {
-        let col = if s.msg.starts_with('✗') { Color32::from_rgb(0xff, 0x8a, 0x8a) } else { Color32::from_rgb(0x8a, 0xe0, 0xa8) };
+        let col = if s.msg.starts_with('✗') { crate::theme::pal().danger_text } else { crate::theme::pal().ok_text };
         ui.label(RichText::new(wp_core::i18n::tr_dyn(&s.msg)).color(col));
     }
 }
@@ -241,7 +241,7 @@ fn card_ui(ui: &mut egui::Ui, core: &Shared, s: &mut St) {
     let Some(card) = s.card.clone() else { return };
     ui.separator();
     crate::widgets::card_frame().show(ui, |ui| {
-        ui.label(RichText::new(tr_args("✓ '{1}' 큐시트를 만들었습니다 ({2}개 순서)", &[&card["name"].as_str().unwrap_or(""), &card["count"]])).strong().color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+        ui.label(RichText::new(tr_args("✓ '{1}' 큐시트를 만들었습니다 ({2}개 순서)", &[&card["name"].as_str().unwrap_or(""), &card["count"]])).strong().color(crate::theme::pal().ok_text));
         let mut meta = vec![];
         if let Some(m) = card["model"].as_str() {
             meta.push(tr_args("모델 {1}", &[&m]));
@@ -433,7 +433,7 @@ fn api_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St, running: bool) {
         });
     } else {
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(tr(if cfg!(target_os = "macos") { "키: 저장됨 (맥 키체인에 보관)" } else { "키: 저장됨 (Windows 보호 기능으로 암호화)" })).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8)));
+            ui.label(RichText::new(tr(if cfg!(target_os = "macos") { "키: 저장됨 (맥 키체인에 보관)" } else { "키: 저장됨 (Windows 보호 기능으로 암호화)" })).small().color(crate::theme::pal().ok_text));
             if ui.add(Btn::new(tr("키 지우기")).size(Size::Sm)).clicked() {
                 core.lock().set_ai(Some(""), None, None);
             }
@@ -639,7 +639,7 @@ pub(crate) fn obs_urls(ui: &mut egui::Ui, port: u16) {
                 ui.set_min_width(lw);
                 ui.add(egui::Label::new(theme::rich(tr(label), 13.0, Weight::Regular, p.text2)).truncate()).on_hover_text(tr(label));
             });
-            egui::Frame::new().fill(p.sunken).stroke(egui::Stroke::new(1.0, p.line)).corner_radius(egui::CornerRadius::same(4)).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+            egui::Frame::new().fill(p.sunken).stroke(egui::Stroke::new(1.0, p.line)).corner_radius(crate::theme::cr(crate::theme::Rad::Sm)).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
                 ui.set_min_width(if wp_core::i18n::is_en() { 270.0 } else { 300.0 });
                 ui.add(egui::Label::new(egui::RichText::new(&url).monospace().color(p.text)).selectable(true));
             });
@@ -819,7 +819,7 @@ pub(crate) fn update_ui(ui: &mut egui::Ui, core: &Shared) {
                     ],
                 ))
                 .strong()
-                .color(Color32::from_rgb(0x8f, 0xb8, 0xff)),
+                .color(crate::theme::pal().hl),
             );
             egui::ScrollArea::vertical()
                 .max_height(260.0)
@@ -867,13 +867,13 @@ pub(crate) fn update_ui(ui: &mut egui::Ui, core: &Shared) {
         "latest" => {
             ui.label(
                 RichText::new(wp_core::i18n::tr("지금이 최신 버전입니다."))
-                    .color(Color32::from_rgb(0x8a, 0xe0, 0xa8)),
+                    .color(crate::theme::pal().ok_text),
             );
         }
         "error" => {
             ui.label(
                 RichText::new(st["error"].as_str().unwrap_or(""))
-                    .color(Color32::from_rgb(0xff, 0x8a, 0x8a)),
+                    .color(crate::theme::pal().danger_text),
             );
         }
         _ => {}
@@ -884,7 +884,7 @@ pub(crate) fn update_ui(ui: &mut egui::Ui, core: &Shared) {
     // [갈래 D] 포터블·개발 실행: 받기·설치 단추가 왜 꺼져 있는지 보이게 (전에는 '받을 새 버전이 없거나…' 라고만 떠서 이유를 알 수 없었다)
     let portable = st["portable"] == true;
     if portable {
-        ui.label(RichText::new(wp_core::i18n::tr(wp_core::updates::PORTABLE_NOTE)).color(Color32::from_rgb(0xff, 0xc8, 0x6a)));
+        ui.label(RichText::new(wp_core::i18n::tr(wp_core::updates::PORTABLE_NOTE)).color(crate::theme::pal().warn));
     }
     let why_off = if portable { wp_core::updates::PORTABLE_NOTE } else { "받을 새 버전이 없거나 이미 받는 중입니다" };
     ui.horizontal(|ui| {

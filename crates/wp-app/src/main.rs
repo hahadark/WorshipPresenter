@@ -48,6 +48,7 @@ mod actions_ui; // 순서 편집칸: 배경 음악 · ⚡ 송출할 때 자동�
 mod theme; // 디자인 기반: control.css 색·글꼴
 mod icons; // 디자인 기반: Lucide 아이콘
 mod widgets; // 디자인 기반: 공용 위젯
+mod probar_ui; // (나) 전문가용 위 컨트롤 막대 · 상태 줄
 mod cue_ui; // 디자인 2단계: 왼쪽 큐시트 패널
 mod cuemgr_ui; // [갈래 C] 큐시트 관리 창 (cuemanager.js)
 mod pptsplit_ui; // [갈래 C] 한 PPT 를 여러 순서로 나누기 창 (cue.js openSplit)
@@ -303,7 +304,7 @@ fn main() -> anyhow::Result<()> {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             imgcache::install(&cc.egui_ctx);
             wp_core::util::mem_log("글꼴 등록");
-            theme::apply(&cc.egui_ctx, theme::ThemeId::Dark); // 설정 테마는 첫 프레임에 apply_ui_prefs 가 다시 적용
+            theme::apply(&cc.egui_ctx, theme::ThemeId::Pro); // 설정 테마는 첫 프레임에 apply_ui_prefs 가 다시 적용
             // 자료 준비가 끝나길 기다린다 (보통 이미 끝나 있다. 첫 실행 자료 옮기기는 시작 창이 진행률을 보인다)
             let (shared, rx) = match prx.recv() {
                 Ok(Ok(v)) => v,

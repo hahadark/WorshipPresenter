@@ -182,7 +182,31 @@ fn colors(kind: Kind, hovered: bool, selected: bool) -> (Color32, Color32, Color
         Kind::Ghost => if hovered { (p.hover, Color32::TRANSPARENT, p.text) } else { (Color32::TRANSPARENT, Color32::TRANSPARENT, p.text) },
     };
     let border = if selected && matches!(kind, Kind::Default | Kind::Ghost) { p.accent } else { border };
+    if p.bevel {
+        // (나) 전문가용: 단추는 테두리 대신 위 밝은 선 · 아래 어두운 선 (paint_bevel). 바탕은 도드라진 회색
+        return match kind {
+            Kind::Default => (if hovered { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, if selected { p.accent } else { Color32::TRANSPARENT }, p.text),
+            Kind::Primary => (if hovered { white85(p.accent) } else { p.accent }, Color32::TRANSPARENT, p.on_accent),
+            Kind::Send => (if hovered { Color32::WHITE } else { p.send_bg }, Color32::TRANSPARENT, p.send_fg),
+            Kind::Danger => (if hovered { p.live_dk } else { p.raised }, p.live_line, p.live_text),
+            Kind::Warn => (p.warn_bg, p.warn, p.text),
+            Kind::Pv => (p.next_bg, p.next, p.next),
+            Kind::Ghost => (bg, if selected { p.accent } else { Color32::TRANSPARENT }, fg),
+        };
+    }
     (bg, border, fg)
+}
+
+/// (나) 전문가용 단추 도드라짐: 위 1px 밝은 선 + 아래 1px 어두운 선 (그림자 아님)
+pub fn paint_bevel(ui: &Ui, r: Rect) {
+    let p = pal();
+    if !p.bevel {
+        return;
+    }
+    let rad = theme::radius(theme::Rad::Md) as f32;
+    let x = r.x_range().shrink(rad.min(r.width() / 2.0 - 0.5));
+    ui.painter().hline(x, r.top() + 0.5, Stroke::new(1.0, alpha(Color32::WHITE, 0.10)));
+    ui.painter().hline(x, r.bottom() + 0.5, Stroke::new(1.0, p.edge));
 }
 
 fn layout(ui: &Ui, text: &str, font: FontId) -> Arc<Galley> {
@@ -197,7 +221,7 @@ fn kbd_size(g: &Galley) -> Vec2 {
 /// kbd 칩을 rect 에 그린다 (css kbd: muted 글자, line 테두리, 둥글기 4, 여백 0 4px)
 fn paint_kbd(ui: &Ui, rect: Rect, g: Arc<Galley>, fg: Color32, border: Color32) {
     let pt = ui.painter();
-    pt.rect_stroke(rect, CornerRadius::same(4), Stroke::new(1.0, border), StrokeKind::Inside);
+    pt.rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(1.0, border), StrokeKind::Inside);
     pt.galley(rect.center() - g.size() / 2.0, g, fg);
 }
 
@@ -256,10 +280,13 @@ impl Widget for Btn {
             // 누를 때 0.5px 내려감 (button:active)
             let r = if resp.is_pointer_button_down_on() { rect.translate(Vec2::new(0.0, 0.5)) } else { rect };
             let pt = ui.painter();
-            pt.rect(r, CornerRadius::same(theme::RADIUS), bg, Stroke::new(p.border_w, border), StrokeKind::Inside);
+            pt.rect(r, crate::theme::cr(crate::theme::Rad::Md), bg, Stroke::new(p.border_w, border), StrokeKind::Inside);
+            if !matches!(self.kind, Kind::Ghost) && bg.a() > 0 {
+                paint_bevel(ui, r);
+            }
             if resp.has_focus() {
                 // :focus-visible { outline: 2px solid accent; outline-offset: 1px }
-                pt.rect_stroke(r.expand(3.0), CornerRadius::same(theme::RADIUS + 3), Stroke::new(2.0, p.accent), StrokeKind::Inside);
+                pt.rect_stroke(r.expand(3.0), crate::theme::cr_n(crate::theme::radius(crate::theme::Rad::Md) + 3), Stroke::new(2.0, p.accent), StrokeKind::Inside);
             }
             let mut x = if self.square { r.center().x - ic / 2.0 } else { r.left() + pad_l + ((r.width() - pad_l - pad_r) - w).max(0.0) / 2.0 };
             let cy = r.center().y;
@@ -287,7 +314,7 @@ impl Widget for Btn {
             }            if let Some(g) = kg {
                 x += kgap;
                 let ks = kbd_size(&g);
-                let (kf, kb) = if self.kind == Kind::Send { (alpha(Color32::WHITE, 0.8), alpha(Color32::WHITE, 0.4)) } else { (p.muted, p.line) };
+                let (kf, kb) = if self.kind == Kind::Send { if p.bevel { (alpha(p.send_fg, 0.6), alpha(p.send_fg, 0.25)) } else { (alpha(Color32::WHITE, 0.8), alpha(Color32::WHITE, 0.4)) } } else if self.kind == Kind::Primary && p.bevel { (alpha(p.on_accent, 0.7), alpha(p.on_accent, 0.3)) } else { (p.muted, p.line) };
                 let kf = if self.enabled { kf } else { kf.gamma_multiply(0.5) };
                 paint_kbd(ui, Rect::from_min_size(Pos2::new(x, cy - ks.y / 2.0), ks), g, kf, kb);
             }
@@ -345,9 +372,9 @@ pub fn badge(ui: &mut Ui, text: &str, kind: Badge) -> Response {
             let a = 0.45 * (1.0 - i as f32 / 6.0) * 0.5;
             pt.rect_filled(rect.expand(i as f32 * 2.0), CornerRadius::same(4 + i as u8 * 2), alpha(p.live, a));
         }
-        pt.rect_stroke(rect.expand(1.0), CornerRadius::same(5), Stroke::new(1.0, alpha(p.live, 0.5)), StrokeKind::Inside);
+        pt.rect_stroke(rect.expand(1.0), crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(1.0, alpha(p.live, 0.5)), StrokeKind::Inside);
     }
-    pt.rect_filled(rect, CornerRadius::same(4), bg);
+    pt.rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), bg);
     pt.galley(rect.center() - g.size() / 2.0, g, Color32::WHITE);
     resp
 }
@@ -370,6 +397,8 @@ pub struct SegStyle {
 impl SegStyle {
     /// .view-tabs: 12px, 여백 2px 8px, 둥글기 4
     pub const COMPACT: SegStyle = SegStyle { font: 12.0, pad: Vec2::new(8.0, 2.0), fill: false, radius: 4 };
+    /// (나) 판 머리 띠 안 .seg: 11px, 여백 1px 9px (높이 20)
+    pub const TINY: SegStyle = SegStyle { font: 11.0, pad: Vec2::new(9.0, 1.0), fill: false, radius: 4 };
     /// .side-tabs: 13px, 여백 5px 4px, 가로 꽉, 둥글기 6
     pub const WIDE: SegStyle = SegStyle { font: 13.0, pad: Vec2::new(4.0, 5.0), fill: true, radius: 6 };
 }
@@ -418,11 +447,24 @@ pub fn segmented_with<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items:
             (false, true) => CornerRadius { nw: 0, sw: 0, ne: rr, se: rr },
             _ => CornerRadius::ZERO,
         };
+        if p.bevel {
+            // (나) 전문가용 .seg: 입력칸 바탕 트랙 위에 고른 칸만 밝은 회색 알약, 테두리 없음
+            if i == 0 {
+                ui.painter().rect_filled(rect, theme::cr(theme::Rad::Md), p.sunken);
+            }
+            let inner = r.shrink(1.0);
+            if on {
+                ui.painter().rect_filled(inner, theme::cr(theme::Rad::Sm), p.sel);
+            } else if cr.hovered() {
+                ui.painter().rect_filled(inner, theme::cr(theme::Rad::Sm), p.hover);
+            }
+        } else {
         let (bg, border) = if on { (p.sel, p.line2) } else if cr.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
         let pt = ui.painter();
         pt.rect(r, corner, bg, Stroke::new(p.border_w, border), StrokeKind::Inside);
         if on {
             sel_rect = Some((r, corner));
+        }
         }
         let mut g = if on { g_bold } else { g_reg };
         // 칸보다 글이 넓으면(영어 화면의 긴 이름) 잘리지 않게 글자를 줄인다
@@ -432,7 +474,7 @@ pub fn segmented_with<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items:
             g = layout(ui, items[i].1, theme::font(size, if on { Weight::SemiBold } else { Weight::Regular }));
         }
         let pt = ui.painter();
-        pt.galley(r.center() - g.size() / 2.0, g, p.text);
+        pt.galley(r.center() - g.size() / 2.0, g, if p.bevel && !on { p.muted } else { p.text });
     }
     // 고른 칸 테두리가 옆 칸 위로 오게 (z-index: 1)
     if let Some((r, c)) = sel_rect {
@@ -507,7 +549,7 @@ pub fn panel_tabs_dock(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize,
         pt.galley(Pos2::new(r.left() + 8.0, r.center().y - g.size().y / 2.0), g, fg);
         if let Some(c) = close {
             if c.hovered() {
-                pt.rect_filled(close_r, CornerRadius::same(4), p.hover);
+                pt.rect_filled(close_r, crate::theme::cr(crate::theme::Rad::Sm), p.hover);
             }
             icons::paint(ui, close_r.shrink(2.0), "x", if c.hovered() { p.text } else { p.text2 });
         }
@@ -529,7 +571,7 @@ pub fn panel_tabs_dock(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize,
             let resp = ui.interact(r, id.with(which), Sense::click());
             let (bg, border, fg) = colors(Kind::Default, resp.hovered(), false);
             let pt = ui.painter();
-            pt.rect(r, CornerRadius::same(theme::RADIUS), bg, Stroke::new(p.border_w, border), StrokeKind::Inside);
+            pt.rect(r, crate::theme::cr(crate::theme::Rad::Md), bg, Stroke::new(p.border_w, border), StrokeKind::Inside);
             let c = r.center();
             if k == 0 {
                 // ▾
@@ -541,8 +583,8 @@ pub fn panel_tabs_dock(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize,
                 // ⧉ 두 겹 네모
                 let a = Rect::from_min_size(c + Vec2::new(-6.0, -6.0), Vec2::splat(8.0));
                 let b = Rect::from_min_size(c + Vec2::new(-2.0, -2.0), Vec2::splat(8.0));
-                pt.rect_stroke(a, CornerRadius::same(1), Stroke::new(1.2, fg), StrokeKind::Middle);
-                pt.rect_stroke(b, CornerRadius::same(1), Stroke::new(1.2, fg), StrokeKind::Middle);
+                pt.rect_stroke(a, crate::theme::cr(crate::theme::Rad::Xs), Stroke::new(1.2, fg), StrokeKind::Middle);
+                pt.rect_stroke(b, crate::theme::cr(crate::theme::Rad::Xs), Stroke::new(1.2, fg), StrokeKind::Middle);
                 out.popout |= resp.clicked();
                 resp.on_hover_text(wp_core::i18n::tr("떠 있는 창으로 띄우기"));
             }
@@ -556,13 +598,13 @@ pub fn panel_tabs_dock(ui: &mut Ui, id: &str, tabs: &[&str], active: &mut usize,
 /// 독 패널 카드 (panel 바탕, 둥글기 12, line-soft 테두리)
 pub fn card_frame() -> egui::Frame {
     let p = pal();
-    egui::Frame::new().fill(p.panel).corner_radius(CornerRadius::same(theme::CARD_RADIUS)).stroke(Stroke::new(1.0, p.line_soft))
+    egui::Frame::new().fill(p.panel).corner_radius(crate::theme::cr(crate::theme::Rad::Xl)).stroke(Stroke::new(1.0, p.line_soft))
 }
 
 /// .ft-group 묶음 (line 테두리, 둥글기 8, 안쪽 3px) — 송출 줄 '글자 숨김 · 지우기 · 모두 지우기'
 pub fn group_frame() -> egui::Frame {
     let p = pal();
-    egui::Frame::new().stroke(Stroke::new(1.0, p.line)).corner_radius(CornerRadius::same(8)).inner_margin(Margin::same(3))
+    egui::Frame::new().stroke(Stroke::new(1.0, p.line)).corner_radius(crate::theme::cr(crate::theme::Rad::Lg)).inner_margin(Margin::same(3))
 }
 
 /// 세로 구분선 (.sep: 1px line, 높이 h)
@@ -590,7 +632,7 @@ pub fn status_btn(ui: &mut Ui, color: Color32, text: &str, dot_only: bool, tip: 
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, g.size().y.max(9.0)), Sense::click());
     let hov = resp.hovered();
     if hov {
-        ui.painter().rect_filled(r.expand2(Vec2::new(4.0, 3.0)), CornerRadius::same(4), p.hover);
+        ui.painter().rect_filled(r.expand2(Vec2::new(4.0, 3.0)), crate::theme::cr(crate::theme::Rad::Sm), p.hover);
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     ui.painter().circle_filled(Pos2::new(r.left() + 4.5, r.center().y), 4.5, color);
@@ -787,8 +829,8 @@ pub fn overlay_btn(ui: &Ui, id: egui::Id, rect: Rect, icon: &str, tip: &str, dan
     let hov = resp.hovered();
     let bg = if hov && danger { p.live } else if hov { p.accent_strong } else { alpha(p.sunken, 0.86) };
     let pt = ui.painter();
-    pt.rect_filled(rect, CornerRadius::same(5), bg);
-    pt.rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, alpha(p.line2, 0.9)), StrokeKind::Inside);
+    pt.rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), bg);
+    pt.rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(1.0, alpha(p.line2, 0.9)), StrokeKind::Inside);
     icons::paint(ui, rect.shrink(5.5), icon, if hov { Color32::WHITE } else { p.text2 });
     if hov {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

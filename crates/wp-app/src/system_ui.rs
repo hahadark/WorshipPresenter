@@ -126,7 +126,7 @@ impl App {
             ui.label(RichText::new(wp_core::i18n::tr("원드라이브 같은 동기화 폴더를 고르면 찬양 · 큐시트 · 오버레이를 그 폴더의 WorshipCue-sync.json 으로 주고받습니다 (기존 워십프리젠터와 같은 파일). 시작할 때 읽고, 바뀌면 1분 안에, 끝날 때 씁니다.")).small());
             ui.horizontal(|ui| {
                 let dir = info["dir"].as_str().unwrap_or("");
-                ui.label(if dir.is_empty() { RichText::new(wp_core::i18n::tr("동기화 꺼짐")).color(Color32::GRAY) } else { RichText::new(format!("📁 {dir}")).strong() });
+                ui.label(if dir.is_empty() { RichText::new(wp_core::i18n::tr("동기화 꺼짐")).color(crate::theme::pal().muted) } else { RichText::new(dir.clone()).strong() });
             });
             let mut note = String::new();
             ui.horizontal(|ui| {
@@ -153,17 +153,17 @@ impl App {
                 ui.label(wp_core::i18n::tr("동기화 파일을 쓴 PC")); ui.label(format!("{} {}", info["remoteHost"].as_str().unwrap_or(""), ago(info["remoteAt"].as_str().unwrap_or("")))); ui.end_row();
             });
             if let Some(e) = info["error"].as_str().filter(|x| !x.is_empty()) {
-                ui.label(RichText::new(e).color(Color32::from_rgb(0xff, 0x8a, 0x8a)));
+                ui.label(RichText::new(e).color(crate::theme::pal().danger_text));
             }
             ui.separator();
             ui.label(RichText::new(wp_core::i18n::tr("백업 (하루 한 번 자동 · 10일치 보관)")).strong());
             let restore_busy = ST.lock().restore_busy;
             if restore_busy {
-                ui.label(RichText::new("되돌리기 예약 파일을 복사하고 있습니다. 끝날 때까지 기다려 주세요.").color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                ui.label(RichText::new("되돌리기 예약 파일을 복사하고 있습니다. 끝날 때까지 기다려 주세요.").color(crate::theme::pal().warn));
             }
             if info["restorePending"] == true {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(wp_core::i18n::tr("되돌리기 예약됨 — 프로그램을 다시 시작하면 적용됩니다.")).color(Color32::from_rgb(0xff, 0xb0, 0x4a)));
+                    ui.label(RichText::new(wp_core::i18n::tr("되돌리기 예약됨 — 프로그램을 다시 시작하면 적용됩니다.")).color(crate::theme::pal().warn));
                     if ui.add_enabled(!restore_busy, egui::Button::new(wp_core::i18n::tr("예약 취소"))).clicked() { self.core.lock().cancel_restore(); }
                 });
             }
@@ -206,7 +206,7 @@ impl App {
                         }
                     });
                 }
-                if list.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("아직 백업이 없습니다.")).color(Color32::GRAY)); }
+                if list.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("아직 백업이 없습니다.")).color(crate::theme::pal().muted)); }
             });
             // 다른 컴퓨터로 옮기기: 자료 전체를 파일 하나로 (wp_core::movedata)
             ui.separator();
@@ -251,7 +251,7 @@ impl App {
             });
             if !note.is_empty() { ST.lock().note = note; }
             let n = ST.lock().note.clone();
-            if !n.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&n)).small().color(Color32::from_rgb(0x8a, 0xe0, 0xa8))); }
+            if !n.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&n)).small().color(crate::theme::pal().ok_text)); }
         });
         ST.lock().sync = open;
     }
@@ -271,7 +271,7 @@ impl App {
             let r = ST.lock().diag_result.clone();
             ui.horizontal(|ui| {
                 let (f, w) = (r["summary"]["fail"].as_u64().unwrap_or(0), r["summary"]["warn"].as_u64().unwrap_or(0));
-                let (t, c) = if f > 0 { (wp_core::i18n::tr_args("문제 {1}곳 · 확인 {2}곳", &[&f, &w]), Color32::from_rgb(0xff, 0x6b, 0x6b)) } else if w > 0 { (wp_core::i18n::tr_args("확인할 곳 {1}곳", &[&w]), Color32::from_rgb(0xff, 0xb0, 0x4a)) } else { (wp_core::i18n::tr("모두 괜찮습니다"), Color32::from_rgb(0x8a, 0xe0, 0xa8)) };
+                let (t, c) = if f > 0 { (wp_core::i18n::tr_args("문제 {1}곳 · 확인 {2}곳", &[&f, &w]), crate::theme::pal().danger_text) } else if w > 0 { (wp_core::i18n::tr_args("확인할 곳 {1}곳", &[&w]), crate::theme::pal().warn) } else { (wp_core::i18n::tr("모두 괜찮습니다"), crate::theme::pal().ok_text) };
                 ui.label(RichText::new(t).strong().color(c));
                 if ui.button(wp_core::i18n::tr("다시 점검")).clicked() { ST.lock().diag_result = Value::Null; }
                 if ui.button(wp_core::i18n::tr("로그 묶음 저장…")).on_hover_text(wp_core::i18n::tr("문제를 알릴 때 보낼 글 파일 (열쇠·PIN·AI 키는 가림)")).clicked() { self.save_log_bundle(); }
@@ -283,10 +283,10 @@ impl App {
             egui::ScrollArea::vertical().id_salt("diag").auto_shrink([false, false]).show(ui, |ui| {
                 for x in r["items"].as_array().into_iter().flatten() {
                     let (mark, col) = match x["status"].as_str().unwrap_or("") {
-                        "ok" => ("✔", Color32::from_rgb(0x8a, 0xe0, 0xa8)),
-                        "warn" => ("!", Color32::from_rgb(0xff, 0xb0, 0x4a)),
-                        "fail" => ("✖", Color32::from_rgb(0xff, 0x6b, 0x6b)),
-                        _ => ("i", Color32::GRAY),
+                        "ok" => ("✔", crate::theme::pal().ok_text),
+                        "warn" => ("!", crate::theme::pal().warn),
+                        "fail" => ("✖", crate::theme::pal().danger_text),
+                        _ => ("i", crate::theme::pal().muted),
                     };
                     ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new(mark).strong().color(col));
@@ -330,7 +330,7 @@ impl App {
                 if ui.button(wp_core::i18n::tr("되돌리기")).clicked() { self.core.lock().draw_undo(); }
                 if ui.button(wp_core::i18n::tr("모두 지우기")).clicked() { self.core.lock().draw_clear(); }
                 if ui.button(wp_core::i18n::tr("강조 끄기")).clicked() { self.core.lock().draw_spot(None); }
-                ui.label(RichText::new(wp_core::i18n::tr("예배당 화면 · OBS 화면에 바로 보입니다 (무대 화면은 빼고)")).small().color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("예배당 화면 · OBS 화면에 바로 보입니다 (무대 화면은 빼고)")).small().color(crate::theme::pal().muted));
             });
             // 바탕: 지금 LIVE 슬라이드
             let (live, tpl, d, logo, hide_bg) = {
@@ -426,7 +426,7 @@ impl App {
                 (c.settings.get()["cameras"].as_object().cloned().unwrap_or_default(), crate::camscan::choices(&c))
             };
             if list.is_empty() {
-                ui.label(RichText::new(wp_core::i18n::tr("아직 카메라가 없습니다. '카메라 찾기'를 누르거나 큐시트에 카메라 순서를 넣으면 여기에 나옵니다.")).color(Color32::GRAY));
+                ui.label(RichText::new(wp_core::i18n::tr("아직 카메라가 없습니다. '카메라 찾기'를 누르거나 큐시트에 카메라 순서를 넣으면 여기에 나옵니다.")).color(crate::theme::pal().muted));
             }
             let mut st = ST.lock();
             let mut preview: Option<(String, String)> = None;

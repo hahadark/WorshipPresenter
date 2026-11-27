@@ -413,7 +413,7 @@ impl App {
                             let hot = row.hovered();
                             if ui.is_rect_visible(rect) {
                                 let bg = if id == st.sel { p.sel } else if hot { p.hover } else { egui::Color32::TRANSPARENT };
-                                ui.painter().rect_filled(rect, egui::CornerRadius::same(6), bg);
+                                ui.painter().rect_filled(rect, crate::theme::cr(crate::theme::Rad::Md), bg);
                                 if is_cur {
                                     ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height())), 0.0, p.accent);
                                 }

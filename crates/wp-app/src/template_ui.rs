@@ -10,7 +10,7 @@ use crate::theme::{self, alpha, pal, Weight};
 use crate::tpl_controls::{f, set};
 use crate::tpl_inspect::{self, Sec};
 use crate::widgets::{self, Btn, Kind, Size};
-use eframe::egui::{self, Align2, Color32, CornerRadius, Key, KeyboardShortcut, Modifiers, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Align2, Color32, Key, KeyboardShortcut, Modifiers, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Vec2};
 use serde_json::{json, Value};
 use wp_core::core::Shared;
 use wp_core::i18n::tr;
@@ -315,9 +315,9 @@ impl TemplateUi {
                 let shown = if on { &self.draft } else { t };
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 66.0), Sense::click());
                 let bg = if on { p.sel } else if resp.hovered() { p.hover } else { Color32::TRANSPARENT };
-                ui.painter().rect_filled(r, CornerRadius::same(6), bg);
+                ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), bg);
                 if on {
-                    ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), CornerRadius::same(2), p.accent);
+                    ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), crate::theme::cr(crate::theme::Rad::Xs), p.accent);
                 }
                 let tw = f(shown, "width", 1920.0) as f32;
                 let th = f(shown, "height", 1080.0) as f32;
@@ -325,7 +325,7 @@ impl TemplateUi {
                 let tr_w = (tr_h * tw / th).min(100.0);
                 let thumb = Rect::from_min_size(Pos2::new(r.left() + 8.0, r.center().y - tr_h / 2.0), Vec2::new(tr_w, tr_h));
                 paint_slide(ui, pc, thumb, Some(&smp), shown, "개역개정", true, false, false);
-                ui.painter().rect_stroke(thumb, CornerRadius::same(2), Stroke::new(1.0, p.line), StrokeKind::Outside);
+                ui.painter().rect_stroke(thumb, crate::theme::cr(crate::theme::Rad::Xs), Stroke::new(1.0, p.line), StrokeKind::Outside);
                 // 이름 + 배지
                 let x0 = thumb.right() + 8.0;
                 let name = wp_core::i18n::tr_name(shown["name"].as_str().unwrap_or(""));
@@ -347,7 +347,7 @@ impl TemplateUi {
                     if br.right() > r.right() {
                         break;
                     }
-                    ui.painter().rect(br, CornerRadius::same(4), alpha(col, 0.16), Stroke::new(1.0, alpha(col, 0.55)), StrokeKind::Inside);
+                    ui.painter().rect(br, crate::theme::cr(crate::theme::Rad::Sm), alpha(col, 0.16), Stroke::new(1.0, alpha(col, 0.55)), StrokeKind::Inside);
                     ui.painter().galley(br.center() - gl.size() / 2.0, gl, col);
                     bx = br.right() + 4.0;
                 }
@@ -592,7 +592,7 @@ impl TemplateUi {
                 pt.rect_filled(zone, 0.0, alpha(p.accent, 0.10));
                 pt.text(zone.center(), Align2::CENTER_CENTER, tr("여기에 놓기"), theme::font(12.0, Weight::SemiBold), alpha(p.text, 0.85));
                 let ghost = Rect::from_min_size(pp - off, lr.size());
-                pt.rect(ghost, CornerRadius::same(4), alpha(p.accent, 0.25), Stroke::new(1.5, p.accent), StrokeKind::Inside);
+                pt.rect(ghost, crate::theme::cr(crate::theme::Rad::Sm), alpha(p.accent, 0.25), Stroke::new(1.5, p.accent), StrokeKind::Inside);
                 if resp.drag_stopped() {
                     set(t, "logo.position", json!(format!("{row}-{col}")));
                     self.drag = None;
@@ -633,7 +633,7 @@ impl TemplateUi {
                     pt.line_segment(line, Stroke::new(2.5, p.accent));
                 }
                 if guides || resp.hovered() || active {
-                    pt.rect(Rect::from_center_size(er.center(), Vec2::splat(8.0)), CornerRadius::same(2), p.accent, Stroke::new(1.0, p.text), StrokeKind::Inside);
+                    pt.rect(Rect::from_center_size(er.center(), Vec2::splat(8.0)), crate::theme::cr(crate::theme::Rad::Xs), p.accent, Stroke::new(1.0, p.text), StrokeKind::Inside);
                 }
                 if active {
                     if let Some(pp) = ui.ctx().pointer_latest_pos() {
@@ -653,7 +653,7 @@ impl TemplateUi {
                         let label = wp_core::i18n::tr_args("여백 {1}", &[&(v.round() as i64).to_string()]);
                         let g = pt.layout_no_wrap(label, theme::font(12.0, Weight::SemiBold), p.text);
                         let br = Rect::from_min_size(pp + Vec2::new(12.0, -26.0), g.size() + Vec2::new(10.0, 4.0));
-                        pt.rect_filled(br, CornerRadius::same(4), alpha(p.panel, 0.92));
+                        pt.rect_filled(br, crate::theme::cr(crate::theme::Rad::Sm), alpha(p.panel, 0.92));
                         pt.galley(br.min + Vec2::new(5.0, 2.0), g, p.text);
                     }
                     if resp.drag_stopped() || !ui.ctx().input(|i| i.pointer.any_down()) {
@@ -666,7 +666,7 @@ impl TemplateUi {
         }
         if let Some(r) = hover_box {
             if self.drag.is_none() {
-                pt.rect_stroke(r.expand(3.0), CornerRadius::same(4), Stroke::new(1.5, alpha(p.hl, 0.9)), StrokeKind::Outside);
+                pt.rect_stroke(r.expand(3.0), crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(1.5, alpha(p.hl, 0.9)), StrokeKind::Outside);
             }
         }
         if !ui.ctx().input(|i| i.pointer.any_down()) && matches!(self.drag, Some(Drag::Logo(_))) {
