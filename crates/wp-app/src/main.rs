@@ -19,6 +19,7 @@ mod paint_edit; // [트랙 A]
 mod css_bg; // 웹과 같은 CSS 그라데이션 계산
 mod slide_layout; // 웹 출력과 같은 슬라이드 자리 계산
 mod parity_shot; // 점검용 --parity: 조작 화면 그림 ↔ 웹 출력 비교
+mod ai_ui; // AI 도우미: AI 설정 · 동의 · 예배 전 큐시트 점검
 mod a_tools; // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
 mod parity_ui; // [트랙 A] 기능 대조에서 빠진 작은 것들
 mod parity2_ui; // [트랙 A] 성경 책 목록 · 종류 골라 붙여 넣기 · 썸네일 오른쪽 클릭

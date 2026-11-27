@@ -178,6 +178,11 @@ pub(crate) fn list_keys(app: &mut App, ui: &egui::Ui, list_rect: Rect, n: usize,
     }
 }
 
+/// 다른 창(예배 전 점검 등)에서 순서를 고른 뒤: 고른 줄이 보이게 스크롤
+pub(crate) fn request_scroll(ctx: &egui::Context) {
+    ctx.data_mut(|m| m.insert_temp(id(SCROLL_SEL), true));
+}
+
 /// 키로 고른 줄이 보이게 스크롤할 차례인가 (고른 줄을 그릴 때 한 번)
 pub(crate) fn take_scroll(ctx: &egui::Context) -> bool {
     ctx.data_mut(|d| d.remove_temp::<bool>(id(SCROLL_SEL))).unwrap_or(false)

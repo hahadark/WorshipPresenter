@@ -1803,6 +1803,7 @@ impl App {
         }
         self.trackb_windows(&ctx); // [트랙 B]
         crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
+        crate::ai_ui::show(self, &ctx); // AI 도우미 (설정 · 동의 · 예배 전 점검 …)
         crate::a_tools::show(self, &ctx, &mut acts); // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
         crate::parity_ui::show(self, &ctx); // [트랙 A] 단축키 보기
         crate::parity2_ui::show(self, &ctx, &mut acts); // [트랙 A] 성경 책 목록 · 종류 골라 붙여 넣기

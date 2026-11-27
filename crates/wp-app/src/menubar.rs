@@ -82,6 +82,9 @@ pub fn menus() -> Vec<Menu> {
             it("a:home", "홈페이지 주보 → 큐시트 · 광고", ""), // [트랙 A]
             it("a:points", "설교 포인트 슬라이드", ""), // [트랙 A]
             it("a:preservice", "예배 전 화면 만들기", ""), // [트랙 A]
+            it("-", "-", ""),
+            it("ai:check", "예배 전 큐시트 점검", ""),
+            it("ai:settings", "AI 설정 (키 · 제공자 · 동의)", ""),
         ] },
         Menu { label: "도움말", items: vec![
             it("b:diagnose", "연결 점검 (예배 전 점검)", ""), // [트랙 B]
@@ -178,6 +181,8 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "a:home" => "globe",
         "a:points" => "presentation",
         "a:preservice" => "images",
+        "ai:check" => "list-checks",
+        "ai:settings" => "sparkles",
         "b:diagnose" => "list-checks",
         "b:logbundle" => "download",
         "b:logs" => "folder-open",
