@@ -41,6 +41,7 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 - 배치: 독 작업공간 → 고정 칸 (`prolayout_ui.rs`: 큐시트 판 · 뷰어 둘 · 본문·편집 · 인스펙터, 설정 `rsProLayout` {side, inspector, timeline, viewers}). 옛 `rsWorkspace` 는 읽기만 하고 지우지 않음. `workspace_ui.rs` 의 독 코드(workspace_content)는 이제 안 부름(보기 → '배치' 창만 씀).
 - 위 컨트롤 막대 · 상태 표시창 · 아래 상태 줄(알림 포함) = `probar_ui.rs`, 예배 시간표(보기 전용) = `timeline_ui.rs`. 옛 머리 줄·송출 줄(top_bar · bottom_bar)은 지움.
 - 테마: 새 기본 `pro`('전문가 (기본)'). 옛 '어둡게' 기본 사용자는 처음 한 번만 pro 로(`ui.proDesign`). 둥글기는 숫자 대신 `theme::cr(Rad::…)`, 높이 `theme::ctl_h()`, 자리 색 `pal().head/bar/edge/lcd/next/live_dk/send_bg`, `pal().bevel` = 전문가 테마(단추 위·아래 선). 빨강 = 송출 중, 노랑 = 다음(미리보기)만 — 기본 단추(Primary)에 노랑을 쓰지 말 것. 종류 아이콘 색 없음.
+- **2.0.8 공개 (2026-11-27)**: Windows 설치판·포터블·latest.yml + 맥 dmg(mac-build CI, 시험 wp-app 232 · wp-core 314) 같은 릴리스, 내려받아 SHA-256 대조 같음. 설치판 /S /TEST 로 켜서 새 화면 확인. 시험 wp-app 233 · wp-core 315. parity 43/44 같은 글자 크기(obs-pip-image 는 2.0.7 부터의 차이), 슬라이드 그리는 코드는 안 바꿈. main 의 README 대표 그림 · 설명서 주 화면·막대 그림도 교체(나머지 그림 목록은 docs/design-pro-apply.md).
 - 화면 문구에 색 이모지를 쓰지 말 것(egui 글꼴에 없음). 점검 캡처: `--win 1600x960 --item 6 --send --shot`.
 
 ## 2026-11-27 예배송출(worship-caster)에서 가져온 아이디어 → 2.0.7 공개 (2026-11-27)
