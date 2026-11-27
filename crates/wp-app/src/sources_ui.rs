@@ -266,8 +266,8 @@ impl App {
                 for (k, (o, label)) in outs.iter().enumerate() {
                     let cur = it["scenes"][o.as_str()].as_str().unwrap_or("").to_string();
                     let (fid, from) = &follows[k];
-                    let why = if *from == From::Type { tr("종류 기본") } else { tr("출력 기본") };
-                    let follow = format!("{} ({why}: {})", tr("따라감"), scene_name(fid));
+                    // 짧게: '따라감 → 이름' (종류 기본이면 '종류' 를 덧붙임). 자세한 차례는 아래 안내 글
+                    let follow = if *from == From::Type { format!("{} → {} ({})", tr("따라감"), scene_name(fid), tr("종류 기본")) } else { format!("{} → {}", tr("따라감"), scene_name(fid)) };
                     if let Some(v) = row(ui, ("item", o), label, &cur, Some(follow)) {
                         let r = self.core.lock().set_item_scene(*i, o, &v);
                         match r {
@@ -288,7 +288,7 @@ impl App {
                     ui.add_space(4.0);
                     head(ui, &tr_args("{1} 순서 기본", &[&tr(outputs::type_name(ty))]));
                     for (k, (o, label)) in outs.iter().enumerate() {
-                        let follow = format!("{} ({}: {})", tr("따라감"), tr("출력 기본"), scene_name(&base[k]));
+                        let follow = format!("{} → {}", tr("따라감"), scene_name(&base[k]));
                         if let Some(v) = row(ui, ("type", o), label, &types[k], Some(follow)) {
                             let r = self.core.lock().set_type_scene(ty, o, &v);
                             if let Err(e) = r {

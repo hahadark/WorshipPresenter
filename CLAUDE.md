@@ -135,3 +135,10 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - 조작 화면 `scene_ui.rs` (별도 창, 보기 → 화면 구성 편집…, 점검 인자 `--scene-open [full|split|pip|lower|three]`), 뷰어는 `paint::paint_scene`.
 - 웹: render.js `sceneNeedsBox · sceneTemplate · sceneBoxCss · sceneHost`, output.js 칸 상자 · 카메라 칸(`.wp-cam`). 기본 구성은 무대에 바로 그려 2.0.8 과 화소까지 같음.
 - 점검: `node tools/scenes/e2e.js --exe targetdebugwp-app.exe --old-exe <2.0.8 web 을 옆에 둔 exe> --data tmpdata --out tmpscene-e2e --fake-cam`. **이 PC 의 OBS Virtual Camera 는 화면 내용을 내보낼 수 있으니 캡처는 --fake-cam 으로.**
+
+## 2026-11-27 소스 · 화면 구성 로드맵 3단계 — 출력마다 다른 구성 (sources 가지, 아직 릴리스 전)
+
+- 쓰는 법 · 저장 형식 · 확인 · 4단계 전에 정할 것: docs/roadmap-sources.md '3단계 한 것'.
+- 코어 `outputs.rs`: 추가 출력 `extraOutputs[]`(/outputs/out-…, kind main|overlay 로 같은 종류 내장 출력처럼) · 종류별 기본 `typeScenes` · 순서 `scenes` · 소리 `output.audioOutput`. 구성 고르는 차례 = 순서 → 종류 기본 → 출력 기본 → full (`Core::scene_choice_for_deck`).
+- 조작 화면: 인스펙터 소스 탭 '화면 구성'(`sources_ui.rs scene_section`), 출력 설정 창 '출력' 구획 · 추가 출력 창(`outputs_ui.rs`), 도구 → 카메라 동시 열기 시험(`camtest_ui.rs` · 코어 `camtest.rs` · `/helper/camtest`), 구성 편집기 Alt+누름 = 겹친 아래 칸 차례로. 점검 인자 `--open-d camtest`.
+- 점검: `node tools/scenes/e2e-outputs.js --exe target\debug\wp-app.exe --data tmp\data --out tmp\outputs-e2e --fake-cam` (시험 기준: 성경봉독 · 찬양 순서마다 예배당 · 방송이 각자 바뀜, cue-next 로 넘김).

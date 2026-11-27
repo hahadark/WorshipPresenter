@@ -1,4 +1,7 @@
 {
+ "출력 추가 · 소리 내는 출력": "Add outputs · sound output",
+ "로비 · 유아실 · 둘째 방송 같은 출력을 더하고, 출력마다 주소 · 모니터 · 기본 화면 구성 · 영상 소리를 정합니다.": "Add outputs such as a lobby, nursery or second stream, and set each one's address, monitor, default scene and video sound.",
+ "따라감 → {1}": "Follow → {1}",
  "'{1}' 화면에서 Esc 를 눌러 창을 닫았습니다.": "Esc was pressed on the '{1}' screen, so its window was closed.",
  "'{1}' 화면 창이 닫혔습니다.": "The '{1}' screen window closed.",
  "출력 창을 띄우지 못했습니다": "Could not open the output window",

@@ -168,7 +168,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
         // 떠 있는 창 기본 자리: 큐시트·메뉴줄을 가리지 않게 (widgets::float_pos)
         let wid = egui::Id::unique(("wp-float", title));
         crate::widgets::close_on_outside(ctx, wid, &mut keep);
-        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).default_height(if w == Win::Bulletin { (ctx.content_rect().height() - 150.0).clamp(300.0, 760.0) } else { 0.0 }).max_height(if w == Win::Output { (ctx.content_rect().height() - 120.0).max(300.0) } else { f32::INFINITY }).collapsible(false).vscroll(matches!(w, Win::Bulletin | Win::Output)).show(ctx, |ui| match w {
+        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).default_height(match w { Win::Bulletin => (ctx.content_rect().height() - 150.0).clamp(300.0, 760.0), Win::Output => (ctx.content_rect().height() - 160.0).clamp(300.0, 760.0), _ => 0.0 }).min_height(if w == Win::Output { 280.0 } else { 0.0 }).max_height(if w == Win::Output { (ctx.content_rect().height() - 120.0).max(300.0) } else { f32::INFINITY }).collapsible(false).vscroll(matches!(w, Win::Bulletin | Win::Output)).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),
