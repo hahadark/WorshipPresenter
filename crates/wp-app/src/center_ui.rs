@@ -2216,7 +2216,7 @@ fn paint_cg_head(ui: &egui::Ui, hr: Rect, i: usize, it: &Value, n: usize, hovere
     pt.galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.hl);
     x += gw + 8.0;
     let ty = it["type"].as_str().unwrap_or("");
-    icons::paint(ui, Rect::from_center_size(Pos2::new(x + 8.0, hr.center().y), Vec2::splat(16.0)), icons::for_type(ty), theme::type_color(ty).unwrap_or(p.muted));
+    icons::paint(ui, Rect::from_center_size(Pos2::new(x + 8.0, hr.center().y), Vec2::splat(16.0)), icons::for_type(ty), p.muted); // 종류 아이콘은 흐린 글 색 한 가지
     x += 22.0;
     let g = pt.layout_no_wrap(it["title"].as_str().unwrap_or("").to_string(), theme::font(14.0, Weight::SemiBold), p.text);
     let gw = g.size().x;

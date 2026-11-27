@@ -564,7 +564,8 @@ fn row_pro(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         widgets::text_at(ui, Pos2::new(rect.left() + 28.0, cy), Align2::RIGHT_CENTER, &(i + 1).to_string(), 12.5, if strong { Weight::Bold } else { Weight::Regular }, c_no);
         // 종류 아이콘 (작게, 칩 없이)
         let ico = Rect::from_center_size(Pos2::new(rect.left() + 46.0, cy), Vec2::splat(14.0));
-        icons::paint(ui, ico, icons::for_type(ty), if strong { Color32::WHITE } else if st.done { p.muted2 } else { theme::type_ink(ty) });
+        // 종류 아이콘은 흐린 글 색 한 가지 (종류마다 다른 색은 쓰지 않는다 — 2.0.8 뒤 주인 피드백)
+        icons::paint(ui, ico, icons::for_type(ty), if strong { Color32::WHITE } else if st.done { p.muted2 } else { p.muted });
         let x = rect.left() + 58.0;
         let mut right = rect.right() - PRO_MIN_W - PRO_TIME_W - 4.0;
         if hovered || st.selected {
@@ -680,7 +681,7 @@ pub fn row(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         x += NO_W + GAP;
         // 종류 아이콘 칩 (28×28, 둥글기 8, 아이콘 16)
         let ico = Rect::from_min_size(Pos2::new(x, top), Vec2::splat(ICO));
-        let (chip, ink) = if st.air { (p.live, Color32::WHITE) } else { (theme::type_chip_bg(ty, st.selected || st.pv), theme::type_ink(ty)) };
+        let (chip, ink) = if st.air { (p.live, Color32::WHITE) } else { (if st.selected || st.pv { p.hover } else { p.panel2 }, p.muted) };
         pt.rect_filled(ico, crate::theme::cr(crate::theme::Rad::Lg), chip);
         icons::paint(ui, Rect::from_center_size(ico.center(), Vec2::splat(16.0)), icons::for_type(ty), ink);
         x += ICO + GAP;
@@ -829,7 +830,7 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                         ("bible", None) => tr("성경 순서 넣기 (먼저 장절을 검색하면 그 장절로 채움)"),
                         _ => tr(tip),
                     };
-                    let r = add_btn(ui, cw, Some(icons::for_type(ty)), theme::type_ink(ty), &tr(label), false, false, &tip);
+                    let r = add_btn(ui, cw, Some(icons::for_type(ty)), p.muted, &tr(label), false, false, &tip);
                     widgets::mark(&format!("add-{ty}"), r.rect);
                     if r.clicked() {
                         add(app, ui.ctx(), ty, acts);
@@ -854,7 +855,8 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 ("points", "presentation", "설교 포인트 슬라이드…"),
                 ("preservice", "images", "예배 전 화면 자동 만들기…"),
             ] {
-                let ink = if matches!(ty, "points" | "preservice") { p.muted } else { theme::type_ink(ty) };
+                let ink = p.muted;
+                let _ = ty;
                 if ui.add(egui::Button::image_and_text(icons::image(ic, 15.0, ink), tr(label))).clicked() {
                     add(app, ui.ctx(), ty, acts);
                     ui.close();
