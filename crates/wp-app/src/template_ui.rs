@@ -241,7 +241,8 @@ impl TemplateUi {
                         ui.set_min_size(Vec2::new(236.0, h));
                         self.list_column(ui, core, &list, &active, &pc);
                     });
-                    let cw = (ui.available_width() - 372.0 - 14.0).max(360.0);
+                    // 2.1.0 다듬기: 속성 구획 머리가 띠로 바뀌어 캔버스와 붙어 보여서 사이를 12 더 띄운다
+                    let cw = (ui.available_width() - 372.0 - 14.0 - 12.0).max(360.0);
                     ui.allocate_ui_with_layout(Vec2::new(cw, h), egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.set_min_size(Vec2::new(cw, h));
                         if !self.draft.is_null() {

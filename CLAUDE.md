@@ -161,3 +161,18 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - 목록 · 결정 · 용어집 · 전후 점수 · 제안: **docs/ui-polish.md**. 캡처 `node tools/polish/shots.js` (95장, 격리 · `COMPUTERNAME=TEST-PC`), 외부 판정 `tools/polish/judge.py` · `score.py` · `table.py` · 쌍 비교 `compare.py` (키는 OPENROUTER_API_KEY 환경변수만).
 - 창 안 양식은 공용 부품으로: `widgets::form_row` / `form_label`(오른쪽 맞춤 이름표 칸) · `group_head`(구획 머리) · `empty_state` · `status_mark`(✔/✖ 글자 대신 아이콘 — 글꼴에 따라 색 이모지로 나옴). 새 창은 `widgets::float_window` (접기 삼각형 없음 · 화면 안 · 높이 한도).
 - 용어: 예배당 화면 = Sanctuary screen, 화면 구성 = Layout(s) (Scene 은 OBS 장면), 내장 출력 이름 'OBS'. 전문가 테마는 오류 글 주황 · 성공 글 회색 (빨강 = 송출 중만).
+
+## 2026-11-27 2.1.0 공개 (소스 · 화면 구성 1~4단계 + AI 도우미 7개 + 인터페이스 다듬기 1차)
+
+- https://github.com/hahadark/WorshipPresenter/releases/tag/v2.1.0 (Latest, 태그 v2.1.0 = rust 27ff6df). sources 를 rust 에 빨리 감기로 합침. 자산 4개(Setup.exe · Portable.zip · latest.yml · mac-arm64.dmg) 올린 것과 내려받은 것 SHA-256 같음, 공개 latest.yml = 2.1.0.
+- 맥 dmg: mac-build 가지에 2.1.0 커밋을 push → mac CI(run 45966446797, wp-app 244 · wp-core 371) 산출물. 시험 wp-app 245 · wp-core 372, parity 46/48(원래 차이 둘), scenes e2e 8 · outputs 9 · auto 20.
+- 설치판 /S /TEST /D=<임시> 로 2.0.8 · 2.1.0 설치·실행 (실제 설치본 · 레지스트리 그대로 확인). 2.0.8 자료 사본 → 2.1.0 → 다시 2.0.8 로 열어도 설정 키 잃음 없음 · 템플릿 · 큐시트 창 정상. 임시 2.0.8 이 '새 버전 2.1.0' 을 찾음(검증 다운로드 단추까지, 실제 설치는 안 눌러 봄).
+- main: README · 사용 설명서에 '화면 구성' · 'AI 도우미 일곱 가지' 절, 대표 그림 교체(readme-main · readme-scenes · readme-ai).
+- 2.0.8 의 '새 버전' 창은 릴리스 설명 마크다운을 날것으로 보여 준다 (2.1.0 에서도 같은 코드 — 다음 판에서 다룰 것).
+- 다음 판 릴리스는 주인이 말할 때. 순서는 위 '릴리스 순서' 그대로 (rust 가지에서: Cargo.toml 4곳 → 빌드 · 시험 · parity · scenes e2e → tools\release.ps1 → /S /TEST 설치 확인 → push rust · mac-build → gh release create --target rust --draft → 해시 대조 → --draft=false --latest).
+
+## 2026-11-27 인터페이스 다듬기 2차 (rust 가지, 릴리스 전)
+
+- 1차 제안 전부: 전문가 테마 선택색 회색 · 접힌 판 손잡이 · 송출 중 꺼짐 알림 하나(뷰어 띠 + 상태 줄 칸) · 메뉴 괄호 설명 오른쪽 흐린 글 · 새 테마 '전문가 밝게'(pro-light) · 큐시트 관리 · 테마 관리 · 템플릿 편집 · 음성 인식 모델 · 주 화면 크기 맞춤. 세부 · 잰 값 표 · 쌍 비교: docs/ui-polish.md '2차 다듬기'.
+- 새 공용: `widgets::segmented_cells`(칸마다 사각형 → 시험 표시), `theme::lift` · `theme::strong_text`(밝은 전문가 테마에서 흰 글 · 흰 hover 를 쓰지 말 것), `menubar::split_desc`.
+- 전문가 테마(어둡게 · 밝게) 공통 규칙: `p.bevel` 로 가르고, 밝은 쪽은 `p.dark == false`. 노랑(accent · next)은 '다음' 에만, '켜짐 · 고름' 은 sel · text2 회색.
