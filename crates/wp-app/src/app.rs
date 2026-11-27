@@ -1602,7 +1602,7 @@ fn layer_chip(ui: &mut egui::Ui, ly: &Layer) -> egui::Response {
         for s in egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0, border), 4.0, 3.0) { pt.add(s); }
     }
     let mut x = r.left() + 8.0;
-    let icol = if ly.on { p.danger_text } else { p.muted };
+    let icol = if ly.on { p.live_text } else { p.muted }; // 나가는 중 = 송출 빨강 (오류 색 아님)
     crate::icons::paint(ui, egui::Rect::from_min_size(egui::Pos2::new(x, r.center().y - 7.0), Vec2::splat(14.0)), ly.icon, icol);
     x += 14.0 + 5.0;
     let pt = ui.painter();

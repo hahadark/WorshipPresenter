@@ -96,14 +96,13 @@ pub fn show(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
             ui.label(RichText::new(wp_core::i18n::tr_dyn(&s.say)).color(p.text2));
         }
         if !s.steps.is_empty() {
-            ui.separator();
-            ui.label(RichText::new(tr("할 일 (차례대로)")).strong());
+            crate::widgets::group_head(ui, &tr("할 일 (차례대로)"));
             for (k, (on, st)) in s.steps.iter_mut().enumerate() {
                 ui.checkbox(on, format!("{}. {}", k + 1, wp_core::i18n::tr_dyn(&st.label)));
             }
         }
         if !s.dropped.is_empty() {
-            ui.label(RichText::new(tr("뺀 것")).strong());
+            crate::widgets::group_head(ui, &tr("뺀 것"));
             for d in &s.dropped {
                 ui.label(RichText::new(format!("· {}", wp_core::i18n::tr_dyn(d))).small().color(p.muted));
             }

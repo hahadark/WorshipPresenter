@@ -309,7 +309,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
     let mut open = true;
     crate::widgets::float_window(ctx, "preservice", wp_core::i18n::tr("예배 전 화면 만들기"), [640.0, 560.0]).open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(wp_core::i18n::tr("지난주 말씀카드 + 이번 주 QT 첫날 본문 → 자동으로 넘기며 반복하는 슬라이드쇼 순서 (큐시트 맨 앞에)")).small().color(crate::theme::pal().muted));
-        ui.label(RichText::new(wp_core::i18n::tr("말씀카드 그림")).strong());
+        crate::widgets::group_head(ui, &wp_core::i18n::tr("말씀카드 그림"));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut p.card_folder).hint_text(wp_core::i18n::tr("설교쇼츠 편집기에서 카드 PNG 를 저장한 폴더")).desired_width(360.0));
             if ui.button(wp_core::i18n::tr("고르기…")).clicked() {
@@ -333,8 +333,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
             let n = g["files"].as_array().map(|a| a.len()).unwrap_or(0);
             ui.checkbox(&mut p.use_group[i], wp_core::i18n::tr_args("{1}  ({2}장){3}", &[&(g["base"].as_str().unwrap_or("")), &n, &(if i == 0 { wp_core::i18n::tr_s(" · 가장 최근") } else { "" })]));
         }
-        ui.separator();
-        ui.label(RichText::new(wp_core::i18n::tr("말씀 글 (설교쇼츠 '홈페이지 묶음')")).strong());
+        crate::widgets::group_head(ui, &wp_core::i18n::tr("말씀 글 (설교쇼츠 '홈페이지 묶음')"));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut p.bundle_dir).hint_text(wp_core::i18n::tr("…\\홈페이지보내기")).desired_width(360.0));
             if ui.button(wp_core::i18n::tr("고르기…")).clicked() {
@@ -352,8 +351,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
         if let Some(b) = &p.bundle {
             ui.checkbox(&mut p.use_card_line, format!("{} · {}", b["date"].as_str().unwrap_or(""), b["cardLine"].as_str().unwrap_or("")));
         }
-        ui.separator();
-        ui.label(RichText::new(wp_core::i18n::tr("이번 주 QT 첫날 본문")).strong());
+        crate::widgets::group_head(ui, &wp_core::i18n::tr("이번 주 QT 첫날 본문"));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::multiline(&mut p.qt_text).desired_rows(2).hint_text(wp_core::i18n::tr("마 6:9-13, 또는 QT 자료(JSON · '1일째 · 제목 (장절)')")).desired_width(420.0));
             if ui.button(wp_core::i18n::tr("본문 찾기")).clicked() {
@@ -469,7 +467,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                 ui.selectable_value(&mut h.service, i, format!("{} {} ({}순서)", v["name"].as_str().unwrap_or(""), v["time"].as_str().unwrap_or(""), v["items"].as_array().map(|a| a.len()).unwrap_or(0)));
             }
         });
-        ui.label(RichText::new(wp_core::i18n::tr("광고 (교회 소식 순서에 넣을 것)")).strong());
+        crate::widgets::group_head(ui, &wp_core::i18n::tr("광고 (교회 소식 순서에 넣을 것)"));
         egui::ScrollArea::vertical().id_salt("home-news").max_height(160.0).show(ui, |ui| {
             for (i, n) in b["news"].as_array().cloned().unwrap_or_default().iter().enumerate() {
                 if let Some(v) = h.news.get_mut(i) {

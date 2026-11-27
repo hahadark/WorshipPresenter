@@ -142,8 +142,7 @@ pub fn search(s: &Value, q: &str) -> Vec<(String, String, String)> {
 impl SettingsUi {
     pub(super) fn keys_page(&mut self, ui: &mut egui::Ui, core: &Shared, v: &View) {
         let p = crate::theme::pal();
-        ui.separator();
-        ui.label(RichText::new(tr("기능별 키")).strong());
+        crate::widgets::group_head(ui, &tr("기능별 키"));
         ui.label(RichText::new(tr("키 칸에 'F6' · 'Ctrl+Shift+F' · 'Alt+ArrowLeft' 처럼 쓰고 Enter 를 누르면 바로 적용됩니다. 칸을 비우면 그 단축키를 끕니다.")).small().color(p.muted));
         // 문제 요약
         let problems = super::shortcut_conflicts(&v.s);

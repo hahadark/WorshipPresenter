@@ -147,8 +147,10 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
         let r = &c.settings.get()["remote"];
         (wp_core::remote::status(&c), r["enabled"].as_bool().unwrap_or(false), c.port)
     };
-    ui.label(wp_core::i18n::tr("같은 Wi-Fi 의 휴대폰·태블릿 브라우저에서 다음·이전·숨김·순서 송출을 합니다."));
-    if ui.checkbox(&mut en, wp_core::i18n::tr("휴대폰 리모컨 켜기")).changed() {
+    use crate::widgets::{form_row, group_head};
+    ui.add(egui::Label::new(RichText::new(wp_core::i18n::tr("같은 Wi-Fi 의 휴대폰·태블릿 브라우저에서 다음·이전·숨김·순서 송출을 합니다.")).small().color(crate::theme::pal().muted)).wrap());
+    ui.add_space(4.0);
+    if form_row(ui, "", |ui| ui.checkbox(&mut en, wp_core::i18n::tr("휴대폰 리모컨 켜기"))).changed() {
         changed(core, |d| {
             d["remote"]["enabled"] = json!(en);
             if d["remote"]["pin"].as_str().unwrap_or("").is_empty() {
@@ -156,14 +158,13 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
             }
         });
     }
-    ui.horizontal(|ui| {
-        ui.label("PIN");
+    form_row(ui, "PIN", |ui| ui.horizontal(|ui| {
         ui.label(RichText::new(st["pin"].as_str().unwrap_or("-")).strong().size(20.0).monospace());
         if ui.button(wp_core::i18n::tr("새 PIN")).clicked() {
             changed(core, |d| d["remote"]["pin"] = json!(wp_core::remote::new_pin()));
         }
-        ui.separator();
-        ui.label(wp_core::i18n::tr("포트"));
+    }));
+    form_row(ui, &wp_core::i18n::tr("포트"), |ui| {
         let mut p = st["port"].as_u64().unwrap_or(37540).to_string();
         if ui.add(egui::TextEdit::singleline(&mut p).desired_width(78.0)).lost_focus() {
             if let Ok(n) = p.trim().parse::<u16>() {
@@ -197,8 +198,8 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
     } else if en {
         ui.label(RichText::new(wp_core::i18n::tr("서버를 켜는 중…")).small());
     }
-    ui.separator();
-    ui.label(RichText::new(wp_core::i18n::tr("OBS 도킹 (이 PC 안에서 PIN 없이): OBS → 도킹 → 사용자 정의 브라우저 도킹에 넣기")).small());
+    group_head(ui, &wp_core::i18n::tr("OBS 도킹"));
+    ui.label(RichText::new(wp_core::i18n::tr("OBS 도킹 (이 PC 안에서 PIN 없이): OBS → 도킹 → 사용자 정의 브라우저 도킹에 넣기")).small().color(crate::theme::pal().muted));
     copy_row(ui, "", &format!("http://127.0.0.1:{port}/dock"));
 }
 
@@ -207,15 +208,16 @@ fn webedit(ui: &mut egui::Ui, core: &Shared) {
     let tr = wp_core::i18n::tr;
     let st = wp_core::webedit::status(&core.lock());
     let mut en = st["enabled"].as_bool().unwrap_or(false);
-    ui.label(tr("다른 컴퓨터(찬양팀 · 방송실)의 브라우저에서 큐시트를 고칩니다: 순서 차례 · 제목 · 가사 · 장절 · 공지 글 · 메모. 저장하면 이 화면에도 바로 들어갑니다."));
-    let r = ui.checkbox(&mut en, tr("웹 편집기 켜기"));
+    use crate::widgets::form_row;
+    ui.add(egui::Label::new(RichText::new(tr("다른 컴퓨터(찬양팀 · 방송실)의 브라우저에서 큐시트를 고칩니다: 순서 차례 · 제목 · 가사 · 장절 · 공지 글 · 메모. 저장하면 이 화면에도 바로 들어갑니다.")).small().color(crate::theme::pal().muted)).wrap());
+    ui.add_space(4.0);
+    let r = form_row(ui, "", |ui| ui.checkbox(&mut en, tr("웹 편집기 켜기")));
     crate::widgets::mark("we-on", r.rect);
     if r.changed() {
         changed(core, |d| d["webEditor"]["enabled"] = json!(en));
     }
     let mut pin = st["pin"].as_str().unwrap_or("").to_string();
-    ui.horizontal(|ui| {
-        ui.label("PIN");
+    form_row(ui, "PIN", |ui| ui.horizontal(|ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut pin).desired_width(110.0).font(egui::TextStyle::Monospace).hint_text(tr("없음")));
         crate::widgets::mark("we-pin", r.rect);
         if r.changed() {
@@ -228,8 +230,8 @@ fn webedit(ui: &mut egui::Ui, core: &Shared) {
         if !pin.is_empty() && ui.button(tr("PIN 지우기")).clicked() {
             changed(core, |d| d["webEditor"]["pin"] = json!(""));
         }
-        ui.separator();
-        ui.label(tr("포트"));
+    }));
+    form_row(ui, &tr("포트"), |ui| {
         let mut p = st["port"].as_u64().unwrap_or(wp_core::webedit::DEFAULT_PORT as u64).to_string();
         if ui.add(egui::TextEdit::singleline(&mut p).desired_width(70.0)).lost_focus() {
             if let Ok(n) = p.trim().parse::<u16>() {
@@ -301,11 +303,11 @@ fn devices(ui: &mut egui::Ui, core: &Shared) {
         let c = core.lock();
         (c.settings.get()["companion"].clone(), c.settings.get()["devices"].clone())
     };
-    ui.label(RichText::new(wp_core::i18n::tr("Companion (Bitfocus Companion 3 이상)")).strong());
-    ui.horizontal(|ui| {
+    use crate::widgets::{form_row, group_head};
+    group_head(ui, &wp_core::i18n::tr("Companion (Bitfocus Companion 3 이상)"));
+    form_row(ui, &wp_core::i18n::tr("주소"), |ui| ui.horizontal(|ui| {
         let mut host = comp["host"].as_str().unwrap_or("127.0.0.1").to_string();
         let mut port = comp["port"].as_u64().unwrap_or(8000).to_string();
-        ui.label(wp_core::i18n::tr("주소"));
         if ui.add(egui::TextEdit::singleline(&mut host).desired_width(130.0)).changed() {
             changed(core, |d| d["companion"]["host"] = json!(host.trim()));
         }
@@ -315,12 +317,11 @@ fn devices(ui: &mut egui::Ui, core: &Shared) {
                 changed(core, |d| d["companion"]["port"] = json!(n));
             }
         }
-    });
+    }));
     {
         let mut s = ST.lock();
-        ui.horizontal(|ui| {
+        form_row(ui, &wp_core::i18n::tr("단추 자리 (페이지/줄/칸)"), |ui| ui.horizontal(|ui| {
             // '1/0/2' 같은 값을 쉬운 말로 (휴리스틱 평가 12번)
-            ui.label(wp_core::i18n::tr("단추 자리 (페이지/줄/칸)"));
             ui.add(egui::TextEdit::singleline(&mut s.comp_loc).hint_text("1/0/2, 2/1/0").desired_width(150.0))
                 .on_hover_text(wp_core::i18n::tr("Companion 화면의 단추 자리를 '페이지/줄/칸' 숫자로 씁니다. 예: 1/0/2 = 1페이지 맨 윗줄(0) 세 번째 칸(2). 여러 개는 쉼표로: 1/0/2, 1/1/0"));
             let ok = !wp_core::companion::parse_locations(&s.comp_loc).is_empty();
@@ -329,10 +330,9 @@ fn devices(ui: &mut egui::Ui, core: &Shared) {
                 drop(s);
                 run_bg(move || wp_core::companion::press(&c2, &loc));
             }
-        });
+        }));
     }
-    ui.separator();
-    ui.label(RichText::new(wp_core::i18n::tr("장비 직접 (Companion 없이)")).strong());
+    group_head(ui, &wp_core::i18n::tr("장비 직접 (Companion 없이)"));
     let mut del = None;
     let list = devs.as_array().cloned().unwrap_or_default();
     for d in &list {

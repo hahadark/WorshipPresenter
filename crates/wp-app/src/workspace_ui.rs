@@ -43,8 +43,8 @@ impl App {
         let mut open = self.workspace.open;
         let wid = egui::Id::unique("wp-float-workspace");
         crate::widgets::close_on_outside(ctx, wid, &mut open);
-        egui::Window::new(tr("배치")).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 360.0)).open(&mut open).resizable(false).show(ctx, |ui| {
-            ui.label(tr("판을 접고 펴서 화면을 넓게 씁니다. 위 막대 양 끝의 단추와 같습니다."));
+        egui::Window::new(tr("배치")).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 360.0)).open(&mut open).resizable(false).collapsible(false).show(ctx, |ui| {
+            crate::widgets::muted(ui, &tr("판을 접고 펴서 화면을 넓게 씁니다. 위 막대 양 끝의 단추와 같습니다."));
             ui.add_space(6.0);
             let mut side = self.pro_side_visible();
             if ui.checkbox(&mut side, tr("왼쪽 큐시트 판 (순서 · 성경 책 · 라이브러리)")).changed() {
@@ -63,8 +63,6 @@ impl App {
                 self.core.lock().settings.update(|s| s["rsProLayout"] = serde_json::json!({}));
                 // 판 너비는 egui 가 기억하므로 이번 실행에서는 그대로, 다음 실행부터 처음 너비
             }
-            ui.add_space(8.0);
-            crate::widgets::muted(ui, &tr("예전의 끌어서 패널을 옮기던 작업공간은 고정 칸으로 바뀌었습니다. 저장해 둔 옛 배치는 지우지 않고 남겨 둡니다."));
         });
         self.workspace.open = open;
     }

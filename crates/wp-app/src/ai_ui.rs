@@ -195,7 +195,7 @@ fn settings_win(app: &mut App, ctx: &egui::Context) {
         let cfg = core.lock().ai_cfg();
         ui.label(RichText::new(tr("주보 → 큐시트 · PPT 나누기 · 설교 포인트 · 예배 전 점검 · 가사 정리 · 자막 번역 · 예배 후 정리 · 말로 시키기가 이 키를 함께 씁니다. 키가 없어도 규칙으로 하는 기능은 모두 됩니다.")).small().color(crate::theme::pal().muted));
         ui.add_space(4.0);
-        ui.label(RichText::new(tr("키")).strong());
+        crate::widgets::group_head(ui, &tr("키"));
         ui.horizontal_wrapped(|ui| {
             if cfg.has_key() {
                 ui.label(RichText::new(tr(if cfg!(target_os = "macos") { "키: 저장됨 (맥 키체인에 보관)" } else { "키: 저장됨 (Windows 보호 기능으로 암호화)" })).small().color(crate::theme::pal().ok_text));
@@ -211,11 +211,11 @@ fn settings_win(app: &mut App, ctx: &egui::Context) {
             }
         });
         ui.add_space(4.0);
-        ui.label(RichText::new(tr("제공자 (OpenAI 호환 주소)")).strong());
+        crate::widgets::group_head(ui, &tr("제공자 (OpenAI 호환 주소)"));
         ui.horizontal_wrapped(|ui| {
             for (name, ep, model) in wp_core::aihelp::PROVIDERS {
                 let on = cfg.endpoint() == ep;
-                if ui.add(Btn::new(name).selected(on).tooltip(ep)).clicked() {
+                if ui.add(Btn::new(tr(name)).selected(on).tooltip(ep)).clicked() {
                     s.endpoint = ep.to_string();
                     s.model = model.to_string();
                     core.lock().set_ai(None, Some(model), Some(if ep == wp_core::bulletin::DEFAULT_ENDPOINT { "" } else { ep }));
@@ -236,8 +236,7 @@ fn settings_win(app: &mut App, ctx: &egui::Context) {
             core.lock().notify(tr("AI 설정을 저장했습니다."), "ok");
         }
         ui.label(RichText::new(tr_args("지금: {1} · {2}", &[&cfg.host(), &cfg.model()])).small());
-        ui.separator();
-        ui.label(RichText::new(tr("글을 밖으로 보내도 된다고 동의한 기능")).strong());
+        crate::widgets::group_head(ui, &tr("글을 밖으로 보내도 된다고 동의한 기능"));
         for (f, name, what) in wp_core::aihelp::FEATURES {
             let mut on = core.lock().ai_consented(f);
             if ui.checkbox(&mut on, tr(name)).on_hover_text(tr_args("보내는 것: {1}", &[&tr(what)])).changed() {

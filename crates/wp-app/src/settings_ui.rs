@@ -267,7 +267,7 @@ impl SettingsUi {
         let p = crate::theme::pal();
         ui.horizontal(|ui| {
             crate::icons::show(ui, "search", 16.0, p.muted);
-            let r = ui.add(egui::TextEdit::singleline(&mut self.query).hint_text(tr("설정 찾기 — 이름 · 설명 · 관련 낱말 (예: 글자 크기, 모니터, OBS, F6)")).desired_width(330.0));
+            let r = ui.add(egui::TextEdit::singleline(&mut self.query).hint_text(tr("설정 찾기 (예: 글자 크기, 모니터, F6)")).desired_width(330.0));
             mark("set-search", r.rect);
             if !self.query.is_empty() && ui.add(Btn::new(tr("지우기")).size(Size::Sm).tooltip(tr("검색을 지우고 분류로 돌아갑니다"))).clicked() {
                 self.query.clear();
@@ -364,7 +364,7 @@ impl SettingsUi {
         ui.label(RichText::new(tr(cat.note())).color(p.muted));
         ui.add_space(6.0);
         if cat == Cat::Obs {
-            ui.label(RichText::new(tr("OBS 브라우저 소스 주소")).strong());
+            crate::widgets::group_head(ui, &tr("OBS 브라우저 소스 주소"));
         }
         let mut advanced = vec![];
         for it in ITEMS.iter().filter(|i| i.cat == cat) {

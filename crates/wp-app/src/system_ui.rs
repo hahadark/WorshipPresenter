@@ -155,8 +155,7 @@ impl App {
             if let Some(e) = info["error"].as_str().filter(|x| !x.is_empty()) {
                 ui.label(RichText::new(e).color(crate::theme::pal().danger_text));
             }
-            ui.separator();
-            ui.label(RichText::new(wp_core::i18n::tr("백업 (하루 한 번 자동 · 10일치 보관)")).strong());
+            crate::widgets::group_head(ui, &wp_core::i18n::tr("백업 (하루 한 번 자동 · 10일치 보관)"));
             let restore_busy = ST.lock().restore_busy;
             if restore_busy {
                 ui.label(RichText::new("되돌리기 예약 파일을 복사하고 있습니다. 끝날 때까지 기다려 주세요.").color(crate::theme::pal().warn));
@@ -209,8 +208,7 @@ impl App {
                 if list.is_empty() { ui.label(RichText::new(wp_core::i18n::tr("아직 백업이 없습니다.")).color(crate::theme::pal().muted)); }
             });
             // 다른 컴퓨터로 옮기기: 자료 전체를 파일 하나로 (wp_core::movedata)
-            ui.separator();
-            ui.label(RichText::new(wp_core::i18n::tr("다른 컴퓨터로 옮기기")).strong());
+            crate::widgets::group_head(ui, &wp_core::i18n::tr("다른 컴퓨터로 옮기기"));
             ui.label(RichText::new(wp_core::i18n::tr("성경·찬양·큐시트·설정·올린 그림을 파일 하나로 저장합니다. 새 컴퓨터에서 '옮기기 파일 가져오기' 뒤 프로그램을 다시 시작하세요.")).small());
             ui.horizontal(|ui| {
                 let b = ui.add_enabled(!restore_busy, egui::Button::new(wp_core::i18n::tr("옮기기 파일 만들기…")));

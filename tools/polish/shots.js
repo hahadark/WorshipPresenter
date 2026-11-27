@@ -77,7 +77,7 @@ function run(s) {
     for (const [k, v] of Object.entries(s.set)) setPath(st, k, v);
     fs.writeFileSync(sp, JSON.stringify(st, null, 1));
     const file = path.join(out, s.id + '.png');
-    const p = spawn(exe, ['--data', d, ...s.args, '--shot', file], { env: { ...process.env, WP_LEGACY_DATA: legacy, ...s.env }, stdio: 'ignore' });
+    const p = spawn(exe, ['--data', d, ...s.args, '--shot', file], { env: { ...process.env, COMPUTERNAME: 'TEST-PC', WP_LEGACY_DATA: legacy, ...s.env }, stdio: 'ignore' });
     const t = setTimeout(() => { try { p.kill(); } catch {} }, 45000);
     p.on('exit', code => { clearTimeout(t); console.log(fs.existsSync(file) ? 'ok  ' : 'MISS', s.id, code); res(); });
   });

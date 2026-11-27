@@ -446,7 +446,7 @@ fn api_tab(ui: &mut egui::Ui, core: &Shared, s: &mut St, running: bool) {
         });
     }
     ui.add_space(2.0);
-    ui.label(RichText::new(tr("모델")).strong());
+    crate::widgets::group_head(ui, &tr("모델"));
     let cur = st["model"].as_str().unwrap_or("").to_string();
     ui.horizontal_wrapped(|ui| {
         for (id, name) in bulletin::RECOMMENDED {

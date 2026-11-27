@@ -872,8 +872,7 @@ impl App {
                 self.tb.note = err(c.save_macro(&m));
             }
             // 예약 실행: 요일·시각에 매크로 (시스템 시간대)
-            ui.separator();
-            ui.label(RichText::new(wp_core::i18n::tr("예약 실행 (요일·시각이 되면 매크로)")).strong());
+            crate::widgets::group_head(ui, &wp_core::i18n::tr("예약 실행 (요일·시각이 되면 매크로)"));
             let sched = self.core.lock().settings.get()["schedule"].as_array().cloned().unwrap_or_default();
             for s in &sched {
                 let mut e = s.clone();

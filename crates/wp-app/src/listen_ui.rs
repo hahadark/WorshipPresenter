@@ -341,7 +341,7 @@ fn captions_ui(app: &App, ui: &mut egui::Ui) {
     let mut only_en = s["stt"]["captions"]["onlyEn"].as_bool().unwrap_or(false);
     let mut to_main = outs.iter().any(|o| o == "main");
     let mut to_obs = outs.iter().any(|o| o == "overlay");
-    ui.label(RichText::new(tr("방송 실시간 자막")).strong());
+    crate::widgets::group_head(ui, &tr("방송 실시간 자막"));
     ui.label(RichText::new(tr("받아 적은 글을 방송 출력(OBS 자막 /outputs/overlay) 아래쪽에 띄웁니다. 예배당 화면에는 기본으로 나가지 않습니다. 말이 8초 멈추면 내려갑니다.")).small().color(p.muted));
     ui.horizontal_wrapped(|ui| {
         if ui.checkbox(&mut on, tr("자막 켜기")).changed() {
@@ -468,7 +468,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 }
             } else if s.ask_download {
                 egui::Frame::group(ui.style()).show(ui, |ui| {
-                    ui.label(RichText::new(tr("받을 파일")).strong());
+                    crate::widgets::group_head(ui, &tr("받을 파일"));
                     let mut list = vec![];
                     if !has_engine && stt::CAN_DOWNLOAD_ENGINE {
                         list.push(&stt::ENGINE_WIN);
@@ -552,7 +552,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         captions_ui(app, ui);
         ui.separator();
         let s = ST.lock();
-        ui.label(RichText::new(tr("찾은 구절")).strong());
+        crate::widgets::group_head(ui, &tr("찾은 구절"));
         if s.found.is_empty() {
             ui.label(RichText::new(tr("아직 없습니다.")).small().color(p.muted));
         }
@@ -570,7 +570,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             }
         });
         ui.add_space(4.0);
-        ui.label(RichText::new(tr("받아 적은 글")).strong());
+        crate::widgets::group_head(ui, &tr("받아 적은 글"));
         egui::ScrollArea::vertical().id_salt("ls-lines").max_height(180.0).stick_to_bottom(true).show(ui, |ui| {
             for (hms, t) in &s.lines {
                 ui.horizontal_wrapped(|ui| {

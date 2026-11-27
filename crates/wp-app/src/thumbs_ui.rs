@@ -186,7 +186,7 @@ impl App {
                             if let Some(op) = crate::ctx_ui::lib_menu(&resp, &name, true, &mops) {
                                 act = Some((op, (*f).clone()));
                             }
-                            ui.add(egui::Label::new(RichText::new(if on { format!("● {name}") } else { name.clone() }).small().color(if on { p.danger_text } else { p.text2 })).truncate()).on_hover_text(f["path"].as_str().unwrap_or(""));
+                            ui.add(egui::Label::new(RichText::new(if on { format!("● {name}") } else { name.clone() }).small().color(if on { p.live_text } else { p.text2 })).truncate()).on_hover_text(f["path"].as_str().unwrap_or(""));
                             ui.horizontal(|ui| {
                                 if ui.small_button(wp_core::i18n::tr("순서로")).on_hover_text(wp_core::i18n::tr("고른 순서 다음에 넣기 (두 번 눌러도)")).clicked() {
                                     act = Some(("cue", (*f).clone()));

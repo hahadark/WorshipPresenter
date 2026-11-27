@@ -196,8 +196,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 }
             }
         });
-        ui.separator();
-        ui.label(RichText::new(tr("녹음 파일로 설교 요약")).strong());
+        crate::widgets::group_head(ui, &tr("녹음 파일로 설교 요약"));
         ui.label(RichText::new(tr("녹음(wav · mp3 · m4a · flac)을 이 PC 안에서 글로 바꾼 뒤, 그 글만 AI 로 요약합니다. 음성은 PC 밖으로 나가지 않습니다.")).small().color(p.muted));
         ui.horizontal_wrapped(|ui| {
             if let Some(f) = s.rec_busy {
@@ -223,7 +222,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             });
         }
         if !s.summary.is_empty() {
-            ui.label(RichText::new(tr("요약")).strong());
+            crate::widgets::group_head(ui, &tr("요약"));
             ui.add(egui::TextEdit::multiline(&mut s.summary).desired_rows(6).desired_width(f32::INFINITY));
             if ui.add(Btn::new(tr("요약 복사")).icon("copy").size(Size::Sm)).clicked() {
                 crate::widgets::copy_notice(ui.ctx(), s.summary.clone(), tr("복사했습니다."));

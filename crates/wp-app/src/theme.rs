@@ -288,8 +288,8 @@ fn build_pro() -> Palette {
         "#2c2c2e", // menubar (Windows 제목 아래 메뉴 줄)
         "#f0c419", // hl
         "#f0c419", // gold
-        "#7fd49b", // ok-text
-        "#ff8a82", // danger-text
+        "#d6d6da", // ok-text (전문가용: 초록 대신 밝은 회색 — 색은 빨강 = 송출 중 · 노랑 = 다음 둘만, 성공은 체크 아이콘으로)
+        "#f39a5a", // danger-text (전문가용: 오류는 주황 — 빨강은 송출 중에만)
         "#f0c419", // accent (노랑 하나)
         "#b8920f", // accent-strong
         "#f0c419", // pv = 다음 (노랑)
