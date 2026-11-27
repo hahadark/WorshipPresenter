@@ -319,43 +319,6 @@ impl App {
 
 
 impl App {
-    /// 바로 송출 중일 때 머리 줄 아래에 계속 보이는 주황 띠 (평가 7번)
-    pub(super) fn direct_band(&mut self, ui: &mut Ui, acts: &mut Vec<Act>) {
-        let p = pal();
-        if p.bevel {
-            // (나): 22px 한 줄 띠 (상태 표시창에도 '바로 송출' 이라고 보인다)
-            ui.horizontal(|ui| {
-                ui.set_height(20.0);
-                ui.spacing_mut().item_spacing.x = 6.0;
-                icons::show(ui, "radio", 13.0, p.warn);
-                ui.add(egui::Label::new(theme::rich(tr("바로 송출 중 — 누르는 즉시 회중 화면에 나갑니다"), 11.5, Weight::SemiBold, p.text)).truncate().selectable(false));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let b = ui.add(Btn::new(tr("미리보기로 돌아가기")).size(Size::Sm).height(18.0).tooltip(tr("클릭하면 미리보기에 놓고 송출 단추로 내보내는 방식으로")));
-                    widgets::mark("direct-band-back", b.rect);
-                    if b.clicked() {
-                        acts.push(Act::TogglePreviewMode);
-                    }
-                });
-            });
-            return;
-        }
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            icons::show(ui, "radio", 16.0, p.warn);
-            ui.add(egui::Label::new(theme::rich(tr("클릭하면 바로 송출됩니다"), 13.0, Weight::Bold, p.text)).selectable(false));
-            ui.add(egui::Label::new(theme::rich(tr("큐시트 순서·본문·슬라이드를 누르는 즉시 회중 화면에 나갑니다"), 13.0, Weight::Regular, p.text2)).truncate().selectable(false));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let b = ui.add(Btn::new(tr("미리보기로 돌아가기")).size(Size::Sm).height(24.0).tooltip(tr("클릭하면 미리보기에 놓고 송출 단추로 내보내는 방식으로")));
-                widgets::mark("direct-band-back", b.rect);
-                if b.clicked() {
-                    acts.push(Act::TogglePreviewMode);
-                }
-            });
-        });
-    }
-}
-
-impl App {
     /// (나) 상태 줄 안의 알림: 종류 색 점 · 글(누르면 닫힘) · [동작 단추] · ✕. 떠 있으면 Some(바탕색)을 먼저 알려 준다
     pub(crate) fn toast_inline(&self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) -> bool {
         let Some((msg, kind, at)) = s.toast.as_ref() else { return false };

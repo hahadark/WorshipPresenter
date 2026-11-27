@@ -533,7 +533,10 @@ impl App {
                     c.settings.update(|d| d["previewMode"] = json!(on));
                     // 원본 control.js:491 — 켜면 미리보기 패널을 열고, 끄면 닫는다
                     sync_preview_pane(&mut self.workspace.state, on);
-                    c.notify(if on { wp_core::i18n::tr("미리보기를 켰습니다. 고른 본문은 미리보기에 놓이고 F9 로 송출합니다.") } else { wp_core::i18n::tr("미리보기를 껐습니다. 이제 클릭한 본문·순서·슬라이드가 바로 송출됩니다.") }, if on { "ok" } else { "info" });
+                    // 끌 때는 알리지 않는다 — 아래 상태 줄의 [미리보기 | 바로 송출] 이 조용히 보여 준다 (2026-11-27 주인: 경고하지 말 것)
+                    if on {
+                        c.notify(wp_core::i18n::tr("미리보기를 켰습니다. 고른 본문은 미리보기에 놓이고 F9 로 송출합니다."), "ok");
+                    }
                 }
                 Act::OutputToggle => {
                     let port = c.port;
@@ -1919,13 +1922,6 @@ impl App {
             });
             // 알림 띠가 놓일 높이 (컨트롤 막대 바로 아래)
             ctx.data_mut(|d| d.insert_temp(egui::Id::new("pro-top-y"), tr_.response.rect.bottom()));
-        }
-        if !s.preview_mode {
-            // 바로 송출 중: 주황 띠를 계속 보인다 (조작 실수 막기)
-            let p = crate::theme::pal();
-            egui::Panel::top("direct-band").frame(egui::Frame::new().fill(p.warn_bg).stroke(egui::Stroke::new(1.0, p.warn)).inner_margin(egui::Margin::symmetric(12, if p.bevel { 1 } else { 4 }))).show(ui, |ui| {
-                self.direct_band(ui, &mut acts);
-            });
         }
         // 아래 상태 줄: 미리보기/바로 송출 · 출력 연결 상태 · 영상·음악 조작 (예전 송출 줄의 단추는 위 컨트롤 막대로)
         {

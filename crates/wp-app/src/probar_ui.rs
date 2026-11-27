@@ -187,7 +187,6 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) {
     let ll = p.lcd_label;
     let live = info.live.clone();
     let direct = info.direct;
-    let warn_c = p.warn;
     let lf = label_f.clone();
     cols.push((rest, Box::new(move |pt: &egui::Painter, r: Rect| {
         let r = r.shrink2(Vec2::new(12.0, 0.0));
@@ -196,7 +195,7 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) {
             Some((t, k, sec)) => {
                 let lr = pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, format!("{} · {:02}:{:02}", tr("송출 중"), sec / 60, sec % 60), lf.clone(), live_c);
                 if direct {
-                    pt.text(Pos2::new(lr.right() + 6.0, r.top() + 6.0), Align2::LEFT_TOP, tr("바로 송출"), lf.clone(), warn_c);
+                    pt.text(Pos2::new(lr.right() + 6.0, r.top() + 6.0), Align2::LEFT_TOP, tr("바로 송출"), lf.clone(), ll); // 흐린 글로만 (경고색 없음, 2026-11-27)
                 }
                 let g = pt.layout_no_wrap(t.clone(), theme::font(13.0, Weight::Bold), lt);
                 let gw = g.size().x;
@@ -208,7 +207,7 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) {
             None => {
                 let lr = pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, tr("송출 중"), lf.clone(), ll);
                 if direct {
-                    pt.text(Pos2::new(lr.right() + 6.0, r.top() + 6.0), Align2::LEFT_TOP, tr("바로 송출"), lf.clone(), warn_c);
+                    pt.text(Pos2::new(lr.right() + 6.0, r.top() + 6.0), Align2::LEFT_TOP, tr("바로 송출"), lf.clone(), ll);
                 }
                 pt.text(Pos2::new(r.left(), r.bottom() - 6.0), Align2::LEFT_BOTTOM, tr("없음"), theme::font(13.0, Weight::Bold), ll);
             }
