@@ -177,7 +177,7 @@ impl App {
     fn lib_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.lib;
         if self.tb.lib_kind.is_empty() { self.tb.lib_kind = "image".into(); }
-        crate::widgets::float_window(ctx, "lib", wp_core::i18n::tr("라이브러리 (그림·영상·음악)"), [520.0, 520.0]).open(&mut open).default_height(520.0f32.min(ctx.content_rect().height() - 160.0)).show(ctx, |ui|  self.library_panel(ui));
+        crate::widgets::float_window(ctx, "lib", wp_core::i18n::tr("라이브러리 (그림·영상·음악)"), [520.0, 520.0]).open(&mut open).show(ctx, |ui| { ui.set_max_height(520.0f32.min(ctx.content_rect().height() - 200.0)); self.library_panel(ui) }); // 격자가 남은 높이를 다 쓰므로 창 높이를 묶음
         self.tb.lib = open;
     }
 
