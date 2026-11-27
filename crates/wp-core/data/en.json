@@ -1,4 +1,6 @@
 {
+ "자료 파일이 손상되어 {1} 백업으로 되돌렸습니다. 그 뒤에 고친 내용은 빠졌을 수 있습니다. 손상된 원본은 {2} 에 남겨 두었습니다.": "The data file was damaged, so it was restored from the {1} backup. Changes made after that may be missing. The damaged original was kept in {2}.",
+ "자료 파일이 손상된 것 같아 백업하지 않았습니다. 파일 → 동기화 · 백업에서 지난 백업으로 되돌리세요.": "The data file seems damaged, so no backup was made. Restore an earlier backup from File → Sync · Backup.",
  "파일 고르기… (OpenLP · ChordPro · ProPresenter 6 · PPT · txt · 콘티 json)": "Choose files… (OpenLP · ChordPro · ProPresenter 6 · PPT · txt · set-list json)",
  "내보낸 큐시트 파일(.json) · 찬양 콘티 스튜디오 콘티(.worship) · 다른 콘티 프로그램의 곡 목록(.json)을 가져옵니다 (여러 개 고를 수 있음)": "Imports exported cue sheets (.json), Worship Conti Studio set lists (.worship) or song lists from other set-list programs (.json) (you can pick several)",
  "이 JSON 에서 가사가 있는 곡을 찾지 못했습니다.": "No songs with lyrics were found in this JSON.",

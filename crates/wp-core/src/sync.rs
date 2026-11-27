@@ -384,6 +384,9 @@ pub fn install(core: &Shared) {
                 if !has_today(&dir) {
                     if let Err(e) = backup_files(&dir) {
                         log::warn!("자동 백업 실패: {e}");
+                        if e.to_string().contains("손상") {
+                            core.lock().notify(crate::i18n::tr(&e.to_string()), "warn");
+                        }
                     }
                 }
             }
@@ -544,6 +547,99 @@ mod tests {
         assert!(apply_pending_restore(&root.join("pc2")));
         assert!(root.join("pc2").join("bible.pre-restore.db").exists());
     }
+
+    #[test]
+    fn damaged_db_recovers_from_newest_good_backup_and_keeps_original() {
+        let dir = std::env::temp_dir().join(format!("wp-recover-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
+        // 백업이 있는 정상 자료
+        let mut c = core(&dir);
+        c.new_cue("백업 전 큐시트").unwrap();
+        c.backup_now().unwrap();
+        drop(c);
+        assert!(db_is_healthy(&dir.join("bible.db")).unwrap());
+        // 더 새 날짜에 망가진 백업도 하나 → 건너뛰어야 한다
+        std::fs::write(dir.join("backups").join("WorshipCue-2999-01-01.db"), b"broken backup").unwrap();
+        // 자료 파일이 망가짐
+        let junk = b"SQLite format 3  but garbage after the header ......".repeat(50);
+        std::fs::write(dir.join("bible.db"), &junk).unwrap();
+        assert!(!db_is_healthy(&dir.join("bible.db")).unwrap());
+        assert!(backup_files(&dir).unwrap_err().to_string().contains("손상"), "손상된 자료는 백업하지 않는다");
+        let c = core(&dir);
+        assert!(c.store.list_cues().iter().any(|x| x.name == "백업 전 큐시트"), "백업으로 켜졌다");
+        assert!(c.toast.as_ref().is_some_and(|t| t.0.contains("손상")), "알린다");
+        drop(c);
+        let kept: Vec<_> = std::fs::read_dir(dir.join("damaged")).unwrap().flatten().collect();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(std::fs::read(kept[0].path().join("bible.db")).unwrap(), junk, "손상된 원본은 그대로 남긴다");
+        // 멀쩡한 자료는 복구하지 않는다
+        assert!(recover_from_backup(&dir).is_err());
+        // 멀쩡한 백업이 없으면 바꾸지 않는다
+        let d2 = dir.join("nobackup");
+        std::fs::create_dir_all(&d2).unwrap();
+        std::fs::write(d2.join("bible.db"), &junk).unwrap();
+        assert!(recover_from_backup(&d2).is_err());
+        assert_eq!(std::fs::read(d2.join("bible.db")).unwrap(), junk);
+        assert!(Core::open(d2.clone(), d2.clone(), None).is_err(), "예전처럼 오류");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// DB 파일 점검: Ok(true) 멀쩡 · Ok(false) 손상 · Err 는 손상이 아닌 까닭(잠김·바쁨·없음)으로 못 봄
+pub fn db_is_healthy(file: &Path) -> Result<bool> {
+    use rusqlite::ErrorCode;
+    let r = (|| -> rusqlite::Result<String> {
+        let c = rusqlite::Connection::open_with_flags(file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        c.busy_timeout(std::time::Duration::from_secs(3))?;
+        c.query_row("PRAGMA quick_check(1)", [], |r| r.get::<_, String>(0))
+    })();
+    match r {
+        Ok(s) => Ok(s.eq_ignore_ascii_case("ok")),
+        Err(rusqlite::Error::SqliteFailure(f, _)) if matches!(f.code, ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 손상 자동 복구 (예배송출의 '자료 손상 시 자동 복구' 를 참고해 새로 씀).
+/// 시작할 때 bible.db 를 열지 못했고 그 까닭이 손상일 때만: 손상된 원본(+ -wal · -shm)을 `damaged/<시각>/` 으로 옮겨 남기고
+/// 멀쩡한 가장 최근 백업을 임시 이름으로 복사한 뒤 bible.db 로 바꿔 끼운다. 설정 파일은 건드리지 않는다.
+/// 잠김 · 권한 같은 다른 까닭이거나 멀쩡한 백업이 없으면 아무것도 바꾸지 않고 Err.
+pub fn recover_from_backup(data_dir: &Path) -> Result<String> {
+    let db = data_dir.join("bible.db");
+    if !db.is_file() {
+        bail!("자료 파일이 없습니다.");
+    }
+    match db_is_healthy(&db) {
+        Ok(true) => bail!("자료 파일은 손상되지 않았습니다 (다른 까닭으로 열지 못함)."),
+        Ok(false) => {}
+        Err(e) => bail!("손상인지 확인하지 못했습니다: {e:#}"),
+    }
+    let _work = FILE_WORK.try_lock().context("백업 또는 복원이 진행 중입니다.")?;
+    let good = backups_in(data_dir)
+        .into_iter()
+        .find(|b| b["db"].as_str().is_some_and(|p| db_is_healthy(Path::new(p)).unwrap_or(false)))
+        .context("되돌릴 멀쩡한 백업이 없습니다.")?;
+    let day = good["day"].as_str().unwrap_or("").to_string();
+    // 1) 새 파일을 먼저 준비 (도중에 끊겨도 원본은 그대로)
+    let tmp = data_dir.join("bible.db.recovering");
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::copy(good["db"].as_str().unwrap_or(""), &tmp).context("백업 복사")?;
+    // 2) 손상된 원본을 따로 남긴다
+    let stamp: String = crate::util::iso_at(crate::util::now_ms() + crate::localtime::local_offset_ms()).chars().take(19).map(|c| if c == ':' || c == 'T' { '-' } else { c }).collect();
+    let keep = data_dir.join("damaged").join(&stamp);
+    std::fs::create_dir_all(&keep)?;
+    for ext in ["", "-wal", "-shm"] {
+        let p = PathBuf::from(format!("{}{ext}", db.display()));
+        if p.exists() {
+            if let Err(e) = std::fs::rename(&p, keep.join(format!("bible.db{ext}"))) {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(anyhow::Error::from(e).context("손상된 원본 옮기기"));
+            }
+        }
+    }
+    // 3) 바꿔 끼우기
+    std::fs::rename(&tmp, &db).context("백업으로 바꿔 끼우기")?;
+    log::warn!("손상 자동 복구: {day} 백업으로 (원본 보관: {})", keep.display());
+    Ok(crate::i18n::tr_args("자료 파일이 손상되어 {1} 백업으로 되돌렸습니다. 그 뒤에 고친 내용은 빠졌을 수 있습니다. 손상된 원본은 {2} 에 남겨 두었습니다.", &[&day, &keep.display()]))
 }
 
 /// 최신순 [{ day, db, settings, size }]
@@ -578,6 +674,10 @@ pub fn backup_files(data_dir: &Path) -> Result<Value> {
     let tmp = dir.join(format!("WorshipCue-{day}.db.tmp"));
     let _ = std::fs::remove_file(&tmp);
     let src = data_dir.join("bible.db");
+    // 손상된 자료로 멀쩡한 백업을 밀어내지 않게 먼저 점검한다
+    if matches!(db_is_healthy(&src), Ok(false)) {
+        bail!("자료 파일이 손상된 것 같아 백업하지 않았습니다. 파일 → 동기화 · 백업에서 지난 백업으로 되돌리세요.");
+    }
     // WAL에 아직 남은 변경까지 포함한다. 실패한 경우 원본 DB 단순 복사로 대체하면 안 된다.
     let result = (|| -> Result<()> {
         let c = rusqlite::Connection::open_with_flags(&src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;

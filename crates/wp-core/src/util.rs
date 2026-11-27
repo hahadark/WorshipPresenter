@@ -8,7 +8,11 @@ pub fn now_ms() -> i64 {
 
 /// ISO 8601 UTC 시각 (JS new Date().toISOString() 과 같은 모양)
 pub fn iso_now() -> String {
-    let ms = now_ms();
+    iso_at(now_ms())
+}
+
+/// ms → ISO 8601 모양 (지역 시각을 넣으면 'Z' 만 빼고 쓰면 된다)
+pub fn iso_at(ms: i64) -> String {
     let secs = ms.div_euclid(1000);
     let milli = ms.rem_euclid(1000);
     let days = secs.div_euclid(86400);

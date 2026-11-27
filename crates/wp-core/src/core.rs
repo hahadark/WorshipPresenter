@@ -201,7 +201,21 @@ impl Core {
         crate::firstrun::mark("자료 폴더 준비");
         let media_dir = data_dir.join("media");
         std::fs::create_dir_all(&media_dir)?;
-        let store = BibleStore::open(&data_dir.join("bible.db"))?;
+        // 손상으로 못 열면: 원본을 damaged/ 에 남기고 멀쩡한 최근 백업으로 (sync::recover_from_backup). 그 밖의 까닭은 예전처럼 오류
+        let mut recovered = None;
+        let store = match BibleStore::open(&data_dir.join("bible.db")) {
+            Ok(s) => s,
+            Err(e) => match crate::sync::recover_from_backup(&data_dir) {
+                Ok(n) => {
+                    recovered = Some(n);
+                    BibleStore::open(&data_dir.join("bible.db"))?
+                }
+                Err(why) => {
+                    log::warn!("자동 복구 안 함: {why:#}");
+                    return Err(e);
+                }
+            },
+        };
         let _ = crate::usage::ensure(&store.db); // [트랙 C] 사용 기록 표
         if let Some(old) = legacy_data_dir() {
             crate::firstrun::repoint_pasted(&store.db, &data_dir, &old); // [갈래 D] 1.x 폴더가 지워졌으면 붙여 넣은 PPT 를 이 판 복사본으로
@@ -239,6 +253,10 @@ impl Core {
                 crate::firstrun::add_start_warning(n.clone());
             }
             c.notify(n, kind);
+        }
+        if let Some(n) = recovered {
+            crate::firstrun::add_start_warning(n.clone());
+            c.notify(n, "warn");
         }
         // 깨진 설정 파일로 켰으면 조용히 넘어가지 않고 알린다 (자료 이전 알림보다 중요하므로 나중에 덮어쓴다)
         if let Some(n) = c.settings.load_note.clone() {
