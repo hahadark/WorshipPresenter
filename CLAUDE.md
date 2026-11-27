@@ -181,3 +181,11 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 
 - 보기 방식 [둘 다 | 송출 중만]: 뷰어 머리 구획 단추 · 보기 메뉴 · Ctrl+Shift+L(단축키 id `toggleViewers`) · 설정 `rsProLayout.viewerMode`. 바로 송출이면 저절로 송출 중만(`ui.directLiveOnly`, 기본 켜짐).
 - '송출 중만' = 송출 뷰어를 가운데 판 오른쪽 칸(`prolayout_ui.rs pro_center_live_only`), 본문·편집은 왼쪽 전체 높이, 미리보기 조작은 노랑 '다음' 줄(`app.rs next_strip`). 비교 · 까닭 · 시험: docs/viewer-single.md, 캡처 `node tools/viewers/shots.js`.
+
+## 2026-11-27 2.1.1 공개 (뷰어 하나만 보기 + 다듬기 2차 + 무대 타이머 두 가지)
+
+- https://github.com/hahadark/WorshipPresenter/releases/tag/v2.1.1 (Latest, 태그 v2.1.1 = rust 6081e61). 자산 4개(Setup.exe · Portable.zip · latest.yml · mac-arm64.dmg) 올린 것과 내려받은 것 SHA-256 같음, 공개 latest.yml = 2.1.1.
+- 시험 wp-app 256 · wp-core 372 (Windows). 맥 CI(run 45984857554) 첫 실행에서 `slideedit_focus_tests::inline_edit_then_main_window_click_escape_does_not_reach_editor` 가 한 번 실패, 다시 돌리니 통과(wp-app 255 · wp-core 371) — 병렬 시험의 흔들림으로 보임(같은 코드의 앞 실행도 통과). 원인 미확인.
+- parity 46/48 (obs-pip-image · obs-pip-score 는 원래 차이), scenes e2e 6(2.0.8 비교 둘은 옛 exe 없어 빠짐) · outputs 9 · auto 20. 설치판 /S /TEST /D=<임시> 로 설치 · 실행(실제 설치본 2.1.0 그대로).
+- '새 버전' 창 릴리스 설명은 2.1.1 부터 마크다운 기호를 걷어 냄(`trackd_ui::plain_notes`). 2.1.0 사용자가 보는 2.1.1 설명은 기호를 적게 써서 씀.
+- 무대 타이머: 무대 화면 창 '몇 시까지' 칸에 실제 끝 시각, 시간표 범위 밖이어도 무대 줄에 보임(홍보 캡처 중 발견).
