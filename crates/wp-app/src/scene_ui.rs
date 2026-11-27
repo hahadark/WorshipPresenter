@@ -409,17 +409,21 @@ impl SceneUi {
             if on {
                 ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), theme::cr(theme::Rad::Xs), p.accent);
             }
-            widgets::text_at(ui, Pos2::new(r.left() + 10.0, r.top() + 14.0), Align2::LEFT_CENTER, name, 13.0, Weight::SemiBold, p.text);
-            widgets::text_at(ui, Pos2::new(r.left() + 10.0, r.top() + 32.0), Align2::LEFT_CENTER, sub, 11.0, Weight::Regular, p.muted);
+            // 쓰는 곳 표시를 먼저 오른쪽에 그리고, 이름은 그 왼쪽까지만 (긴 이름 · 영어에서 겹치지 않게)
             let mut x = r.right() - 8.0;
             for u in uses {
                 let rr = widgets::text_at(ui, Pos2::new(x, r.top() + 14.0), Align2::RIGHT_CENTER, u, 10.5, Weight::SemiBold, p.text2);
                 ui.painter().rect_stroke(rr.expand2(Vec2::new(4.0, 1.0)), theme::cr(theme::Rad::Xs), Stroke::new(1.0, p.line), StrokeKind::Outside);
                 x = rr.left() - 12.0;
             }
+            let clip = Rect::from_min_max(r.min, Pos2::new(x.max(r.left() + 40.0), r.bottom())).intersect(ui.clip_rect());
+            let pt = ui.painter().with_clip_rect(clip);
+            pt.text(Pos2::new(r.left() + 10.0, r.top() + 14.0), Align2::LEFT_CENTER, name, theme::font(13.0, Weight::SemiBold), p.text);
+            let pt2 = ui.painter().with_clip_rect(Rect::from_min_max(r.min, Pos2::new(r.right() - 6.0, r.bottom())).intersect(ui.clip_rect()));
+            pt2.text(Pos2::new(r.left() + 10.0, r.top() + 32.0), Align2::LEFT_CENTER, sub, theme::font(11.0, Weight::Regular), p.muted);
             resp
         };
-        let uses_of = |id: &str| -> Vec<String> { used.iter().filter(|(_, _, u)| u == id).map(|(o, n, _)| if o == "overlay" { tr("방송") } else { n.clone() }).collect() };
+        let uses_of = |id: &str| -> Vec<String> { used.iter().filter(|(_, _, u)| u == id).map(|(o, n, _)| if o == "overlay" { "OBS".to_string() } else { tr(n) }).collect() };
         let base_uses = uses_of(scenes::FULL);
         let r = base_row(ui, &tr("전체 화면 (기본)"), &tr("템플릿 그대로 · 고칠 수 없음"), false, base_uses.iter().rev().map(String::as_str).collect());
         r.on_hover_text(tr("구성을 고르지 않은 출력은 늘 이 모양입니다. 고치려면 새 구성을 만드세요."));

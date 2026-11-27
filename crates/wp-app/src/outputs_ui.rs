@@ -156,12 +156,11 @@ pub(crate) fn section(ui: &mut egui::Ui, app: &mut App) {
         )
     };
     let shown = |id: &str, n: &str| if id == "main" || id == "overlay" { tr(n) } else { n.to_string() };
-    ui.label(theme::rich(tr("출력"), 14.0, Weight::Bold, p.text));
+    widgets::group_head(ui, &tr("출력"));
     ui.add(egui::Label::new(theme::rich(tr("예배당 · 방송(OBS) 말고도 로비 · 유아실 · 둘째 방송 같은 화면을 더할 수 있습니다. 출력마다 주소가 따로 있고, 모니터에 띄우거나 OBS · 다른 PC 브라우저에서 엽니다."), 11.5, Weight::Regular, p.muted)).wrap());
     ui.add_space(4.0);
     // 소리 내는 출력
-    ui.horizontal(|ui| {
-        ui.label(theme::rich(tr("영상 · 유튜브 소리"), 12.5, Weight::Regular, p.text2));
+    widgets::form_row(ui, &tr("영상 · 유튜브 소리"), |ui| {
         let mut pick = audio.clone();
         let cur = list.iter().find(|(k, _)| *k == audio).map(|(k, n)| shown(k, n)).unwrap_or_default();
         let r = egui::ComboBox::from_id_salt("out-audio").width(200.0).selected_text(cur).show_ui(ui, |ui| {
@@ -176,8 +175,8 @@ pub(crate) fn section(ui: &mut egui::Ui, app: &mut App) {
                 core.lock().notify(e.to_string(), "error");
             }
         }
+        ui.add(egui::Label::new(theme::rich(tr("소리는 이 출력 하나에서만 납니다 (모니터 창으로 띄웠을 때). 나머지 출력은 소리를 끕니다."), 11.0, Weight::Regular, p.muted2)).wrap());
     });
-    ui.add(egui::Label::new(theme::rich(tr("소리는 이 출력 하나에서만 납니다 (모니터 창으로 띄웠을 때). 나머지 출력은 소리를 끕니다."), 11.0, Weight::Regular, p.muted2)).wrap());
     ui.add_space(6.0);
     transition_rows(ui, app, &list);
     ui.add_space(6.0);
@@ -187,7 +186,8 @@ pub(crate) fn section(ui: &mut egui::Ui, app: &mut App) {
         let mut v = o.clone();
         let mut changed = false;
         let mut delete = false;
-        egui::Frame::new().fill(p.sunken).stroke(egui::Stroke::new(1.0, p.line)).corner_radius(theme::cr(theme::Rad::Md)).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
+        // 추가 출력 한 줄 묶음: 둥근 상자 대신 위아래 얇은 선 (표의 한 줄처럼)
+        egui::Frame::new().stroke(egui::Stroke::new(1.0, p.line)).corner_radius(0).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             ui.horizontal(|ui| {
                 // 이름: 입력 중에는 글만 들고 있다가 칸을 떠날 때 저장
@@ -390,13 +390,14 @@ fn transition_rows(ui: &mut egui::Ui, app: &mut App, list: &[(String, String)]) 
             core.lock().notify(e.to_string(), "error");
         }
     };
-    ui.horizontal(|ui| {
-        ui.label(theme::rich(tr("화면 구성이 바뀔 때"), 12.5, Weight::Regular, p.text2));
-        if let Some(v) = transition_pick(ui, "global", Some(&global), None) {
-            set("", v);
-        }
+    widgets::form_row(ui, &tr("화면 구성이 바뀔 때"), |ui| {
+        ui.horizontal(|ui| {
+            if let Some(v) = transition_pick(ui, "global", Some(&global), None) {
+                set("", v);
+            }
+        });
+        ui.add(egui::Label::new(theme::rich(tr("옮겨 가기: 같은 카메라 · 웹 페이지는 끊기지 않고 새 자리로 미끄러지고, 새로 생기거나 사라지는 칸은 서서히. 구성 편집기에서 구성마다 따로 고를 수도 있습니다."), 11.0, Weight::Regular, p.muted2)).wrap());
     });
-    ui.add(egui::Label::new(theme::rich(tr("옮겨 가기: 같은 카메라 · 웹 페이지는 끊기지 않고 새 자리로 미끄러지고, 새로 생기거나 사라지는 칸은 서서히. 구성 편집기에서 구성마다 따로 고를 수도 있습니다."), 11.0, Weight::Regular, p.muted2)).wrap());
     let shown = |id: &str, n: &str| if id == "main" || id == "overlay" { tr(n) } else { n.to_string() };
     egui::CollapsingHeader::new(theme::rich(tr("출력마다 다르게"), 11.5, Weight::Regular, p.text2)).id_salt("tr-per-output").default_open(per.iter().any(|(_, v)| v.is_some())).show(ui, |ui| {
         for (id, v) in &per {

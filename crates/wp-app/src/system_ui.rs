@@ -282,19 +282,14 @@ impl App {
             ui.separator();
             egui::ScrollArea::vertical().id_salt("diag").auto_shrink([false, false]).show(ui, |ui| {
                 for x in r["items"].as_array().into_iter().flatten() {
-                    let (mark, col) = match x["status"].as_str().unwrap_or("") {
-                        "ok" => ("✔", crate::theme::pal().ok_text),
-                        "warn" => ("!", crate::theme::pal().warn),
-                        "fail" => ("✖", crate::theme::pal().danger_text),
-                        _ => ("i", crate::theme::pal().muted),
-                    };
+                    let st = x["status"].as_str().unwrap_or("").to_string();
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new(mark).strong().color(col));
+                        crate::widgets::status_mark(ui, &st);
                         ui.label(RichText::new(wp_core::i18n::tr_dyn_deep(x["title"].as_str().unwrap_or(""))).strong());
                         ui.label(wp_core::i18n::tr_dyn_deep(x["detail"].as_str().unwrap_or("")));
                     });
                     for f in x["fix"].as_array().into_iter().flatten().filter_map(|f| f.as_str()) {
-                        ui.label(RichText::new(format!("    · {}", wp_core::i18n::tr_dyn_deep(f))).small().color(Color32::LIGHT_GRAY));
+                        ui.label(RichText::new(format!("    · {}", wp_core::i18n::tr_dyn_deep(f))).small().color(crate::theme::pal().muted));
                     }
                     ui.add_space(4.0);
                 }

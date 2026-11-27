@@ -69,6 +69,8 @@ pub struct SettingsUi {
     /// 막대를 끄는 동안의 값 (놓을 때 적용: 글자 크기는 끄는 중에 바꾸면 화면이 같이 움직여 못 맞춘다)
     slider: Option<(&'static str, f64)>,
     info: Option<(f64, Info)>,
+    /// 지금 그리는 항목이 인스펙터 양식(이름표는 왼쪽 칸) 안인가
+    in_form: bool,
     /// 시험용: 파일 고르기 창 대신 쓸 파일
     #[cfg(test)]
     pub test_pick: Option<std::path::PathBuf>,
@@ -298,7 +300,7 @@ impl SettingsUi {
     fn cats(&mut self, ui: &mut egui::Ui) {
         let searching = !self.query.trim().is_empty();
         for cat in Cat::ALL {
-            let r = ui.selectable_label(!searching && self.cat == cat, RichText::new(tr(cat.name())).size(14.0)).on_hover_text(tr(cat.note()));
+            let r = ui.selectable_label(!searching && self.cat == cat, RichText::new(tr(cat.name())).size(12.5)).on_hover_text(tr(cat.note()));
             mark(&format!("set-cat-{}", cat.key()), r.rect);
             if r.clicked() {
                 self.cat = cat;
@@ -358,7 +360,7 @@ impl SettingsUi {
     fn page(&mut self, ui: &mut egui::Ui, core: &Shared, v: &View, now: f64) {
         let p = crate::theme::pal();
         let cat = self.cat;
-        ui.label(RichText::new(tr(cat.name())).size(18.0).strong());
+        ui.label(crate::theme::rich(tr(cat.name()), 15.0, crate::theme::Weight::SemiBold, p.text));
         ui.label(RichText::new(tr(cat.note())).color(p.muted));
         ui.add_space(6.0);
         if cat == Cat::Obs {
@@ -443,7 +445,23 @@ impl SettingsUi {
         let r = frame
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                self.item_inner(ui, core, v, it);
+                // 인스펙터 양식: 왼쪽 오른쪽 정렬 이름표 칸 + 오른쪽 조절 칸 (좁으면 위아래로)
+                let w = ui.available_width();
+                let lw = crate::widgets::form_label_w(w);
+                if lw > 0.0 {
+                    ui.horizontal_top(|ui| {
+                        let label = if matches!(it.kind, Kind::Toggle) || (matches!(it.kind, Kind::Special) && it.id == "obsfull") { String::new() } else { tr(it.label) };
+                        crate::widgets::form_label(ui, lw, &label, &tr(it.desc));
+                        ui.vertical(|ui| {
+                            ui.set_width(ui.available_width());
+                            self.in_form = true;
+                            self.item_inner(ui, core, v, it);
+                            self.in_form = false;
+                        });
+                    });
+                } else {
+                    self.item_inner(ui, core, v, it);
+                }
             })
             .response;
         mark(&format!("set-item-{}", it.id), r.rect);
@@ -463,7 +481,11 @@ impl SettingsUi {
         let cur = items::read(&v.s, it.path).clone();
         let def = if it.path.is_empty() { Value::Null } else { items::default_of(it.path) };
         let ctl = format!("set-ctl-{}", it.id);
+        let in_form = self.in_form;
         let title = |ui: &mut egui::Ui| {
+            if in_form {
+                return; // 이름표는 왼쪽 칸에
+            }
             let r = ui.label(RichText::new(&label).strong());
             if !desc.is_empty() {
                 r.on_hover_text(&desc);
@@ -624,7 +646,8 @@ impl SettingsUi {
         if !desc.is_empty() {
             ui.label(RichText::new(&desc).small().color(p.muted));
         }
-        if show_value {
+        if show_value && !(cur == def || (cur.is_null() && !def.is_null())) {
+            // 기본값 그대로면 조절 칸이 이미 값을 보여 주므로 '지금: …(기본값)' 줄은 뺀다
             let same = cur == def || (cur.is_null() && !def.is_null());
             ui.horizontal(|ui| {
                 let txt = if same { tr_args("지금: {1} (기본값)", &[&items::value_text(it, &def)]) } else { tr_args("지금: {1} · 기본값: {2}", &[&items::value_text(it, &cur), &items::value_text(it, &def)]) };

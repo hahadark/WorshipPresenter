@@ -181,7 +181,7 @@ impl App {
             // ---------------- 자동으로 나누기 ----------------
             ui.horizontal_wrapped(|ui| {
                 ui.label(rich(tr("자동으로 나누기"), 13.0, Weight::SemiBold, p.text));
-                let b = ui.add(Btn::new(tr("AI 로 나누기")).icon("sparkles").kind(Kind::Primary).enabled(!st.busy).tooltip(tr("오픈라우터 API 키로 (주보 AI 와 같은 키·모델)")));
+                let b = ui.add(Btn::new(tr("AI 로 나누기")).kind(Kind::Primary).enabled(!st.busy).tooltip(tr("오픈라우터 API 키로 (주보 AI 와 같은 키·모델)")));
                 if b.clicked() {
                     self.split_ai(&mut st);
                 }

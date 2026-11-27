@@ -413,7 +413,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         (wp_core::settings::SHORTCUTS["labels"].clone(), c.settings.get()["shortcuts"].clone())
     };
     crate::widgets::close_on_outside(ctx, egui::Id::unique("wp-float-shortcuts"), &mut open);
-    egui::Window::new(wp_core::i18n::tr("단축키")).id(egui::Id::unique("wp-float-shortcuts")).default_pos(crate::widgets::float_pos(ctx, egui::Id::unique("wp-float-shortcuts"), 420.0)).open(&mut open).default_width(420.0).show(ctx, |ui| {
+    egui::Window::new(wp_core::i18n::tr("단축키")).id(egui::Id::unique("wp-float-shortcuts")).default_pos(crate::widgets::float_pos(ctx, egui::Id::unique("wp-float-shortcuts"), 420.0)).open(&mut open).default_width(420.0).collapsible(false).show(ctx, |ui| {
         egui::Grid::new("keys").striped(true).num_columns(2).show(ui, |ui| {
             for (k, label) in labels.as_object().cloned().unwrap_or_default() {
                 ui.label(RichText::new(keys[&k].as_str().unwrap_or("")).monospace().strong());

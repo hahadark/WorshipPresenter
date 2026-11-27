@@ -996,7 +996,9 @@ pub fn float_pos(ctx: &egui::Context, id: egui::Id, width: f32) -> Pos2 {
 pub fn float_window<'a>(ctx: &egui::Context, key: &str, title: impl Into<String>, size: [f32; 2]) -> FloatWin<'a> {
     let id = egui::Id::unique(("wp-float", key));
     let pos = float_pos(ctx, id, size[0]);
-    FloatWin { win: egui::Window::new(title.into()).id(id).default_size(size).default_pos(pos), id, open: None, outside: true }
+    // 접기 삼각형은 쓰지 않는다 (창마다 있고 없고가 달랐음 — 닫기 X 하나로 통일). 화면 밖으로 나가지 않게 조작 화면 안에 묶음
+    let scr = ctx.content_rect();
+    FloatWin { win: egui::Window::new(title.into()).id(id).default_size(size).default_pos(pos).collapsible(false).constrain_to(scr).max_height((scr.height() - FLOAT_TOP - 12.0).max(240.0)), id, open: None, outside: true }
 }
 
 /// `float_window` 가 돌려주는 창: egui::Window 와 같은 방식으로 이어 쓰고, 마지막 `show` 에서 바깥 누름을 처리한다
@@ -1158,4 +1160,74 @@ mod float_tests {
         // 지운 뒤에는 다시 첫 단추 상태
         assert!(!confirm_pass(&ctx, t + 0.1, vec![]));
     }
+}
+// ---------------- 인스펙터 양식 (창 안 설정 줄 공통) ----------------
+// 인스펙터 '글자' 탭의 줄(quick_ui tc_row)과 같은 모양: 왼쪽 이름표 칸(오른쪽 맞춤 · 흐린 11.5px) + 오른쪽 조절 칸.
+// 설정 창 · 출력 설정 · 도구 창이 같은 부품을 쓴다.
+
+/// 이름표 칸 너비 (칸이 좁으면 0 → 이름표를 위에)
+pub fn form_label_w(avail: f32) -> f32 {
+    if avail < 460.0 { 0.0 } else { (avail * 0.26).clamp(120.0, 180.0) }
+}
+
+/// 이름표 칸 하나 (조절 칸 첫 줄 높이 가운데에 맞춤, 길면 줄바꿈). `tip` 은 마우스 올림 설명
+pub fn form_label(ui: &mut Ui, w: f32, text: &str, tip: &str) {
+    let p = pal();
+    let h = theme::ctl_h();
+    let fs = if p.bevel { 11.5 } else { 12.5 };
+    let g = ui.painter().layout(text.to_string(), theme::font(fs, Weight::Regular), p.text2, w - 4.0);
+    let gh = g.size().y.max(h);
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, gh), Sense::hover());
+    let y = if g.rows.len() <= 1 { r.top() + (h - g.size().y) / 2.0 } else { r.top() + 3.0 };
+    // 줄마다 오른쪽 맞춤
+    let pos = Pos2::new(r.right() - 4.0 - g.size().x, y);
+    ui.painter().galley(pos, g, p.text2);
+    if !tip.is_empty() && !text.is_empty() {
+        resp.on_hover_text(tip);
+    }
+}
+
+/// 양식 한 줄: 이름표 칸 + 조절 칸 (좁으면 이름표 위)
+pub fn form_row<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let lw = form_label_w(ui.available_width());
+    if lw == 0.0 {
+        if !label.is_empty() {
+            ui.label(egui::RichText::new(label).color(pal().text2).size(12.0));
+        }
+        return add(ui);
+    }
+    ui.horizontal_top(|ui| {
+        form_label(ui, lw, label, "");
+        ui.vertical(|ui| add(ui)).inner
+    })
+    .inner
+}
+
+/// 창 안 구획 머리 (인스펙터 접는 구획과 같은 띠, 접지 않는 것). 위 여백 포함
+pub fn group_head(ui: &mut Ui, title: &str) {
+    let p = pal();
+    ui.add_space(6.0);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::hover());
+    ui.painter().text(Pos2::new(r.left(), r.center().y), Align2::LEFT_CENTER, title, theme::font(11.5, Weight::SemiBold), p.text);
+    ui.painter().hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.line));
+    ui.add_space(4.0);
+}
+
+/// 빈 상태 한 줄 (가운데 큰 안내 대신: 왼쪽 맞춤 흐린 글 + 할 일 단추 하나까지)
+pub fn empty_state(ui: &mut Ui, text: &str) {
+    let p = pal();
+    ui.add_space(4.0);
+    ui.add(egui::Label::new(egui::RichText::new(text).color(p.muted).size(12.0)).wrap());
+}
+
+/// 점검 결과 표시 하나 (글자 ✔ · ✖ 는 글꼴에 따라 색 이모지로 나와 아이콘으로): ok = 흐린 체크, warn = 주황 깃발, fail = 빨강 x (오류 글색), 그 밖 = 흐린 i
+pub fn status_mark(ui: &mut Ui, status: &str) -> Response {
+    let p = pal();
+    let (name, col) = match status {
+        "ok" => ("check", p.text2),
+        "warn" | "blocked-maybe" => ("flag", p.warn),
+        "fail" | "blocked" => ("circle-x", p.danger_text),
+        _ => ("info", p.muted),
+    };
+    icons::show(ui, name, 14.0, col)
 }

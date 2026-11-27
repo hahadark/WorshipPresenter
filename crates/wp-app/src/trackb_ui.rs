@@ -177,7 +177,7 @@ impl App {
     fn lib_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.lib;
         if self.tb.lib_kind.is_empty() { self.tb.lib_kind = "image".into(); }
-        crate::widgets::float_window(ctx, "lib", wp_core::i18n::tr("라이브러리 (그림·영상·음악)"), [520.0, 520.0]).open(&mut open).show(ctx, |ui|  self.library_panel(ui));
+        crate::widgets::float_window(ctx, "lib", wp_core::i18n::tr("라이브러리 (그림·영상·음악)"), [520.0, 520.0]).open(&mut open).default_height(520.0f32.min(ctx.content_rect().height() - 160.0)).show(ctx, |ui|  self.library_panel(ui));
         self.tb.lib = open;
     }
 
@@ -630,7 +630,7 @@ impl App {
             crate::widgets::mark("quick-input", r.rect);
             if self.tb.quick_focus { if r.has_focus() { self.tb.quick_focus = false } else { r.request_focus() } }
             ui.horizontal(|ui| {
-                let b = ui.button(wp_core::i18n::tr("송출 (Enter)"));
+                let b = ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("송출 (Enter)")).kind(crate::widgets::Kind::Primary)); // 이 창의 주된 일 하나
                 crate::widgets::mark("quick-send", b.rect);
                 send |= b.clicked();
                 let c = ui.button(wp_core::i18n::tr("큐시트에 넣기")).on_hover_text(wp_core::i18n::tr("고른 순서 다음에 '공지' 순서로 넣습니다"));
@@ -776,7 +776,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.tb.stage_msg).hint_text(tr("무대 메시지 (설교자에게만)")));
                 let empty = self.tb.stage_msg.trim().is_empty();
-                if ui.add(Btn::new(tr("보내기")).size(Size::Sm).enabled(!empty).tooltip(if empty { tr("보낼 글을 먼저 쓰세요") } else { tr("무대 화면에 띄웁니다") })).clicked() { self.core.lock().stage_message(&self.tb.stage_msg.clone()); }
+                if ui.add(Btn::new(tr("보내기")).size(Size::Sm).kind(Kind::Primary).enabled(!empty).tooltip(if empty { tr("보낼 글을 먼저 쓰세요") } else { tr("무대 화면에 띄웁니다") })).clicked() { self.core.lock().stage_message(&self.tb.stage_msg.clone()); }
                 if ui.add(Btn::new(tr("메시지 내리기")).size(Size::Sm).tooltip(tr("무대 화면의 메시지를 없앱니다"))).clicked() { self.tb.stage_msg.clear(); self.core.lock().stage_message(""); }
             });
             ui.separator();

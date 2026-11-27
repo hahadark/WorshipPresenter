@@ -265,7 +265,7 @@ impl App {
                         }
                     }
                 }
-                if ui.add(Btn::new(tr("주보로 (AI)")).icon("sparkles").tooltip(tr("주보 글·사진에서 예배 순서를 읽어 큐시트를 만듭니다"))).clicked() {
+                if ui.add(Btn::new(tr("주보로 (AI)")).tooltip(tr("주보 글·사진에서 예배 순서를 읽어 큐시트를 만듭니다"))).clicked() {
                     *open = false;
                     crate::trackd_ui::handle_menu("d:bulletin");
                 }

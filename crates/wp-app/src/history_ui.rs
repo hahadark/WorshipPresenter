@@ -238,13 +238,73 @@ impl HistoryUi {
                 ui.separator();
                 ui.label(wp_core::i18n::tr("가져다 쓴 공개 코드·글꼴"));
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    let notices = include_str!("../../../THIRD_PARTY_NOTICES.md");
-                    ui.label(RichText::new(notices).small());
+                    // 마크다운 표 · 링크 기호를 빼고 글로 (머리는 굵게, 표 한 줄은 '이름 · 버전 · 라이선스')
+                    for (head, line) in plain_notices(include_str!("../../../THIRD_PARTY_NOTICES.md")) {
+                        if head {
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(line).strong());
+                        } else if line.is_empty() {
+                            ui.add_space(2.0);
+                        } else {
+                            ui.add(egui::Label::new(RichText::new(line).small()).wrap());
+                        }
+                    }
                     ui.separator();
                     ui.label(RichText::new("Rust: egui/eframe (MIT/Apache-2.0) · wry/tao (MIT/Apache-2.0) · axum·tokio (MIT) · rusqlite (MIT) · ab_glyph (Apache-2.0)").small());
                 });
             });
             self.about_open = open;
         }
+    }
+}
+
+/// THIRD_PARTY_NOTICES.md → (머리인가, 글) 줄. 표 구분 줄은 빼고, 칸은 ' · ' 로, [글](주소) 는 '글 (주소)' 로, ** · ` 는 뺀다
+fn plain_notices(md: &str) -> Vec<(bool, String)> {
+    let link = |t: &str| -> String {
+        let mut out = String::new();
+        let mut rest = t;
+        while let Some(a) = rest.find('[') {
+            let Some(b) = rest[a..].find("](").map(|x| a + x) else { break };
+            let Some(c) = rest[b..].find(')').map(|x| b + x) else { break };
+            out.push_str(&rest[..a]);
+            out.push_str(&rest[a + 1..b]);
+            out.push_str(" (");
+            out.push_str(&rest[b + 2..c]);
+            out.push(')');
+            rest = &rest[c + 1..];
+        }
+        out.push_str(rest);
+        out.replace("**", "").replace('`', "")
+    };
+    let mut v = vec![];
+    for l in md.lines() {
+        let t = l.trim();
+        if t.starts_with('|') {
+            let cells: Vec<&str> = t.trim_matches('|').split('|').map(|c| c.trim()).collect();
+            if cells.iter().all(|c| c.chars().all(|ch| ch == '-' || ch == ':' || ch == ' ')) {
+                continue;
+            }
+            v.push((false, link(&cells.join(" · "))));
+        } else if let Some(h) = t.strip_prefix('#') {
+            v.push((true, link(h.trim_start_matches('#').trim())));
+        } else {
+            v.push((false, link(t)));
+        }
+    }
+    v
+}
+
+#[cfg(test)]
+mod notice_tests {
+    #[test]
+    fn 라이선스_목록은_표_기호_없이_보인다() {
+        let v = super::plain_notices("# 제목
+| 이름 | 라이선스 |
+|---|---|
+| [egui](https://x.y) | MIT |");
+        assert_eq!(v[0], (true, "제목".to_string()));
+        assert_eq!(v[1].1, "이름 · 라이선스");
+        assert_eq!(v[2].1, "egui (https://x.y) · MIT");
+        assert!(v.iter().all(|(_, l)| !l.contains('|')));
     }
 }

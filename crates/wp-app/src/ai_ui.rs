@@ -110,7 +110,7 @@ pub fn take_granted(feature: &str) -> bool {
 pub fn ai_button(ui: &mut egui::Ui, app: &App, label: &str, busy: bool) -> bool {
     let has = app.core.lock().ai_cfg().has_key() || std::env::var("WP_AI_MOCK").is_ok();
     let text = if busy { tr("AI 가 읽는 중…") } else { tr(label) };
-    let r = ui.add(Btn::new(text).icon("sparkles").enabled(!busy).tooltip(if has { String::new() } else { tr("AI 키가 필요합니다") }));
+    let r = ui.add(Btn::new(text).enabled(!busy).tooltip(if has { String::new() } else { tr("AI 키가 필요합니다") }));
     if r.clicked() && !has {
         app.core.lock().notify(tr(wp_core::aihelp::NEED_KEY), "warn");
         ST.lock().settings.open = true;

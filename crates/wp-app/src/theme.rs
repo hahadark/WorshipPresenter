@@ -465,9 +465,9 @@ pub fn style(s: &mut egui::Style, p: &Palette) {
     sc.dormant_background_opacity = 0.0;
     sc.active_background_opacity = 0.0;
     sc.interact_background_opacity = 0.0;
-    sc.dormant_handle_opacity = 0.25;
-    sc.active_handle_opacity = 0.32;
-    sc.interact_handle_opacity = 0.45;
+    sc.dormant_handle_opacity = 0.4; // 긴 창(출력 설정 등)에서 아래가 더 있다는 것이 보이게 (0.25 는 거의 안 보였음)
+    sc.active_handle_opacity = 0.5;
+    sc.interact_handle_opacity = 0.6;
 }
 
 // ---------------------------------------------------------------- 글꼴

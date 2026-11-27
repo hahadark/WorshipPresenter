@@ -568,54 +568,63 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
         c.emit(wp_core::core::Ev::Ui);
     };
     let flag = |k: &str, d: bool| out[k].as_bool().unwrap_or(d);
-    let mut a = flag("autoOnSend", true);
-    if ui.checkbox(&mut a, wp_core::i18n::tr("송출하면 예배당 화면 창을 자동으로 켜기")).changed() {
-        set("autoOnSend", a);
-    }
-    let mut l = flag("linkObs", true);
-    if ui.checkbox(&mut l, wp_core::i18n::tr("예배당 화면을 끄면 OBS 화면도 같이 숨기기")).changed() {
-        set("linkObs", l);
-    }
-    let mut cur = flag("cursorHidden", true);
-    if ui.checkbox(&mut cur, wp_core::i18n::tr("출력 화면에서 마우스 커서 숨기기")).changed() {
-        set("cursorHidden", cur);
-    }
-    let mut pip = flag("obsPip", false);
-    if ui.checkbox(&mut pip, wp_core::i18n::tr("OBS 자막: 그림·악보 슬라이드를 오른쪽 위에 작게")).changed() {
-        set("obsPip", pip);
-    }
-    ui.separator();
-    ui.label(RichText::new(wp_core::i18n::tr("모니터")).strong());
-    if ui.small_button(wp_core::i18n::tr("모니터 다시 찾기")).clicked() {
-        app.out.refresh_monitors();
-    }
-    for m in app.out.monitors.clone() {
-        let t = format!("{}  {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s("  (주 모니터 · 조작 화면)") } else { "" });
-        if ui.radio(app.monitor == m.index, t).clicked() {
-            app.monitor = m.index;
-            core.lock().settings.update(|d| d["rsOutputMonitor"] = json!(m.index));
-            if app.out.running() {
-                let port = core.lock().port;
-                app.out.open(port, m.index, false);
-            }
-        }
-    }
+    use crate::widgets::{form_row, group_head};
+    // 가장 중요한 것(지금 켜져 있나 · 켜기)을 맨 위에, 그 아래 모니터 · 함께 할 일 (인스펙터 양식)
+    group_head(ui, &wp_core::i18n::tr("예배당 화면"));
     let running = app.out.running();
     let held = core.lock().obs_hold;
-    ui.label(wp_core::i18n::tr_args("예배당 화면: {1}{2}", &[&(if running { wp_core::i18n::tr_s("켜짐") } else { wp_core::i18n::tr_s("꺼짐") }), &(if held { wp_core::i18n::tr_s(" · OBS 화면 숨김 중") } else { "" })]));
-    ui.horizontal(|ui| {
-        if ui.button(if running { wp_core::i18n::tr_s("예배당 화면 끄기") } else { wp_core::i18n::tr_s("예배당 화면 켜기") }).clicked() {
-            if running {
-                app.out.close();
-            } else {
-                let port = core.lock().port;
-                app.out.open(port, app.monitor, false);
+    form_row(ui, &wp_core::i18n::tr("상태"), |ui| {
+        ui.horizontal(|ui| {
+            ui.label(wp_core::i18n::tr_args("예배당 화면: {1}{2}", &[&(if running { wp_core::i18n::tr_s("켜짐") } else { wp_core::i18n::tr_s("꺼짐") }), &(if held { wp_core::i18n::tr_s(" · OBS 화면 숨김 중") } else { "" })]));
+            if ui.add(crate::widgets::Btn::new(if running { wp_core::i18n::tr_s("예배당 화면 끄기") } else { wp_core::i18n::tr_s("예배당 화면 켜기") }).kind(if running { crate::widgets::Kind::Default } else { crate::widgets::Kind::Primary })).clicked() {
+                if running {
+                    app.out.close();
+                } else {
+                    let port = core.lock().port;
+                    app.out.open(port, app.monitor, false);
+                }
+                toggled(&core, running, !running);
             }
-            toggled(&core, running, !running);
+            if ui.button(wp_core::i18n::tr("시험용 작은 창")).clicked() {
+                let port = core.lock().port;
+                app.out.open(port, app.monitor, true);
+            }
+        });
+    });
+    form_row(ui, &wp_core::i18n::tr("모니터"), |ui| {
+        for m in app.out.monitors.clone() {
+            let t = format!("{}  {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s("  (주 모니터 · 조작 화면)") } else { "" });
+            if ui.radio(app.monitor == m.index, t).clicked() {
+                app.monitor = m.index;
+                core.lock().settings.update(|d| d["rsOutputMonitor"] = json!(m.index));
+                if app.out.running() {
+                    let port = core.lock().port;
+                    app.out.open(port, m.index, false);
+                }
+            }
         }
-        if ui.button(wp_core::i18n::tr("시험용 작은 창")).clicked() {
-            let port = core.lock().port;
-            app.out.open(port, app.monitor, true);
+        if ui.small_button(wp_core::i18n::tr("모니터 다시 찾기")).clicked() {
+            app.out.refresh_monitors();
+        }
+    });
+    form_row(ui, &wp_core::i18n::tr("함께"), |ui| {
+        let mut a = flag("autoOnSend", true);
+        if ui.checkbox(&mut a, wp_core::i18n::tr("송출하면 예배당 화면 창을 자동으로 켜기")).changed() {
+            set("autoOnSend", a);
+        }
+        let mut l = flag("linkObs", true);
+        if ui.checkbox(&mut l, wp_core::i18n::tr("예배당 화면을 끄면 OBS 화면도 같이 숨기기")).changed() {
+            set("linkObs", l);
+        }
+        let mut cur = flag("cursorHidden", true);
+        if ui.checkbox(&mut cur, wp_core::i18n::tr("출력 화면에서 마우스 커서 숨기기")).changed() {
+            set("cursorHidden", cur);
+        }
+    });
+    form_row(ui, &wp_core::i18n::tr("OBS 자막"), |ui| {
+        let mut pip = flag("obsPip", false);
+        if ui.checkbox(&mut pip, wp_core::i18n::tr("OBS 자막: 그림·악보 슬라이드를 오른쪽 위에 작게")).changed() {
+            set("obsPip", pip);
         }
     });
     ui.separator();
@@ -632,8 +641,7 @@ pub(crate) fn obs_urls(ui: &mut egui::Ui, port: u16) {
     use crate::widgets::{self, Btn, Size};
     use wp_core::i18n::tr;
     let p = pal();
-    ui.label(theme::rich(tr("OBS에 넣을 주소"), 14.0, Weight::Bold, p.text));
-    ui.add_space(4.0);
+    widgets::group_head(ui, &tr("OBS에 넣을 주소"));
     for (i, (label, path)) in [("예배당 화면 그대로", "/outputs/main"), ("투명 자막", "/outputs/overlay"), ("무대 화면", "/outputs/stage")].into_iter().enumerate() {
         let url = format!("http://127.0.0.1:{port}{path}");
         ui.horizontal(|ui| {

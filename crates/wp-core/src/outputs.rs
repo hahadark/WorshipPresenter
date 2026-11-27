@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 pub const MAX_EXTRA: usize = 8;
 
 /// 내장 출력 (id, 이름)
-pub const BUILTIN: [(&str, &str); 2] = [("main", "예배당"), ("overlay", "방송 (OBS)")];
+pub const BUILTIN: [(&str, &str); 2] = [("main", "예배당"), ("overlay", "OBS")];
 
 /// 순서 종류별 기본 구성을 고를 수 있는 종류 (순서 종류 type, 이름)
 pub const SCENE_TYPES: [(&str, &str); 10] = [

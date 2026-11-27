@@ -83,13 +83,7 @@ pub fn row(ui: &mut egui::Ui) {
     }
     ui.horizontal_wrapped(|ui| {
         let state = result.as_ref().and_then(|r| r["state"].as_str()).unwrap_or("");
-        let (mark, col) = match state {
-            "ok" => ("✔", crate::theme::pal().ok_text),
-            "blocked" => ("✖", crate::theme::pal().danger_text),
-            "none" => ("!", crate::theme::pal().warn),
-            _ => ("…", crate::theme::pal().muted),
-        };
-        ui.label(RichText::new(mark).strong().color(col));
+        crate::widgets::status_mark(ui, match state { "ok" => "ok", "blocked" => "blocked", "none" => "warn", _ => "" });
         ui.label(RichText::new(tr("방화벽")).strong());
         let text = if busy && result.is_none() { tr("확인하는 중…") } else { result.as_ref().map(wp_core::firewall::describe).unwrap_or_default() };
         ui.label(RichText::new(text).small());
