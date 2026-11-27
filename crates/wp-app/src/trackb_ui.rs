@@ -565,20 +565,18 @@ impl App {
             let filled = wp_core::overlays::fill_template(&self.tb.msg_text, &self.tb.msg_fields);
             ui.label(egui::RichText::new(tr("미리보기")).small().color(p.muted));
             message_preview(ui, &filled);
-            ui.horizontal_wrapped(|ui| {
-                ui.label(tr("표시 시간"));
+            crate::widgets::form_row(ui, &tr("표시 시간"), |ui| ui.horizontal_wrapped(|ui| {
                 let label = |s: i64| match s { 0 => tr("숨길 때까지 계속"), s if s % 60 == 0 => wp_core::i18n::tr_args("{1}분 뒤 숨김", &[&(s / 60)]), s => wp_core::i18n::tr_args("{1}초 뒤 숨김", &[&s]) };
                 egui::ComboBox::from_id_salt("msg-sec").selected_text(label(self.tb.msg_sec)).show_ui(ui, |ui| {
                     for s in MSG_SECS { ui.selectable_value(&mut self.tb.msg_sec, s, label(s)); }
                 });
                 ui.add(egui::DragValue::new(&mut self.tb.msg_sec).range(0..=3600).suffix(tr("초"))).on_hover_text(tr("직접 정하기 (0이면 숨길 때까지 계속)"));
-            });
-            ui.horizontal(|ui| {
-                ui.label(tr("보일 곳"));
+            }));
+            crate::widgets::form_row(ui, &tr("보일 곳"), |ui| ui.horizontal(|ui| {
                 let mut main = true;
                 ui.add_enabled(false, egui::Checkbox::new(&mut main, tr("예배당 화면"))).on_disabled_hover_text(tr("회중 메시지는 항상 예배당 화면에 보입니다"));
                 ui.checkbox(&mut self.tb.msg_obs, tr("OBS 자막에도"));
-            });
+            }));
             ui.horizontal(|ui| {
                 let empty = filled.trim().is_empty();
                 let tip = if empty { tr("보일 글을 먼저 쓰거나 위에서 틀을 고르세요") } else { tr("지금 바로 예배당 화면에 띠를 띄웁니다") };
@@ -852,11 +850,10 @@ impl App {
                     if crate::widgets::confirm_delete(ui, egui::Id::unique(("macro-del", &id)), &wp_core::i18n::tr("지우기"), &q) { self.core.lock().delete_macro(&id); }
                 });
             }
-            ui.separator();
-            ui.label(wp_core::i18n::tr("새 매크로: 지금 상태를 담기"));
-            ui.horizontal(|ui| { ui.label(wp_core::i18n::tr("이름")); ui.text_edit_singleline(&mut self.tb.macro_name); });
-            ui.horizontal(|ui| { ui.label(wp_core::i18n::tr("무대 메시지")); ui.text_edit_singleline(&mut self.tb.macro_msg); });
-            if ui.button(wp_core::i18n::tr("저장 (로고·배경·오버레이 상태 + 무대 메시지)")).clicked() {
+            crate::widgets::group_head(ui, &wp_core::i18n::tr("새 매크로: 지금 상태를 담기"));
+            crate::widgets::form_row(ui, &wp_core::i18n::tr("이름"), |ui| ui.text_edit_singleline(&mut self.tb.macro_name));
+            crate::widgets::form_row(ui, &wp_core::i18n::tr("무대 메시지"), |ui| ui.text_edit_singleline(&mut self.tb.macro_msg));
+            if crate::widgets::form_row(ui, "", |ui| ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("저장")).kind(crate::widgets::Kind::Primary).tooltip(wp_core::i18n::tr("저장 (로고·배경·오버레이 상태 + 무대 메시지)")))).clicked() {
                 let mut c = self.core.lock();
                 // Electron 매크로는 순서의 '송출할 때 자동으로' 와 같은 칸: logo on|off · bg hide|show · ovOn(하나) · ovOff('*') · stageMsg
                 let on: Vec<String> = c.overlays().into_iter().filter(|o| o["on"] == true).filter_map(|o| o["id"].as_str().map(String::from)).collect();

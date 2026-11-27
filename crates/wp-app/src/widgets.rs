@@ -1167,7 +1167,7 @@ mod float_tests {
 
 /// 이름표 칸 너비 (칸이 좁으면 0 → 이름표를 위에)
 pub fn form_label_w(avail: f32) -> f32 {
-    if avail < 460.0 { 0.0 } else { (avail * 0.26).clamp(120.0, 180.0) }
+    if avail < 300.0 { 0.0 } else { (avail * 0.26).clamp(88.0, 180.0) }
 }
 
 /// 이름표 칸 하나 (조절 칸 첫 줄 높이 가운데에 맞춤, 길면 줄바꿈). `tip` 은 마우스 올림 설명

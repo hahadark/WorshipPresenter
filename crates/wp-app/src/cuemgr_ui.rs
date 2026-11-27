@@ -176,7 +176,7 @@ impl App {
         widgets::float_window(ctx, "cues", tr("큐시트 관리"), [900.0, 600.0]).open(&mut keep).show(ctx, |ui| {
             // ---------------- 위 ----------------
             ui.horizontal_wrapped(|ui| {
-                let b = ui.add(Btn::new(tr("새 큐시트")).icon("plus").kind(Kind::Primary).tooltip(tr("오늘 날짜로 기본 예배 순서가 든 큐시트를 만들어 엽니다")));
+                let b = ui.add(Btn::new(tr("새 큐시트")).icon("plus").tooltip(tr("오늘 날짜로 기본 예배 순서가 든 큐시트를 만들어 엽니다")));
                 widgets::mark("cm-new", b.rect);
                 if b.clicked() {
                     let r = self.core.lock().new_cue_default(false); // 잠금을 먼저 푼다 (가지 안에서 다시 잠그므로)
