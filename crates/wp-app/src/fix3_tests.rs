@@ -118,7 +118,7 @@ fn toast(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: 
     }
 }
 fn bottom(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-    app.bottom_bar(ui, s, acts);
+    app.status_strip(ui, s, acts);
 }
 fn exit_frame(app: &mut App, ctx: &egui::Context, _: &mut egui::Ui, _: &Snap, _: &mut Vec<Act>) {
     crate::trackd_ui::output_exit(app, ctx);

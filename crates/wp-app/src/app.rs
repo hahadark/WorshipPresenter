@@ -1837,41 +1837,6 @@ impl App {
             // 원본 #panelCue: '큐시트 (예배 순서) | 성경 책'. 찬송가·찬양·라이브러리는 라이브러리 패널 탭에 있다.
             crate::cue_ui::side(self, ui, acts, |app, ui, acts| app.cue_panel(ui, s, acts));
  }
- /// 아래 송출 줄 앞부분 (Electron footer.bottom): 이전 F5 · 다음 F6 · 송출 F9 | 글자 숨김 F10 · 지우기 ▾ · 모두 지우기.
- /// 가로 줄 안에서 부른다 (topbar_ui::bottom_bar).
- pub(crate) fn workspace_controls(&mut self,ui:&mut egui::Ui,s:&Snap,acts:&mut Vec<Act>){
-    let shortcut_settings = serde_json::json!({"shortcuts": self.core.lock().settings.get()["shortcuts"].clone()});
-    let shortcut = |id: &str, default: &str| crate::keys::label(&shortcut_settings, id, default);
-            {
-                use crate::widgets::{Btn, Kind, Size};
-                use wp_core::i18n::tr;
-                // 묶음(48)과 높이를 맞추려 위아래 4px (가로 줄 가운데 맞춤이 먹지 않아 틀로)
-                egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 4)).show(ui, |ui| { ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0; // .ft-group { gap: 6px }
-                if ui.add(Btn::new(tr("이전")).icon("skip-back").kbd(shortcut("prevSlide", "F5")).size(Size::Big).tooltip(tr("이전 슬라이드"))).clicked() { acts.push(Act::Step(-1)) }
-                if ui.add(Btn::new(tr("다음")).icon_end("skip-forward").kbd(shortcut("nextSlide", "F6")).size(Size::Big).tooltip(tr("다음 슬라이드"))).clicked() { acts.push(Act::Step(1)) }
-                if ui.add(Btn::new(tr("송출")).icon("play").kbd(shortcut("sendPreview", "F9")).kind(Kind::Send).size(Size::Big).tooltip(tr("미리보기를 송출"))).clicked() { acts.push(Act::SendPreview) }
-                }); });
-                crate::widgets::group_frame().show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0; // .clear-group { gap: 4px }
-                        let hidden = s.live.as_ref().is_some_and(|l| !l.visible);
-                        // 숨긴 동안은 .clear-group button.active (노랑)
-                        let b = Btn::new(if hidden { tr("글자 보이기") } else { tr("글자 숨김") }).kbd(shortcut("toggleClear", "F10")).size(Size::Tall).kind(if hidden { Kind::Warn } else { Kind::Default });
-                        if ui.add(b.tooltip(tr("글자(슬라이드)만 숨기기·다시 보이기"))).clicked() { acts.push(Act::ToggleClear) }
-                        let more_on = s.hide_bg || s.logo;
-                        let more = ui.add(Btn::new(tr("지우기 ▾").trim_end_matches(" ▾")).caret().size(Size::Tall).kind(if more_on { Kind::Warn } else { Kind::Default }).tooltip(tr("예배당 화면 비우기: 배경 지우기 · 로고 화면 (큐시트 순서는 그대로)")));
-                        egui::Popup::menu(&more).frame(crate::menubar::drop_frame()).gap(2.0).show(|ui| {
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            if crate::menubar::item_row(ui, Some("image"), &tr("배경 지우기"), "", s.hide_bg.then_some(true)).clicked() { acts.push(Act::ToggleBg); ui.close(); }
-                            if crate::menubar::item_row(ui, Some("flag"), &tr("로고 화면"), "", s.logo.then_some(true)).clicked() { acts.push(Act::ToggleLogo); ui.close(); }
-                        });
-                        if ui.add(Btn::new(tr("모두 지우기")).kind(Kind::Danger).size(Size::Tall).tooltip(tr("예배당 화면을 모두 비움: 글자·배경·로고 (큐시트 순서는 지우지 않음)"))).clicked() { acts.push(Act::ClearAll) }
-                    });
-                });
-            }
-
- }
 }
 
 impl Drop for App {

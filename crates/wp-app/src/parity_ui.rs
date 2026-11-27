@@ -4,7 +4,7 @@
 //!  - 도움말: 사용 설명서 · README · OBS 안내 · 단축키 보기 · 새 소식 · 문제 알리기
 
 use crate::app::{Act, App};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::{json, Value};

@@ -881,7 +881,10 @@ pub fn hover_ops_float(ui: &Ui, id: egui::Id, anchor: Rect, ops: &[HoverOp]) -> 
     let w = ops.len() as f32 * (s + 4.0) - 4.0;
     // 칩 위로 겹치게 (칩에서 단추로 옮겨 가는 동안 끊기지 않게)
     let bar = Rect::from_min_size(Pos2::new((anchor.right() - w).max(anchor.left() - w * 0.5), anchor.top() - s + 6.0), Vec2::new(w, s));
-    let hot = ui.ctx().pointer_hover_pos().is_some_and(|q| anchor.contains(q) || bar.expand(2.0).contains(q));
+    let float_layer = egui::LayerId::new(egui::Order::Foreground, id.with("float"));
+    // 떠 있는 창이 그 자리를 덮고 있으면(마우스가 창 위) 단추를 띄우지 않는다 — 창 위로 단추가 비쳐 보였다
+    let on_top = |q: Pos2| ui.ctx().layer_id_at(q).is_none_or(|l| l == ui.layer_id() || l.id == float_layer.id || l.order == egui::Order::Foreground);
+    let hot = ui.ctx().pointer_hover_pos().is_some_and(|q| (anchor.contains(q) || bar.expand(2.0).contains(q)) && on_top(q));
     if !hot || !ui.is_rect_visible(anchor) {
         return None;
     }

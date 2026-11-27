@@ -92,7 +92,7 @@ fn tp_button(ui: &mut Ui, rect: Rect, id: Id, icon: &str, label: &str, kbd: &str
     let resp = ui.interact(rect, id, Sense::click()).on_hover_text(tip);
     let hov = resp.hovered();
     let (bg, fg) = if send {
-        (if hov { Color32::WHITE } else { p.send_bg }, p.send_fg)
+        (if hov { if p.bevel { Color32::WHITE } else { mix(p.send_bg, 85.0, Color32::WHITE) } } else { p.send_bg }, p.send_fg)
     } else {
         (if hov { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, p.text)
     };
@@ -457,7 +457,7 @@ impl App {
         let bar = ui.interact(ui.available_rect_before_wrap(), ui.id().with("footer-menu"), Sense::click());
         crate::ctx_ui::footer_menu(self, &bar, acts);
         // 알림이 떠 있으면 상태 줄 바탕을 그 종류 색으로 살짝 (눈에 띄게)
-        if let Some((_, kind, at)) = s.toast.as_ref() {
+        if let Some((_, kind, at)) = s.toast.as_ref().filter(|_| pal().bevel) {
             let life = if s.toast_act.is_some() { 12000 } else { 8000 };
             if wp_core::util::now_ms() - at < life {
                 let p = pal();
@@ -470,7 +470,8 @@ impl App {
             ui.set_min_height(22.0);
             ui.spacing_mut().item_spacing.x = 8.0;
             let p = pal();
-            let toast = self.toast_inline(ui, s, acts);
+            // 알림을 상태 줄 안에 두는 것은 (나) 전문가 테마만 (옛 테마는 예전처럼 오른쪽 아래 상자)
+            let toast = p.bevel && self.toast_inline(ui, s, acts);
             if toast {
                 widgets::vsep(ui, 14.0);
             }
@@ -480,6 +481,9 @@ impl App {
             let (a, b) = (tr("미리보기"), tr("바로 송출"));
             let r = widgets::segmented_with(ui, &mut pv, &[(true, a.as_str()), (false, b.as_str())], widgets::SegStyle::TINY);
             widgets::mark("studio-split", r.rect);
+            let (l, rr) = r.rect.split_left_right_at_fraction(0.5);
+            widgets::mark("studio-preview", l);
+            widgets::mark("studio-direct", rr);
             let r = r.on_hover_text(tr("미리보기: 누른 것이 '다음' 화면에 놓이고 송출 단추로 내보냄 · 바로 송출: 누르는 즉시 회중 화면에"));
             if r.changed() && pv != s.preview_mode {
                 acts.push(Act::TogglePreviewMode);

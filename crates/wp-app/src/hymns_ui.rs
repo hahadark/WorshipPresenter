@@ -2,7 +2,7 @@
 //! · 클립보드 붙여 넣기(Ctrl+V: 글·그림·PowerPoint 슬라이드) · 받은 찬양 PPT 지켜보기
 
 use crate::app::{Act, App};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use serde_json::{json, Value};
 use wp_core::{clippaste, hymnal, hymns, pptsplit, songinbox};
 

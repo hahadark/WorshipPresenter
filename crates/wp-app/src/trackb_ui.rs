@@ -2,7 +2,7 @@
 //! 도구 줄(위)에서 창을 열고 닫는다. 단축키: Ctrl+M 메시지 · Ctrl+T 즉석 자막 · Ctrl+P 인쇄 · Ctrl+Z/Y 실행 취소 · Alt+1~9 매크로
 
 use crate::app::App;
-use eframe::egui::{self, Color32, Key, KeyboardShortcut, Modifiers, RichText};
+use eframe::egui::{self, Key, KeyboardShortcut, Modifiers, RichText};
 use serde_json::{json, Value};
 use std::process::Command;
 use wp_core::presentation::Deck;

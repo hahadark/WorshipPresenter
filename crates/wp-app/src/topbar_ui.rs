@@ -9,160 +9,23 @@
 //! - 알림(.msg): 오른쪽 아래(송출 줄 위)에 뜨는 상자
 use super::{Act, App, Snap};
 use crate::icons;
-use crate::menubar;
 use crate::theme::{self, Weight, alpha, pal};
 use crate::widgets::{self, Btn, Kind, Size};
-use eframe::egui::{self, Align, Align2, Color32, Id, Key, Layout, Pos2, Rect, Response, RichText, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
+use eframe::egui::{self, Align, Align2, Color32, Id, Key, Layout, Pos2, Rect, RichText, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::json;
 use wp_core::i18n::tr;
-use wp_core::workspace::Workspace;
 
-/// index.html .brand-mark (64×64 SVG 그대로)
-const BRAND_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><defs><linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5a93ff"/><stop offset=".55" stop-color="#3566e0"/><stop offset="1" stop-color="#1e3f9e"/></linearGradient><linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd25a"/><stop offset="1" stop-color="#f0a21a"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg1)"/><rect x="12.5" y="16.4" width="25" height="5.2" rx="2.6" fill="#fff"/><rect x="12.5" y="29.4" width="25" height="5.2" rx="2.6" fill="#fff" opacity=".62"/><rect x="12.5" y="42.4" width="25" height="5.2" rx="2.6" fill="#fff" opacity=".36"/><path d="M42 26.5 Q42 24.5 43.8 25.5 L52 30.6 Q53.6 31.6 52 32.6 L43.8 37.7 Q42 38.7 42 36.7 Z" fill="url(#bg2)"/></svg>"##;
 
-/// 머리 줄 높이 (control.css .top: 안쪽 8px 12px, 검색칸 40px)
-pub(crate) const TOP_MARGIN: egui::Margin = egui::Margin { left: 12, right: 12, top: 8, bottom: 8 };
-/// 송출 줄 안쪽 (.bottom: 8px 12px)
-pub(crate) const BOTTOM_MARGIN: egui::Margin = egui::Margin { left: 12, right: 12, top: 8, bottom: 8 };
 
 fn text_w(ui: &Ui, s: &str, size: f32, w: Weight) -> f32 {
     ui.painter().layout_no_wrap(s.to_string(), theme::font(size, w), Color32::WHITE).size().x
 }
 
-/// select 모양 (hgroup 안: 테두리 없음, 글 14px, 오른쪽 작은 ▾ — control.css select 배경 그라데이션 화살표)
-fn select_at(ui: &mut Ui, rect: Rect, id: Id, text: &str, tip: &str) -> Response {
-    let p = pal();
-    let resp = ui.interact(rect, id, Sense::click()).on_hover_text(tip);
-    let pt = ui.painter_at(rect.shrink2(Vec2::new(0.0, 1.0)));
-    pt.text(Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, text, theme::font(14.0, Weight::Regular), p.text);
-    // 4px 45° 두 삼각형이 만드는 작은 ▾ (오른쪽에서 13px~5px)
-    let (cx, cy) = (rect.right() - 9.0, rect.center().y + 1.0);
-    pt.add(Shape::convex_polygon(vec![Pos2::new(cx - 4.0, cy - 2.0), Pos2::new(cx + 4.0, cy - 2.0), Pos2::new(cx, cy + 2.0)], p.muted, Stroke::NONE));
-    if resp.has_focus() {
-        pt.rect_stroke(rect.shrink(2.0), crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(2.0, p.accent), StrokeKind::Inside);
-    }
-    resp
-}
 
-/// select 의 펼친 목록 (메뉴 줄과 같은 .mb-drop 모양)
-fn select_popup(resp: &Response, min_w: f32, content: impl FnOnce(&mut Ui)) {
-    egui::Popup::menu(resp).frame(menubar::drop_frame()).gap(2.0).show(|ui| {
-        ui.set_min_width(min_w);
-        ui.spacing_mut().item_spacing.y = 0.0;
-        content(ui);
-    });
-}
 
-/// 묶음 틀 (.hgroup: sunken 바탕 · line 테두리(hover line2) · 둥글기 6 · 높이 34)
-fn hgroup_frame(ui: &Ui, rect: Rect, idx: egui::layers::ShapeIdx) {
-    let p = pal();
-    let hov = ui.rect_contains_pointer(rect);
-    ui.painter().set(
-        idx,
-        Shape::Vec(vec![
-            Shape::rect_filled(rect, crate::theme::cr(crate::theme::Rad::Md), p.sunken),
-            Shape::rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Md), Stroke::new(p.border_w, if hov { p.line2 } else { p.line }), StrokeKind::Inside),
-        ]),
-    );
-}
 
 impl App {
-    /// 머리 줄 (header.top)
-    pub(super) fn top_bar(&mut self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 10.0; // .top { gap: 10px }
-            ui.set_min_height(40.0);
-            brand(ui);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                // 설정 톱니 (.icon-btn 34×34)
-                if ui.add(Btn::icon_only("settings").tooltip(tr("설정 (Ctrl+,)"))).clicked() {
-                    self.tc.settings.open = true;
-                }
-                self.workspace_picker(ui);
-                // 클릭하면: [미리보기] [바로 송출] — 상태를 이름으로 쓴 토글 대신 고르는 분할 단추 (평가 7번).
-                // 원본 .studio 색: 미리보기 = pv, 바로 송출 = warn
-                if let Some(on) = studio_split(ui, s.preview_mode) {
-                    if on != s.preview_mode {
-                        acts.push(Act::TogglePreviewMode);
-                    }
-                }
-                self.search_group(ui, s, acts);
-                self.search_bar(ui, s, acts);
-            });
-        });
-    }
 
-    /// 검색 방식 | 번역본 | 병행 번역 (.hgroup, 오른쪽→왼쪽 배치 안에서 한 덩어리로)
-    fn search_group(&mut self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) {
-        let (mode, parallel) = {
-            let c = self.core.lock();
-            (c.settings.str(&["searchMode"]), c.settings.str(&["parallelVersionId"]))
-        };
-        let modes = [("auto", tr("자동")), ("reference", tr("장절")), ("text", tr("본문"))];
-        let mode_label = modes.iter().find(|m| m.0 == mode).map(|m| m.1.clone()).unwrap_or_else(|| modes[0].1.clone());
-        let vname = self.versions.iter().find(|v| v.id == s.version).map(|v| v.name.clone()).unwrap_or_default();
-        let none = tr("병행: 없음");
-        let pname = self.versions.iter().find(|v| v.id == parallel).map(|v| format!("+ {}", v.name)).unwrap_or_else(|| none.clone());
-        // select 너비 = 가장 긴 선택지 + 왼쪽 8 + 오른쪽 24 (css select padding-right 24)
-        let pad = 8.0 + 24.0;
-        let w_mode = modes.iter().map(|m| text_w(ui, &m.1, 14.0, Weight::Regular)).fold(0.0, f32::max) + pad;
-        let w_ver = self.versions.iter().map(|v| text_w(ui, &v.name, 14.0, Weight::Regular)).fold(text_w(ui, &vname, 14.0, Weight::Regular), f32::max).min(160.0) + pad;
-        let w_par = self.versions.iter().map(|v| text_w(ui, &format!("+ {}", v.name), 14.0, Weight::Regular)).fold(text_w(ui, &none, 14.0, Weight::Regular), f32::max).min(170.0) + pad;
-        let total = w_mode + w_ver + w_par + 2.0;
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(total, theme::CTL_H), Sense::hover());
-        let bg = ui.painter().add(Shape::Noop);
-        hgroup_frame(ui, rect, bg);
-        let p = pal();
-        let r_mode = Rect::from_min_size(rect.min, Vec2::new(w_mode, rect.height()));
-        let r_ver = Rect::from_min_size(Pos2::new(r_mode.right() + 1.0, rect.top()), Vec2::new(w_ver, rect.height()));
-        let r_par = Rect::from_min_max(Pos2::new(r_ver.right() + 1.0, rect.top()), rect.max);
-        // select + select { border-left: 1px line }
-        for x in [r_mode.right() + 0.5, r_ver.right() + 0.5] {
-            ui.painter().vline(x, rect.y_range().shrink(1.0), Stroke::new(1.0, p.line));
-        }
-        let rm = select_at(ui, r_mode, Id::new("hdr-mode"), &mode_label, &tr("기본 검색 방식 (요3:16 → 장절, 사랑 → 본문)"));
-        select_popup(&rm, w_mode, |ui| {
-            for (k, l) in &modes {
-                if menubar::item_row(ui, None, l, "", Some(*k == mode)).clicked() {
-                    self.core.lock().settings.update(|d| d["searchMode"] = json!(k));
-                    if !self.search.trim().is_empty() {
-                        acts.push(Act::SearchList(self.search.clone()));
-                    }
-                    ui.close();
-                }
-            }
-        });
-        let rv = select_at(ui, r_ver, Id::new("hdr-version"), &vname, &tr("성경 번역본"));
-        select_popup(&rv, w_ver, |ui| {
-            for v in &self.versions {
-                if menubar::item_row(ui, None, &v.name, "", Some(v.id == s.version)).clicked() {
-                    acts.push(Act::SetVersion(v.id.clone()));
-                    ui.close();
-                }
-            }
-        });
-        let rp = select_at(ui, r_par, Id::new("hdr-parallel"), &pname, &tr("병행 번역본: 두 번역을 함께 송출 (예: 개역개정 + NIV)"));
-        let mut pick: Option<String> = None;
-        select_popup(&rp, w_par, |ui| {
-            if menubar::item_row(ui, None, &none, "", Some(parallel.is_empty())).clicked() {
-                pick = Some(String::new());
-                ui.close();
-            }
-            for v in &self.versions {
-                if menubar::item_row(ui, None, &format!("+ {}", v.name), "", Some(v.id == parallel)).clicked() {
-                    pick = Some(v.id.clone());
-                    ui.close();
-                }
-            }
-        });
-        if let Some(id) = pick {
-            self.core.lock().settings.update(|d| d["parallelVersionId"] = json!(id));
-            if !self.search.trim().is_empty() {
-                acts.push(Act::Search(self.search.clone()));
-            }
-        }
-    }
 
     /// 넓은 검색칸 (#q: 높이 40 · 17px · 왼쪽 38px 돋보기 · 둥글기 8 · 포커스 때 accent 테두리 + 3px 번짐)
     pub(crate) fn search_bar(&mut self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) {
@@ -264,124 +127,7 @@ impl App {
         let _ = s;
     }
 
-    /// 작업공간 고르기 (.ws-pick.hgroup: 배치 아이콘 + select). 펼치면 작업공간 목록 · 저장·관리·패널 · 배치 잠금
-    fn workspace_picker(&mut self, ui: &mut Ui) {
-        let p = pal();
-        let st = &self.workspace.state;
-        let current = st
-            .saved
-            .iter()
-            .find(|w| w.id == st.active)
-            .map(|w| w.name.clone())
-            .or_else(|| Workspace::BUILTINS.iter().find(|(id, _)| *id == st.active).map(|(_, n)| tr(n)))
-            .unwrap_or_else(|| tr("기본"));
-        let sel_w = 145.0; // .ws-pick select { max-width: 150px }
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(8.0 + 16.0 + 2.0 + sel_w, theme::CTL_H), Sense::hover());
-        let bg = ui.painter().add(Shape::Noop);
-        hgroup_frame(ui, rect, bg);
-        icons::paint(ui, Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 8.0, rect.center().y), Vec2::splat(16.0)), "layout-panel-left", p.muted);
-        let srect = Rect::from_min_max(Pos2::new(rect.right() - sel_w, rect.top()), rect.max);
-        let resp = select_at(ui, srect, Id::new("hdr-workspace"), &current, &tr("작업공간: 상황별 패널 배치 (Ctrl+Alt+1~9)"));
-        let mut pick = None;
-        let mut manage = false;
-        let mut lock = None;
-        select_popup(&resp, 220.0, |ui| {
-            let st = &self.workspace.state;
-            for (id, name) in Workspace::BUILTINS {
-                if menubar::item_row(ui, None, &tr(name), "", Some(st.active == id)).clicked() {
-                    pick = Some(id.to_string());
-                    ui.close();
-                }
-            }
-            for w in &st.saved {
-                if menubar::item_row(ui, None, &w.name, "", Some(st.active == w.id)).clicked() {
-                    pick = Some(w.id.clone());
-                    ui.close();
-                }
-            }
-            menubar::sep(ui);
-            if menubar::item_row(ui, Some("columns-2"), &tr("저장 · 관리 · 패널"), "", None).clicked() {
-                manage = true;
-                ui.close();
-            }
-            let locked = st.locked;
-            if menubar::item_row(ui, Some("lock"), &tr("배치 잠금"), "", if locked { Some(true) } else { None }).clicked() {
-                lock = Some(!locked);
-            }
-        });
-        if let Some(id) = pick {
-            self.workspace.state.select(&id)
-        }
-        if manage {
-            self.workspace.open = true
-        }
-        if let Some(l) = lock {
-            self.workspace.state.locked = l
-        }
-    }
 
-    /// 아래 송출 줄 (footer.bottom) — 창 맨 아래 전체 폭 고정
-    pub(super) fn bottom_bar(&mut self, ui: &mut Ui, s: &Snap, acts: &mut Vec<Act>) {
-        let shortcut_settings = serde_json::json!({"shortcuts": self.core.lock().settings.get()["shortcuts"].clone()});
-        self.video_bar(ui); // [트랙 B] 영상·음악 조작 줄 (재생 중일 때만 내용이 생김)
-        // [갈래 C] 아래 줄 빈 자리 오른쪽 클릭 = 화면 지우기 메뉴 (ctxmenu.js footer.bottom) — 단추보다 먼저 놓는다
-        let bar = ui.interact(ui.available_rect_before_wrap(), ui.id().with("footer-menu"), egui::Sense::click());
-        crate::ctx_ui::footer_menu(self, &bar, acts);
-        ui.spacing_mut().interact_size.y = 48.0; // 가로 줄 처음 높이 → 단추들이 묶음 높이 가운데에 놓인다
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 10.0; // .bottom { gap: 10px }
-            ui.spacing_mut().interact_size.y = theme::CTL_H; // 줄 높이(48)는 이미 잡혔고, 안쪽 묶음은 원래 값으로
-            self.workspace_controls(ui, s, acts);
-            // 즉석 자막 (.quick-btn: 34px, 열려 있으면 accent 테두리·글자)
-            let qon = self.tb.quick;
-            let mut q = Btn::new(tr("즉석 자막")).icon("text").kbd(crate::keys::label(&shortcut_settings, "quickText", "Ctrl+T")).tooltip(tr("즉석 자막: 글을 써서 바로 송출"));
-            if qon {
-                q = q.text_color(pal().accent).icon_color(pal().accent).selected(true);
-            }
-            if egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 7)).show(ui, |ui| ui.add(q)).inner.clicked() {
-                self.tb.quick = !qon;
-            }
-            // 예배당 화면: 꺼짐/켜짐 + 누르면 할 일 (.big.output-toggle, 켜짐 = pv 바탕·테두리)
-            // 원본은 '보조 화면 꺼짐' 이지만 상태 줄('예배당 화면 꺼짐')과 이름을 하나로 맞춘다.
-            let running = self.out.running();
-            let b = Btn::new(if running { tr("예배당 화면: 켜짐 · 끄기") } else { tr("예배당 화면: 꺼짐 · 켜기") })
-                .kbd(crate::keys::label(&shortcut_settings, "toggleOutputWindow", "Ctrl+Shift+F"))
-                .size(Size::Big)
-                .kind(if running { Kind::Pv } else { Kind::Default })
-                .tooltip(tr("예배당 모니터의 전체 화면 출력을 켜고 끕니다"));
-            if egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 4)).show(ui, |ui| ui.add(b)).inner.clicked() {
-                acts.push(Act::OutputToggle);
-            }
-            widgets::vsep(ui, 24.0);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 14.0; // .status { gap: 14px }
-                // 중요한 순서(오류 > 예배당 화면 > OBS 전체 > OBS 자막 > 출력 창 > OBS 원격)로 자리를 주고,
-                // 모자라면 글은 빼고 점만(툴팁에 전체 문구), 그래도 모자라면 뒤 항목부터 뺀다.
-                // 오른쪽→왼쪽 배치라 거꾸로 그려서 화면에는 중요한 것이 왼쪽(송출 줄 쪽)에 온다.
-                let items = self.status_items(s);
-                let widths: Vec<f32> = items.iter().map(|x| text_w(ui, &x.1, 12.0, Weight::Regular)).collect();
-                let fit = widgets::fit_status(&widths, ui.available_width() - 4.0, 14.0);
-                let mut open = None;
-                for ((col, text, key), f) in items.iter().zip(&fit).rev() {
-                    let Some(full) = f else { continue };
-                    let tip = match *key {
-                        "obs-remote" => tr("누르면 OBS 원격 조작 창"),
-                        _ => tr("누르면 출력 설정 (예배당 화면 · OBS 주소)"),
-                    };
-                    let r = widgets::status_btn(ui, *col, text, !*full, &tip);
-                    widgets::mark(&format!("status-{key}"), r.rect);
-                    if r.clicked() {
-                        open = Some(*key);
-                    }
-                }
-                match open {
-                    Some("obs-remote") => crate::trackd_ui::open(crate::trackd_ui::Win::Obs),
-                    Some(_) => crate::trackd_ui::open(crate::trackd_ui::Win::Output),
-                    None => {}
-                }
-            });
-        });
-    }
 
     /// 출력 연결 상태 (control.js renderStatus 와 같은 문구·색)
     /// (점 색, 글, 항목 이름) — 중요한 것부터
@@ -555,33 +301,6 @@ impl App {
     }
 }
 
-/// '클릭하면: [미리보기] [바로 송출]' (오른쪽→왼쪽 배치 안에서 부름). 눌린 쪽을 Some(미리보기 켬지)로
-fn studio_split(ui: &mut Ui, preview: bool) -> Option<bool> {
-    let p = pal();
-    let mut out = None;
-    ui.scope(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        let direct = Btn::new(tr("바로 송출"))
-            .kind(if preview { Kind::Default } else { Kind::Warn })
-            .selected(!preview)
-            .tooltip(tr("클릭한 본문·순서·슬라이드가 미리보기를 거치지 않고 바로 회중 화면에 나갑니다 (OBS 스튜디오 모드 끄기와 같음)"));
-        let r = ui.add(direct);
-        widgets::mark("studio-direct", r.rect);
-        if r.clicked() {
-            out = Some(false);
-        }
-        let pv = Btn::new(tr("미리보기"))
-            .kind(if preview { Kind::Pv } else { Kind::Default })
-            .tooltip(tr("클릭하면 미리보기에만 놓이고, 송출 단추를 눌러야 회중 화면에 나갑니다"));
-        let r = ui.add(pv);
-        widgets::mark("studio-preview", r.rect);
-        if r.clicked() {
-            out = Some(true);
-        }
-    });
-    ui.add(egui::Label::new(theme::rich(tr("클릭하면"), 13.0, Weight::Regular, p.muted)).selectable(false));
-    out
-}
 
 impl App {
     /// 바로 송출 중일 때 머리 줄 아래에 계속 보이는 주황 띠 (평가 7번)
@@ -672,18 +391,3 @@ fn toast_button(act: &str) -> (String, &'static str) {
     }
 }
 
-/// 로고 + 워십<b>프리젠터</b> (.brand: 26px 그림 · 간격 8 · 700, 프리젠터는 hl 800)
-fn brand(ui: &mut Ui) {
-    let p = pal();
-    let r = ui.add(egui::Image::from_bytes("bytes://wp-brand.svg", BRAND_SVG).fit_to_exact_size(Vec2::splat(26.0)));
-    let _ = r.on_hover_text(tr("워십프리젠터"));
-    ui.add_space(8.0 - ui.spacing().item_spacing.x);
-    let name = tr("워십프리젠터");
-    let mut job = egui::text::LayoutJob::default();
-    // 영어 화면 등 번역되면 한 덩어리로
-    let (a, b) = if name == "워십프리젠터" { ("워십".to_string(), "프리젠터".to_string()) } else { (name.clone(), String::new()) };
-    job.append(&a, 0.0, egui::TextFormat { font_id: theme::font(14.0, Weight::Bold), color: p.text, extra_letter_spacing: 0.2, ..Default::default() });
-    job.append(&b, 0.0, egui::TextFormat { font_id: theme::font(14.0, Weight::Bold), color: p.hl, extra_letter_spacing: 0.2, ..Default::default() });
-    ui.label(job);
-    ui.add_space(2.0); // .brand { margin-right: 2px }
-}

@@ -115,7 +115,41 @@ fn live(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mu
     app.deck_view(ui, "LIVE", d.as_ref(), true, s.live.as_ref(), s, acts);
 }
 fn bottom(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-    app.bottom_bar(ui, s, acts);
+    app.status_strip(ui, s, acts);
+}
+fn bar(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
+    app.control_bar(ui, s, acts);
+}
+
+// ---------------- (나) 위 컨트롤 막대 ----------------
+
+#[test]
+fn control_bar_transport_and_tools_push_the_same_acts() {
+    let mut h = H::new(two());
+    let has = |a: &[Act], f: &dyn Fn(&Act) -> bool| a.iter().any(f);
+    let a = h.click_acts("pro-send", bar);
+    assert!(has(&a, &|x| matches!(x, Act::SendPreview)), "송출 = 미리보기를 송출 (F9 와 같음)");
+    let a = h.click_acts("pro-next", bar);
+    assert!(has(&a, &|x| matches!(x, Act::Step(1))), "다음 슬라이드 (F6)");
+    let a = h.click_acts("pro-prev", bar);
+    assert!(has(&a, &|x| matches!(x, Act::Step(-1))), "이전 슬라이드 (F5)");
+    let a = h.click_acts("pro-hide", bar);
+    assert!(has(&a, &|x| matches!(x, Act::ToggleClear)), "글자 숨김 (F10)");
+    let a = h.click_acts("pro-output", bar);
+    assert!(has(&a, &|x| matches!(x, Act::OutputToggle)), "예배당 화면 켜기·끄기 (Ctrl+Shift+F)");
+    assert!(!h.app.tb.quick);
+    h.click("pro-quick", bar);
+    assert!(h.app.tb.quick, "즉석 자막 (Ctrl+T)");
+}
+
+#[test]
+fn control_bar_clear_menu_has_bg_logo_and_clear_all() {
+    let mut h = H::new(two());
+    h.click("pro-clear", bar);
+    h.frame(vec![], bar);
+    // 펼친 메뉴의 세 줄 (배경 지우기 · 로고 화면 · 모두 지우기) — 메뉴는 그 자리에 뜬다
+    let open = egui::Popup::is_any_open(&h.ctx);
+    assert!(open, "지우기를 누르면 펼침 메뉴");
 }
 
 // ---------------- 3-1 예배당 화면 꺼짐 ----------------
@@ -227,7 +261,8 @@ fn output_settings_obs_urls_copy_with_notice() {
 // ---------------- 3-7 미리보기 / 바로 송출 ----------------
 
 fn top(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, s: &Snap, acts: &mut Vec<Act>) {
-    app.top_bar(ui, s, acts);
+    // (나): 누르면 [미리보기 | 바로 송출] 은 아래 상태 줄에
+    app.status_strip(ui, s, acts);
 }
 fn band(app: &mut App, _: &egui::Context, ui: &mut egui::Ui, _: &Snap, acts: &mut Vec<Act>) {
     app.direct_band(ui, acts);

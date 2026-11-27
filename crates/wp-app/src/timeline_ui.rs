@@ -175,10 +175,12 @@ impl App {
             let done = live_idx.is_some_and(|l| c.index < l);
             let live = live_idx == Some(c.index);
             let next = next_idx == Some(c.index);
+            // 어두운 테마는 흰 글, 밝은 테마는 진한 글 (막대 바탕이 옅어서)
+            let strong = if p.dark { Color32::WHITE } else { p.text };
             let (bg, fg, sub_c) = if live {
-                (mix(p.live, 55.0, p.panel), Color32::WHITE, alpha(Color32::WHITE, 0.75))
+                (mix(p.live, if p.dark { 55.0 } else { 25.0 }, p.panel), strong, alpha(strong, 0.75))
             } else if next {
-                (mix(p.next, 30.0, p.panel), Color32::WHITE, alpha(Color32::WHITE, 0.75))
+                (mix(p.next, 30.0, p.panel), strong, alpha(strong, 0.75))
             } else if done {
                 (mix(p.raised, 55.0, p.panel), p.muted2, p.muted2)
             } else {
@@ -213,8 +215,9 @@ impl App {
         // 지금 시각 세로선 (재생 헤드) — 범위 안일 때만
         if now_min >= t0 && now_min <= t1 {
             let x = xof(now_min);
-            pt.vline(x, (br.top() + RULER_H - 2.0)..=br.bottom(), Stroke::new(1.0, Color32::WHITE));
-            pt.add(egui::Shape::convex_polygon(vec![Pos2::new(x - 5.0, br.top() + RULER_H - 8.0), Pos2::new(x + 5.0, br.top() + RULER_H - 8.0), Pos2::new(x, br.top() + RULER_H - 1.0)], Color32::WHITE, Stroke::NONE));
+            let head_c = if p.dark { Color32::WHITE } else { p.text };
+            pt.vline(x, (br.top() + RULER_H - 2.0)..=br.bottom(), Stroke::new(1.0, head_c));
+            pt.add(egui::Shape::convex_polygon(vec![Pos2::new(x - 5.0, br.top() + RULER_H - 8.0), Pos2::new(x + 5.0, br.top() + RULER_H - 8.0), Pos2::new(x, br.top() + RULER_H - 1.0)], head_c, Stroke::NONE));
             ui.ctx().request_repaint_after(std::time::Duration::from_secs(5));
         }
     }
