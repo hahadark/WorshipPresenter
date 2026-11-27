@@ -24,11 +24,12 @@ pub const USER_KINDS: [&str; 1] = ["web"];
 pub const OUTPUTS: [&str; 2] = ["main", "overlay"];
 
 /// 내장 소스 (식별자, 종류, 이름). 기본 구성에서 쌓는 차례와 같다 — 오버레이 · 사용자 소스는 그 사이에 끼운다.
-pub const BUILTIN: [(&str, &str, &str); 9] = [
+pub const BUILTIN: [(&str, &str, &str); 10] = [
     ("background", "background", "템플릿 배경"),
     ("media", "media", "배경 미디어"),
     ("slide-bg", "slide-bg", "순서 배경 영상"),
     ("live", "live", "송출 중인 순서"),
+    ("caption", "caption", "실시간 자막"),
     ("message", "message", "회중 메시지"),
     ("logo-screen", "logo-screen", "로고 화면"),
     ("draw", "draw", "그리기"),
@@ -159,10 +160,14 @@ pub fn default_scene(output: &str, overlays: &[Value], user: &[Value]) -> Value 
     layers.extend(user_on(user, output, "over").map(|s| l(s["id"].as_str().unwrap_or(""))));
     for o in overlays {
         let id = o["id"].as_str().unwrap_or("");
-        if id == "wpmessage" {
-            continue; // 회중 메시지는 자기 칸 (아래)
+        if id == "wpmessage" || id == crate::voicefollow::CAPTION_ID {
+            continue; // 회중 메시지 · 실시간 자막은 자기 칸 (아래)
         }
         layers.push(json!({ "id": format!("overlay:{id}"), "source": format!("overlay:{id}") }));
+    }
+    // 실시간 자막 (AI 음성 인식): 띄운 동안만 칸이 생긴다 — 오버레이와 같은 자리(회중 메시지 아래)
+    if overlays.iter().any(|o| o["id"] == crate::voicefollow::CAPTION_ID) {
+        layers.push(l("caption"));
     }
     layers.push(l("message"));
     layers.push(l("logo-screen"));
@@ -525,6 +530,11 @@ impl Core {
         // 회중 메시지
         let msg_on: Vec<&'static str> = OUTPUTS.iter().copied().filter(|o| !crate::overlays::message_overlay(&self.b.message, o).is_empty()).collect();
         rows.push(row("message", "message", "회중 메시지", self.b.message.as_ref().map(|m| m.text.clone()).unwrap_or_default(), msg_on));
+        // 실시간 자막 (도구 → 음성 인식 → 방송 실시간 자막): 기본은 방송 출력 아래쪽
+        let cap: Vec<Vec<Value>> = OUTPUTS.iter().map(|o| crate::voicefollow::caption_overlay(o)).collect();
+        let cap_on: Vec<&'static str> = OUTPUTS.iter().copied().zip(cap.iter()).filter(|(_, c)| !c.is_empty()).map(|(o, _)| o).collect();
+        let cap_text = cap.iter().flatten().next().and_then(|c| c["text"].as_str()).unwrap_or("").to_string();
+        rows.push(row("caption", "caption", "실시간 자막", cap_text, cap_on));
         // 로고 화면
         rows.push(row("logo-screen", "logo-screen", "로고 화면", String::new(), if self.layers.logo { both.clone() } else { vec![] }));
         // 그리기

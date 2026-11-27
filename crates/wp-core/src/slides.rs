@@ -341,6 +341,23 @@ fn alias_of(tok: &str) -> Vec<String> {
 }
 
 /// 부를 순서 "1절 후렴 2절 후렴" 대로 가사 묶음을 늘어놓는다
+/// 부를 순서에서 가사에 없는 이름 (arrange 와 같은 규칙: '1절' · 'v1' · '후' …) — 큐시트 점검용
+pub fn unknown_order_tokens(chunks: &[Chunk], order: &str) -> Vec<String> {
+    let labels: Vec<String> = chunks.iter().filter(|c| !c.label.is_empty()).map(|c| norm_label(&c.label)).collect();
+    if labels.is_empty() {
+        return vec![];
+    }
+    order
+        .split(|c: char| c.is_whitespace() || ",·>→/|".contains(c))
+        .filter(|x| !x.is_empty())
+        .filter(|tok| {
+            let names = alias_of(tok);
+            !labels.iter().any(|l| names.contains(l) || names.iter().any(|n| l.starts_with(n.as_str())))
+        })
+        .map(String::from)
+        .collect()
+}
+
 pub fn arrange(chunks: Vec<Chunk>, order: &str) -> Vec<Chunk> {
     let toks: Vec<&str> = order.split(|c: char| c.is_whitespace() || ",·>→/|".contains(c)).filter(|x| !x.is_empty()).collect();
     if toks.is_empty() {

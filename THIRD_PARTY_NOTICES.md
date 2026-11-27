@@ -27,6 +27,17 @@
 
 워십프리젠터는 그 가운데 PPTX 엔진 부분만 가져와 고쳐 묶었다 (`tools/build-ieum-pptx.js`). 이음오피스·GenOffice 의 다른 부분(글꼴 · 디자인 템플릿 · 스킬 등)은 들어 있지 않다.
 
+## 처음 쓸 때 받는 것 (설치판에는 들어 있지 않음)
+
+도구 → '음성 인식: 구절 따라가기 · 실시간 자막' 을 처음 켤 때, 받는 곳 · 크기 · 라이선스를 보여 주고 동의를 받은 뒤 자료 폴더의 `stt\` 에 받는다.
+주소와 SHA-256 은 `crates/wp-core/src/stt.rs` 에 박아 두었고, 받은 뒤 대조해 다르면 지우고 쓰지 않는다. 음성은 PC 밖으로 보내지 않는다.
+
+| 이름 | 라이선스 | 받는 곳 · 크기 |
+|---|---|---|
+| [whisper.cpp](https://github.com/ggml-org/whisper.cpp) b5907 — `whisper-server.exe` · `whisper.dll` · `ggml*.dll` 만 꺼내 씀 (Windows x64 CPU 판) | MIT (Copyright (c) 2023-2026 The ggml authors) | github.com/ggml-org/whisper.cpp/releases/download/b5907/whisper-bin-x64.zip · 9.2MB. 맥은 받지 않고 Homebrew `whisper-cpp` 의 `whisper-server` 를 씀 |
+| Whisper small (ggml q5_1) 음성 인식 모델 | MIT (OpenAI Whisper 모델 가중치, ggml 변환 ggerganov/whisper.cpp) | huggingface.co/ggerganov/whisper.cpp · ggml-small-q5_1.bin 190MB (논리 코어 8개 이상 PC 의 기본) |
+| Whisper base (ggml q5_1) 음성 인식 모델 | MIT (위와 같음) | huggingface.co/ggerganov/whisper.cpp · ggml-base-q5_1.bin 60MB (코어가 적은 PC 의 기본) |
+
 ## 그 밖의 자료
 
 - **성경 본문**: 개역한글은 대한성서공회 안내상 저작재산권 보호기간이 만료된 번역본입니다. 다른 번역본·찬송가·악보·가사는 들어 있지 않으며 각 권리자의 조건을 따릅니다.

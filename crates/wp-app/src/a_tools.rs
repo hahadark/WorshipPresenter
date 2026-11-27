@@ -74,6 +74,17 @@ pub fn handle_menu(id: &str) -> bool {
     true
 }
 
+/// '설교 원고 → 슬라이드' 창에서 넘겨받아 설교 포인트 창을 연다 (같은 원고)
+pub fn open_points_with(text: &str, title: &str, verse: &str, speaker: &str) {
+    let mut s = ST.lock();
+    s.points.open = true;
+    s.points.text = text.to_string();
+    s.points.title = title.to_string();
+    s.points.verse = verse.to_string();
+    s.points.speaker = speaker.to_string();
+    s.points.data = sp::find_points(text, &json!({ "title": title, "verse": verse, "speaker": speaker })).ok();
+}
+
 /// 폴더 고르기 창 (Electron pickFolder 명령)
 pub fn pick_folder(title: &str) -> Option<String> {
     rfd::FileDialog::new().set_title(title).pick_folder().map(|p| p.to_string_lossy().to_string())
@@ -182,6 +193,9 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                         }
                     },
                 );
+            }
+            if ui.button(wp_core::i18n::tr("슬라이드 묶음으로 (제목 · 성경 · 인용)")).on_hover_text(wp_core::i18n::tr("같은 원고로 '설교 원고 → 슬라이드' 창을 엽니다")).clicked() {
+                crate::sermon_ui::open_with(&p.text, &p.title, &p.verse, &p.speaker);
             }
             if ui.button(wp_core::i18n::tr("채팅 AI 프롬프트 복사")).on_hover_text(wp_core::i18n::tr("챗GPT·클로드·제미나이에 붙여 넣고, 답을 아래 칸에 붙여 넣으세요")).clicked() {
                 match sp::chat_prompt(&p.text, &meta(p), p.extra.trim()) {

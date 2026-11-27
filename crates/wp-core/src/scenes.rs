@@ -41,7 +41,7 @@ pub fn ok_source(s: &str) -> bool {
     if s.len() > 300 || s.chars().any(|c| c.is_control()) {
         return false;
     }
-    matches!(s, "background" | "media" | "slide-bg" | "live" | "message" | "logo-screen" | "draw" | "pip") || s.starts_with("overlay:") || s.starts_with("camera:") || s.starts_with("src-")
+    matches!(s, "background" | "media" | "slide-bg" | "live" | "caption" | "message" | "logo-screen" | "draw" | "pip") || s.starts_with("overlay:") || s.starts_with("camera:") || s.starts_with("src-")
 }
 
 /// 자리 [x, y, w, h] (화면 비율): 화면 안에, 가장 작은 크기 이상
@@ -298,13 +298,17 @@ pub fn effective_scene(scene: &Value, output: &str, overlays: &[Value], resolve:
     let auto = |id: &str| json!({ "id": id, "source": id, "auto": true });
     for o in overlays {
         let id = o["id"].as_str().unwrap_or("");
-        if id == "wpmessage" {
+        if id == "wpmessage" || id == crate::voicefollow::CAPTION_ID {
             continue;
         }
         let s = format!("overlay:{id}");
         if !has(&layers, &s) {
             layers.push(auto(&s));
         }
+    }
+    // 실시간 자막: 띄운 동안 구성에 없으면 맨 위 자동 칸 (회중 메시지 아래) — 구성에 넣었으면 그 자리 차례로
+    if overlays.iter().any(|o| o["id"] == crate::voicefollow::CAPTION_ID) && !has(&layers, "caption") {
+        layers.push(auto("caption"));
     }
     for s in ["message", "logo-screen", "draw"] {
         if !has(&layers, s) {

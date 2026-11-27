@@ -178,6 +178,11 @@ pub(crate) fn list_keys(app: &mut App, ui: &egui::Ui, list_rect: Rect, n: usize,
     }
 }
 
+/// 다른 창(예배 전 점검 등)에서 순서를 고른 뒤: 고른 줄이 보이게 스크롤
+pub(crate) fn request_scroll(ctx: &egui::Context) {
+    ctx.data_mut(|m| m.insert_temp(id(SCROLL_SEL), true));
+}
+
 /// 키로 고른 줄이 보이게 스크롤할 차례인가 (고른 줄을 그릴 때 한 번)
 pub(crate) fn take_scroll(ctx: &egui::Context) -> bool {
     ctx.data_mut(|d| d.remove_temp::<bool>(id(SCROLL_SEL))).unwrap_or(false)
@@ -871,6 +876,7 @@ pub fn add_grid(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 ("camera", "camera", "카메라"),
                 ("blank", "square", "빈 화면"),
                 ("points", "presentation", "설교 포인트 슬라이드…"),
+                ("sermon", "file-text", "설교 원고 → 슬라이드…"),
                 ("preservice", "images", "예배 전 화면 자동 만들기…"),
             ] {
                 let ink = p.muted;
@@ -968,7 +974,7 @@ fn add_footer_pro(app: &mut App, ui: &mut egui::Ui, direct: bool, acts: &mut Vec
             }
         }
         crate::menubar::sep(ui);
-        for (ty, ic, label) in [("points", "presentation", "설교 포인트 슬라이드…"), ("preservice", "images", "예배 전 화면 자동 만들기…")] {
+        for (ty, ic, label) in [("points", "presentation", "설교 포인트 슬라이드…"), ("sermon", "file-text", "설교 원고 → 슬라이드…"), ("preservice", "images", "예배 전 화면 자동 만들기…")] {
             if crate::menubar::item_row(ui, Some(ic), &tr(label), "", None).clicked() {
                 add(app, ui.ctx(), ty, acts);
                 ui.close();
@@ -1010,6 +1016,9 @@ pub(crate) fn add(app: &mut App, ctx: &egui::Context, ty: &str, acts: &mut Vec<A
         }
         "preservice" => {
             crate::a_tools::handle_menu("a:preservice");
+        }
+        "sermon" => {
+            crate::sermon_ui::handle_menu("ai:sermon");
         }
         "camera" => acts.push(Act::AddItem("camera", Some(json!({ "title": tr("카메라"), "deviceId": "", "label": "", "fit": "cover" })))),
         "slideshow" => acts.push(Act::AddItem("slideshow", Some(json!({ "title": tr("예배 전 화면"), "images": [], "body": "", "autoSec": 8, "autoLoop": true, "countdown": "", "countdownLabel": tr("예배 시작까지") })))),

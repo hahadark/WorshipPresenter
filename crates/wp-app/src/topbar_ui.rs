@@ -122,7 +122,13 @@ impl App {
         }
         // Enter = 검색 (control.js doSearch: 장절이면 미리보기, 바로 송출 모드면 송출). Ctrl+Enter 는 전역 sendNow 가 먼저 받는다
         if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter) && !i.modifiers.ctrl) && !self.search.trim().is_empty() {
-            acts.push(Act::Search(self.search.clone()));
+            // '>' 로 시작하면 말로 시키기 (예: > 지난주 큐시트 복사해서 설교만 바꿔)
+            if let Some(cmd) = self.search.trim().strip_prefix('>') {
+                crate::say_ui::open_with(cmd.trim());
+                self.search.clear();
+            } else {
+                acts.push(Act::Search(self.search.clone()));
+            }
         }
         let _ = s;
     }

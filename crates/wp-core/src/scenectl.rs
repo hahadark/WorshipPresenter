@@ -353,6 +353,21 @@ mod tests {
         assert!(crate::actions::summary(c.settings.get(), &c.cue.as_ref().unwrap().items[2]).contains("본문 전체"));
     }
 
+    /// 실시간 자막(AI 5번)은 'caption' 소스: 띄운 동안만 기본 구성 · 맨 위 자동 칸에 생기고, 구성에 넣으면 그 자리
+    #[test]
+    fn caption_is_a_source() {
+        let cap = json!({ "id": crate::voicefollow::CAPTION_ID, "type": "banner" });
+        let ids = |sc: &Value| sc["layers"].as_array().unwrap().iter().map(|l| l["source"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        let d = crate::sources::default_scene("overlay", &[cap.clone()], &[]);
+        assert_eq!(ids(&d), ["background", "media", "slide-bg", "live", "caption", "message", "logo-screen", "draw", "pip"]);
+        assert!(!ids(&crate::sources::default_scene("overlay", &[], &[])).contains(&"caption".to_string()), "자막이 없으면 칸도 없음 (2.0.8 과 같은 차례)");
+        let sc = json!({ "id": "sc-a", "layers": [{ "id": "l1", "source": "camera:c1" }, { "id": "l2", "source": "caption", "rect": [0, 0, 1, 0.3] }, { "id": "l3", "source": "live" }] });
+        assert!(crate::scenes::ok_source("caption"));
+        let e = crate::scenes::effective_scene(&sc, "overlay", &[cap], &|_| None);
+        assert_eq!(ids(&e)[..3], ["camera:c1", "caption", "live"]);
+        assert_eq!(ids(&e).iter().filter(|x| *x == "caption").count(), 1);
+    }
+
     #[test]
     fn action_normalize() {
         assert_eq!(normalize_action(&json!({ "overlay": "sc-a", "bad key!": "x", "main": 3 })), Some(json!({ "overlay": "sc-a" })));

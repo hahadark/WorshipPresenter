@@ -241,6 +241,17 @@ impl Core {
         let output = crate::outputs::kind_of(self.settings.get(), output);
         let mut o: Vec<Value> = self.overlays().into_iter().filter(|x| x["on"] == true && x["outputs"].as_array().is_some_and(|a| a.iter().any(|y| y == output))).collect();
         o.extend(overlays::message_overlay(&self.b.message, output));
+        o.extend(crate::voicefollow::caption_overlay(output)); // 실시간 자막 (기본은 방송 출력에만)
+        o
+    }
+
+    /// 출력 데이터의 overlays: 화면 구성에 'caption' 칸을 직접 넣었으면 자막을 어느 출력에 띄웠든 이 출력에도 (그 칸에 그림)
+    pub fn overlays_with_scene(&self, output: &str, scene: &Value) -> Vec<Value> {
+        let mut o = self.overlays_for(output);
+        let has_cap = scene["layers"].as_array().is_some_and(|a| a.iter().any(|l| l["source"] == "caption" && l["auto"] != true));
+        if has_cap && !o.iter().any(|x| x["id"] == crate::voicefollow::CAPTION_ID) {
+            o.extend(crate::voicefollow::caption_overlay_any());
+        }
         o
     }
 

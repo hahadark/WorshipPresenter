@@ -619,7 +619,8 @@ pub fn type_color(t: &str) -> Option<Color32> {
 /// 종류 아이콘 색 (css `--ink`): 어두운 테마는 종류 색 62% + 흰색, 밝게는 그대로. 고대비는 muted
 pub fn type_ink(t: &str) -> Color32 {
     let p = pal();
-    if p.id == ThemeId::Contrast {
+    // 고대비 · 전문가(기본) 테마는 종류 아이콘을 흐린 글 색 한 가지로 (빨강=송출 · 노랑=다음 외에는 색을 쓰지 않는다)
+    if p.id == ThemeId::Contrast || p.id == ThemeId::Pro {
         return p.muted;
     }
     let tc = type_color(t).unwrap_or(p.muted);

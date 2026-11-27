@@ -31,7 +31,7 @@
   /** 옛 코어(scene 없음)와 같은 기본 차례 */
   function defaultLayers(p) {
     const l = id => ({ id, source: id });
-    const ov = (p.overlays || []).filter(o => o.id !== 'wpmessage').map(o => l('overlay:' + o.id));
+    const ov = (p.overlays || []).filter(o => o.id !== 'wpmessage').map(o => l(o.id === 'wpcaption' ? 'caption' : 'overlay:' + o.id));
     return [l('background'), l('media'), l('slide-bg'), l('live'), ...ov, l('message'), l('logo-screen'), l('draw')];
   }
   function sceneLayers(p) {
@@ -334,7 +334,7 @@
   // 오버레이마다 자기 층 (overlay:<id>, 회중 메시지는 message): 바뀐 오버레이만 다시 그린다
   function renderOverlays(p, force) {
     for (const o of p.overlays || []) {
-      const el = slot(o.id === 'wpmessage' ? 'message' : 'overlay:' + o.id);
+      const el = slot(o.id === 'wpmessage' ? 'message' : o.id === 'wpcaption' ? 'caption' : 'overlay:' + o.id); // 실시간 자막(AI) = caption 칸
       if (!el) continue;
       const key = JSON.stringify([o, tpl.font && tpl.font.family]);
       if (!force && el.dataset.key === key && el.firstChild) continue;
@@ -345,6 +345,9 @@
     // 내린 회중 메시지: 층은 구성에 늘 있으므로 비운다
     const msg = slot('message');
     if (msg && !(p.overlays || []).some(o => o.id === 'wpmessage') && msg.firstChild) { msg.innerHTML = ''; msg.dataset.key = ''; }
+    // 내린 실시간 자막: 구성에 직접 넣은 caption 칸은 남으므로 비운다
+    const cap = slot('caption');
+    if (cap && !(p.overlays || []).some(o => o.id === 'wpcaption') && cap.firstChild) { cap.innerHTML = ''; cap.dataset.key = ''; }
   }
 
   // ---------- 영상 재생 슬라이드 ----------

@@ -364,6 +364,7 @@ impl Core {
         let builtin = output == "main" || output == "overlay";
         let hold = self.obs_hold && builtin;
         let scene_id = self.scene_id_for_deck(output, self.pres.live.as_ref().map(|l| &l.deck));
+        let scene = self.scene_for(output);
         json!({
             "output": output,
             "version": live["version"],
@@ -375,13 +376,13 @@ impl Core {
             "template": self.stage_template_for_deck(output, self.pres.live.as_ref().map(|l| &l.deck)), // [트랙 C] 'OBS 전체' 면 예배당 템플릿
             "obsFull": kind == "overlay" && self.obs_full, // [트랙 C]
             "pip": if kind == "overlay" && !self.obs_full && s["output"]["obsPip"].as_bool().unwrap_or(false) { json!({ "template": self.template_for("main") }) } else { Value::Null },
-            "overlays": (self.overlays_for(output)), // [트랙 B]
+            "overlays": (self.overlays_with_scene(output, &scene)), // [트랙 B] + 구성에 넣은 실시간 자막 칸
             "layers": self.layers_payload(output),
             "video": self.video_payload(), // [트랙 B]
             "cursorHidden": s["output"]["cursorHidden"].as_bool().unwrap_or(true),
             "cameras": s.get("cameras").cloned().unwrap_or(json!({})),
             // 소스 · 화면 구성 (docs/roadmap-sources.md): 덧붙인 칸 — 옛 칸은 그대로, 옛 output.js 는 이 칸을 모른 채 그린다
-            "scene": self.scene_for(output),
+            "scene": scene,
             "sources": crate::sources::payload_sources_for(output, &crate::sources::user_sources(s), &scene_id, s),
             // 소리 내는 출력 (로드맵 3단계, 설정 output.audioOutput · 기본 예배당). 옛 output.js 는 이 칸을 모르고 예배당 창에서만 소리를 낸다 (같은 결과)
             "audio": crate::outputs::audio_output(s) == output,
@@ -452,6 +453,30 @@ impl Core {
         let p = self.passage_meta(passage, query, None);
         self.pres.set_preview(p, slides, idx);
         self.after_preview();
+    }
+
+    /// 장절을 '다음(미리보기)' 에만 올린다 — 바로 송출 모드여도 송출하지 않는다 (설교 구절 따라가기). 반환: 본문 제목
+    pub fn preview_passage_quiet(&mut self, reference: &str) -> Result<String, String> {
+        let v = self.version_id();
+        let r = self.store.resolve_reference(&v, reference);
+        if r["ok"] != json!(true) {
+            return Err(r["error"].as_str().unwrap_or("본문을 찾지 못했습니다.").to_string());
+        }
+        let passage = crate::flow::with_parallel(self, r["passage"].clone());
+        let opts = self.split_opts(None);
+        let slides = slides::build_bible(&passage, &opts);
+        let p = self.passage_meta(&passage, reference, None);
+        self.pres.set_preview(p, slides, 0);
+        self.pick.want = None;
+        self.pick.want_send = None;
+        self.emit(Ev::Ui); // after_preview 를 부르지 않는다 (송출하지 않음)
+        Ok(passage["title"].as_str().unwrap_or(reference).to_string())
+    }
+
+    /// 출력 화면에 오버레이(자막 등)가 바뀌었다고 알린다
+    pub fn overlays_changed(&self) {
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
     }
 
     fn passage_meta(&self, passage: &Value, query: &str, item: Option<(usize, &Value)>) -> Value {
