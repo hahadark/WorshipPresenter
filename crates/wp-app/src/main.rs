@@ -21,6 +21,7 @@ mod slide_layout; // 웹 출력과 같은 슬라이드 자리 계산
 mod parity_shot; // 점검용 --parity: 조작 화면 그림 ↔ 웹 출력 비교
 mod lyricsfix_ui; // 가사 자동 정리 (절·후렴·브리지 · 전후 비교)
 mod recap_ui; // 예배 후 정리
+mod say_ui; // 말로 시키기
 mod listen_ui; // 음성 인식: 설교 구절 따라가기 · 방송 자막
 mod sermon_ui; // 설교 원고 → 슬라이드 묶음
 mod ai_ui; // AI 도우미: AI 설정 · 동의 · 예배 전 큐시트 점검

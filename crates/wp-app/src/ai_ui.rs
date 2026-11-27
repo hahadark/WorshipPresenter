@@ -49,7 +49,7 @@ struct St {
 static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
 
 pub fn handle_menu(id: &str) -> bool {
-    if crate::recap_ui::handle_menu(id) || crate::lyricsfix_ui::handle_menu(id) || crate::listen_ui::handle_menu(id) || crate::sermon_ui::handle_menu(id) {
+    if crate::say_ui::handle_menu(id) || crate::recap_ui::handle_menu(id) || crate::lyricsfix_ui::handle_menu(id) || crate::listen_ui::handle_menu(id) || crate::sermon_ui::handle_menu(id) {
         return true;
     }
     let mut s = ST.lock();
@@ -120,6 +120,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             if let Ok(t) = std::fs::read_to_string(f) {
                 crate::lyricsfix_ui::open_text(&t);
             }
+        }
+        if let Some(t) = a.iter().position(|x| x == "--say").and_then(|i| a.get(i + 1)) {
+            crate::say_ui::open_with(t);
         }
     });
     consent_win(app, ctx);

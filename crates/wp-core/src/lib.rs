@@ -19,6 +19,7 @@ pub mod stt; // PC 안 음성 인식 (whisper.cpp 서버 · 받기·SHA-256 대�
 pub mod voicefollow; // 설교 중 성경 구절 따라가기 · 방송 자막
 pub mod lyricsclean; // 가사 자동 정리 (절 · 후렴 · 브리지 · 줄 바꿈 · 띄어쓰기)
 pub mod recap; // 예배 후 정리 (시간 표시 · 유튜브 설명 · 설교 요약 재료 · 쇼츠 후보)
+pub mod saycmd; // 말로 시키기 (정해진 단계만 · 확인 뒤 실행)
 pub mod cuecheck; // 예배 전 큐시트 점검 (규칙 + AI 선택)
 pub mod sermonslides; // 설교 원고 → 슬라이드 묶음 (제목 · 성경 · 설교 포인트 · 인용)
 pub mod preservice; // [트랙 A] 예배 전 화면

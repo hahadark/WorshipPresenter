@@ -1810,6 +1810,10 @@ impl App {
         crate::tools_ui::show(&ctx, &self.core); // [트랙 D]
         crate::ai_ui::show(self, &ctx); // AI 도우미 (설정 · 동의 · 예배 전 점검 …)
         crate::lyricsfix_ui::show(self, &ctx, &mut acts); // 가사 자동 정리
+        crate::say_ui::show(self, &ctx, &mut acts); // 말로 시키기
+        for id in crate::say_ui::take_pending() {
+            crate::track_c::handle_menu(self, &id);
+        }
         crate::a_tools::show(self, &ctx, &mut acts); // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
         crate::parity_ui::show(self, &ctx); // [트랙 A] 단축키 보기
         crate::parity2_ui::show(self, &ctx, &mut acts); // [트랙 A] 성경 책 목록 · 종류 골라 붙여 넣기
