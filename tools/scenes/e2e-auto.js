@@ -71,8 +71,10 @@ async function runApp(data, cueFile) {
   let log = '';
   p.stdout.on('data', b => { log += b; });
   p.stderr.on('data', b => { log += b; });
+  // 출시 빌드는 창 프로그램이라 표준 출력이 없다 → 자료 폴더의 로그에서도 찾는다
+  const logFile = () => { try { const d = path.join(data, 'logs'); return fs.readdirSync(d).map(f => fs.readFileSync(path.join(d, f), 'utf8')).join('\n'); } catch { return ''; } };
   for (let i = 0; i < 160; i++) {
-    const m = log.match(/로컬 서버: http:\/\/127\.0\.0\.1:(\d+)/);
+    const m = (log + logFile()).match(/로컬 서버: http:\/\/127\.0\.0\.1:(\d+)/);
     if (m) { await sleep(4000); return { proc: p, port: m[1], log: () => log }; }
     await sleep(250);
   }
