@@ -306,14 +306,19 @@ impl App {
                             "trash" => trash.len(),
                             _ => all.len(),
                         };
-                        for (k, l) in [("all", "전체"), ("pinned", "고정"), ("template", "서식"), ("trash", "휴지통")] {
-                            let b = ui.add(Btn::new(format!("{} {}", tr(l), n(k))).size(Size::Sm).selected(st.view == k));
-                            widgets::mark(&format!("cm-view-{k}"), b.rect);
-                            if b.clicked() && st.view != k {
-                                st.view = k.into();
-                                st.checked.clear();
-                                remember(self, &st);
-                            }
+                        // 2.1.0 다듬기: 따로 떨어진 칩 넷(고른 것 노랑 테두리) → 분할 단추 하나 (인스펙터 · 뷰어 머리와 같은 모양)
+                        let keys = ["all", "pinned", "template", "trash"];
+                        let labels: Vec<String> = keys.iter().zip(["전체", "고정", "서식", "휴지통"]).map(|(k, l)| format!("{} {}", tr(l), n(k))).collect();
+                        let items: Vec<(String, &str)> = keys.iter().zip(&labels).map(|(k, l)| (k.to_string(), l.as_str())).collect();
+                        let mut view = st.view.clone();
+                        let (r, cells) = widgets::segmented_cells(ui, &mut view, &items, widgets::SegStyle::COMPACT);
+                        for (k, cr) in keys.iter().zip(&cells) {
+                            widgets::mark(&format!("cm-view-{k}"), *cr);
+                        }
+                        if r.changed() && st.view != view {
+                            st.view = view;
+                            st.checked.clear();
+                            remember(self, &st);
                         }
                     });
                     ui.horizontal_wrapped(|ui| {
@@ -408,14 +413,16 @@ impl App {
                             let name = c["name"].as_str().unwrap_or("");
                             let is_cur = id == current;
                             let w = ui.available_width();
-                            let (rect, row) = ui.allocate_exact_size(egui::vec2(w, 44.0), egui::Sense::click());
+                            // 2.1.0 다듬기: 두 줄(이름 · 날짜)이 다음 줄에 붙어 보여 48 로, 사이 2
+                            let (rect, row) = ui.allocate_exact_size(egui::vec2(w, 48.0), egui::Sense::click());
+                            ui.add_space(2.0);
                             widgets::mark(&format!("cm-row-{name}"), rect);
                             let hot = row.hovered();
                             if ui.is_rect_visible(rect) {
                                 let bg = if id == st.sel { p.sel } else if hot { p.hover } else { egui::Color32::TRANSPARENT };
                                 ui.painter().rect_filled(rect, crate::theme::cr(crate::theme::Rad::Md), bg);
                                 if is_cur {
-                                    ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height())), 0.0, p.accent);
+                                    ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height())), 0.0, if p.bevel { p.text2 } else { p.accent });
                                 }
                                 let x = rect.left() + 34.0;
                                 let mut head = String::new();
@@ -434,16 +441,18 @@ impl App {
                                 let pt = ui.painter().with_clip_rect(clip);
                                 let hg = pt.layout_no_wrap(head, crate::theme::font(13.5, Weight::SemiBold), p.text);
                                 let hw = hg.size().x;
-                                pt.galley(egui::pos2(x, rect.top() + 5.0), hg, p.text);
+                                pt.galley(egui::pos2(x, rect.top() + 7.0), hg, p.text);
                                 if is_cur {
-                                    let og = pt.layout_no_wrap(tr("열림"), crate::theme::font(11.0, Weight::SemiBold), p.accent);
-                                    pt.galley(egui::pos2(x + hw + 8.0, rect.top() + 7.0), og, p.accent);
+                                    // '열림' 표시: 전문가 테마는 노랑(= 다음) 대신 밝은 회색
+                                    let oc = if p.bevel { p.text2 } else { p.accent };
+                                    let og = pt.layout_no_wrap(tr("열림"), crate::theme::font(11.0, Weight::SemiBold), oc);
+                                    pt.galley(egui::pos2(x + hw + 8.0, rect.top() + 9.0), og, oc);
                                 }
                                 let date = c["serviceDate"].as_str().unwrap_or("");
                                 let d = if date.is_empty() { tr("날짜 없음") } else { format!("{date} ({})", tr(cuemgr::day_of(date))) };
                                 let sub = format!("{d} · {}{}", tr_args("{1}개 순서", &[&c["count"]]), if c["memo"].as_str().is_some_and(|m| !m.is_empty()) { " · 메모" } else { "" });
                                 let sg = pt.layout_no_wrap(sub, crate::theme::font(11.5, Weight::Regular), p.muted);
-                                pt.galley(egui::pos2(x, rect.top() + 24.0), sg, p.muted);
+                                pt.galley(egui::pos2(x, rect.top() + 27.0), sg, p.muted);
                             }
                             // 고르기 칸 (줄 위에 놓아 줄 클릭보다 먼저 받는다)
                             let cb_rect = egui::Rect::from_center_size(egui::pos2(rect.left() + 17.0, rect.center().y), egui::vec2(20.0, 20.0));
@@ -508,7 +517,7 @@ impl App {
         // 입력칸은 다 쓰고 나갈 때(Enter·다른 곳 누름) 저장 — 원본 'change' 사건과 같게
         let done = |r: &egui::Response| r.lost_focus();
         egui::Grid::new("cm-form").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            ui.label(tr("이름"));
+            widgets::form_label(ui, 76.0, &tr("이름"), "");
             let r = ui.add_enabled(!trashed, egui::TextEdit::singleline(&mut st.name).desired_width(f32::INFINITY));
             widgets::mark("cm-name", r.rect);
             if done(&r) && st.name.trim() != s("name") && !st.name.trim().is_empty() {
@@ -516,7 +525,7 @@ impl App {
                 changed = true;
             }
             ui.end_row();
-            ui.label(tr("예배 날짜"));
+            widgets::form_label(ui, 76.0, &tr("예배 날짜"), "");
             ui.horizontal(|ui| {
                 let r = ui.add_enabled(!trashed, egui::TextEdit::singleline(&mut st.date).desired_width(110.0).hint_text("2026-11-15"));
                 widgets::mark("cm-date", r.rect);
@@ -533,7 +542,7 @@ impl App {
             });
             ui.end_row();
             if times_on && !trashed {
-                ui.label(tr("시작 시각"));
+                widgets::form_label(ui, 76.0, &tr("시작 시각"), "");
                 let r = ui.add(egui::TextEdit::singleline(&mut st.start).desired_width(110.0).hint_text("11:00"));
                 if done(&r) && st.start.trim() != s("startTime") {
                     meta["startTime"] = json!(st.start.trim());
@@ -541,7 +550,7 @@ impl App {
                 }
                 ui.end_row();
             }
-            ui.label(tr("메모"));
+            widgets::form_label(ui, 76.0, &tr("메모"), "");
             let r = ui.add_enabled(!trashed, egui::TextEdit::multiline(&mut st.memo).desired_rows(2).desired_width(f32::INFINITY).hint_text(tr("예: 성찬 주일 · 찬양팀 B · 순서지 인쇄 완료")));
             widgets::mark("cm-memo", r.rect);
             if done(&r) && st.memo != s("memo") {

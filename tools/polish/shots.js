@@ -58,6 +58,12 @@ add('en-scene', ['--win', W, ...base, '--scene-open', 'pip'], { uiLang: 'en' });
 add('en-ins-sources', ['--win', W, ...base, '--item', '0', '--ins-tab', 'sources'], { uiLang: 'en' });
 // 밝게 · 고대비 창 몇 개
 for (const th of ['light', 'contrast']) for (const w of ['c:settings', 'd:output', 'ai:check']) add(`${th}-${w.replace(':', '-')}`, ['--win', W, ...base, '--item', '1', '--open-menu', w], { 'ui.theme': th });
+// 전문가 밝게 (2.1.0 다듬기 2차)
+add('main-prolight', ['--win', W, ...base, '--item', '1', '--send'], { 'ui.theme': 'pro-light' });
+add('main-prolight-1000', ['--win', '1000x640', ...base, '--item', '1', '--send'], { 'ui.theme': 'pro-light' });
+for (const w of ['c:settings', 'd:output', 'b:cues', 'c:templates']) add(`prolight-${w.replace(':', '-')}`, ['--win', W, ...base, '--item', '1', '--open-menu', w], { 'ui.theme': 'pro-light' });
+add('prolight-tpl', ['--win', W, ...base, '--tpl-open', 'main'], { 'ui.theme': 'pro-light' });
+add('prolight-menu-도구', ['--win', W, ...base, '--open-menu', '도구'], { 'ui.theme': 'pro-light' });
 // 좁은 창에서 창
 for (const w of ['c:settings', 'd:output']) add('narrow-' + w.replace(':', '-'), ['--win', '1000x640', ...base, '--open-menu', w]);
 

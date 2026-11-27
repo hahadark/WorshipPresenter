@@ -185,15 +185,19 @@ fn colors(kind: Kind, hovered: bool, selected: bool) -> (Color32, Color32, Color
     if p.bevel {
         // (나) 전문가용: 단추는 테두리 대신 위 밝은 선 · 아래 어두운 선 (paint_bevel). 바탕은 도드라진 회색
         return match kind {
-            Kind::Default => (if hovered { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, if selected { p.accent } else { Color32::TRANSPARENT }, p.text),
+            // 켜져 있는 단추(편집칸 · 크게 · 그리기 …)는 노랑 테두리 대신 고른 회색 바탕 + 밝은 테두리 (노랑은 '다음' 에만)
+            Kind::Default if selected => (if hovered { theme::lift(p.sel) } else { p.sel }, p.text2, p.text),
+            Kind::Default => (if hovered { theme::lift(p.raised) } else { p.raised }, Color32::TRANSPARENT, p.text),
             // 노랑은 '다음' 뜻이라 기본 단추에 쓰지 않는다: 조금 더 밝은 회색 + 굵은 글
-            Kind::Primary => (if hovered { mix(p.raised, 62.0, Color32::WHITE) } else { mix(p.raised, 74.0, Color32::WHITE) }, Color32::TRANSPARENT, Color32::WHITE), // 창마다 주된 일 하나 (보통 단추보다 확실히 밝게)
-            Kind::Send => (if hovered { Color32::WHITE } else { p.send_bg }, Color32::TRANSPARENT, p.send_fg),
+            // 창마다 주된 일 하나 (보통 단추보다 확실히 밝게 · 밝은 테마는 진한 회색 + 흰 글)
+            Kind::Primary if p.dark => (if hovered { mix(p.raised, 62.0, Color32::WHITE) } else { mix(p.raised, 74.0, Color32::WHITE) }, Color32::TRANSPARENT, Color32::WHITE),
+            Kind::Primary => (if hovered { mix(p.text2, 85.0, Color32::WHITE) } else { mix(p.text2, 88.0, p.raised) }, Color32::TRANSPARENT, Color32::WHITE),
+            Kind::Send => (if hovered { if p.dark { Color32::WHITE } else { mix(p.send_bg, 85.0, Color32::WHITE) } } else { p.send_bg }, Color32::TRANSPARENT, p.send_fg),
             // 지우기·삭제는 빨강 없이 보통 단추 (빨강은 송출 중에만) — 묻기·되돌리기로 막는다
-            Kind::Danger => (if hovered { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, Color32::TRANSPARENT, p.text),
+            Kind::Danger => (if hovered { theme::lift(p.raised) } else { p.raised }, Color32::TRANSPARENT, p.text),
             Kind::Warn => (p.warn_bg, p.warn, p.text),
             Kind::Pv => (p.next_bg, p.next, p.next),
-            Kind::Ghost => (bg, if selected { p.accent } else { Color32::TRANSPARENT }, fg),
+            Kind::Ghost => (if selected { p.sel } else { bg }, if selected { p.text2 } else { Color32::TRANSPARENT }, fg),
         };
     }
     (bg, border, fg)
@@ -416,7 +420,13 @@ pub fn segmented_wide<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items:
 }
 
 pub fn segmented_with<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items: &[(T, &str)], st: SegStyle) -> Response {
+    segmented_cells(ui, current, items, st).0
+}
+
+/// [`segmented_with`] + 칸마다 사각형 (칸마다 시험 표시를 붙일 때)
+pub fn segmented_cells<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items: &[(T, &str)], st: SegStyle) -> (Response, Vec<Rect>) {
     let p = pal();
+    let mut cells = Vec::with_capacity(items.len());
     let gal: Vec<(Arc<Galley>, Arc<Galley>)> = items
         .iter()
         .map(|(_, t)| (layout(ui, t, theme::font(st.font, Weight::Regular)), layout(ui, t, theme::font(st.font, Weight::SemiBold))))
@@ -431,6 +441,7 @@ pub fn segmented_with<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items:
     for (i, ((val, _), (g_reg, g_bold))) in items.iter().zip(gal).enumerate() {
         let w = if st.fill { (total + (n - 1) as f32) / n as f32 } else { widths[i] };
         let r = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(w, h));
+        cells.push(r);
         x += w - 1.0; // + button { margin-left: -1px }
         let id = resp.id.with(i);
         let cr = ui.interact(r, id, Sense::click());
@@ -482,7 +493,7 @@ pub fn segmented_with<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items:
     if let Some((r, c)) = sel_rect {
         ui.painter().rect_stroke(r, c, Stroke::new(p.border_w, p.line2), StrokeKind::Inside);
     }
-    resp
+    (resp, cells)
 }
 
 // ---------------------------------------------------------------- 패널 탭 머리

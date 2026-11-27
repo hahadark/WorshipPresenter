@@ -87,6 +87,35 @@ pub(crate) fn section(ui: &mut egui::Ui, key: &str, title: &str, default_open: b
     open
 }
 
+/// 접힌 판 손잡이: 판이 있던 가장자리에 얇은 띠(10px) + 가운데 작은 삼각형. 누르면 true
+pub(crate) const HANDLE_W: f32 = 10.0;
+fn collapsed_handle(ui: &mut egui::Ui, id: &str, left: bool, tip: &str) -> bool {
+    let p = pal();
+    let mut clicked = false;
+    let panel = if left { egui::Panel::left(id.to_string()) } else { egui::Panel::right(id.to_string()) };
+    panel.resizable(false).exact_size(HANDLE_W).frame(egui::Frame::new().fill(p.head).inner_margin(Margin::ZERO)).show(ui, |ui| {
+        let r = ui.max_rect();
+        let resp = ui.interact(r, Id::new((id, "hit")), Sense::click()).on_hover_text(tip);
+        widgets::mark(id, r);
+        let pt = ui.painter();
+        if resp.hovered() {
+            pt.rect_filled(r, 0.0, p.hover);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        let x = if left { r.right() - 0.5 } else { r.left() + 0.5 };
+        pt.vline(x, r.y_range(), Stroke::new(1.0, p.edge));
+        // 가운데 손잡이 금 + 펴는 방향 삼각형
+        let c = r.center();
+        pt.vline(c.x, egui::Rangef::new(c.y - 22.0, c.y - 8.0), Stroke::new(2.0, p.muted2));
+        pt.vline(c.x, egui::Rangef::new(c.y + 8.0, c.y + 22.0), Stroke::new(2.0, p.muted2));
+        let d = if left { 1.0 } else { -1.0 };
+        let tri = vec![Pos2::new(c.x - 2.0 * d, c.y - 4.0), Pos2::new(c.x + 2.5 * d, c.y), Pos2::new(c.x - 2.0 * d, c.y + 4.0)];
+        pt.add(egui::Shape::convex_polygon(tri, if resp.hovered() { p.text } else { p.muted }, Stroke::NONE));
+        clicked = resp.clicked();
+    });
+    clicked
+}
+
 /// 판 바탕 틀 (판 색, 여백 없음)
 fn pane_frame() -> egui::Frame {
     egui::Frame::new().fill(pal().panel).inner_margin(Margin::ZERO)
@@ -131,6 +160,13 @@ impl App {
                     ui.painter().vline(ui.max_rect().left() - 0.5, ui.max_rect().y_range(), Stroke::new(1.0, p.edge));
                     self.pro_inspector(ui, s, acts);
                 });
+        }
+        // ---- 접힌 판 손잡이 (좁은 창 · 배율 150% 에서 처음부터 접혀 있을 때도 '여기 판이 있다' 가 보이게). 누르면 폄
+        if !self.pro_side_visible() && collapsed_handle(ui, "pro-side-handle", true, &tr("큐시트 판 펴기")) {
+            self.pro_toggle_side();
+        }
+        if !self.pro_inspector_visible() && collapsed_handle(ui, "pro-ins-handle", false, &tr("인스펙터 펴기")) {
+            self.pro_toggle_inspector();
         }
         // 알림 상자가 시간표를 덮지 않게: 창 아래에서 가운데 판 아래끝까지 높이
         let bottom_h = ui.ctx().content_rect().bottom() - ui.available_rect_before_wrap().bottom();

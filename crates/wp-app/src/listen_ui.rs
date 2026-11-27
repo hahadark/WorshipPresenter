@@ -498,22 +498,22 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 s.ask_download = true;
             }
         }
-        // 모델 고르기
-        ui.horizontal_wrapped(|ui| {
-            ui.label(tr("모델"));
-            for m in stt::MODELS {
-                let on = model == m.id;
-                let have = stt::model_path(&data, m.id).is_file();
-                let label = format!("{}{}", m.id, if have { "" } else { " (안 받음)" });
-                if ui.add(Btn::new(label).selected(on).size(Size::Sm).tooltip(tr(m.name))).clicked() && !s.listening {
-                    let id = m.id.to_string();
-                    app.core.lock().settings.update(|d| {
-                        if !d["stt"].is_object() {
-                            d["stt"] = serde_json::json!({});
-                        }
-                        d["stt"]["model"] = serde_json::json!(id);
-                    });
-                }
+        // 모델 고르기 — 2.1.0 다듬기: 낱개 칩(고른 것 노랑 테두리) 대신 양식 줄 + 분할 단추 (듣는 중에는 못 바꿈)
+        crate::widgets::form_row(ui, &tr("모델"), |ui| {
+            let labels: Vec<String> = stt::MODELS.iter().map(|m| format!("{}{}", m.id, if stt::model_path(&data, m.id).is_file() { String::new() } else { format!(" ({})", tr("안 받음")) })).collect();
+            let items: Vec<(String, &str)> = stt::MODELS.iter().zip(&labels).map(|(m, l)| (m.id.to_string(), l.as_str())).collect();
+            let mut pick = model.to_string();
+            let (r, cells) = ui.add_enabled_ui(!s.listening, |ui| crate::widgets::segmented_cells(ui, &mut pick, &items, crate::widgets::SegStyle::COMPACT)).inner;
+            for (m, c) in stt::MODELS.iter().zip(&cells) {
+                ui.interact(*c, ui.id().with(("stt-model-tip", m.id)), egui::Sense::hover()).on_hover_text(tr(m.name));
+            }
+            if r.changed() && !s.listening {
+                app.core.lock().settings.update(|d| {
+                    if !d["stt"].is_object() {
+                        d["stt"] = serde_json::json!({});
+                    }
+                    d["stt"]["model"] = serde_json::json!(pick);
+                });
             }
         });
         ui.separator();

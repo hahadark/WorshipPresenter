@@ -1133,7 +1133,7 @@ impl App {
                 if p.bevel {
                     // (나) 뷰어 머리: '다음'(노랑) · '송출 중'(빨강) 굵은 글자만 (배지 없이)
                     let (t, c) = if is_live { (tr("송출 중"), p.live_text) } else { (tr("다음"), p.next) };
-                    ui.add(egui::Label::new(theme::rich(t, 12.5, Weight::Bold, c)).selectable(false));
+                    ui.add(egui::Label::new(theme::rich(t, 12.0, Weight::Bold, c)).selectable(false));
                 } else if is_live { widgets::badge(ui, "LIVE", Badge::Live); } else { widgets::badge(ui, &tr("미리보기"), Badge::Pv); }
                 let info = deck.map(|d| deck_info(d, is_live)).unwrap_or_default();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1217,17 +1217,21 @@ impl App {
             if is_live && p.bevel { self.output_off_overlay(ui, rect, deck.is_some(), acts); }
             // ---- .pane-tools: (◀ n/m ▶) · 다음: … · 그리기
             ui.add_space(6.0);
+            // 2.1.0 다듬기: 이 줄 단추는 모두 높이 26 (편집칸 머리 단추와 같은 단계) · 글자 ◀▶ 대신 선 아이콘
+            let tool_h = if p.bevel { 26.0 } else { 28.0 };
             ui.horizontal(|ui| {
-                ui.set_min_height(30.0);
+                ui.set_min_height(if p.bevel { 26.0 } else { 30.0 });
                 if !is_live {
                     let n = deck.map(|d| d.slides.len()).unwrap_or(0);
                     let i = deck.map(|d| d.index).unwrap_or(0);
                     let why = if deck.is_none() { Some(tr("미리보기에 띄운 본문이 없습니다")) } else { None };
                     let prev_tip = why.clone().unwrap_or_else(|| if i == 0 { tr("첫 슬라이드입니다") } else { tr("미리보기 이전 슬라이드 (PageUp)") });
-                    if ui.add(Btn::new("◀").height(28.0).enabled(deck.is_some() && i > 0).tooltip(prev_tip)).clicked() && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
+                    let prev = if p.bevel { Btn::icon_only("chevron-left").size(widgets::Size::Sm) } else { Btn::new("◀") };
+                    if ui.add(prev.height(tool_h).enabled(deck.is_some() && i > 0).tooltip(prev_tip)).clicked() && i > 0 { acts.push(Act::PreviewIndex(i - 1)) }
                     count_label(ui, deck.map(|d| format!("{} / {}", d.index + 1, d.slides.len())).unwrap_or_default());
                     let next_tip = why.unwrap_or_else(|| if i + 1 >= n { tr("마지막 슬라이드입니다") } else { tr("미리보기 다음 슬라이드 (PageDown)") });
-                    if ui.add(Btn::new("▶").height(28.0).enabled(deck.is_some() && i + 1 < n).tooltip(next_tip)).clicked() && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
+                    let next = if p.bevel { Btn::icon_only("chevron-right").size(widgets::Size::Sm) } else { Btn::new("▶") };
+                    if ui.add(next.height(tool_h).enabled(deck.is_some() && i + 1 < n).tooltip(next_tip)).clicked() && i + 1 < n { acts.push(Act::PreviewIndex(i + 1)) }
                 } else if let Some(d) = deck {
                     count_label(ui, format!("{} / {}", d.index + 1, d.slides.len()));
                 }
@@ -1236,8 +1240,8 @@ impl App {
                     // 줄 오른쪽 끝 ▴/▾ (.pane-tools .thumbs-fold: 28px, muted · 접힌 때 accent). 접혀도 남아 다시 펼친다
                     let fb = Btn::icon_only(if folded { "chevron-down" } else { "chevron-up" })
                         .kind(widgets::Kind::Ghost)
-                        .height(28.0)
-                        .icon_color(if folded { p.accent } else { p.muted })
+                        .height(tool_h)
+                        .icon_color(if folded { if p.bevel { p.text } else { p.accent } } else { p.muted })
                         .tooltip(if folded { tr("슬라이드(절) 번호 단추 펼치기") } else { tr("슬라이드(절) 번호 단추 접기 (화면 자리 넓히기)") });
                     let fr = ui.add(fb);
                     widgets::mark(&format!("{fold_key}-thumbs-fold"), fr.rect);
@@ -1245,7 +1249,7 @@ impl App {
                         self.core.lock().settings.update(|d| d["thumbsFold"][fold_key] = serde_json::json!(!folded_saved));
                         ui.ctx().request_repaint();
                     }
-                    if is_live && ui.add(Btn::new(tr("그리기")).icon("brush").height(30.0).selected(draw_on).tooltip(tr("LIVE 화면에 그리기·강조 — 예배당·OBS 화면에 같이 보입니다"))).clicked() {
+                    if is_live && ui.add(Btn::new(tr("그리기")).icon("brush").size(if p.bevel { widgets::Size::Sm } else { widgets::Size::Md }).height(if p.bevel { tool_h } else { 30.0 }).selected(draw_on).tooltip(tr("LIVE 화면에 그리기·강조 — 예배당·OBS 화면에 같이 보입니다"))).clicked() {
                         crate::system_ui::ST.lock().draw = true;
                     }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
@@ -1446,8 +1450,9 @@ fn dashed_rect(ui: &egui::Ui, r: egui::Rect, st: egui::Stroke) {
 /// .count (muted, 가운데, 최소 48px)
 fn count_label(ui: &mut egui::Ui, t: String) {
     let p = crate::theme::pal();
-    let g = ui.painter().layout_no_wrap(t, crate::theme::font(14.0, crate::theme::Weight::Regular), p.muted);
-    let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x.max(48.0), g.size().y), Sense::hover());
+    // 2.1.0 다듬기: 전문가 테마는 이 줄의 '다음: …' 과 같은 12 단계 (예전 14 는 줄에서 혼자 컸다)
+    let g = ui.painter().layout_no_wrap(t, crate::theme::font(if p.bevel { 12.0 } else { 14.0 }, crate::theme::Weight::Regular), p.muted);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x.max(if p.bevel { 40.0 } else { 48.0 }), g.size().y), Sense::hover());
     ui.painter().galley(r.center() - g.size() / 2.0, g, p.muted);
 }
 

@@ -513,9 +513,15 @@ fn srow_body(s: &Value, item_type: &str) -> SrowBody {
     }
 }
 
-/// 이름표 색 (BCGroup.color — 성경 슬라이드는 없음)
+/// 이름표 색 (BCGroup.color — 성경 슬라이드는 없음).
+/// 전문가 테마는 빨강 = 송출 중 · 노랑 = 다음 만 진한 색으로 쓰므로, 이름표 색(절 파랑 · 후렴 빨강 …)은 흐린 회색 쪽으로 눌러 구별만 되게 한다
 fn group_color(s: &Value) -> Option<Color32> {
-    (s["kind"] != "bible").then(|| wp_core::groups::color(s["label"].as_str().unwrap_or(""))).flatten().map(theme::hex)
+    let p = pal();
+    (s["kind"] != "bible")
+        .then(|| wp_core::groups::color(s["label"].as_str().unwrap_or("")))
+        .flatten()
+        .map(theme::hex)
+        .map(|c| if p.bevel { theme::mix(c, 40.0, p.text2) } else { c })
 }
 
 /// 슬라이드 이름 (grid.js: 숫자뿐인 이름은 빼고, 성경은 장절)
@@ -1120,14 +1126,16 @@ impl App {
                 let can_add = !st.cue_mode && self.searched_bible_item().is_some();
                 let add_w = if can_add { 140.0 } else { 0.0 };
                 let view_w = 250.0 + add_w + if matches!(st.view, SlideView::Grid | SlideView::All) { 100.0 } else { 0.0 };
-                let info_g = ui.painter().layout_no_wrap(info.clone(), theme::font(14.0, Weight::Regular), pal().muted);
+                // 2.1.0 다듬기: 제목 14 굵게 · 부가 글 12 흐리게 (편집칸 머리 · 인스펙터 제목과 같은 단계, 예전 15 · 14)
+                let (t_fs, i_fs) = if pal().bevel { (14.0, 12.0) } else { (15.0, 14.0) };
+                let info_g = ui.painter().layout_no_wrap(info.clone(), theme::font(i_fs, Weight::Regular), pal().muted);
                 let room = (row_width(ui) - view_w - info_g.size().x - 16.0).max(60.0);
                 ui.scope(|ui| {
                     ui.set_max_width(room);
-                    ui.add(egui::Label::new(rich(&title, 15.0, Weight::Bold, pal().text)).truncate());
+                    ui.add(egui::Label::new(rich(&title, t_fs, Weight::Bold, pal().text)).truncate());
                 });
                 if !info.is_empty() {
-                    ui.label(rich(&info, 14.0, Weight::Regular, pal().muted));
+                    ui.label(rich(&info, i_fs, Weight::Regular, pal().muted));
                 }
                 if can_add {
                     let b = ui.add(Btn::new(tr("큐시트에 넣기")).icon("plus").size(Size::Sm).height(26.0).kind(widgets::Kind::Primary).tooltip(tr("검색한 본문을 성경 순서로 큐시트에 넣습니다 (고른 순서 다음에)")));
@@ -2392,9 +2400,12 @@ pub(crate) fn ce_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut eg
     let lw = if wp_core::i18n::is_en() { 88.0 } else { 52.0 };
     let r = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        let g = ui.painter().layout(label.to_string(), theme::font(14.0, Weight::Regular), p.text2, lw);
+        // 2.1.0 다듬기: 전문가 테마는 인스펙터 양식(form_label)과 같은 이름표 — 오른쪽 맞춤 · 11.5 · text2
+        let fs = if p.bevel { 11.5 } else { 14.0 };
+        let g = ui.painter().layout(label.to_string(), theme::font(fs, Weight::Regular), p.text2, lw);
         let (r, _) = ui.allocate_exact_size(Vec2::new(lw, theme::ctl_h().max(g.size().y)), Sense::hover());
-        ui.painter().galley(Pos2::new(r.left(), r.top() + (theme::ctl_h() - g.size().y).max(0.0) / 2.0), g, p.text2);
+        let x = if p.bevel { r.right() - g.size().x } else { r.left() };
+        ui.painter().galley(Pos2::new(x, r.top() + (theme::ctl_h() - g.size().y).max(0.0) / 2.0), g, p.text2);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             add(ui)

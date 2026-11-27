@@ -149,6 +149,8 @@ impl App {
         // 예배당 화면 (꺼짐 = muted2 · 켜짐 = pv · 모니터 없음 = live)
         let mon = self.out.monitors.iter().find(|m| m.index == self.monitor).map(|m| format!("{} {}×{}", m.name, m.size.0, m.size.1));
         let (c, t) = match (running, mon) {
+            // 송출 중인데 꺼져 있으면 주황 (뷰어 안 띠와 같은 뜻 — 아래 알림 띠 대신 이 칸 하나)
+            (false, _) if p.bevel && s.live.is_some() => (p.warn, tr("예배당 화면 꺼짐 — 회중에게 안 보임")),
             (false, _) => (p.muted2, tr("예배당 화면 꺼짐")),
             (true, Some(m)) => (p.pv, wp_core::i18n::tr_args("예배당 화면: {1}", &[&m])),
             (true, None) => (p.live, tr("예배당 모니터 연결 안 됨")),
@@ -287,7 +289,11 @@ impl App {
         }
         let tr_ = Rect::from_min_max(Pos2::new(band.left() + 8.0, band.top()), Pos2::new(br.left() - 6.0, band.bottom()));
         icons::paint(ui, Rect::from_center_size(Pos2::new(tr_.left() + 7.0, band.center().y), Vec2::splat(14.0)), "monitor-off", Color32::WHITE);
-        ui.painter().with_clip_rect(tr_).text(Pos2::new(tr_.left() + 20.0, band.center().y), Align2::LEFT_CENTER, tr("예배당 화면 꺼짐 — 회중에게 안 보임"), theme::font(11.5, Weight::SemiBold), Color32::WHITE);
+        // 좁은 뷰어에서는 긴 글이 잘리지 않게 짧은 글로 (2.1.0 다듬기)
+        let long = tr("예배당 화면 꺼짐 — 회중에게 안 보임");
+        let fits = ui.painter().layout_no_wrap(long.clone(), theme::font(11.5, Weight::SemiBold), Color32::WHITE).size().x <= tr_.width() - 22.0;
+        let text = if fits { long } else { tr("예배당 화면 꺼짐") };
+        ui.painter().with_clip_rect(tr_).text(Pos2::new(tr_.left() + 20.0, band.center().y), Align2::LEFT_CENTER, text, theme::font(11.5, Weight::SemiBold), Color32::WHITE);
     }
 
     /// 송출했는데 예배당 화면이 꺼져 있고 자동으로 켜지도 않을 때, 꺼진 동안 한 번만 알림 + [예배당 화면 켜기]
@@ -296,6 +302,10 @@ impl App {
         thread_local!(static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) });
         if self.out.running() {
             WARNED.with(|w| w.set(false));
+            return;
+        }
+        // (나) 전문가 테마: 송출 중 뷰어 안 띠 [지금 켜기] + 상태 줄 '예배당 화면 꺼짐' 칸(주황)이 알린다 — 아래 알림 띠를 또 띄우지 않는다
+        if pal().bevel {
             return;
         }
         let mut c = self.core.lock();

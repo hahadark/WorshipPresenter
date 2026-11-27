@@ -573,7 +573,8 @@ fn row_pro(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         }
         let strong = st.air || st.pv;
         let (c_no, c_t, c_d, c_tm) = if strong {
-            (Color32::WHITE, Color32::WHITE, theme::alpha(Color32::WHITE, 0.7), Color32::WHITE)
+            let w = theme::strong_text();
+            (w, w, theme::alpha(w, 0.7), w)
         } else if st.done {
             (p.muted2, p.muted2, p.muted2, p.muted2)
         } else {
@@ -584,14 +585,14 @@ fn row_pro(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
         // 종류 아이콘 (작게, 칩 없이)
         let ico = Rect::from_center_size(Pos2::new(rect.left() + 46.0, cy), Vec2::splat(14.0));
         // 종류 아이콘은 흐린 글 색 한 가지 (종류마다 다른 색은 쓰지 않는다 — 2.0.8 뒤 주인 피드백)
-        icons::paint(ui, ico, icons::for_type(ty), if strong { Color32::WHITE } else if st.done { p.muted2 } else { p.muted });
+        icons::paint(ui, ico, icons::for_type(ty), if strong { theme::strong_text() } else if st.done { p.muted2 } else { p.muted });
         let x = rect.left() + 58.0;
         let mut right = rect.right() - PRO_MIN_W - PRO_TIME_W - 4.0;
         if hovered || st.selected {
             right = if hovered { send_rect.left() - 4.0 } else { edit_rect.left() - 4.0 };
         }
         if !(hovered || st.selected) {
-            right -= scene_mark(ui, resp.id.with("scene"), Pos2::new(right - 6.0, cy), 12.0, &st.scene, if strong { Color32::WHITE } else { p.muted });
+            right -= scene_mark(ui, resp.id.with("scene"), Pos2::new(right - 6.0, cy), 12.0, &st.scene, if strong { theme::strong_text() } else { p.muted });
         }
         if let Some((t, dur)) = &st.time {
             if !t.is_empty() {

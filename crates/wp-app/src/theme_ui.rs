@@ -109,6 +109,10 @@ const FILTERS: [&str; 3] = ["모두", "기본 테마", "내 테마"];
 
 fn slot_color(slot: &str) -> Color32 {
     let p = pal();
+    // 전문가 테마: 노랑(= 다음)을 '어디에 쓰는 중' 표시에 쓰지 않는다 — 흐린 회색 배지 한 가지 (이름 글자로 구별)
+    if p.bevel {
+        return p.text2;
+    }
     match slot {
         "main" => p.accent,
         "overlay" => p.pv,
@@ -363,17 +367,21 @@ impl ThemeUi {
                 ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
                 let r = ui.add(egui::TextEdit::singleline(&mut self.query).hint_text(tr("테마 이름 찾기")).desired_width(170.0));
                 widgets::mark("theme-search", r.rect);
-                for (k, label) in FILTERS.iter().enumerate() {
-                    if btn(ui, &format!("theme-filter-{k}"), Btn::new(tr(label)).size(Size::Sm).selected(self.filter == k as u8)) {
-                        self.filter = k as u8;
-                    }
+                // 2.1.0 다듬기: 거르기 · 견본 글은 낱개 칩 대신 분할 단추 (고른 칸 = 회색, 노랑 테두리 없음)
+                let fl: Vec<String> = FILTERS.iter().map(|l| tr(l)).collect();
+                let fi: Vec<(u8, &str)> = fl.iter().enumerate().map(|(k, l)| (k as u8, l.as_str())).collect();
+                let (_, cells) = widgets::segmented_cells(ui, &mut self.filter, &fi, widgets::SegStyle::COMPACT);
+                for (k, c) in cells.iter().enumerate() {
+                    widgets::mark(&format!("theme-filter-{k}"), c.intersect(ui.clip_rect()));
                 }
                 widgets::vsep(ui, 18.0);
                 ui.label(theme::rich(&tr("견본 글"), 12.0, Weight::Medium, p.muted));
-                for (k, label) in SAMPLES.iter().enumerate() {
-                    if btn(ui, &format!("theme-sample-{k}"), Btn::new(tr(label)).size(Size::Sm).selected(self.sample == k).tooltip(tr("미리보기에 넣어 볼 글을 바꿉니다 (출력은 바뀌지 않습니다)"))) {
-                        self.sample = k;
-                    }
+                let sl: Vec<String> = SAMPLES.iter().map(|l| tr(l)).collect();
+                let si: Vec<(usize, &str)> = sl.iter().enumerate().map(|(k, l)| (k, l.as_str())).collect();
+                let (r, cells) = widgets::segmented_cells(ui, &mut self.sample, &si, widgets::SegStyle::COMPACT);
+                r.on_hover_text(tr("미리보기에 넣어 볼 글을 바꿉니다 (출력은 바뀌지 않습니다)"));
+                for (k, c) in cells.iter().enumerate() {
+                    widgets::mark(&format!("theme-sample-{k}"), c.intersect(ui.clip_rect()));
                 }
                 widgets::vsep(ui, 18.0);
                 if btn(ui, "theme-save-current", Btn::new(tr("지금 출력 디자인을 내 테마로 저장")).icon("plus").size(Size::Sm).tooltip(tr("지금 예배당·OBS 자막·OBS 찬송가에 쓰는 디자인을 한 묶음으로 이름 붙여 저장합니다"))) {
@@ -552,7 +560,7 @@ impl ThemeUi {
             if in_group.is_empty() {
                 // 내 테마가 하나도 없을 때는 만드는 법을 알려 준다 (찾기·거르기로 가려진 때는 아님)
                 if g == "내 테마" && self.filter != 1 && self.query.trim().is_empty() {
-                    ui.label(theme::rich(&tr("내 테마"), 13.0, Weight::SemiBold, p.muted));
+                    widgets::group_head(ui, &tr("내 테마"));
                     ui.label(theme::rich(&tr("아직 내 테마가 없습니다. 위의 '지금 출력 디자인을 내 테마로 저장'이나 기본 테마의 '복제해서 수정'으로 만드세요."), 12.5, Weight::Regular, p.muted2));
                     ui.add_space(8.0);
                 }
@@ -560,7 +568,7 @@ impl ThemeUi {
             }
             ui.add_space(4.0);
             let head = if g == "내 테마" { tr("내 테마") } else { tr_args("기본 테마 · {1}", &[&tr(g)]) };
-            ui.label(theme::rich(&head, 13.0, Weight::SemiBold, p.muted));
+            widgets::group_head(ui, &head);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(12.0, 12.0);
                 for t in in_group {
@@ -581,7 +589,8 @@ impl ThemeUi {
         widgets::mark(&format!("theme-card-{}", s(t, "id")), r);
         let hovered = resp.hovered();
         let bg = if selected { p.sel } else if hovered { p.hover } else { p.panel2 };
-        let border = if selected { p.accent } else if hovered { p.line2 } else { p.line };
+        // 고른 카드: 전문가 테마는 노랑 대신 밝은 회색 2px (노랑 = 다음)
+        let border = if selected { if p.bevel { p.text2 } else { p.accent } } else if hovered { p.line2 } else { p.line };
         ui.painter().rect(r, crate::theme::cr(crate::theme::Rad::Lg), bg, Stroke::new(if selected { 2.0 } else { 1.0 }, border), StrokeKind::Inside);
         let thumb = Rect::from_min_size(r.min + Vec2::new(6.0, 6.0), Vec2::new(CARD_W - 12.0, THUMB_H - 6.0));
         let slot = SLOTS.iter().find(|o| t["slots"][**o].is_object()).copied().unwrap_or("main");
@@ -623,7 +632,7 @@ impl ThemeUi {
         let using = used(t);
         ui.horizontal_wrapped(|ui| {
             ui.label(theme::rich(&shown_name(t), 16.0, Weight::Bold, p.text));
-            chip(ui, &tr(if builtin { "기본 테마" } else { "내 테마" }), if builtin { p.muted } else { p.accent });
+            chip(ui, &tr(if builtin { "기본 테마" } else { "내 테마" }), if builtin || p.bevel { p.muted } else { p.accent });
         });
         if !s(t, "desc").is_empty() {
             ui.label(theme::rich(&tr(s(t, "desc")), 12.5, Weight::Regular, p.muted));

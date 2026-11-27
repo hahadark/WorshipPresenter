@@ -92,9 +92,9 @@ fn tp_button(ui: &mut Ui, rect: Rect, id: Id, icon: &str, label: &str, kbd: &str
     let resp = ui.interact(rect, id, Sense::click()).on_hover_text(tip);
     let hov = resp.hovered();
     let (bg, fg) = if send {
-        (if hov { if p.bevel { Color32::WHITE } else { mix(p.send_bg, 85.0, Color32::WHITE) } } else { p.send_bg }, p.send_fg)
+        (if hov { if p.bevel && p.dark { Color32::WHITE } else { mix(p.send_bg, 85.0, Color32::WHITE) } } else { p.send_bg }, p.send_fg)
     } else {
-        (if hov { mix(p.raised, 80.0, Color32::WHITE) } else { p.raised }, p.text)
+        (if hov { theme::lift(p.raised) } else { p.raised }, p.text)
     };
     let r = if resp.is_pointer_button_down_on() { rect.translate(Vec2::new(0.0, 0.5)) } else { rect };
     let pt = ui.painter();

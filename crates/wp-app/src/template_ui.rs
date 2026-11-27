@@ -89,6 +89,10 @@ fn sample(k: usize) -> Value {
 
 fn slot_color(slot: &str) -> Color32 {
     let p = pal();
+    // 전문가 테마: '어디에 쓰는 중' 표시는 회색 한 가지 (노랑 = 다음 에만)
+    if p.bevel {
+        return p.text2;
+    }
     match slot {
         "main" => p.accent,
         "overlay" => p.pv,
@@ -247,7 +251,7 @@ impl TemplateUi {
                     ui.allocate_ui_with_layout(Vec2::new(372.0, h), egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.set_min_size(Vec2::new(360.0, h));
                         if !self.draft.is_null() {
-                            ui.label(theme::rich(tr("속성"), 13.0, Weight::SemiBold, pal().muted));
+                            widgets::group_head(ui, &tr("속성"));
                             egui::ScrollArea::vertical().id_salt("tpl-inspect").auto_shrink([false, false]).show(ui, |ui| {
                                 ui.set_width(352.0);
                                 let focus = self.focus.take();
@@ -302,7 +306,7 @@ impl TemplateUi {
     /// 왼쪽: 템플릿 목록
     fn list_column(&mut self, ui: &mut egui::Ui, core: &Shared, list: &[Value], active: &[String; 3], pc: &paint::Ctx) {
         let p = pal();
-        ui.label(theme::rich(tr("템플릿"), 13.0, Weight::SemiBold, p.muted));
+        widgets::group_head(ui, &tr("템플릿"));
         let list_h = (ui.available_height() - 130.0).max(120.0);
         let mut pick: Option<Value> = None;
         egui::ScrollArea::vertical().id_salt("tpl-list").max_height(list_h).auto_shrink([false, false]).show(ui, |ui| {
@@ -317,7 +321,7 @@ impl TemplateUi {
                 let bg = if on { p.sel } else if resp.hovered() { p.hover } else { Color32::TRANSPARENT };
                 ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), bg);
                 if on {
-                    ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), crate::theme::cr(crate::theme::Rad::Xs), p.accent);
+                    ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), crate::theme::cr(crate::theme::Rad::Xs), if p.bevel { p.text2 } else { p.accent });
                 }
                 let tw = f(shown, "width", 1920.0) as f32;
                 let th = f(shown, "height", 1080.0) as f32;

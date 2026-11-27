@@ -245,7 +245,24 @@ fn top_button(ui: &mut Ui, id: egui::Id, text: &str, open: bool) -> Response {
     resp
 }
 
-/// 펼친 메뉴의 한 줄 (.mb-item: 18px 아이콘 칸 · 글 · 오른쪽 kbd, hover 때 sel 바탕).
+/// 메뉴 이름 끝의 괄호 설명 '이름 (설명)' → (이름, 설명). 설명은 메뉴 오른쪽에 흐린 글로 (2.1.0 다듬기: 긴 메뉴 이름 줄이기)
+pub fn split_desc(label: &str) -> (&str, Option<&str>) {
+    if let Some(body) = label.strip_suffix(')') {
+        if let Some(i) = body.rfind(" (") {
+            let (name, desc) = (&body[..i], &body[i + 2..]);
+            if !name.trim().is_empty() && !desc.trim().is_empty() && !desc.contains('(') {
+                return (name, Some(desc));
+            }
+        }
+    }
+    (label, None)
+}
+
+/// 설명 글 크기 · 이름과 설명 사이
+const DESC_FONT: f32 = 11.5;
+const DESC_GAP: f32 = 16.0;
+
+/// 펼친 메뉴의 한 줄 (.mb-item: 18px 아이콘 칸 · 글 · 오른쪽 흐린 설명 · kbd, hover 때 sel 바탕).
 /// `check` 가 Some 이면 아이콘 칸에 ✓ (원본의 '✓ ' 앞글자)
 pub fn item_row(ui: &mut Ui, icon: Option<&str>, label: &str, key: &str, check: Option<bool>) -> Response {
     let p = pal();
@@ -267,10 +284,17 @@ pub fn item_row(ui: &mut Ui, icon: Option<&str>, label: &str, key: &str, check: 
         _ => {}
     }
     let x = rect.left() + 8.0 + 18.0 + 9.0;
-    pt.text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, label, theme::font(ITEM_FONT, Weight::Regular), p.text);
+    let (name, desc) = split_desc(label);
+    pt.text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, name, theme::font(ITEM_FONT, Weight::Regular), p.text);
+    let mut right = rect.right() - 10.0;
     if !key.is_empty() {
-        pt.text(Pos2::new(rect.right() - 10.0, rect.center().y), Align2::RIGHT_CENTER, key, theme::font(11.0, Weight::Regular), p.muted);
+        let r = pt.text(Pos2::new(right, rect.center().y), Align2::RIGHT_CENTER, key, theme::font(11.0, Weight::Regular), p.muted);
+        right = r.left() - 12.0;
     }
+    if let Some(d) = desc {
+        pt.text(Pos2::new(right, rect.center().y), Align2::RIGHT_CENTER, d, theme::font(DESC_FONT, Weight::Regular), if hov { p.muted } else { p.muted2 });
+    }
+    let _ = right;
     resp
 }
 
@@ -330,7 +354,10 @@ pub fn show_with(ui: &mut Ui, menus: &[Menu], mut extra: impl FnMut(&str, &mut U
                 if i.id == "-" {
                     continue;
                 }
-                let tw = ui.painter().layout_no_wrap(wp_core::i18n::tr(i.label), theme::font(ITEM_FONT, Weight::Regular), pal().text).size().x;
+                let full = wp_core::i18n::tr(i.label);
+                let (name, desc) = split_desc(&full);
+                let tw = ui.painter().layout_no_wrap(name.to_string(), theme::font(ITEM_FONT, Weight::Regular), pal().text).size().x
+                    + desc.map(|d| DESC_GAP + ui.painter().layout_no_wrap(d.to_string(), theme::font(DESC_FONT, Weight::Regular), pal().muted).size().x).unwrap_or(0.0);
                 let kw = if i.key.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(i.key.to_string(), theme::font(11.0, Weight::Regular), pal().muted).size().x + 12.0 };
                 w = w.max(35.0 + tw + kw + 18.0);
             }
@@ -377,4 +404,17 @@ pub fn sub_row<R>(ui: &mut Ui, icon: Option<&str>, label: &str, content: impl Fn
             content(ui)
         })
         .map(|r| r.inner)
+}
+
+#[cfg(test)]
+mod desc_tests {
+    use super::split_desc;
+    #[test]
+    fn menu_desc_splits_trailing_paren_only() {
+        assert_eq!(split_desc("웹 편집기 (다른 컴퓨터에서 큐시트 고치기)"), ("웹 편집기", Some("다른 컴퓨터에서 큐시트 고치기")));
+        assert_eq!(split_desc("말로 시키기 (찾기칸에 '>' 로도)"), ("말로 시키기", Some("찾기칸에 '>' 로도")));
+        assert_eq!(split_desc("주보로 큐시트 만들기 (AI)…"), ("주보로 큐시트 만들기 (AI)…", None));
+        assert_eq!(split_desc("설정"), ("설정", None));
+        assert_eq!(split_desc("Usage log (copyright report)"), ("Usage log", Some("copyright report")));
+    }
 }

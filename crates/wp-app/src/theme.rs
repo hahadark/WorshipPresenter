@@ -51,7 +51,7 @@ pub fn radius(k: Rad) -> u8 {
 
 /// 둥글기 숫자 (그 테마)
 pub fn radius_for(id: ThemeId, k: Rad) -> u8 {
-    let pro = id == ThemeId::Pro;
+    let pro = id == ThemeId::Pro || id == ThemeId::ProLight;
     match (k, pro) {
         (Rad::Xs, _) => 2,
         (Rad::Sm, true) => 3,
@@ -93,10 +93,12 @@ pub enum ThemeId {
     Navy = 4,
     /// (나) 어두운 전문가용 — 2026-11-27 새 기본
     Pro = 5,
+    /// (나) 의 밝은 판 — 같은 배치 · 같은 색 규칙(빨강 = 송출 중 · 노랑 = 다음 · 송출 단추 하나만 도드라짐), 2.1.0 다듬기
+    ProLight = 6,
 }
 
 impl ThemeId {
-    pub const ALL: [ThemeId; 6] = [ThemeId::Pro, ThemeId::Dark, ThemeId::Light, ThemeId::Contrast, ThemeId::Warm, ThemeId::Navy];
+    pub const ALL: [ThemeId; 7] = [ThemeId::Pro, ThemeId::ProLight, ThemeId::Dark, ThemeId::Light, ThemeId::Contrast, ThemeId::Warm, ThemeId::Navy];
     /// 설정 값 → 테마. Electron 과 같은 id(dark·light·contrast·warm·navy) + Rust 판 새 기본 pro. 예전 Rust 판 값 night 는 navy,
     /// 아직 옮기지 않은 manna(만나로)는 밝게로 본다. 모르는 값·빈 값은 새 기본(pro).
     pub fn from_setting(s: &str) -> ThemeId {
@@ -106,15 +108,16 @@ impl ThemeId {
             "contrast" => ThemeId::Contrast,
             "warm" => ThemeId::Warm,
             "navy" | "night" => ThemeId::Navy,
+            "pro-light" => ThemeId::ProLight,
             _ => ThemeId::Pro,
         }
     }
     pub fn id(self) -> &'static str {
-        ["dark", "light", "contrast", "warm", "navy", "pro"][self as usize]
+        ["dark", "light", "contrast", "warm", "navy", "pro", "pro-light"][self as usize]
     }
     /// 화면에 보이는 이름 (Electron uitheme.js)
     pub fn name(self) -> &'static str {
-        ["어둡게", "밝게", "고대비", "따뜻하게", "푸른 밤", "전문가 (기본)"][self as usize]
+        ["어둡게", "밝게", "고대비", "따뜻하게", "푸른 밤", "전문가 (기본)", "전문가 밝게"][self as usize]
     }
 }
 
@@ -217,7 +220,7 @@ fn build(id: ThemeId, v: [&str; 24]) -> Palette {
     let (pv_p, l1, l2, l3, w_p, a_p) = if id == ThemeId::Light { (14.0, 12.0, 20.0, 30.0, 18.0, 14.0) } else { (22.0, 24.0, 38.0, 52.0, 24.0, 24.0) };
     Palette {
         id,
-        dark: id != ThemeId::Light,
+        dark: id != ThemeId::Light && id != ThemeId::ProLight,
         bg: c[0],
         panel,
         panel2: c[2],
@@ -318,7 +321,56 @@ fn build_pro() -> Palette {
     p
 }
 
-static PALETTES: once_cell::sync::Lazy<[Palette; 6]> = once_cell::sync::Lazy::new(|| {
+/// (나) 전문가 밝게 — 같은 배치 · 같은 자리 색 규칙을 밝은 회색 판에. 상태 표시창은 어두운 그대로(LCD), 송출 단추는 하나뿐인 진한 단추
+fn build_pro_light() -> Palette {
+    let mut p = build(ThemeId::ProLight, [
+        "#d4d4d8", // bg (판 사이 바탕)
+        "#ececee", // panel
+        "#e2e2e5", // panel2 (--head)
+        "#c3c3c8", // line
+        "#a9a9af", // line2
+        "#dcdce0", // line-soft (표 줄 사이)
+        "#1d1d1f", // text
+        "#3a3a3e", // text2
+        "#5c5c63", // muted
+        "#7d7d84", // muted2
+        "#ffffff", // sunken (입력칸)
+        "#dddde1", // hover
+        "#c4c4c9", // sel (.seg span.on)
+        "#e4e4e7", // menubar
+        "#8a6a00", // hl (밝은 바탕 위 노랑 글은 읽히지 않아 진한 황토)
+        "#8a6a00", // gold
+        "#3a3a3e", // ok-text (성공은 회색 글 — 색은 빨강 · 노랑 둘만)
+        "#b4520f", // danger-text (오류는 진한 주황 — 빨강은 송출 중에만)
+        "#c49500", // accent (노랑 하나)
+        "#a88200", // accent-strong
+        "#c49500", // pv = 다음 (노랑, 밝은 바탕에서 보이게 조금 진하게)
+        "#d42e26", // live
+        "#d9801c", // warn (주황)
+        "#8a5a10", // warn-strong
+    ]);
+    p.head = hex("#e2e2e5");
+    p.bar = hex("#d6d6da");
+    p.bar_hi = hex("#f2f2f4");
+    p.edge = hex("#b9b9be");
+    p.raised = hex("#f6f6f7");
+    p.lcd = hex("#232628");
+    p.lcd_text = hex("#e8eced");
+    p.lcd_label = hex("#8c979c");
+    p.next = hex("#c49500");
+    p.next_bg = hex("#f5e6a6");
+    p.pv_bg = hex("#f5e6a6");
+    p.accent_bg = hex("#f5e6a6");
+    p.live_dk = hex("#f6d3d0");
+    p.live_text = hex("#b3221b");
+    p.on_accent = hex("#1a1a1a");
+    p.send_bg = hex("#1d1d1f");
+    p.send_fg = hex("#f4f4f5");
+    p.bevel = true;
+    p
+}
+
+static PALETTES: once_cell::sync::Lazy<[Palette; 7]> = once_cell::sync::Lazy::new(|| {
     [
         // :root (어둡게, 기본)
         build(ThemeId::Dark, ["#121519", "#1a1e25", "#222731", "#313846", "#465065", "#252b35", "#eef1f6", "#d3d9e4", "#a3abba", "#7c8597", "#0e1115", "#262d3a", "#2c3c5c", "#0b0d10", "#9ec5ff", "#ffd479", "#86e8ae", "#ff9ea1", "#4f8cff", "#2b5fa8", "#3aa76d", "#e5484d", "#f0b429", "#8a6a1c"]),
@@ -331,6 +383,7 @@ static PALETTES: once_cell::sync::Lazy<[Palette; 6]> = once_cell::sync::Lazy::ne
         // html[data-theme="navy"]
         build(ThemeId::Navy, ["#0e1524", "#142035", "#1a2843", "#2a3b5e", "#40567f", "#1f2d4a", "#ebf1fd", "#d0dbf1", "#a5b5d4", "#7a8bab", "#0a101d", "#213256", "#284579", "#08101c", "#93c4ff", "#ffd479", "#8ae6b1", "#ffa0a3", "#5b9bff", "#2f63c0", "#3cb878", "#ee4f57", "#f0b429", "#8a6a1c"]),
         build_pro(),
+        build_pro_light(),
     ]
 });
 
@@ -343,6 +396,17 @@ impl Palette {
     pub fn field_or_sunken(&self) -> Color32 {
         self.sunken
     }
+}
+
+/// 누를 수 있는 바탕의 '올라간' 색 (어두운 테마는 밝게, 밝은 테마는 조금 어둡게)
+pub fn lift(c: Color32) -> Color32 {
+    if pal().dark { mix(c, 80.0, Color32::WHITE) } else { mix(c, 90.0, Color32::BLACK) }
+}
+
+/// 진한 바탕(송출 중 · 다음 줄) 위 글 색: 어두운 테마는 흰색, 밝은 테마는 진한 글
+pub fn strong_text() -> Color32 {
+    let p = pal();
+    if p.dark { Color32::WHITE } else { p.text }
 }
 
 /// 지금 조작 화면 테마의 색
@@ -396,7 +460,7 @@ pub fn style(s: &mut egui::Style, p: &Palette) {
         // 전문가용: egui 기본 단추·고르기 칸도 도드라진 회색 (.pop #48484b), 테두리 없이
         let raised = p.raised;
         v.widgets.inactive = WidgetVisuals { bg_fill: raised, weak_bg_fill: raised, bg_stroke: Stroke::new(1.0, p.edge), corner_radius: cr(Rad::Md), fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
-        let hov = mix(raised, 80.0, Color32::WHITE);
+        let hov = if p.dark { mix(raised, 80.0, Color32::WHITE) } else { mix(raised, 90.0, Color32::BLACK) };
         v.widgets.hovered = WidgetVisuals { bg_fill: hov, weak_bg_fill: hov, bg_stroke: Stroke::new(1.0, p.edge), corner_radius: cr(Rad::Md), fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
         v.widgets.active = v.widgets.hovered;
         v.widgets.open = WidgetVisuals { bg_fill: p.field_or_sunken(), weak_bg_fill: p.field_or_sunken(), bg_stroke: Stroke::new(1.0, p.accent), corner_radius: cr(Rad::Md), fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
@@ -405,6 +469,13 @@ pub fn style(s: &mut egui::Style, p: &Palette) {
     // 고른 것: button.on / .view-tabs .on (sel 바탕, 글자는 text). 포커스된 입력칸 테두리도 이 색을 쓴다(egui 제약)
     v.selection = Selection { bg_fill: p.sel, stroke: Stroke::new(1.0, p.text) };
     v.hyperlink_color = p.hl;
+    if p.bevel {
+        // 전문가 테마 (어둡게 · 밝게): 입력칸 초점 테두리 · 고른 글 바탕 · 체크 · 라디오는 회색 한 벌, 링크도 회색 글
+        // (노랑은 '다음', 빨강은 '송출 중' 에만 — egui 기본 푸른 선택색이 남지 않게)
+        v.selection = Selection { bg_fill: p.sel, stroke: Stroke::new(1.0, p.text2) };
+        v.hyperlink_color = p.text2;
+        v.widgets.inactive.fg_stroke = Stroke::new(1.0, p.text);
+    }
     v.faint_bg_color = p.panel2;
     v.extreme_bg_color = p.sunken; // 입력칸·스크롤 바탕
     v.text_edit_bg_color = Some(p.sunken); // select, input { background: sunken }
@@ -620,7 +691,7 @@ pub fn type_color(t: &str) -> Option<Color32> {
 pub fn type_ink(t: &str) -> Color32 {
     let p = pal();
     // 고대비 · 전문가(기본) 테마는 종류 아이콘을 흐린 글 색 한 가지로 (빨강=송출 · 노랑=다음 외에는 색을 쓰지 않는다)
-    if p.id == ThemeId::Contrast || p.id == ThemeId::Pro {
+    if p.id == ThemeId::Contrast || p.id == ThemeId::Pro || p.id == ThemeId::ProLight {
         return p.muted;
     }
     let tc = type_color(t).unwrap_or(p.muted);
@@ -655,5 +726,24 @@ mod tests {
         assert_eq!(ThemeId::from_setting("???"), ThemeId::Pro);
         assert_eq!(ThemeId::from_setting("dark"), ThemeId::Dark);
         assert_eq!(ThemeId::from_setting("pro").id(), "pro");
+    }
+
+    #[test]
+    fn pro_light_keeps_pro_rules_on_light_ground() {
+        // 2.1.0 다듬기 2차: 전문가 밝게 — 같은 배치(bevel) · 밝은 바탕 · 빨강 = 송출 중 · 노랑 = 다음 · 송출 단추만 진하게
+        let id = ThemeId::from_setting("pro-light");
+        assert_eq!(id, ThemeId::ProLight);
+        assert_eq!(id.id(), "pro-light");
+        assert!(ThemeId::ALL.contains(&id));
+        let p = palette_of(id);
+        assert!(p.bevel && !p.dark);
+        let lum = |c: Color32| 0.2126 * c.r() as f32 + 0.7152 * c.g() as f32 + 0.0722 * c.b() as f32;
+        assert!(lum(p.panel) > 200.0 && lum(p.text) < 60.0, "밝은 판 · 진한 글");
+        assert!(lum(p.send_bg) < 60.0 && lum(p.send_fg) > 200.0, "송출 단추 하나만 진하게");
+        assert!(p.live.r() > 180 && p.live.g() < 80, "빨강 = 송출 중");
+        assert!(p.next.r() > 150 && p.next.g() > 120 && p.next.b() < 40, "노랑 = 다음");
+        // 옛 밝게 · 고대비는 그대로
+        assert!(!palette_of(ThemeId::Light).bevel && !palette_of(ThemeId::Contrast).bevel);
+        assert_eq!(radius_for(id, Rad::Md), radius_for(ThemeId::Pro, Rad::Md));
     }
 }

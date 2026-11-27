@@ -166,15 +166,19 @@ fn live_pane_band_appears_only_when_live_and_output_off() {
 }
 
 #[test]
-fn send_with_output_off_and_no_auto_toasts_turn_on_button() {
+fn send_with_output_off_and_no_auto_shows_one_warning_not_two() {
+    // 2.1.0 다듬기: 전문가 테마는 뷰어 안 띠 [지금 켜기] + 상태 줄 칸(주황) 하나로 — 아래 알림 띠를 또 띄우지 않는다
     let mut h = H::new(two());
     h.app.core.lock().settings.update(|d| d["output"]["autoOnSend"] = json!(false));
     h.app.apply(vec![Act::PreviewItem(0), Act::SendPreview]);
-    let (msg, act) = h.toast();
-    assert!(msg.contains("예배당 화면이 꺼져"), "{msg}");
-    assert_eq!(act, Some("output-on"));
-    let acts = h.click_acts("toast-act", toast);
-    assert!(acts.iter().any(|a| matches!(a, Act::ToastAct("output-on"))));
+    assert!(h.toast().0.is_empty(), "알림 띠가 겹쳐 뜨면 안 됨: {}", h.toast().0);
+    let s = h.app.snap();
+    let items = h.app.status_items(&s);
+    let out = items.iter().find(|x| x.2 == "output").expect("상태 줄 예배당 칸");
+    assert!(out.1.contains("회중에게 안 보임"), "{}", out.1);
+    assert_eq!(out.0, crate::theme::pal().warn);
+    let acts = h.click_acts("live-output-on", live);
+    assert!(acts.iter().any(|a| matches!(a, Act::OutputToggle)), "뷰어 안 띠 [지금 켜기]");
 }
 
 #[test]

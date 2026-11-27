@@ -117,7 +117,7 @@ const SEARCH_MODES: Opts = &[("auto", "자동 (숫자가 있으면 장절, 없�
 const SPLIT_MODES: Opts = &[("auto", "화면 공간에 맞춰 자동"), ("count", "지정한 절 수만큼")];
 const NAV_MODES: Opts = &[("range", "선택한 범위 안에서만 이동"), ("continuous", "다음(이전) 절로 계속 이어가기")];
 /// crate::theme::ThemeId 가 실제로 가진 다섯 가지만 (예전 목록의 '만나로'는 '밝게'와 같은 색이라 뺐다)
-pub const THEMES: Opts = &[("pro", "전문가 (기본)"), ("dark", "어둡게"), ("contrast", "고대비"), ("light", "밝게"), ("warm", "따뜻하게"), ("navy", "푸른 밤")];
+pub const THEMES: Opts = &[("pro", "전문가 (기본)"), ("pro-light", "전문가 밝게"), ("dark", "어둡게"), ("contrast", "고대비"), ("light", "밝게"), ("warm", "따뜻하게"), ("navy", "푸른 밤")];
 const LANGS: Opts = &[("ko", "한국어"), ("en", "English")];
 
 pub static ITEMS: &[Item] = &[

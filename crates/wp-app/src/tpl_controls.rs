@@ -46,8 +46,12 @@ pub fn row<R>(ui: &mut egui::Ui, label: &str, tip: &str, add: impl FnOnce(&mut e
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.set_min_height(28.0);
         let (r, resp) = ui.allocate_exact_size(Vec2::new(LABEL_W, 28.0), Sense::hover());
-        let g = ui.painter().layout(tr(label), theme::font(12.5, Weight::Regular), pal().muted, LABEL_W - 4.0);
-        ui.painter().galley(Pos2::new(r.left(), r.center().y - g.size().y / 2.0), g, pal().muted);
+        // 2.1.0 다듬기: 전문가 테마는 인스펙터 양식(form_label)과 같게 — 오른쪽 맞춤 · 11.5 · text2
+        let p = pal();
+        let (fs, col) = if p.bevel { (11.5, p.text2) } else { (12.5, p.muted) };
+        let g = ui.painter().layout(tr(label), theme::font(fs, Weight::Regular), col, LABEL_W - 4.0);
+        let x = if p.bevel { r.right() - 4.0 - g.size().x } else { r.left() };
+        ui.painter().galley(Pos2::new(x, r.center().y - g.size().y / 2.0), g, col);
         if !tip.is_empty() {
             resp.on_hover_text(tr(tip));
         }
@@ -104,10 +108,11 @@ pub fn switch_widget(ui: &mut egui::Ui, on: &mut bool) -> Response {
         resp.mark_changed();
     }
     let k = ui.ctx().animate_bool(resp.id, *on);
-    let bg = if *on { p.accent } else if resp.hovered() { p.line2 } else { p.line };
+    // 전문가 테마: 켜짐 = 밝은 회색 바탕 · 어두운 손잡이 (노랑은 '다음' 에만)
+    let bg = if *on { if p.bevel { p.text2 } else { p.accent } } else if resp.hovered() { p.line2 } else { p.line };
     ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Xl), bg);
     let x = egui::lerp(r.left() + 10.0..=r.right() - 10.0, k);
-    ui.painter().circle_filled(Pos2::new(x, r.center().y), 7.0, p.text);
+    ui.painter().circle_filled(Pos2::new(x, r.center().y), 7.0, if p.bevel && *on { p.panel } else { p.text });
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -306,7 +311,7 @@ pub fn align_seg(ui: &mut egui::Ui, salt: &str, cur: &str, kinds: &[&str]) -> Op
             (_, true) => CornerRadius { nw: 0, sw: 0, ne: 6, se: 6 },
             _ => CornerRadius::ZERO,
         };
-        let (bg, border) = if on { (p.sel, p.accent) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
+        let (bg, border) = if on { (p.sel, if p.bevel { p.text2 } else { p.accent }) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
         ui.painter().rect(r, corner, bg, Stroke::new(1.0, border), StrokeKind::Inside);
         paint_align_icon(ui, Rect::from_center_size(r.center(), Vec2::new(18.0, 16.0)), k, if on { p.text } else { p.text2 });
         let tip = match *k {
@@ -340,7 +345,7 @@ pub fn pos_grid(ui: &mut egui::Ui, salt: &str, cells: &[&[(&str, &str)]], cur: &
             let cr = Rect::from_min_size(Pos2::new(r.left() + pad + x as f32 * (cw + gap), r.top() + pad + y as f32 * (chh + gap)), Vec2::new(cw, chh));
             let resp = ui.interact(cr, ui.scope_id().with((salt, y, x)), Sense::click());
             let on = *v == cur;
-            let (bg, border) = if on { (p.accent, p.accent) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
+            let (bg, border) = if on { if p.bevel { (p.sel, p.text2) } else { (p.accent, p.accent) } } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
             ui.painter().rect(cr, crate::theme::cr(crate::theme::Rad::Sm), bg, Stroke::new(1.0, border), StrokeKind::Inside);
             // 칸 안 작은 막대: 그 칸에 글이 놓이는 모양
             let bar_x = match x {
@@ -348,7 +353,7 @@ pub fn pos_grid(ui: &mut egui::Ui, salt: &str, cells: &[&[(&str, &str)]], cur: &
                 _ if x as f32 == cols - 1.0 => cr.right() - 14.0,
                 _ => cr.center().x - 5.0,
             };
-            ui.painter().rect_filled(Rect::from_min_size(Pos2::new(bar_x, cr.center().y - 1.0), Vec2::new(10.0, 2.0)), crate::theme::cr(crate::theme::Rad::Xs), if on { Color32::WHITE } else { p.muted2 });
+            ui.painter().rect_filled(Rect::from_min_size(Pos2::new(bar_x, cr.center().y - 1.0), Vec2::new(10.0, 2.0)), crate::theme::cr(crate::theme::Rad::Xs), if on { if p.bevel { p.text } else { Color32::WHITE } } else { p.muted2 });
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
@@ -368,6 +373,38 @@ pub fn section<R>(ui: &mut egui::Ui, id: &str, icon: &str, title: &str, force: O
     let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), sid, id == "bg" || id == "font");
     if let Some(o) = force {
         state.set_open(o);
+    }
+    if p.bevel {
+        // 2.1.0 다듬기: 전문가 테마는 인스펙터 구획 머리(prolayout_ui::section)와 같은 띠 — 높이 26 · 머리 색 · 위아래 선 · 작은 삼각형 · 11.5 굵게 · 흐린 아이콘
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), theme::SECTION_H), Sense::click());
+        if resp.clicked() {
+            state.toggle(ui);
+        }
+        let open = state.is_open();
+        let pt = ui.painter();
+        pt.rect_filled(r, 0.0, if resp.hovered() { p.hover } else { theme::mix(p.head, 70.0, p.panel) });
+        pt.hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, p.line));
+        pt.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.edge));
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        let c = Pos2::new(r.left() + 10.0, r.center().y);
+        let tri = if open {
+            vec![Pos2::new(c.x - 3.5, c.y - 2.0), Pos2::new(c.x + 3.5, c.y - 2.0), Pos2::new(c.x, c.y + 2.5)]
+        } else {
+            vec![Pos2::new(c.x - 2.0, c.y - 3.5), Pos2::new(c.x + 2.5, c.y), Pos2::new(c.x - 2.0, c.y + 3.5)]
+        };
+        pt.add(egui::Shape::convex_polygon(tri, p.text2, Stroke::NONE));
+        crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 27.0, r.center().y), Vec2::splat(13.0)), icon, p.muted);
+        ui.painter().text(Pos2::new(r.left() + 40.0, r.center().y), egui::Align2::LEFT_CENTER, tr(title), theme::font(11.5, Weight::SemiBold), p.text);
+        let resp = resp.on_hover_text(tr(if open { "누르면 접기" } else { "누르면 펼치기" }));
+        let body = state.show_body_unindented(ui, |ui| {
+            ui.add_space(6.0);
+            let r = add(ui);
+            ui.add_space(8.0);
+            r
+        });
+        return (resp, body.map(|b| b.inner));
     }
     // 머리 줄: 가로 꽉 찬 단추 (▸/▾ · 묶음 아이콘 · 제목), 마우스를 올리면 hover 바탕
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
