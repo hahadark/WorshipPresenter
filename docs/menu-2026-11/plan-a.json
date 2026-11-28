@@ -3,6 +3,18 @@
     "label": "파일",
     "items": [
       {
+        "id": "b:newcue",
+        "label": "새 큐시트",
+        "desc": "",
+        "key": "Ctrl+N"
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
         "id": "c:import-bible",
         "label": "성경 번역본 가져오기…",
         "desc": "",

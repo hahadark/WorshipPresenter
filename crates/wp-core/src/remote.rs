@@ -87,7 +87,8 @@ static MARKS: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*\*|\{색:#[0-9a-fA-F]{3,
 static CHORDS: Lazy<Regex> = Lazy::new(|| Regex::new(r"\[([A-G](?:#|b|♯|♭)?(?:maj|min|m|M|sus|dim|aug|add|°|ø)?\d{0,2}(?:(?:sus|add|maj|b|#|\+|-)\d{1,2})*(?:/[A-G](?:#|b|♯|♭)?)?)\]").unwrap());
 static SP2: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s{2,}").unwrap());
 
-fn slide_text(sl: &Value) -> String {
+/// 슬라이드를 한 줄 글로 (리모컨 · 조작 화면의 무대 화면 미리 보기)
+pub fn slide_text(sl: &Value) -> String {
     if sl.is_null() {
         return String::new();
     }

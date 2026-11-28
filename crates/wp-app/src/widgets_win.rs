@@ -48,7 +48,7 @@ pub fn window<'a>(ctx: &egui::Context, key: &str, title: impl Into<String>, size
     let pos = Pos2::new(x, scr.top() + widgets::FLOAT_TOP + step);
     // 높이 한도는 내용 칸 기준이라 창 머리(제목 줄)만큼 더 뺀다 — 안 그러면 큰 창이 위 메뉴 막대를 덮는다
     let max_h = (scr.height() - widgets::FLOAT_TOP - 12.0 - TITLE_H).max(200.0);
-    Win { inner: widgets::float_window(ctx, key, title, size).max_width((scr.width() - 24.0).max(320.0)).max_height(max_h).vscroll(true), id, open: None, modal: true, size, fit: true, max_h, pos: Some(pos) }
+    Win { inner: widgets::float_window(ctx, key, title, size).max_width((scr.width() - 24.0).max(320.0)).max_height(max_h).vscroll(true), id, open: None, modal: true, size, fit: true, max_h, pos: Some(pos), follow: false }
 }
 
 /// 창 머리(제목 줄 + 테두리 안 여백) 높이 어림
@@ -70,6 +70,32 @@ pub fn note_viewers(ctx: &egui::Context, rect: Rect) {
 pub fn viewers_rect(ctx: &egui::Context) -> Option<Rect> {
     let pass = ctx.cumulative_pass_nr();
     ctx.data(|d| d.get_temp::<(Rect, u64)>(viewers_key())).filter(|(_, at)| at + 2 >= pass).map(|(r, _)| r)
+}
+
+fn body_key() -> Id {
+    Id::new("wp-win-body")
+}
+
+/// 주 화면이 이번 프레임에 본문·편집 판을 그린 자리를 적는다 (prolayout_ui). 무대 화면 창이 그 오른쪽 아래에 뜬다
+pub fn note_body(ctx: &egui::Context, rect: Rect) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(body_key(), (rect, pass)));
+}
+
+/// 지금 보이는 본문 판 자리 (최근 두 프레임 안에 그린 것만)
+pub fn body_rect(ctx: &egui::Context) -> Option<Rect> {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<(Rect, u64)>(body_key())).filter(|(_, at)| at + 2 >= pass).map(|(r, _)| r)
+}
+
+/// 본문 판 오른쪽 아래 모서리에 맞춘 처음 자리 (왼쪽 위 모서리). 높이 `h` 는 창 머리를 뺀 내용 어림.
+/// 판 위쪽(뷰어의 슬라이드 줄 · 본문 판 머리)을 덮지 않게 위 끝은 판 머리 아래로 묶는다
+pub fn body_corner(scr: Rect, body: Rect, size: [f32; 2]) -> Pos2 {
+    let gap = 8.0;
+    let (w, h) = (size[0], size[1] + TITLE_H);
+    let x = (body.right() - w - gap).max(body.left() + gap).max(scr.left() + gap);
+    let y = (body.bottom() - h - gap).max(body.top() + theme::HEAD_H + gap).min(scr.bottom() - h.min(scr.height() * 0.5) - gap);
+    Pos2::new(x, y)
 }
 
 /// 뷰어를 가리지 않는 처음 자리 (왼쪽 위 모서리). 차례: 뷰어 바로 아래 → 뷰어 왼쪽 → 뷰어 오른쪽. 어디에도 넉넉히 안 들어가면 None (보통 자리)
@@ -115,6 +141,8 @@ pub struct Win<'a> {
     max_h: f32,
     /// 처음 열 때 놓을 자리 (한 번만 — 그 뒤로는 egui 가 기억한 자리)
     pos: Option<Pos2>,
+    /// 사용자가 옮기기 전까지 `pos` 를 따라간다 (live_corner: 첫 프레임의 판 자리가 자리 잡은 뒤와 달라서)
+    follow: bool,
 }
 
 impl<'a> Win<'a> {
@@ -131,6 +159,23 @@ impl<'a> Win<'a> {
         self.max_h = self.max_h.min(max_h);
         self.inner = self.inner.max_height(self.max_h);
         self
+    }
+    /// 진행 중에 여는 작은 창: 처음 뜨는 자리를 본문 판 오른쪽 아래로 (무대 화면 창 — 뷰어의 '다음' 슬라이드 줄을 가리지 않게).
+    /// 본문 판 자리를 모르면 `live` 와 같다
+    pub fn live_corner(mut self, ctx: &egui::Context) -> Self {
+        let scr = ctx.content_rect();
+        match body_rect(ctx) {
+            Some(b) => {
+                self.pos = Some(body_corner(scr, b, self.size));
+                self.follow = true;
+                let top = ctx.memory(|m| m.area_rect(self.id)).map(|r| r.top()).or(self.pos.map(|p| p.y)).unwrap_or(scr.top() + widgets::FLOAT_TOP);
+                let max_h = (scr.bottom() - top - 48.0).max(200.0);
+                self.max_h = self.max_h.min(max_h);
+                self.inner = self.inner.max_height(self.max_h);
+                self
+            }
+            None => self.live(ctx),
+        }
     }
     pub fn open(mut self, open: &'a mut bool) -> Self {
         self.open = Some(open);
@@ -156,13 +201,25 @@ impl<'a> Win<'a> {
         self.id
     }
     pub fn show<R>(self, ctx: &egui::Context, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
-        let Win { inner, id, open, modal, fit, max_h, pos, .. } = self;
+        let Win { inner, id, open, modal, fit, max_h, pos, follow, .. } = self;
         let showing = open.as_ref().is_none_or(|o| **o);
+        // 따라가는 창: 지난번에 우리가 놓은 자리 그대로면(사용자가 안 옮김) 새로 잰 자리로 옮긴다
+        let auto = Id::new(("wp-win-auto", id));
+        if showing && follow {
+            if let (Some(p), Some(r)) = (pos, ctx.memory(|m| m.area_rect(id))) {
+                let last = ctx.data(|d| d.get_temp::<Pos2>(auto));
+                if last.is_some_and(|l| (l - r.min).length() < 1.5) && (p - r.min).length() >= 1.5 {
+                    ctx.memory_mut(|m| m.areas_mut().set_state(egui::LayerId::new(egui::Order::Middle, id), egui::AreaState { pivot_pos: Some(p), pivot: egui::Align2::LEFT_TOP, size: None, interactable: true, last_became_visible_at: None }));
+                    ctx.data_mut(|d| d.insert_temp(auto, p));
+                }
+            }
+        }
         // 처음 열 때 한 번만 자리를 정한다. 닫힌 창에는 하지 않는다 (set_state 는 그 층을 '보임' 으로 친다)
         let placed = Id::new(("wp-win-placed", id));
         if showing && !ctx.data(|d| d.get_temp::<bool>(placed).unwrap_or(false)) {
             if let Some(pos) = pos.filter(|_| ctx.memory(|m| m.area_rect(id).is_none())) {
                 ctx.memory_mut(|m| m.areas_mut().set_state(egui::LayerId::new(egui::Order::Middle, id), egui::AreaState { pivot_pos: Some(pos), pivot: egui::Align2::LEFT_TOP, size: None, interactable: true, last_became_visible_at: None }));
+                ctx.data_mut(|d| d.insert_temp(auto, pos));
             }
             ctx.data_mut(|d| d.insert_temp(placed, true));
         }

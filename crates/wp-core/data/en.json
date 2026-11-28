@@ -1,4 +1,8 @@
 {
+ "타이머 · 무대 메시지 · 고정 같은 조작은 인스펙터 '무대' 탭에서 합니다.": "Timer, stage message and pin controls are in the Inspector's Stage tab.",
+ "무대 탭 열기": "Open Stage tab",
+ "오른쪽 인스펙터의 '무대' 탭을 엽니다": "Opens the Stage tab in the Inspector on the right",
+ "무대 화면에 보이는 모습 (근사 — 실제 무대 화면은 웹이 그립니다)": "How the stage display looks (approximate; the real stage display is drawn by the web page)",
  "1절 · {1}": "1 verse · {1}",
  "눌러서 전문 보기": "Click to read it all",
  "{1} / {2} MB": "{1} / {2} MB",

@@ -418,7 +418,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     const GROUPS: [(&str, &[&str]); 4] = [
         ("송출", &["sendPreview", "sendNow", "nextSlide", "prevSlide", "=Space|다음 슬라이드 (입력칸 밖)", "toggleClear", "toggleOutputWindow", "outputOff"]),
         ("미리보기", &["previewNextSlide", "previewPrevSlide", "previewNextVerse", "previewPrevVerse", "previewChapterStart"]),
-        ("큐시트", &["cueNext", "cuePrev", "cueEdit", "toggleEditor", "=Ctrl+E|슬라이드 편집", "=Ctrl+V|클립보드에서 붙여 넣기 (새 순서)", "=Ctrl+Z / Ctrl+Y|실행 취소 · 다시", "printCue"]),
+        ("큐시트", &["cueNext", "cuePrev", "cueEdit", "toggleEditor", "=Ctrl+N|새 큐시트", "=Ctrl+E|슬라이드 편집", "=Ctrl+V|클립보드에서 붙여 넣기 (새 순서)", "=Ctrl+Z / Ctrl+Y|실행 취소 · 다시", "printCue"]),
         ("찾기 · 창", &["focusSearch", "openBooks", "openHistory", "webLyrics", "quickText", "messages", "toggleViewers", "=Alt+1~9|매크로"]),
     ];
     let listed: Vec<&str> = GROUPS.iter().flat_map(|g| g.1.iter().copied()).collect();

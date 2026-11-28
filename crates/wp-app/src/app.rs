@@ -291,7 +291,7 @@ impl App {
         }
     }
 
-    fn apply(&mut self, acts: Vec<Act>) {
+    pub(crate) fn apply(&mut self, acts: Vec<Act>) {
         // 바로 송출 모드에서는 누른 것(순서·본문·슬라이드·라이브러리)이 송출 없이도 나간다 → LIVE 가 바뀌었는지로 본다
         let live_mark = |c: &wp_core::core::Core| c.pres.live.as_ref().map(|l| (l.sent_at, c.pres.version));
         let before = live_mark(&self.core.lock());

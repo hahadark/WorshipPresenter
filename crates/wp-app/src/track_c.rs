@@ -59,6 +59,8 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "b:stage" => app.tb.stage = true,
         "b:macros" => app.tb.macros = true,
         "b:cues" => app.tb.cues = true,
+        // 파일 → 새 큐시트 (Ctrl+N): 큐시트 판 폴더 단추의 '새 큐시트' 와 같은 Act
+        "b:newcue" => app.apply(vec![crate::app::Act::NewCue]),
         "b:conti" => crate::cuemgr_ui::import_conti_dialog(app),
         "b:pptx" => crate::cuemgr_ui::export_pptx_dialog(app),
         "b:print" => app.print_cue(),
@@ -168,6 +170,10 @@ pub fn windows(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     app.tc.scenes.show(ctx, &core, &app.web_dir, &app.data_dir);
     app.tc.history.show(ctx, &core, acts);
     if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::E))) { app.tc.slideedit.open = !app.tc.slideedit.open; }
+    // Ctrl+N = 새 큐시트 (파일 메뉴 맨 위). 글을 쓰는 중에는 글칸 몫으로 둔다
+    if !ctx.egui_wants_keyboard_input() && ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::N))) {
+        handle_menu(app, "b:newcue");
+    }
     let (sel, wd, dd) = (app.sel, app.web_dir.clone(), app.data_dir.clone());
     app.tc.slideedit.show(ctx, &core, sel, &wd, &dd, acts);
     app.tc.themes.show(ctx, &core, &app.web_dir, &app.data_dir);

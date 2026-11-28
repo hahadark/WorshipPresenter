@@ -749,13 +749,62 @@ impl App {
         true
     }
     // ---------------- 무대 화면 ----------------
-    // 진행 중에 여는 창이라 뷰어(다음 · 송출 중) 밖에 뜬다 (widgets_win::live). 본문은 인스펙터 '무대' 탭과 같은 workspace_stage
+    // 창은 무대 화면 미리 보기와 주소만 (주인 결정 2026-11-28: 조작은 인스펙터 '무대' 탭 한 곳 — workspace_stage).
+    // 처음 뜨는 자리는 본문 판 오른쪽 아래 (widgets_win::live_corner) — 뷰어의 '다음' 슬라이드 줄을 가리지 않게
     fn stage_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.stage;
-        crate::widgets_win::window(ctx, "stage", wp_core::i18n::tr("무대 화면"), [440.0, 560.0]).live(ctx).open(&mut open).show(ctx, |ui| {
-            self.workspace_stage(ui);
+        crate::widgets_win::window(ctx, "stage", wp_core::i18n::tr("무대 화면"), [360.0, 300.0]).live_corner(ctx).open(&mut open).show(ctx, |ui| {
+            self.stage_window_body(ui);
         });
         self.tb.stage = open;
+    }
+
+    fn stage_window_body(&mut self, ui: &mut egui::Ui) {
+        use crate::theme::{self, pal, Type};
+        use crate::widgets::{self, Btn, Size};
+        use wp_core::i18n::tr;
+        let p = pal();
+        let (payload, port) = {
+            let c = self.core.lock();
+            (c.stage_payload(), c.port)
+        };
+        ui.spacing_mut().item_spacing.y = theme::sp::X6;
+        // 시계 · 타이머가 움직이므로 창이 떠 있는 동안 1초마다
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000));
+        let r = stage_preview(ui, &payload);
+        widgets::mark("stage-win-preview", r.rect);
+        // ---- 주소
+        let url = format!("http://127.0.0.1:{port}/outputs/stage");
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::sp::X4;
+            let b = ui.add(Btn::new(tr("주소 복사")).icon("copy").size(Size::Sm).tooltip(tr("무대 화면 주소 복사")));
+            widgets::mark("stage-win-copy", b.rect);
+            if b.clicked() {
+                crate::widgets::copy_notice(ui.ctx(), url.clone(), tr("무대 화면 주소를 복사했습니다."));
+            }
+            let (g, _) = widgets::elide(ui, &url, Type::Small.font(), p.muted, ui.available_width());
+            let (r, resp) = ui.allocate_exact_size(g.size(), Sense::hover());
+            ui.painter().galley(r.min, g, p.muted);
+            resp.on_hover_text(tr("다른 PC·태블릿 브라우저나 OBS 브라우저 소스에 이 주소를 넣으면 무대 화면이 나옵니다"));
+        });
+        // ---- 조작은 인스펙터 '무대' 탭에서
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::sp::X4;
+            ui.add(egui::Label::new(theme::ty(tr("타이머 · 무대 메시지 · 고정 같은 조작은 인스펙터 '무대' 탭에서 합니다."), Type::Small, p.muted)).wrap());
+            let b = ui.add(Btn::new(tr("무대 탭 열기")).size(Size::Sm).tooltip(tr("오른쪽 인스펙터의 '무대' 탭을 엽니다")));
+            widgets::mark("stage-win-open-tab", b.rect);
+            if b.clicked() {
+                self.pro_open_stage_tab(ui.ctx());
+            }
+        });
+    }
+
+    /// 오른쪽 인스펙터를 펴고 '무대' 탭을 고른다 (무대 화면 창 · 시험)
+    pub(crate) fn pro_open_stage_tab(&mut self, ctx: &egui::Context) {
+        if !self.pro_inspector_visible() {
+            self.pro_toggle_inspector();
+        }
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("pro-ins-tab"), crate::prolayout_ui::InsTab::Stage));
     }
 
     pub(crate) fn workspace_stage(&mut self, ui: &mut egui::Ui) {
@@ -1202,6 +1251,135 @@ fn timer_text(ms: i64) -> String {
     let s = ms.abs() / 1000;
     let sign = if ms < 0 { "−" } else { "" };
     if s >= 3600 { format!("{sign}{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60) } else { format!("{sign}{:02}:{:02}", s / 60, s % 60) }
+}
+
+/// 무대 화면 미리 보기 (웹 /outputs/stage 의 배치를 줄여 그린 근사 — 검은 바탕 · 위 제목 · 메시지 띠 · 지금 슬라이드 · 다음 · 타이머).
+/// 실제 무대 화면은 웹이 그린다. 빨강 테두리 = 송출 중인 슬라이드, 고정이면 회색 테두리
+fn stage_preview(ui: &mut egui::Ui, st: &Value) -> egui::Response {
+    use crate::theme::{self, font, pal, Weight};
+    use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind};
+    use wp_core::i18n::tr;
+    let p = pal();
+    let w = ui.available_width().max(200.0);
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, w * 9.0 / 16.0), Sense::hover());
+    let pt = ui.painter_at(rect);
+    let h = rect.height();
+    let white = Color32::from_gray(240);
+    let dim = Color32::from_gray(150);
+    let faint = Color32::from_gray(60);
+    pt.rect_filled(rect, theme::cr(theme::Rad::Sm), Color32::BLACK);
+    let inner = rect.shrink2(vec2(w * 0.025, h * 0.03));
+    let has_live = st["hasLive"] == true;
+    let pin = st["pin"].is_object();
+    // ---- 위 줄: 제목 · n/m · 시계
+    let fs_top = (h * 0.06).max(9.0);
+    let now = wp_core::util::now_ms() + wp_core::localtime::local_offset_ms();
+    let secs = now.div_euclid(1000).rem_euclid(86_400);
+    let clock = format!("{:02}:{:02}:{:02}", secs / 3600, (secs / 60) % 60, secs % 60);
+    let cg = pt.layout_no_wrap(clock, font(fs_top * 1.2, Weight::Bold), white);
+    let top_h = cg.size().y;
+    let cw = cg.size().x;
+    pt.galley(pos2(inner.right() - cw, inner.top()), cg, white);
+    let count = if has_live { format!("{} / {}", st["index"].as_i64().unwrap_or(0) + 1, st["count"].as_i64().unwrap_or(0)) } else { String::new() };
+    let ng = pt.layout_no_wrap(count, font(fs_top, Weight::Regular), dim);
+    let nx = inner.right() - cw - w * 0.02 - ng.size().x;
+    pt.galley(pos2(nx, inner.top() + (top_h - ng.size().y) / 2.0), ng, dim);
+    let title = st["title"].as_str().unwrap_or("").to_string();
+    let (tg, _) = crate::widgets::elide(ui, &title, font(fs_top, Weight::Bold), white, (nx - inner.left() - w * 0.02).max(10.0));
+    pt.galley(pos2(inner.left(), inner.top() + (top_h - tg.size().y) / 2.0), tg, white);
+    let mut y = inner.top() + top_h + h * 0.02;
+    // ---- 무대 메시지 띠
+    let msg = st["message"].as_str().unwrap_or("").trim().replace('\n', " ");
+    if !msg.is_empty() {
+        let mh = h * 0.1;
+        let band = Rect::from_min_size(pos2(inner.left(), y), vec2(inner.width(), mh));
+        pt.rect_filled(band, theme::cr(theme::Rad::Sm), p.warn);
+        let (g, _) = crate::widgets::elide(ui, &msg, font(mh * 0.55, Weight::Bold), Color32::BLACK, band.width() - 8.0);
+        pt.galley(band.center() - g.size() / 2.0, g, Color32::BLACK);
+        y = band.bottom() + h * 0.02;
+    }
+    // ---- 아래 줄: 순서 메모 · 타이머 (켜져 있을 때만)
+    let t = &st["timer"];
+    let tset = t["running"] == true || t["duration"].as_i64().unwrap_or(0) > 0;
+    let bot_h = h * 0.13;
+    let bot = Rect::from_min_max(pos2(inner.left(), inner.bottom() - bot_h), inner.max);
+    if tset {
+        let rem = t["remaining"].as_i64().unwrap_or(0);
+        let col = if rem < 0 { p.live } else if rem < 5 * 60_000 { p.warn } else { white };
+        let txt = timer_text(rem) + if t["running"] == true { "" } else { " ||" };
+        let g = pt.layout_no_wrap(txt, font(bot_h * 0.75, Weight::Bold), col);
+        pt.galley(pos2(bot.right() - g.size().x, bot.center().y - g.size().y / 2.0), g, col);
+    }
+    let note = st["note"].as_str().unwrap_or("").trim().to_string();
+    if !note.is_empty() {
+        let (g, _) = crate::widgets::elide(ui, &note, font(bot_h * 0.4, Weight::Regular), dim, bot.width() * 0.6);
+        pt.galley(pos2(bot.left(), bot.center().y - g.size().y / 2.0), g, dim);
+    }
+    // ---- 다음 칸 (고정 중이면 '지금 화면')
+    let next_h = h * 0.17;
+    let next = Rect::from_min_max(pos2(inner.left(), bot.top() - h * 0.02 - next_h), pos2(inner.right(), bot.top() - h * 0.02));
+    pt.rect_stroke(next, theme::cr(theme::Rad::Sm), Stroke::new(1.0, faint), StrokeKind::Inside);
+    let none = tr("송출 중인 화면 없음").to_string();
+    let cur_txt = if has_live { wp_core::remote::slide_text(&st["slide"]) } else { none.clone() };
+    let (label, next_txt) = if pin {
+        (tr("지금 화면").to_string(), cur_txt.clone())
+    } else {
+        let n = if st["nextSlide"].is_object() {
+            wp_core::remote::slide_text(&st["nextSlide"])
+        } else if has_live {
+            tr("(이 순서의 마지막 슬라이드)").to_string()
+        } else {
+            String::new()
+        };
+        (tr("다음").to_string(), n)
+    };
+    let lg = pt.layout_no_wrap(label, font((next_h * 0.24).max(7.0), Weight::Regular), Color32::from_gray(110));
+    let lh = lg.size().y;
+    pt.galley(next.min + vec2(6.0, 3.0), lg, Color32::from_gray(110));
+    let next_txt = next_txt.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (g, _) = crate::widgets::elide(ui, &next_txt, font((next_h * 0.32).max(8.0), Weight::Regular), dim, next.width() - 12.0);
+    pt.galley(pos2(next.left() + 6.0, next.top() + 4.0 + lh), g, dim);
+    // ---- 지금 슬라이드 (크게): 빨강 테두리 = 송출 중, 고정 = 회색
+    let cur = Rect::from_min_max(pos2(inner.left(), y), pos2(inner.right(), next.top() - h * 0.02));
+    let hidden = has_live && st["visible"] != true && !pin;
+    let border = if pin { Color32::from_gray(120) } else if has_live { p.live } else { faint };
+    pt.rect_stroke(cur, theme::cr(theme::Rad::Sm), Stroke::new(1.5, if hidden { theme::alpha(border, 0.5) } else { border }), StrokeKind::Inside);
+    let body = if pin {
+        let pj = &st["pin"];
+        if pj["mode"] == "order" {
+            let items = pj["items"].as_array().cloned().unwrap_or_default();
+            let at = pj["current"].as_i64().unwrap_or(-1);
+            if items.is_empty() {
+                tr("열린 큐시트가 없습니다").to_string()
+            } else {
+                items.iter().enumerate().map(|(i, it)| format!("{}{}. {}", if i as i64 == at { "> " } else { "" }, i + 1, it["title"].as_str().unwrap_or(""))).collect::<Vec<_>>().join("\n")
+            }
+        } else {
+            pj["text"].as_str().unwrap_or("").to_string()
+        }
+    } else {
+        cur_txt
+    };
+    let area = cur.shrink2(vec2(w * 0.03, h * 0.05));
+    let col = if hidden { dim } else { white };
+    let mut fs = (h * 0.1).max(8.0);
+    let galley = loop {
+        let g = ui.painter().layout(body.clone(), font(fs, Weight::SemiBold), col, area.width());
+        if g.size().y <= area.height() || fs <= 6.0 {
+            break g;
+        }
+        fs -= 0.5;
+    };
+    let gpos = if pin { area.left_top() } else { area.center() - galley.size() / 2.0 };
+    pt.with_clip_rect(area).galley(gpos, galley, col);
+    if has_live || pin {
+        let badge = if pin { tr("고정") } else if hidden { tr("숨김 중") } else { tr("LIVE") };
+        let bg = pt.layout_no_wrap(badge.to_string(), font((h * 0.045).max(7.0), Weight::Bold), white);
+        let br = Rect::from_min_size(pos2(cur.right() - bg.size().x - 10.0, cur.top() + 4.0), bg.size() + vec2(6.0, 2.0));
+        pt.rect_filled(br, theme::cr(theme::Rad::Sm), if pin { Color32::from_gray(90) } else { theme::alpha(p.live, if hidden { 0.5 } else { 1.0 }) });
+        pt.galley(br.min + vec2(3.0, 1.0), bg, white);
+    }
+    resp.on_hover_text(tr("무대 화면에 보이는 모습 (근사 — 실제 무대 화면은 웹이 그립니다)"))
 }
 
 /// 회중 메시지 보내기 전 모습: 예배당 화면(16:9) 아래에 띠. 실제 출력은 웹이 그리므로 자리·글 확인용 근사.

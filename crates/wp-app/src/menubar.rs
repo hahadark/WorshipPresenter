@@ -56,6 +56,9 @@ fn dynsub(id: &'static str, label: &'static str) -> Item {
 pub fn menus() -> Vec<Menu> {
     vec![
         Menu { label: "파일", items: vec![
+            // 큐시트 판 폴더 단추의 '새 큐시트' 와 같은 동작 (Act::NewCue, 주인 결정 2026-11-28)
+            it("b:newcue", "새 큐시트", "Ctrl+N"),
+            line(),
             it("c:import-bible", "성경 번역본 가져오기…", ""),
             itd("b:conti", "찬양 콘티 가져오기…", "콘티 스튜디오 .worship", ""),
             it("d:reimport", "1.x 자료 다시 가져오기…", ""),
@@ -251,6 +254,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "c:settings" => "settings",
         "c:slideedit" => "square-pen",
         "b:cues" => "folder-open",
+        "b:newcue" => "plus",
         "b:conti" => "download",
         "b:pptx" => "file-text",
         "b:names" => "tag",
@@ -668,9 +672,9 @@ mod layout_tests {
         assert!(missing.is_empty(), "새 메뉴에서 빠진 동작: {missing:?}");
         let dup: Vec<(&&str, &usize)> = count.iter().filter(|(_, n)| **n != 1).collect();
         assert!(dup.is_empty(), "두 자리에 있는 동작: {dup:?}");
-        // 새로 생긴 것은 하위 메뉴 자리 하나뿐 (동작 없음)
+        // 새로 생긴 것: 하위 메뉴 자리(동작 없음) · 파일 → 새 큐시트(2026-11-28, 큐시트 판 폴더 단추와 같은 동작)
         let added: Vec<&&str> = count.keys().filter(|id| !old.contains(**id)).collect();
-        assert_eq!(added, [&"v:lang"], "새로 생긴 항목");
+        assert_eq!(added, [&"b:newcue", &"v:lang"], "새로 생긴 항목");
     }
 
     #[test]
@@ -680,15 +684,19 @@ mod layout_tests {
         for (_, id, key) in OLD {
             assert_eq!(new[id], *key, "{id} 단축키");
         }
+        assert_eq!(new["b:newcue"], "Ctrl+N", "새 큐시트 단축키");
         let keys: Vec<&str> = new.values().copied().filter(|k| !k.is_empty()).collect();
-        assert_eq!(keys.len(), 11, "단축키가 붙은 항목 수: {keys:?}");
+        assert_eq!(keys.len(), 12, "단축키가 붙은 항목 수: {keys:?}");
+        // 겹치는 단축키 없음
+        let uniq: BTreeSet<&str> = keys.iter().copied().collect();
+        assert_eq!(uniq.len(), keys.len(), "겹친 단축키: {keys:?}");
     }
 
     #[test]
     fn shape_matches_the_proposal() {
         let list = menus();
         // 시안의 '줄 · 묶음(구분선 + 1)' (a.png 의 메뉴 이름 옆 숫자)
-        let want = [("파일", 8, 4), ("편집", 3, 2), ("보기", 4, 3), ("큐시트", 6, 3), ("화면", 9, 4), ("연결", 10, 4), ("송출", 9, 4), ("AI", 8, 4), ("도움말", 11, 4)];
+        let want = [("파일", 9, 5), ("편집", 3, 2), ("보기", 4, 3), ("큐시트", 6, 3), ("화면", 9, 4), ("연결", 10, 4), ("송출", 9, 4), ("AI", 8, 4), ("도움말", 11, 4)];
         for (m, (name, rows, groups)) in list.iter().zip(want) {
             assert_eq!(m.label, name);
             let seps = m.items.iter().filter(|i| i.id == "-").count();
@@ -698,7 +706,7 @@ mod layout_tests {
             assert!(m.items.first().unwrap().id != "-" && m.items.last().unwrap().id != "-", "{name} 구분선 자리");
             assert!(!m.items.windows(2).any(|w| w[0].id == "-" && w[1].id == "-"), "{name} 구분선 둘");
         }
-        assert_eq!(list.iter().map(|m| m.items.iter().filter(|i| i.id != "-").count()).sum::<usize>(), 68, "메뉴 줄 합계");
+        assert_eq!(list.iter().map(|m| m.items.iter().filter(|i| i.id != "-").count()).sum::<usize>(), 69, "메뉴 줄 합계");
         // 하위 메뉴: 지금 있던 3개 + 언어, 모두 한 단계
         let subs: Vec<&Item> = list.iter().flat_map(|m| &m.items).filter(|i| !matches!(i.sub, Sub::No)).collect();
         assert_eq!(subs.iter().map(|i| i.id).collect::<Vec<_>>(), ["v:lang", "x:tpl-main", "x:tpl-overlay", "x:obs-url"]);
@@ -710,7 +718,7 @@ mod layout_tests {
         }
         // 자리: 시안의 옮김 표에서 몇 군데
         let menu_of = |id: &str| list.iter().find(|m| flat(std::slice::from_ref(*m)).iter().any(|i| i.id == id)).map(|m| m.label).unwrap();
-        for (id, menu) in [("d:bulletin", "AI"), ("b:stage", "화면"), ("d:reimport", "파일"), ("b:print", "파일"), ("b:undo", "편집"), ("c:slideedit", "편집"), ("x:obs-url", "연결"), ("x:preview-off", "송출"), ("c:lang-en", "보기"), ("b:songs", "큐시트"), ("b:diagnose", "도움말")] {
+        for (id, menu) in [("b:newcue", "파일"), ("d:bulletin", "AI"), ("b:stage", "화면"), ("d:reimport", "파일"), ("b:print", "파일"), ("b:undo", "편집"), ("c:slideedit", "편집"), ("x:obs-url", "연결"), ("x:preview-off", "송출"), ("c:lang-en", "보기"), ("b:songs", "큐시트"), ("b:diagnose", "도움말")] {
             assert_eq!(menu_of(id), menu, "{id}");
         }
     }

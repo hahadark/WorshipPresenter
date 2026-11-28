@@ -358,6 +358,7 @@ impl App {
             }
         }
         let bottom = Rect::from_min_max(Pos2::new(full.left(), full.top() + if vh > 0.0 { vh + 6.0 } else { 0.0 }), full.max);
+        crate::widgets_win::note_body(ui.ctx(), bottom); // 무대 화면 창이 이 판 오른쪽 아래에 뜬다
         ui.scope_builder(UiBuilder::new().max_rect(bottom).id_salt("pro-main"), |ui| {
             ui.set_clip_rect(bottom.intersect(ui.clip_rect()));
             ui.spacing_mut().item_spacing.y = 4.0;
@@ -430,6 +431,7 @@ impl App {
             }
         }
         // ---- 왼쪽: 본문·편집 (위에서 아래까지)
+        crate::widgets_win::note_body(ui.ctx(), left);
         ui.scope_builder(UiBuilder::new().max_rect(left).id_salt("pro-main"), |ui| {
             ui.set_clip_rect(left.intersect(ui.clip_rect()));
             ui.spacing_mut().item_spacing.y = 4.0;

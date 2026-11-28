@@ -157,7 +157,8 @@ fn timeline_shows_running_timer_outside_plan() {
     assert!(r.right() <= head.right() + 30.0 && r.left() >= 0.0, "줄 안에 보임: {r:?}");
 }
 
-/// 홍보 캡처 중 발견: 다른 곳(분 단추 · 리모컨 · /api/trigger/timer)으로 켠 타이머의 끝 시각이 무대 화면 창 '몇 시까지' 칸에 보여야 함
+/// 홍보 캡처 중 발견: 다른 곳(분 단추 · 리모컨 · /api/trigger/timer)으로 켠 타이머의 끝 시각이 무대 '몇 시까지' 칸에 보여야 함.
+/// 2026-11-28 부터 조작은 인스펙터 '무대' 탭 한 곳 — 무대 화면 창의 [무대 탭 열기] 로 그 탭을 연다
 #[test]
 fn stage_window_until_field_shows_actual_end() {
     let mut h = H::new(notices());
@@ -165,7 +166,55 @@ fn stage_window_until_field_shows_actual_end() {
     let t = h.app.core.lock().b.stage.timer.clone();
     let m = ((t.end_at + wp_core::localtime::local_offset_ms()).div_euclid(60_000)).rem_euclid(1440);
     crate::track_c::handle_menu(&mut h.app, "b:stage");
+    let p = at(&mut h, "stage-win-open-tab");
+    click_at(&mut h, p);
     idle(&mut h, 3);
-    assert!(seen("stage-timer-at").is_some(), "무대 화면 창의 '몇 시까지' 칸");
+    assert!(seen("stage-timer-at").is_some(), "인스펙터 무대 탭의 '몇 시까지' 칸");
     assert_eq!(h.app.tb.timer_at_for_test(), format!("{}:{:02}", m / 60, m % 60));
+}
+
+/// 주인 결정 (2026-11-28): 무대 화면 창은 미리 보기와 주소만, 조작(타이머 · 메시지 · 고정)은 인스펙터 '무대' 탭.
+/// 창은 본문 판 오른쪽 아래에 떠서 뷰어(미리보기의 '다음' 슬라이드 줄)를 가리지 않는다
+#[test]
+fn stage_window_is_preview_and_address_only_and_clear_of_viewers() {
+    let mut h = H::new(notices());
+    h.app.core.lock().preview_item(0);
+    idle(&mut h, 2);
+    crate::track_c::handle_menu(&mut h.app, "b:stage");
+    idle(&mut h, 4);
+    let prev = seen("stage-win-preview").expect("무대 화면 미리 보기");
+    assert!(seen("stage-win-copy").is_some(), "주소 복사 단추");
+    for gone in ["stage-timer-big", "stage-timer-at", "stage-timer-at-go"] {
+        assert!(seen(gone).is_none(), "창(과 글자 탭)에는 조작이 없다: {gone}");
+    }
+    let viewers = crate::widgets_win::viewers_rect(&h.ctx).expect("뷰어 자리");
+    let body = crate::widgets_win::body_rect(&h.ctx).expect("본문 판 자리");
+    assert!(prev.top() > viewers.bottom(), "뷰어 아래: {prev:?} / {viewers:?}");
+    assert!(prev.top() > body.top() + crate::theme::HEAD_H, "본문 판 머리도 가리지 않음: {prev:?} / {body:?}");
+    assert!(prev.right() <= body.right() && prev.center().x > body.center().x, "본문 판 오른쪽: {prev:?} / {body:?}");
+    // 무대 탭으로 옮긴 조작은 하나도 사라지지 않았다
+    h.app.pro_open_stage_tab(&h.ctx);
+    idle(&mut h, 3);
+    for keep in ["stage-timer-big", "stage-timer-at", "stage-timer-at-go"] {
+        assert!(seen(keep).is_some(), "인스펙터 무대 탭: {keep}");
+    }
+}
+
+/// 파일 → 새 큐시트 · Ctrl+N: 큐시트 판 폴더 단추의 '새 큐시트' 와 같은 동작 (Act::NewCue)
+#[test]
+fn file_menu_new_cue_and_ctrl_n() {
+    let mut h = H::new(notices());
+    idle(&mut h, 2);
+    let before = h.app.core.lock().cues.len();
+    let first = h.app.core.lock().cue.as_ref().map(|c| c.id.clone());
+    crate::track_c::handle_menu(&mut h.app, "b:newcue");
+    let (n1, id1) = { let c = h.app.core.lock(); (c.cues.len(), c.cue.as_ref().map(|c| c.id.clone())) };
+    assert_eq!(n1, before + 1, "메뉴: 큐시트 하나 더");
+    assert_ne!(id1, first, "새 큐시트가 열림");
+    assert!(h.app.core.lock().cue.as_ref().unwrap().items.is_empty(), "폴더 단추의 '새 큐시트' 와 같은 빈 큐시트");
+    idle(&mut h, 1);
+    let m = Modifiers { ctrl: true, command: true, ..Default::default() };
+    full(&mut h, vec![Event::ModifiersChanged(m), Event::Key { key: Key::N, physical_key: None, pressed: true, repeat: false, modifiers: m }]);
+    full(&mut h, vec![Event::Key { key: Key::N, physical_key: None, pressed: false, repeat: false, modifiers: m }, Event::ModifiersChanged(Modifiers::NONE)]);
+    assert_eq!(h.app.core.lock().cues.len(), before + 2, "Ctrl+N");
 }

@@ -347,7 +347,7 @@ pub fn head(app: &mut App, ui: &mut egui::Ui, cue_id: &str, cue_label: &str, cue
             let fb = ui.add(Btn::icon_only("folder-open").tooltip(tr("큐시트 관리: 새로 만들기 · 다음 주로 복제 · 서식 · 메모 · 내보내기·가져오기 · 휴지통")));
             egui::Popup::menu(&fb).show(|ui| {
                 ui.set_min_width(200.0);
-                if ui.add(egui::Button::image_and_text(icons::image("plus", 15.0, p.muted), tr("새 큐시트"))).clicked() {
+                if ui.add(egui::Button::image_and_text(icons::image("plus", 15.0, p.muted), tr("새 큐시트")).shortcut_text("Ctrl+N")).clicked() {
                     acts.push(Act::NewCue);
                     ui.close();
                 }
