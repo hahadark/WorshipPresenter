@@ -57,8 +57,9 @@ export function newSecret(role) {
 }
 
 // ---------- 쿠키 ----------
-export async function issueToken(env, { church, role, cred }, now = Date.now()) {
-  const exp = now + (SESSION_TTL[role] || 3600) * 1000;
+export async function issueToken(env, { church, role, cred }, now = Date.now(), ttlMs = 0) {
+  // ttlMs: 쉬운 로그인의 기기 세션 (이 기기 기억 90일 · 끄면 12시간 — identity/login.mjs). 없으면 역할마다의 기본
+  const exp = now + (ttlMs > 0 ? ttlMs : (SESSION_TTL[role] || 3600) * 1000);
   const body = b64u(enc.encode(JSON.stringify({ c: church, r: role, k: cred, e: exp })));
   return { token: `v1.${body}.${b64u(await hmac(env, `session:${body}`))}`, exp };
 }

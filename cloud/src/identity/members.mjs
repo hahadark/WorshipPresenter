@@ -12,9 +12,11 @@ export const validEmail = s => typeof s === 'string' && s.length <= 254 && EMAIL
 export const MAX_MEMBERS = 50;
 
 export const credOf = m => `m:${m.id}:${m.gen}`;
+/** 기기 세션이 붙은 열쇠 (쉬운 로그인, login.mjs): 'm:<사람>:<세대>:<세션>' — 세션 하나만 '로그아웃시키기' 할 수 있게 */
+export const sessionCredOf = (m, sid) => `m:${m.id}:${m.gen}:${sid}`;
 export function parseCred(cred) {
-  const m = /^m:([A-Za-z0-9]{6,24}):(\d{1,9})$/.exec(String(cred || ''));
-  return m ? { id: m[1], gen: Number(m[2]) } : null;
+  const m = /^m:([A-Za-z0-9]{6,24}):(\d{1,9})(?::([A-Za-z0-9]{6,24}))?$/.exec(String(cred || ''));
+  return m ? { id: m[1], gen: Number(m[2]), ...(m[3] ? { sid: m[3] } : {}) } : null;
 }
 
 /** 줄 → 바깥에 보일 모양 (해시는 내보내지 않는다) */
@@ -24,7 +26,7 @@ export function view(row) {
   return {
     id: row.id, role: row.role, label: row.label,
     provider: provider === 'pw' ? 'password' : provider,
-    ...(provider === 'pw' ? { login: name } : provider === 'google' ? { google: true } : { email: name }), // google: 7단계 '구글로 시작하기' (번호는 내보내지 않음)
+    ...(provider === 'pw' ? { login: name } : provider === 'google' ? { google: true, email: row.email || '' } : { email: name }), // google: 구글 번호는 내보내지 않고 확인된 이메일만 (쉬운 로그인)
     createdAt: row.created_at, lastLoginAt: row.last_login_at ?? null,
   };
 }
@@ -35,6 +37,10 @@ const LIVE_MS = 30_000;
 export function forgetMember(church, id) {
   for (const k of live.keys()) if (k.startsWith(`${church}/m:${id}:`)) live.delete(k);
 }
+/** 세션 하나를 끊었을 때 (이 Worker 인스턴스의 기억만 — 다른 인스턴스는 30초 안에) */
+export function forgetSession(church, sid) {
+  for (const k of live.keys()) if (k.startsWith(`${church}/m:`) && k.split('/')[1].endsWith(`:${sid}`)) live.delete(k);
+}
 export async function memberAlive(env, church, cred, role, now = Date.now()) {
   const p = parseCred(cred);
   if (!p) return false;
@@ -44,7 +50,12 @@ export async function memberAlive(env, church, cred, role, now = Date.now()) {
   const row = await env.DB.prepare(
     'SELECT m.role AS role, m.gen AS gen, m.disabled_at AS disabled, h.disabled_at AS churchOff FROM members m JOIN churches h ON h.id = m.church_id WHERE m.church_id = ?1 AND m.id = ?2',
   ).bind(church, p.id).first();
-  const ok = !!row && !row.disabled && !row.churchOff && row.gen === p.gen && SESSION_ROLE[row.role] === role;
+  let ok = !!row && !row.disabled && !row.churchOff && row.gen === p.gen && SESSION_ROLE[row.role] === role;
+  // 기기 세션이 붙은 열쇠면 그 세션이 살아 있어야 한다 (주인 화면의 '로그아웃시키기' · 로그아웃)
+  if (ok && p.sid) {
+    const ss = await env.DB.prepare('SELECT revoked_at AS revoked, expires_at AS exp FROM member_sessions WHERE church_id = ?1 AND id = ?2 AND member_id = ?3').bind(church, p.sid, p.id).first();
+    ok = !!ss && !ss.revoked && ss.exp > now;
+  }
   if (live.size > 5000) live.clear();
   live.set(key, { ok, at: now });
   return ok;

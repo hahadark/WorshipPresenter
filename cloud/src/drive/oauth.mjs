@@ -12,6 +12,7 @@ import { dayOf, serviceLimits } from '../tiers/limits.mjs';
 import { forgetTier, RESERVED_CHURCHES } from '../tiers/index.mjs';
 import { DRIVE_FILE_SCOPE, SCOPES, endpoints, forgetToken, googleConfigured, readIdToken, sealToken, tokenRequest, accountOf, markDisconnected, unsealToken } from './google.mjs';
 import { churchFolder, forgetFolders } from './folders.mjs';
+import { googleLogin, validInviteToken } from '../identity/login.mjs';
 
 const enc = new TextEncoder();
 const b64u = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -69,7 +70,12 @@ async function start(request, env, url) {
     if (!s || s.role !== 'owner') return back(url, 'owner');
     st.c = s.church;
   }
-  if (mode === 'login') { const c = q.get('church'); if (validChurch(c)) st.c = c; }
+  if (mode === 'login') {
+    const c = q.get('church'); if (validChurch(c)) st.c = c;
+    // 쉬운 로그인: 이 기기 기억(기본 켬) · 받은 초대 링크 (identity/login.mjs googleLogin)
+    st.r = q.get('remember') === '0' ? 0 : 1;
+    const inv = q.get('invite'); if (validInviteToken(inv)) st.i = inv;
+  }
   const e = endpoints(env);
   const p = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirectUri(env, url), response_type: 'code', state: st.s,
@@ -111,13 +117,8 @@ async function callback(request, env, url) {
   const subject = `google:${who.sub}`;
   const now = Date.now();
   if (st.m === 'login') {
-    const rows = (await env.DB.prepare(
-      `SELECT m.church_id AS church, m.* FROM members m JOIN churches h ON h.id = m.church_id WHERE m.subject = ?1 AND m.disabled_at IS NULL AND h.disabled_at IS NULL ORDER BY m.created_at LIMIT 20`,
-    ).bind(subject).all()).results;
-    const m = rows.find(x => x.church === st.c) || rows[0];
-    if (!m) return back(url, 'no-account');
-    await env.DB.prepare('UPDATE members SET last_login_at = ?3 WHERE church_id = ?1 AND id = ?2').bind(m.church, m.id, now).run();
-    return done(url, st.n || HOME[SESSION_ROLE[m.role]], await ownerCookies(env, request, m.church, m));
+    // 쉬운 로그인: 구글 번호로 된 계정 + 이 이메일로 온 초대 + 받은 초대 링크 → 교회가 하나면 바로, 여럿이면 고르기
+    return googleLogin(env, request, url, st, who, [`${OAUTH_COOKIE}=; Path=/auth/google; Max-Age=0; SameSite=Lax; HttpOnly${url.protocol === 'https:' ? '; Secure' : ''}`]);
   }
   // 가입 · 다시 연결은 drive.file 이 꼭 있어야 한다 (구글 동의 화면에서 사람이 칸을 끌 수 있다)
   if (!String(tok.scope || '').split(/\s+/).includes(DRIVE_FILE_SCOPE)) return back(url, 'scope');

@@ -7,6 +7,7 @@ import * as auth from '../auth.mjs';
 import { HOME, PROTOCOL, SESSION_TTL, fail, json, validChurch } from '../protocol.mjs';
 import { readBody } from '../data/documents.mjs';
 import { accessConfigured, verifyAccessJwt } from './access.mjs';
+import * as easy from './login.mjs'; // 쉬운 로그인 (교회 ID 없이 · 기기 세션 · 초대)
 import { checkPassword, hashPassword, newPassword, weakPassword } from './password.mjs';
 import {
   MAX_MEMBERS, MEMBER_ROLES, SESSION_ROLE, createMember, credOf, forgetMember, listMembers, memberById, parseCred, validEmail, validLogin, view,
@@ -46,6 +47,7 @@ async function closeSockets(env, church, m) {
 /** 로그인 전에 오는 길. 해당 없으면 null */
 export async function publicRoute(request, env, url) {
   const path = url.pathname;
+  { const x = await easy.publicRoute(request, env, url); if (x) return x; }
   if (path === '/auth/member' && request.method === 'POST') return passwordLogin(request, env, url);
   if (path === '/auth/access' && request.method === 'GET') return accessLogin(request, env, url);
   return null;
@@ -76,8 +78,7 @@ async function passwordLogin(request, env, url) {
     await noteFailure(env, church, userScope, now, 10, 60_000);
     return fail(401, BAD);
   }
-  await env.DB.prepare('UPDATE members SET last_login_at = ?3 WHERE church_id = ?1 AND id = ?2').bind(church, m.id, now).run();
-  const c = await sessionCookies(env, request, church, m);
+  const c = await easy.startSession(env, request, church, m, { remember: a.remember !== false, via: 'password' }, now);
   const res = json({ ok: true, protocol: PROTOCOL, role: c.role, memberRole: m.role, home: HOME[c.role] });
   for (const h of c.headers) res.headers.append('set-cookie', h);
   return res;
@@ -93,8 +94,7 @@ async function accessLogin(request, env, url) {
     'SELECT m.* FROM members m JOIN churches h ON h.id = m.church_id WHERE m.church_id = ?1 AND m.subject = ?2 AND m.disabled_at IS NULL AND h.disabled_at IS NULL',
   ).bind(church, `access:${who.email}`).first();
   if (!m) return fail(403, '이 교회에 등록된 사람이 아닙니다. 주인에게 등록을 부탁해 주세요.');
-  await env.DB.prepare('UPDATE members SET last_login_at = ?3 WHERE church_id = ?1 AND id = ?2').bind(church, m.id, Date.now()).run();
-  const c = await sessionCookies(env, request, church, m);
+  const c = await easy.startSession(env, request, church, m, { remember: true, via: 'access' });
   const next = url.searchParams.get('next') || '';
   const to = next.startsWith('/') && !next.startsWith('//') ? next : HOME[c.role];
   const res = new Response(null, { status: 302, headers: { location: to, 'cache-control': 'no-store' } });
@@ -110,6 +110,7 @@ export async function handle(request, env, url, s, r) {
     case 'update': return update(request, env, url, s);
     case 'remove': return remove(env, url, s);
     case 'password': return changePassword(request, env, s);
+    case 'sessions': case 'revokeSession': case 'invites': case 'createInvite': case 'revokeInvite': return easy.handle(request, env, url, s, r);
     default: return fail(404, '없는 주소입니다.');
   }
 }
@@ -195,7 +196,7 @@ async function changePassword(request, env, s) {
     .bind(s.church, m.id, await hashPassword(env.AUTH_SECRET, s.church, m.subject, a.next), now).run();
   await closeSockets(env, s.church, m);
   // 다른 기기의 쿠키는 죽고, 이 기기는 새 쿠키로 계속
-  const c = await sessionCookies(env, request, s.church, { ...m, gen: m.gen + 1 });
+  const c = await easy.startSession(env, request, s.church, { ...m, gen: m.gen + 1 }, { remember: true, via: 'password' }, now);
   const res = json({ ok: true });
   for (const h of c.headers) res.headers.append('set-cookie', h);
   return res;
