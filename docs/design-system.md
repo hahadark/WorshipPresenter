@@ -64,7 +64,7 @@ Pretendard만 사용한다. `theme::ty(text, Type, color)` 또는 `Type::… .fo
 
 ## 견본과 캡처
 
-`wp-app --specimen --win 1440x1000 --shot tmp/craft/specimen.png`는 실제 자료, DB, 출력 서버, 모니터를 열지 않는다. `--data`를 함께 주면 그 폴더의 `settings.json`에서 테마와 배율만 읽는다. `--specimen icons`는 이름표와 16/20/24px 아이콘을 나열한다. 견본의 진행 시각은 고정한다.
+`wp-app --specimen --win 1440x1000 --shot tmp/craft/specimen.png`는 실제 자료, DB, 출력 서버, 모니터를 열지 않는다. `--data`를 함께 주면 그 폴더의 `settings.json`에서 테마와 배율만 읽는다. `--specimen icons`는 이름표와 16/20/24px 아이콘을 나열한다. `--specimen windows`는 창 부품(F2 `widgets_win`: 구획 · 양식 · 결과 글 다섯 가지 · 빈 상태 · 목록 줄 · 아래 단추 줄)을 창 틀 안에 그린다. 견본의 진행 시각은 고정한다.
 
 `node tools/craft/shots.js --exe target/debug/wp-app.exe --seed tmp/craft/seed --out tmp/craft/after --only specimen`로 테마와 배율별 그림을 만든다. 앱이 직접 찍고 종료하며 키보드·마우스를 건드리지 않는다. 실제 주 화면의 전후 쌍은 `tmp/craft/before`, `tmp/craft/after`에 보관한다.
 
@@ -81,6 +81,8 @@ Pretendard만 사용한다. `theme::ty(text, Type, color)` 또는 `Type::… .fo
 이름표 (100개): `align-center` · `align-justify` · `align-left` · `align-right` · `arrow-down` · `arrow-left` · `arrow-right` · `arrow-up` · `bold` · `book-open` · `brush` · `camera` · `captions` · `check` · `chevron-down` · `chevron-left` · `chevron-right` · `chevron-up` · `chevrons-down` · `chevrons-up` · `circle` · `circle-check` · `circle-help` · `circle-x` · `clapperboard` · `clock` · `columns-2` · `copy` · `copy-plus` · `download` · `eraser` · `external-link` · `eye` · `eye-off` · `file-text` · `flag` · `folder` · `folder-open` · `globe` · `grip-vertical` · `hand` · `home` · `image` · `images` · `info` · `italic` · `keyboard` · `layers` · `layout-grid` · `link` · `list` · `maximize` · `megaphone` · `mic` · `minimize` · `minus` · `monitor` · `monitor-off` · `more-horizontal` · `mouse-pointer-2` · `music` · `music-2` · `palette` · `panel-bottom` · `panel-left` · `panel-right` · `pause` · `pencil` · `play` · `plus` · `power` · `presentation` · `redo-2` · `refresh-cw` · `rotate-ccw` · `rows-2` · `save` · `scan` · `scissors` · `search` · `settings` · `skip-back` · `skip-forward` · `sliders-horizontal` · `square` · `square-pen` · `tag` · `text` · `timer` · `trash-2` · `triangle-alert` · `type` · `underline` · `undo-2` · `upload` · `video` · `volume-2` · `volume-x` · `wifi` · `x`
 
 ![아이콘 견본](images/craft/icons.jpg)
+
+![창 부품 견본 (--specimen windows)](images/craft/specimen-windows.jpg)
 
 ## 이번에 더한 공용 부품 (2026-11-28 2차)
 

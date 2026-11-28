@@ -56,6 +56,8 @@ for (const th of ['pro', 'pro-light', 'dark', 'contrast']) add('specimen-' + th,
 add('specimen-s125', ['--win', '1600x1500', '--specimen'], { 'ui.scale': 125 });
 add('specimen-s150', ['--win', '1600x1500', '--specimen'], { 'ui.scale': 150 });
 add('icons', ['--win', '1200x900', '--specimen', 'icons']);
+add('specimen-windows', ['--win', '1200x800', '--specimen', 'windows']);
+add('specimen-windows-light', ['--win', '1200x800', '--specimen', 'windows'], { 'ui.theme': 'pro-light' });
 add('icons-s125', ['--win', '1200x900', '--specimen', 'icons'], { 'ui.scale': 125 });
 add('icons-s150', ['--win', '1200x900', '--specimen', 'icons'], { 'ui.scale': 150 });
 add('icons-old', ['--win', '1200x900', '--specimen', 'icons'], {}, { WP_ICONS: 'lucide' });

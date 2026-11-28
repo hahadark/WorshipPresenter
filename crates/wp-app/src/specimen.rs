@@ -1,4 +1,4 @@
-//! 자료·네트워크·출력 창 없이 여는 결정적 부품 견본. --specimen [icons] --shot <png>
+//! 자료·네트워크·출력 창 없이 여는 결정적 부품 견본. --specimen [icons|windows] --shot <png>
 use crate::{icons, theme::{self, Type, pal}, widgets::{self, Btn, Kind, Vis}};
 use eframe::egui::{self, Align2, Pos2, Rect, Sense, Vec2};
 
@@ -7,17 +7,19 @@ pub fn run() -> anyhow::Result<()> {
     let value = |key: &str| args.iter().position(|s| s == key).and_then(|i| args.get(i + 1)).cloned();
     let settings: serde_json::Value = value("--data").and_then(|d| std::fs::read_to_string(std::path::Path::new(&d).join("settings.json")).ok()).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
     let dims = value("--win").and_then(|s| {let (w,h)=s.split_once('x')?; Some([w.parse().ok()?,h.parse().ok()?])}).unwrap_or([1440.0, 1000.0]);
-    let only_icons = value("--specimen").as_deref() == Some("icons");
+    let mode = value("--specimen").filter(|v| !v.starts_with("--")).unwrap_or_default();
+    let only_icons = mode == "icons";
+    let windows = mode == "windows";
     let shot = value("--shot");
     eframe::run_native("WorshipPresenter · specimen", eframe::NativeOptions { viewport: egui::ViewportBuilder::default().with_inner_size(dims).with_resizable(false).with_position([0.0,0.0]), ..Default::default() }, Box::new(move |cc| {
         theme::install_fonts(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
         crate::settings_ui::apply_ui_prefs(&cc.egui_ctx, &settings);
-        Ok(Box::new(Specimen { shot, only_icons, frames: 0 }))
+        Ok(Box::new(Specimen { shot, only_icons, windows, frames: 0 }))
     })).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-struct Specimen { shot: Option<String>, only_icons: bool, frames: usize }
+struct Specimen { shot: Option<String>, only_icons: bool, windows: bool, frames: usize }
 impl eframe::App for Specimen {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         let ctx=ui.ctx().clone();
@@ -25,7 +27,7 @@ impl eframe::App for Specimen {
             ui.label(theme::ty("WorshipPresenter / CRAFT · 부품 견본",Type::Title,pal().text));
             ui.label(theme::ty("Pretendard · 4px grid · 90 / 130ms · 자료와 출력 서버를 열지 않는 점검 화면",Type::Small,pal().muted));
             ui.add_space(8.0);
-            if self.only_icons { icon_grid(ui); } else { components(ui); }
+            if self.only_icons { icon_grid(ui); } else if self.windows { window_parts(ui); } else { components(ui); }
         });
         self.frames+=1;
         if self.shot.is_some() && self.frames < 5 {ctx.request_repaint();}
@@ -120,3 +122,47 @@ fn icon_grid(ui:&mut egui::Ui){
     let p=pal();let names=icons::names();let cols=(ui.available_width()/104.0).floor().max(1.0) as usize;
     for row in names.chunks(cols){ui.horizontal(|ui|{for name in row {ui.allocate_ui(Vec2::new(100.0,48.0),|ui|{ui.horizontal(|ui|{for s in [16.0,20.0,24.0]{icons::show(ui,name,s,p.text);}});ui.label(theme::ty(*name,Type::Micro,p.muted));});}});}
 }
+
+/// 창 부품 (F2 widgets_win): 창 틀 안에 구획 · 양식 · 결과 글 다섯 가지 · 빈 상태 · 목록 줄 · 아래 단추 줄
+fn window_parts(ui: &mut egui::Ui) {
+    use crate::widgets_win as win;
+    let p = pal();
+    let col_w = ((ui.available_width() - 24.0) / 2.0).max(360.0);
+    ui.horizontal_top(|ui| {
+        // ---- 창 하나 (보통 창 모양: 판 바탕 · 6 둥글기 · 1px 테두리)
+        ui.allocate_ui_with_layout(Vec2::new(col_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+            egui::Frame::window(ui.style()).show(ui, |ui| {
+                ui.set_width(col_w - 32.0);
+                ui.label(theme::ty("창 제목", Type::Title, p.text));
+                win::lead(ui, "창 맨 위 한 줄 설명 — 무엇을 하는 창인지");
+                win::section(ui, "구획 머리");
+                win::field(ui, "이름", |ui| { let mut t = String::from("주일 예배"); ui.add(egui::TextEdit::singleline(&mut t).desired_width(f32::INFINITY)); });
+                win::field(ui, "시작 시각", |ui| { let mut t = String::from("11:00"); ui.add(egui::TextEdit::singleline(&mut t).desired_width(80.0)); });
+                win::field(ui, "켜기", |ui| { let mut on = true; widgets::checkbox(ui, &mut on, "예배당 화면에도 보이기"); });
+                win::section(ui, "결과 글");
+                win::status(ui, win::Tone::Ok, "저장했습니다");
+                win::status(ui, win::Tone::Info, "알림 · 다음에 할 일");
+                win::status(ui, win::Tone::Warn, "확인할 것이 있습니다");
+                win::status(ui, win::Tone::Error, "열지 못했습니다 — 파일이 다른 프로그램에서 열려 있습니다");
+                win::status(ui, win::Tone::Busy, "불러오는 중");
+                win::footer_split(ui, |ui| { ui.add(win::danger("지우기")); }, |ui| { ui.add(win::primary("저장")); ui.add(win::secondary("취소")); });
+            });
+        });
+        ui.add_space(16.0);
+        ui.allocate_ui_with_layout(Vec2::new(col_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+            egui::Frame::window(ui.style()).show(ui, |ui| {
+                ui.set_width(col_w - 32.0);
+                ui.label(theme::ty("목록 창", Type::Title, p.text));
+                win::section(ui, "목록 줄 (보통 · 고름)");
+                for (i, t) in ["주일 예배 (○○교회)", "수요 예배", "금요 기도회"].iter().enumerate() {
+                    let (r, _) = win::list_row(ui, theme::ROW_H, i == 1);
+                    ui.painter().text(r.left_center() + Vec2::new(12.0, 0.0), Align2::LEFT_CENTER, *t, Type::Body.font(), p.text);
+                }
+                win::section(ui, "빈 상태");
+                win::empty(ui, "folder-open", "아직 기록이 없습니다", "송출하면 여기에 남습니다.");
+                win::footer(ui, |ui| { ui.add(win::secondary("닫기")); });
+            });
+        });
+    });
+}
+

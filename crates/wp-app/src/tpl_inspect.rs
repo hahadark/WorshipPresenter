@@ -295,7 +295,7 @@ fn grad_dirs(ui: &mut egui::Ui, cur: &str, c1: &str, c2: &str) -> Option<String>
                 let k = match v {
                     "lr" => fx,
                     "diag" => (fx + fy) / 2.0,
-                    "radial" => (((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt() / 0.7071).min(1.0),
+                    "radial" => (((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt() / std::f32::consts::FRAC_1_SQRT_2).min(1.0),
                     _ => fy,
                 };
                 let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * k) as u8;

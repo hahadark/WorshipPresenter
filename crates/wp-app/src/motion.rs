@@ -86,7 +86,7 @@ pub fn paint(p: &egui::Painter, rect: Rect, kind: &str, t: f32) {
             for _ in 0..220 {
                 let (x, y) = (rnd.next() * w, rnd.next() * h);
                 let r = (0.6 + rnd.next() * 1.6) * h / 1080.0;
-                let (f, ph) = (0.4 + rnd.next() * 1.2, rnd.next() * 6.283);
+                let (f, ph) = (0.4 + rnd.next() * 1.2, rnd.next() * std::f32::consts::TAU);
                 let a = 0.35 + 0.65 * (t * f + ph).sin().abs();
                 p.circle_filled(at((x + t * w * 0.004) % w, y), r.max(0.5), Color32::from_white_alpha((a * 255.0) as u8));
             }
