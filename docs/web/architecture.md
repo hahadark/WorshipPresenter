@@ -38,7 +38,8 @@
 - **틀린 횟수**: 기기 주소(`cf-connecting-ip`)별 5번마다 잠금(30초부터 두 배씩, 최대 15분), 교회 전체 30번이면 15분. D1 `auth_failures`.
 - **쓰기 보호**: 쿠키로 오는 쓰기 · 실시간 연결은 `Origin` 이 같고 `X-WorshipCue: 1`(또는 `Sec-Fetch-Site: same-origin`)일 때만. 새로 만든 페이지(로그인 · 주인)는 엄격한 CSP, 리모컨 · 편집기는 `X-Frame-Options: DENY`.
 - **교회 단위 분리**: 교회는 쿠키 · 열쇠 앞머리에서만 정한다. 본문 · 쿼리의 교회 값을 믿지 않는다(PIN 로그인의 `c=` 는 '어느 교회의 PIN 인지' 만 정하고, 그 교회의 해시로만 맞춘다). 중계실은 `ROOMS.idFromName(교회)` — 교회마다 따로. D1 의 모든 표는 `church_id` 가 첫 열쇠이고 모든 질의는 `WHERE church_id = ?1` 로 시작한다. Worker 가 중계실에 넘길 때 `x-wp-*` 머리글을 지우고 확인한 값으로 다시 쓴다.
-- **2단계에서 바꿀 것**: 주인 로그인을 사람 계정으로(선택지 — Cloudflare Access 무료 50명 · GitHub/Google OAuth). 기기 열쇠는 그대로 둔다(OBS · 휴대폰에는 계정이 없다). 교회 만들기는 지금 `POST /api/v1/admin/churches`(Worker 비밀값 `ADMIN_TOKEN` 이 있을 때만 열림) 또는 `scripts/seed.mjs`.
+- **2단계 A 에서 한 것**: 사람 계정 `members`(owner · editor · viewer, 비밀번호 또는 Cloudflare Access) — 쿠키 역할 `owner` · `member-editor` · `member-viewer`, 자료 권한 `read` · `write` 를 더함. 기기 열쇠 · PIN 은 그대로 ([`data-api.md`](data-api.md) 1 · 5절).
+- (처음 적은 것) **2단계에서 바꿀 것**: 주인 로그인을 사람 계정으로(선택지 — Cloudflare Access 무료 50명 · GitHub/Google OAuth). 기기 열쇠는 그대로 둔다(OBS · 휴대폰에는 계정이 없다). 교회 만들기는 지금 `POST /api/v1/admin/churches`(Worker 비밀값 `ADMIN_TOKEN` 이 있을 때만 열림) 또는 `scripts/seed.mjs`.
 
 ## 3. HTTP 계약 (1단계, 구현함)
 
@@ -121,7 +122,7 @@
 - **송출 주체 겹침**(3단계에서 정할 것): 지금은 '나중에 붙은 쪽이 이김'. 웹 조작 화면이 예배 중 설치판을 몰래 밀어내지 않도록, 3단계는 `hello.source = 'desktop'|'web'` 과 `claim`(주인이 넘겨받기를 눌러야 함) 메시지를 더한다 — 덧붙이는 것이라 v1 그대로.
 - 브라우저에서 쓰지 못하는 것: OS 파일 경로 · SQLite 파일 · TCP/UDP(장비) · 전역 단축키 · IME. https 페이지에서 `http://127.0.0.1:37528` 을 부르는 것은 섞인 내용 · 로컬 네트워크 접근 허락에 걸려 기본 길로 삼지 않는다.
 
-## 6. 2단계 자료 계약 (예약 — 아직 없음)
+## 6. 2단계 자료 계약 (2A 구현함 — 쓰는 법 · 예시 · 덧붙인 칸은 [`data-api.md`](data-api.md), 자산 길은 2C)
 
 D1 (교회 단위, 모든 질의 `church_id = ?1`):
 

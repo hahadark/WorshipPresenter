@@ -18,7 +18,11 @@
   async function login(c, s) {
     $('go').disabled = true; $('err').textContent = '';
     try {
-      const r = await fetch('/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-worshipcue': '1' }, body: JSON.stringify({ church: c.trim().toLowerCase(), secret: s.trim() }) });
+      // 로그인 이름이 있으면 사람 계정(2단계, /auth/member), 없으면 기기 열쇠 · PIN (1단계)
+      const who = ($('login') && $('login').value.trim().toLowerCase()) || '';
+      const r = who
+        ? await fetch('/auth/member', { method: 'POST', headers: { 'content-type': 'application/json', 'x-worshipcue': '1' }, body: JSON.stringify({ church: c.trim().toLowerCase(), login: who, password: s }) })
+        : await fetch('/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-worshipcue': '1' }, body: JSON.stringify({ church: c.trim().toLowerCase(), secret: s.trim() }) });
       const j = await r.json().catch(() => ({ ok: false, error: '응답을 읽지 못했습니다.' }));
       if (!j.ok) { $('err').textContent = j.error || '들어가지 못했습니다.'; return; }
       location.replace(next(j.home || '/'));

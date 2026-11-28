@@ -3,6 +3,7 @@
 // - 쿠키는 { 교회, 역할, 열쇠 id, 만료 } 를 서명한 것. 열쇠를 지우면 그 열쇠로 만든 쿠키가 모두 죽는다 (요청마다 확인, 30초 기억).
 // - 틀린 횟수는 D1 에 센다 (기기 주소별 5번마다 30초~, PIN 은 교회 전체 30번이면 15분 — 긴 열쇠는 교회 전체를 잠그지 않는다).
 import { ROLES, SESSION_TTL, validChurch } from './protocol.mjs';
+import { memberAlive } from './identity/members.mjs'; // 2단계 사람 계정 ('m:' 열쇠)
 
 const enc = new TextEncoder();
 export const COOKIE = 'wp_session';
@@ -93,7 +94,8 @@ export function forget(church, cred) {
   live.delete(`${church}/${cred}`);
 }
 /** 쿠키의 열쇠가 아직 살아 있는가 (지웠거나 만료되면 false) */
-export async function credentialAlive(env, church, cred, now = Date.now()) {
+export async function credentialAlive(env, church, cred, now = Date.now(), role = '') {
+  if (String(cred).startsWith('m:')) return memberAlive(env, church, cred, role, now);
   const key = `${church}/${cred}`;
   const hit = live.get(key);
   if (hit && now - hit.at < LIVE_MS) return hit.ok;
@@ -110,7 +112,7 @@ export async function credentialAlive(env, church, cred, now = Date.now()) {
 export async function sessionOf(request, env) {
   if (!configured(env)) return null;
   const s = await readToken(env, cookies(request)[COOKIE]);
-  if (!s || !(await credentialAlive(env, s.church, s.cred))) return null;
+  if (!s || !(await credentialAlive(env, s.church, s.cred, Date.now(), s.role))) return null;
   return s;
 }
 
