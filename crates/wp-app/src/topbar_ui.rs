@@ -364,8 +364,9 @@ impl App {
             return false;
         }
         let p = pal();
+        // 오류는 주황(빨강은 송출 중에만), 성공은 회색 — 전문가 테마 규칙. 옛 테마는 예전 색
         let c = match *kind {
-            "error" => p.live,
+            "error" => if p.bevel { p.danger_text } else { p.live },
             "warn" => p.warn,
             "ok" => p.ok_text,
             _ => p.text2,
@@ -373,13 +374,41 @@ impl App {
         let (dot, _) = ui.allocate_exact_size(Vec2::new(10.0, 18.0), Sense::hover());
         ui.painter().circle_filled(dot.center(), 4.0, c);
         let room = (ui.available_width() * 0.6).max(120.0);
-        let lr = ui.scope(|ui| {
-            ui.set_max_width(room);
-            ui.add(egui::Label::new(theme::rich(wp_core::i18n::tr_dyn(msg), 12.0, Weight::SemiBold, p.text)).truncate().selectable(false).sense(Sense::click()))
-        }).inner.on_hover_text(format!("{}\n({})", wp_core::i18n::tr_dyn(msg), tr("눌러서 닫기")));
+        let full = wp_core::i18n::tr_dyn(msg);
+        let font = if p.bevel { theme::Type::SmallStrong.font() } else { theme::font(12.0, Weight::SemiBold) };
+        let (g, cut) = widgets::elide(ui, &full, font, p.text, room);
+        let (lrect, lr) = ui.allocate_exact_size(g.size(), Sense::click());
+        ui.painter().galley(lrect.min, g, p.text);
+        if lr.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
         widgets::mark("toast-msg", lr.rect);
-        if lr.clicked() {
-            acts.push(Act::ToastDismiss);
+        if cut {
+            // 잘린 알림: 누르면 전문 + 할 일 (닫지 않음)
+            let lr = lr.on_hover_text(tr("눌러서 전문 보기"));
+            egui::Popup::menu(&lr).frame(crate::menubar::drop_frame()).gap(4.0).show(|ui| {
+                ui.set_max_width(420.0);
+                ui.add(egui::Label::new(theme::ty(full.clone(), theme::Type::Body, p.text)).wrap());
+                ui.add_space(theme::sp::X8);
+                ui.horizontal(|ui| {
+                    if let Some(a) = s.toast_act {
+                        let (label, icon) = toast_button(a);
+                        if ui.add(Btn::new(label).icon(icon).size(Size::Sm)).clicked() {
+                            acts.push(Act::ToastAct(a));
+                            ui.close();
+                        }
+                    }
+                    if ui.add(Btn::new(tr("닫기")).size(Size::Sm)).clicked() {
+                        acts.push(Act::ToastDismiss);
+                        ui.close();
+                    }
+                });
+            });
+        } else {
+            let lr = lr.on_hover_text(format!("{full}\n({})", tr("눌러서 닫기")));
+            if lr.clicked() {
+                acts.push(Act::ToastDismiss);
+            }
         }
         if let Some(a) = s.toast_act {
             let (label, icon) = toast_button(a);

@@ -1006,7 +1006,9 @@ fn float_ids(ctx: &egui::Context) -> Vec<egui::Id> {
 pub fn float_pos(ctx: &egui::Context, id: egui::Id, width: f32) -> Pos2 {
     let scr = ctx.content_rect();
     let mut ids = float_ids(ctx);
-    let open = ctx.memory(|m| ids.iter().filter(|x| **x != id).filter(|x| m.areas().is_visible(&egui::LayerId::new(egui::Order::Middle, **x))).count());
+    // 열린 창 수: 바로 앞 화면에 실제로 그려진 창만 센다 (areas().is_visible 는 set_state 를 부른 닫힌 창도 '보임' 으로 셌다)
+    let frame = ctx.cumulative_frame_nr();
+    let open = ids.iter().filter(|x| **x != id).filter(|x| ctx.data(|d| d.get_temp::<u64>(egui::Id::unique(("wp-float-drawn", **x)))).is_some_and(|f| f + 1 >= frame)).count();
     if !ids.contains(&id) {
         ids.push(id);
         ctx.data_mut(|d| d.insert_temp(egui::Id::unique("wp-float-ids"), ids));
@@ -1061,6 +1063,10 @@ impl<'a> FloatWin<'a> {
     pub fn title_bar(mut self, v: bool) -> Self { self.win = self.win.title_bar(v); self }
     pub fn show<R>(self, ctx: &egui::Context, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
         let FloatWin { win, id, open, outside } = self;
+        if open.as_deref().is_none_or(|o| *o) {
+            let f = ctx.cumulative_frame_nr();
+            ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("wp-float-drawn", id)), f));
+        }
         match open {
             Some(o) => {
                 if outside {

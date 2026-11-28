@@ -726,6 +726,21 @@ pub fn notice(ui: &mut Ui, tone: Tone, text: &str, action: Option<&str>, closabl
     out
 }
 
+/// 넘치는 줄의 끝을 바탕색으로 흐리게 (24px). `left` 면 왼쪽 끝
+pub fn fade_edge(ui: &Ui, rect: Rect, left: bool, ground: Color32) {
+    let w = 24.0_f32.min(rect.width() / 4.0);
+    let (x0, x1) = if left { (rect.left(), rect.left() + w) } else { (rect.right() - w, rect.right()) };
+    let (c0, c1) = if left { (ground, Color32::TRANSPARENT) } else { (Color32::TRANSPARENT, ground) };
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(Pos2::new(x0, rect.top()), c0);
+    mesh.colored_vertex(Pos2::new(x1, rect.top()), c1);
+    mesh.colored_vertex(Pos2::new(x1, rect.bottom()), c1);
+    mesh.colored_vertex(Pos2::new(x0, rect.bottom()), c0);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().add(mesh);
+}
+
 // ================================================================ 빈 상태
 
 /// 빈 상태: 흐린 아이콘 + 한 줄 제목 + 안내 글 + (할 일 단추). 판 가운데가 아니라 위쪽에 왼쪽 맞춤으로 둔다

@@ -1370,7 +1370,7 @@ impl App {
                 let (wd, dd) = (self.web_dir.clone(), self.data_dir.clone());
                 let c = paint::Ctx { web_dir: &wd, data_dir: &dd };
                 let sa = if strip { egui::ScrollArea::horizontal().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).auto_shrink([false, true]) } else { egui::ScrollArea::vertical().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).max_height(76.0).auto_shrink([false, true]) };
-                sa.show(ui, |ui| {
+                let so = sa.show(ui, |ui| {
                     let mut body = |ui: &mut egui::Ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(if strip { 6.0 } else { 4.0 }, 4.0);
                         let item = crate::center_ui::deck_item(s, d);
@@ -1396,6 +1396,17 @@ impl App {
                     };
                     if strip { ui.horizontal(|ui| body(ui)); } else { ui.horizontal_wrapped(|ui| body(ui)); }
                 });
+                if strip {
+                    // 줄이 넘치면 잘린 쪽 끝을 흐리게 (반쯤 잘린 칸이 '끝' 처럼 보이지 않게)
+                    let vbg = theme::mix(p.panel, 80.0, p.bg);
+                    let (r, off, cw) = (so.inner_rect, so.state.offset().x, so.content_size.x);
+                    if off + r.width() < cw - 1.0 {
+                        widgets::fade_edge(ui, r, false, vbg);
+                    }
+                    if off > 1.0 {
+                        widgets::fade_edge(ui, r, true, vbg);
+                    }
+                }
             }
         });
     }
