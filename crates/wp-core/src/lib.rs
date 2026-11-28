@@ -44,6 +44,7 @@ pub mod pdf; // PDF 보여 주기 (운영체제의 PDF 그리기로 쪽마다 �
 pub mod youtube; // 유튜브 주소 재생 (영상 순서, 임베드)
 pub mod webedit; // 웹 편집기 (다른 컴퓨터의 브라우저에서 큐시트 고치기, PIN)
 pub mod cloud; // 클라우드 연결 (웹판 1단계, docs/web/architecture.md) — 기본 꺼짐
+pub mod cloudsync; // 클라우드 자료 동기화 (웹판 2단계 B, docs/web/sync.md) — 기본 꺼짐
 pub mod phonecam; // 휴대폰을 카메라로 (https · WebRTC 이어 주기)
 pub mod firewall; // Windows 방화벽: 휴대폰·내부망 연결 확인 · 열기
 pub mod pptxout; // 큐시트 → PPT 파일 하나 (예배 순서대로)

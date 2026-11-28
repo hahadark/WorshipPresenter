@@ -118,6 +118,7 @@ fn body(ui: &mut egui::Ui, core: &Shared) {
     if !msg.is_empty() {
         ui.label(RichText::new(msg).small().color(p.muted));
     }
+    crate::cloudsync_ui::section(ui, core); // 2단계 B 자료 동기화
     group_head(ui, &tr("상태"));
     ui.horizontal(|ui| {
         let (mark, text) = match st.state.as_str() {
