@@ -55,9 +55,8 @@ const WINS = [
   ['ai-settings', ['--open-menu', 'ai:settings']], ['ai-check', ['--open-menu', 'ai:check']], ['ai-sermon', ['--open-menu', 'ai:sermon']], ['ai-listen', ['--open-menu', 'ai:listen']],
   ['ai-lyrics', ['--open-menu', 'ai:lyrics']], ['ai-recap', ['--open-menu', 'ai:recap']], ['ai-say', ['--open-menu', 'ai:say']],
   // 점검 인자 --open-x 로만 열리는 것 (craft-windows 에서 더함)
-  ['x-hymn', ['--open-x', 'hymn']], ['x-ppt', ['--open-x', 'ppt']], ['x-lyrics', ['--open-x', 'lyrics']], ['x-webconsent', ['--open-x', 'webconsent']],
-  ['x-aiconsent', ['--open-x', 'aiconsent']], ['x-migrate', ['--open-x', 'migrate']], ['x-startwarn', ['--open-x', 'startwarn']], ['x-libfolders', ['--open-x', 'libfolders']],
-  ['x-move', ['--open-x', 'move']], ['x-pptsplit', ['--open-x', 'pptsplit']], ['x-bigppt', ['--open-x', 'bigppt']],
+  // (찬송가 · PPT 넣기 · 큰 PPT 나누기 · 첫 실행 자료 옮김 · 인터넷 자료 안내는 점검 인자가 없어 코드로만 봄 — docs/ui-craft-windows.md)
+  ['x-lyrics', ['--open', 'lyrics']], ['x-aiconsent', ['--open-x', 'aiconsent']],
   ['x-update-new', ['--open-x', 'update-new']], ['x-update-err', ['--open-x', 'update-err']], ['x-update-dl', ['--open-x', 'update-dl']],
 ];
 for (const [id, a] of WINS) add('base', id, ['--win', W, ...base, ...a]);
@@ -65,7 +64,7 @@ for (const [id, a] of WINS) add('base', id, ['--win', W, ...base, ...a]);
 add('base', 'main', ['--win', W, ...base, '--item', '1', '--send']);
 
 // ---- 크기 · 배율: 창이 넘치거나 잘리는지
-const SIZED = ['settings', 'set-keys', 'tpl', 'themes', 'cues', 'slideedit', 'scene', 'output', 'update', 'songs', 'lib', 'ai-listen', 'ai-lyrics', 'ai-recap', 'sync', 'diagnose', 'stage', 'message', 'macros', 'names', 'import-bible', 'points', 'tool-devices', 'tool-remote', 'help-keys', 'x-pptsplit', 'x-update-new', 'bulletin', 'obs', 'usage', 'draw', 'ai-sermon', 'ai-check', 'ai-settings', 'preservice', 'home', 'camtest', 'cameras', 'overlays'];
+const SIZED = ['settings', 'set-keys', 'tpl', 'themes', 'cues', 'slideedit', 'scene', 'output', 'update', 'songs', 'lib', 'ai-listen', 'ai-lyrics', 'ai-recap', 'sync', 'diagnose', 'stage', 'message', 'macros', 'names', 'import-bible', 'points', 'tool-devices', 'tool-remote', 'help-keys', 'x-update-new', 'bulletin', 'obs', 'usage', 'draw', 'ai-sermon', 'ai-check', 'ai-settings', 'preservice', 'home', 'camtest', 'cameras', 'overlays'];
 for (const id of SIZED) {
   const a = WINS.find(w => w[0] === id)[1];
   add('sizes', id + '@1000', ['--win', '1000x640', ...base, ...a]);

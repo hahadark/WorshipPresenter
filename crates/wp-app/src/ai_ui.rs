@@ -145,6 +145,13 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 }
 
 fn consent_win(app: &mut App, ctx: &egui::Context) {
+    // 점검용: --open-x aiconsent → 처음 쓸 때 묻는 창 (예배 전 점검 기능으로)
+    static X: std::sync::Once = std::sync::Once::new();
+    X.call_once(|| {
+        if crate::widgets_win::open_x("aiconsent") {
+            ST.lock().consent = Some("check".into());
+        }
+    });
     let Some(feature) = ST.lock().consent.clone() else { return };
     let cfg = app.core.lock().ai_cfg();
     let mut open = true;

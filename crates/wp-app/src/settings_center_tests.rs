@@ -279,7 +279,7 @@ fn 바꾼_단축키가_바로_듣고_틀린_키는_저장되지_않는다() {
     assert!(seen("set-key-problems").is_some(), "겹치는 키 요약");
 
     // 하나만 기본값으로
-    h.app.tc.settings.keys.filter = "다음 슬라이드 (Live)".into();
+    h.app.tc.settings.keys.filter = "송출 다음 슬라이드".into();
     press(&mut h, "set-key-def-nextSlide");
     assert_eq!(get(&h, &["shortcuts", "nextSlide"]), json!("F6"));
     h.app.tc.settings.open = false;
