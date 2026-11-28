@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>워십프리젠터 웹 — 둘러보기</title>
+<link rel="stylesheet" href="/cloud/cloud.css">
+<script type="application/json" id="wp-cfg">"__WP_CLOUD__"</script>
+</head>
+<body>
+<main>
+  <div class="row" style="justify-content:space-between">
+    <div><h1>워십프리젠터 웹 — 둘러보기</h1><div class="muted">견본 교회 (로그인 없이)</div></div>
+    <button type="button" id="logout">나가기</button>
+  </div>
+  <div class="box">
+    <p><b>누구나 같이 보는 견본 교회입니다.</b> 개인 정보 · 실제 교회 자료를 넣지 마세요. 고친 것은 하루 안에 처음 모습으로 돌아갑니다.</p>
+    <p class="muted">파일 올리기 · AI · 사람 초대 · 오래 쓰는 송출 주소는 둘러보기에서 막혀 있습니다. 우리 교회로 쓰려면 <a href="/login">구글로 무료 시작하기</a>.</p>
+    <p class="muted" id="reset"></p>
+  </div>
+  <h2>화면 열기</h2>
+  <div class="box">
+    <a href="/outputs/main" target="_blank" rel="noopener">예배당 화면</a> ·
+    <a href="/outputs/overlay" target="_blank" rel="noopener">OBS 투명 자막</a> ·
+    <a href="/outputs/stage" target="_blank" rel="noopener">무대 화면</a> ·
+    <a href="/control/"><b>웹 조작 화면</b></a> <!-- 3단계 (web-egui) -->
+    <p class="muted">둘러보기의 송출은 이 브라우저(방문자)만의 것입니다 — 다른 방문자 화면에 나가지 않습니다.</p>
+  </div>
+  <h2>견본 큐시트 · 찬양</h2>
+  <div class="box"><table><thead><tr><th>종류</th><th>이름</th><th>판</th></tr></thead><tbody id="docs"></tbody></table><p class="err" id="err"></p></div>
+  <h2>성경 찾기 <span class="muted">(지어낸 견본 본문)</span></h2>
+  <form class="box" id="bf">
+    <div class="row"><input id="ref" value="요3:16-18" style="width:auto;flex:1"><button class="primary" type="submit">찾기</button></div>
+    <div id="verses"></div>
+  </form>
+</main>
+<script src="/cloud/demo.js"></script>
+</body>
+</html>

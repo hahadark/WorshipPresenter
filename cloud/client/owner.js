@@ -12,6 +12,21 @@
     if (r.status === 401) { location.replace('/login?next=/owner'); throw new Error('로그인'); }
     return r.json().catch(() => ({ ok: false, error: '응답을 읽지 못했습니다.' }));
   }
+  // 7단계: 등급 · 구글 드라이브 연결 (끊겼으면 다시 연결 안내 — 송출 중인 화면은 마지막 상태 그대로)
+  async function tier() {
+    const t = await api('/api/v1/tier').catch(() => null);
+    if (!t || !t.ok) { $('tier').innerHTML = '<span class="err">등급을 읽지 못했습니다.</span>'; return; }
+    let html = '<div><b>' + esc(t.name || t.tier) + '</b>' + (t.moving ? ' <span class="err">(저장소를 옮기는 중 — 잠시 고칠 수 없습니다)</span>' : '') + '</div>';
+    if (t.store === 'drive') {
+      const d = await api('/api/v1/drive').catch(() => null);
+      if (d && d.connected) html += '<div class="muted" style="margin-top:6px"><span class="dot on"></span>구글 드라이브 연결됨 (' + esc(d.email) + ')' + (d.folderUrl ? ' · <a href="' + esc(d.folderUrl) + '" target="_blank" rel="noopener">드라이브 폴더 열기</a>' : '') + ' · <button type="button" id="gdisc">연결 끊기</button></div>';
+      else html += '<div style="margin-top:6px"><span class="dot"></span><span class="err">구글 드라이브 연결이 끊어졌습니다.</span> 송출 중인 화면은 마지막 화면 그대로입니다. <a href="/auth/google/start?mode=connect">다시 연결하기</a></div>';
+    }
+    $('tier').innerHTML = html;
+    const b = $('gdisc');
+    if (b) b.onclick = async () => { if (!confirm('구글 드라이브 연결을 끊을까요? 드라이브의 파일은 그대로 남고, 다시 연결하면 이어서 씁니다.')) return; await api('/api/v1/drive/disconnect', { method: 'POST' }); tier(); };
+  }
+  tier();
   async function room() {
     const j = await api('/api/v1/room').catch(() => null);
     if (!j || !j.ok) { $('room').innerHTML = '<span class="err">상태를 읽지 못했습니다.</span>'; return; }

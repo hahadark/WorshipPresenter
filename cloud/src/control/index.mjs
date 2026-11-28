@@ -1,6 +1,6 @@
 // 3단계 웹 조작 화면 (web-egui) 의 클라우드 쪽: 페이지 · 성경 한 권 받기.
 //   GET /control/                → 조작 화면 (로그인 필요: read 권한 = 주인 · 편집자 · 보기만). wasm · js · 글꼴은 정적 파일 /control/*
-//   GET /demo/                   → 로그인 없이 둘러보기 (견본 자료 · 브라우저 안 저장만, 클라우드 자료 없음)
+//   둘러보기(/demo, tiers/demo.mjs)의 데모 쿠키도 /control/ 을 연다 (demo 역할에 read · source 가 있음, 방문자마다 따로인 중계실)
 //   GET /api/v1/control/bible/book?version=&book=  → 그 책 전체 {verses:[[장,절,글]…], headings:[[장,절,글]…]} (read)
 // 조작 화면은 설치판 코어(wasm)가 메모리 SQLite 에서 장절 · 낱말을 찾는다 → 번역본을 책 단위로 받아 넣는다(브라우저가 IndexedDB 에 보관,
 // 번역본이 바뀌었을 때만 다시 받음). /api/v1/bible/passage 는 한 번에 한 책의 일부라 번역본 전체를 넣기에 맞지 않다.
@@ -18,14 +18,6 @@ export function controlRoute(method, path) {
   return null;
 }
 
-/** 로그인 없이 여는 길 (index.mjs 가 로그인 확인 전에 부른다) */
-export const isDemo = (method, path) => (method === 'GET' || method === 'HEAD') && (path === '/demo' || path === '/demo/');
-/** 둘러보기의 출력 화면: 클라우드 자료 없이 같은 브라우저(BroadcastChannel)로만 받는다 → 페이지 이름 · 없으면 null */
-export function demoOutput(method, path) {
-  if (method !== 'GET' && method !== 'HEAD') return null;
-  const m = /^\/demo\/outputs\/(main|overlay|stage)\/?$/.exec(path);
-  return m ? (m[1] === 'stage' ? 'stage' : 'output') : null;
-}
 
 export async function handle(request, env, url, s, r) {
   if (r.op === 'book') return book(env, url, s);

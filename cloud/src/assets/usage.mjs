@@ -39,7 +39,7 @@ export async function flushB(env) {
 export async function guardRow(env, church, now = Date.now()) {
   return env.DB.prepare(
     `SELECT
-       (SELECT COALESCE(SUM(size), 0) FROM asset_blobs WHERE purged_at IS NULL) AS storedBytes,
+       (SELECT COALESCE(SUM(size), 0) FROM asset_blobs WHERE purged_at IS NULL AND church_id NOT IN (SELECT id FROM churches WHERE tier = 'free')) AS storedBytes, -- 7단계: 무료(드라이브) 교회는 R2 를 쓰지 않음
        (SELECT COALESCE(SUM(size), 0) FROM asset_uploads) AS reservedBytes,
        (SELECT COALESCE(SUM(class_a), 0) FROM asset_usage WHERE month = ?2) AS classA,
        (SELECT COALESCE(SUM(class_b), 0) FROM asset_usage WHERE month = ?2) AS classB,

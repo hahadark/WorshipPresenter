@@ -44,8 +44,9 @@ pub fn cfg() -> Option<Cfg> {
 pub fn authed() -> bool {
     cfg().is_some_and(|c| c.authed)
 }
+/// 둘러보기 (tiers/demo.mjs 의 demo 역할 — 견본 교회, 방문자마다 따로인 중계실)
 pub fn demo() -> bool {
-    cfg().is_some_and(|c| c.demo)
+    cfg().is_some_and(|c| c.demo || c.role == "demo")
 }
 pub fn church() -> String {
     cfg().map(|c| c.church).unwrap_or_default()
@@ -57,12 +58,13 @@ pub fn can(cap: &str) -> bool {
         "owner" => true,
         "member-editor" => matches!(cap, "view" | "remote" | "editor" | "read" | "write" | "ai"),
         "member-viewer" => matches!(cap, "view" | "read"),
+        "demo" => matches!(cap, "view" | "remote" | "editor" | "source" | "read" | "write"),
         _ => false,
     }
 }
-/// 출력 창 주소 앞머리: 둘러보기는 /demo/outputs/ (같은 브라우저로만), 그 밖은 /outputs/
+/// 출력 창 주소 앞머리 (클라우드는 어댑터가, 내 PC 시험은 local-live.js 가 같은 브라우저 송출을 받는다)
 pub fn outputs_base() -> &'static str {
-    if demo() { "/demo/outputs/" } else { "/outputs/" }
+    "/outputs/"
 }
 
 // ---------------- HTTP ----------------
@@ -346,8 +348,8 @@ pub fn ui(ctx: &egui::Context) {
     UI.with(|u| u.borrow_mut().rects.clear());
     let note_rect = |name: &str, r: &egui::Response| UI.with(|u| u.borrow_mut().rects.push((name.to_string(), r.rect)));
     let st = state();
-    let (text, color): (String, egui::Color32) = if c.demo {
-        ("둘러보기 — 자료는 이 브라우저에만 남습니다".into(), egui::Color32::from_rgb(0x8b, 0x90, 0x99))
+    let (text, color): (String, egui::Color32) = if demo() {
+        ("둘러보기 — 견본 교회 (고친 것은 하루 안에 처음으로 돌아갑니다)".into(), egui::Color32::from_rgb(0x8b, 0x90, 0x99))
     } else if !c.authed {
         return;
     } else {
@@ -374,8 +376,8 @@ pub fn ui(ctx: &egui::Context) {
                     return;
                 }
                 ui.label(egui::RichText::new(text).size(12.0));
-                if c.demo {
-                    if ui.small_button("로그인").clicked() {
+                if demo() {
+                    if ui.small_button("우리 교회로 시작").clicked() {
                         if let Some(w) = web_sys::window() {
                             let _ = w.location().set_href("/login?next=/control/");
                         }

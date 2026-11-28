@@ -14,6 +14,7 @@
 | `src/data/` · `src/identity/` | 2단계 A: 문서 · 동기화 · 성경 API · 장절 파서(설치판과 대조) · 사람 계정 ([`docs/web/data-api.md`](../docs/web/data-api.md)) |
 | `src/ai/` | 5단계 AI: 교회 키 봉인 · 동의 · 한도 · 기록 · 대신 부르기 · 클라우드 음성 인식(무료 할당 안에서만) ([`docs/web/ai.md`](../docs/web/ai.md)) |
 | `src/media/` · `client/media/` | 4단계 B: 카메라 이름 맞추기 · 휴대폰 카메라 신호(중계실) · PDF(pdf.js 고정판) · 탭끼리 영상 맞추기 ([`docs/web/media.md`](../docs/web/media.md)) — 브라우저 시험 `scripts/media-browser-e2e.mjs` |
+| `src/tiers/` · `src/drive/` | 7단계 일부: 계정 등급(데모 · 무료 · 유료) · 한도표 · 둘러보기 · 옮기기 · 무료 = 구글 드라이브 저장소(OAuth · 문서 · 성경 · 파일) ([`docs/web/tiers.md`](../docs/web/tiers.md), 구글 준비 [`google-setup.md`](../docs/web/google-setup.md)). 시험용 가짜 구글 `test/fake-google/` |
 | `migrations/` | D1 (`0002_data.sql` = 2단계 A · `0003_ai.sql` = 5단계 AI · `0004_assets.sql` = 2단계 C 파일) |
 | `scripts/` | `assets`(web/ → public/) · `seed`(견본 교회) · `e2e` · `deploy` · `inventory`(대조표 빠짐 검사) · `desktop-e2e`(설치판과 함께) · `bible-import`(bible.db 사본 → D1) |
 

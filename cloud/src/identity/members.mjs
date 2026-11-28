@@ -24,7 +24,7 @@ export function view(row) {
   return {
     id: row.id, role: row.role, label: row.label,
     provider: provider === 'pw' ? 'password' : provider,
-    ...(provider === 'pw' ? { login: name } : { email: name }),
+    ...(provider === 'pw' ? { login: name } : provider === 'google' ? { google: true } : { email: name }), // google: 7단계 '구글로 시작하기' (번호는 내보내지 않음)
     createdAt: row.created_at, lastLoginAt: row.last_login_at ?? null,
   };
 }

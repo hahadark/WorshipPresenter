@@ -50,8 +50,6 @@ for (const f of readdirSync(join(cloud, 'client'))) {
     if (e.code !== 'ENOENT') throw e;
     console.log('dist-web/ 이 없어 웹 조작 화면(/control)은 넣지 않음 — bash tools/web/build.sh');
   }
-  mkdirSync(join(out, 'cloud', 'control'), { recursive: true });
-  copyFileSync(join(web, 'app', 'local-live.js'), join(out, 'cloud', 'control', 'local-live.js')); // 둘러보기 출력 (같은 브라우저)
 }
 // 4단계 B 미디어 부품 (client/media/*.js · *.mjs) + pdf.js 고정판 (package.json 의 pdfjs-dist, 예배 중 CDN 을 부르지 않게)
 mkdirSync(join(out, 'cloud', 'media'), { recursive: true });

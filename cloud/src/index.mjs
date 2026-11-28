@@ -11,10 +11,16 @@ import * as ai from './ai/index.mjs'; // 5단계 AI (docs/web/ai.md)
 import * as control from './control/index.mjs'; // 3단계 웹 조작 화면 (docs/web/egui-web.md)
 import * as media from './media/index.mjs'; // 4단계 B 미디어 (docs/web/media.md)
 import { isPhonePath } from './media/routes.mjs';
+import * as tiers from './tiers/index.mjs'; // 7단계 일부: 등급(데모 · 무료 · 유료) · 등급별 저장소 (docs/web/tiers.md)
+import { limitsOf } from './tiers/limits.mjs';
+import * as demo from './tiers/demo.mjs';
+import * as admin from './tiers/admin.mjs';
+import * as google from './drive/oauth.mjs';
 
 export { ChurchRoom } from './room.mjs';
 
 const room = (env, church) => env.ROOMS.get(env.ROOMS.idFromName(church));
+const roomName = s => (s.role === 'demo' ? demo.demoRoom(s) : s.church);
 const ipOf = request => request.headers.get('cf-connecting-ip') || 'local';
 const sameOrigin = (request, url) => { const o = request.headers.get('origin'); return !o || o === url.origin; };
 /** 페이지가 자리만 채워 보내는 값 (어댑터가 넣어 둔 'cloud', 도킹의 'dock') 은 열쇠로 치지 않는다 */
@@ -27,7 +33,8 @@ function toRoom(env, request, s) {
   headers.set('x-wp-role', s.role);
   headers.set('x-wp-cred', s.cred);
   headers.set('x-wp-exp', String(s.exp || 0));
-  return room(env, s.church).fetch(new Request(request, { headers }));
+  if (s.limits) { headers.set('x-wp-max-outputs', String(s.limits.outputs ?? '')); headers.set('x-wp-max-remotes', String(s.limits.remotes ?? '')); }
+  return room(env, roomName(s)).fetch(new Request(request, { headers }));
 }
 
 async function loginCookies(env, request, church, v) {
@@ -58,25 +65,27 @@ async function handle(request, env) {
   const method = request.method;
 
   if (path === '/health') return json({ ok: true, protocol: PROTOCOL, configured: auth.configured(env) });
-  if (path === '/login' && method === 'GET') return page('login', { v: PROTOCOL });
+  if (path === '/login' && method === 'GET') return page('login', { v: PROTOCOL, demo: demo.demoEnabled(env) });
   if (path === '/auth/login' && method === 'POST') return login(request, env, url);
   if (path === '/auth/logout' && method === 'POST') {
     if (!sameOrigin(request, url)) return fail(403, '다른 곳에서 온 요청입니다.');
     return json({ ok: true }, 200, { 'set-cookie': auth.setCookie(auth.COOKIE, '', request, 0) });
   }
   if (path === '/api/v1/admin/churches' && method === 'POST') return adminCreateChurch(request, env);
-  // 3단계: 로그인 없이 둘러보기 (견본 자료 · 브라우저 안 저장만) — 조작 화면 · 같은 브라우저 출력
-  if (control.isDemo(method, path)) return page('control', { v: PROTOCOL, church: '', role: '', authed: false, demo: true, page: 'control' });
-  { const d = control.demoOutput(method, path); if (d) return page(d, { v: PROTOCOL, church: '', role: '', authed: false, demo: true, page: d }); }
+  if (path.startsWith('/api/v1/admin/')) return admin.handle(request, env, url);
+  if (path.startsWith('/auth/google/')) { const x = await google.publicRoute(request, env, url); if (x) return x; }
   if (path.startsWith('/auth/')) { const x = await identity.publicRoute(request, env, url); if (x) return x; }
   if (isPhonePath(path)) return media.publicRoute(request, env, url, toRoom); // 휴대폰 카메라: 로그인 대신 서명 링크
 
   // 설치판(2B)의 자료 동기화: 쿠키 대신 설치판 연결 열쇠 (data/index.mjs bearer)
   const dr = /^Bearer\s/i.test(request.headers.get('authorization') || '') ? route(method, path, url.searchParams) : null;
-  if (dr?.kind === 'data') return data.bearer(request, env, url, dr);
-  if (dr?.kind === 'assets') return data.bearer(request, env, url, dr, assets.handle); // 2C 파일 (같은 열쇠 확인)
+  if (dr?.kind === 'data') return data.bearer(request, env, url, dr, tiered(data.handle));
+  if (dr?.kind === 'assets') return data.bearer(request, env, url, dr, tiered(assets.handle)); // 2C 파일 (같은 열쇠 확인)
 
   const session = await auth.sessionOf(request, env);
+  // 둘러보기 (로그인 없이 — 데모 쿠키를 준다)
+  if (path === '/demo' && method === 'GET') return demo.enter(request, env, url, session, (name, cfg) => page(name, { v: PROTOCOL, ...cfg, authed: true }));
+  if (session?.role === 'demo') { const x = demo.demoRate(request, env); if (x) return x; }
   if (path === '/' && (method === 'GET' || method === 'HEAD')) {
     const to = !session ? '/login' : homeOf(session.role);
     return Response.redirect(url.origin + to, 302);
@@ -150,6 +159,15 @@ async function handle(request, env) {
   }
   if (r.kind === 'events' && !sameOrigin(request, url)) return fail(403, '다른 곳에서 온 요청입니다.');
 
+  // 등급: 자료 · 파일 · AI · 사람 길은 등급이 되는지 · 한도 안인지 보고 저장소를 고른다 (tiers/index.mjs prepare)
+  if (['data', 'assets', 'ai', 'identity', 'media-api'].includes(r.kind)) {
+    const t = await tiers.prepare(request, env, url, s, r);
+    if (t instanceof Response) return withCookies(t, fresh?.headers);
+    s = { ...s, tier: t };
+  } else if (r.kind === 'events' || r.kind === 'bridge' || r.kind === 'page' || r.kind === 'tiers') {
+    const t = await tiers.tierOf(env, s.church);
+    s = { ...s, tier: t, limits: tiers.roomLimits(t.tier, env) };
+  }
   let res;
   if (r.kind === 'page') res = page(r.page, { v: PROTOCOL, church: s.church, role: s.role, authed: true, page: r.page });
   else if (r.kind === 'api') res = await api(request, env, url, s);
@@ -159,6 +177,7 @@ async function handle(request, env) {
   else if (r.kind === 'ai') res = await ai.handle(request, env, url, s, r);
   else if (r.kind === 'control') res = await control.handle(request, env, url, s, r);
   else if (r.kind === 'media-api') res = await media.handle(request, env, url, s, r); // ('media' 는 1단계 설치판 파일 중계)
+  else if (r.kind === 'tiers') res = await tiers.handle(request, env, url, s, r);
   else res = await toRoom(env, request, s);
   return withCookies(res, fresh?.headers);
 }
@@ -181,6 +200,14 @@ async function login(request, env, url) {
 }
 
 // ---------- API v1 (Worker 가 답하는 것) ----------
+/** Bearer(설치판) 길도 등급 확인을 거치게 */
+function tiered(next) {
+  return async (request, env, url, s, r) => {
+    const t = await tiers.prepare(request, env, url, s, r);
+    return t instanceof Response ? t : next(request, env, url, { ...s, tier: t }, r);
+  };
+}
+
 async function api(request, env, url, s) {
   const path = url.pathname;
   if (path === '/api/v1/me') {
@@ -192,6 +219,11 @@ async function api(request, env, url, s) {
     const a = await request.json().catch(() => ({}));
     if (!['owner', 'bridge', 'output', 'remote', 'editor'].includes(a.role)) return fail(400, '열쇠 종류가 올바르지 않습니다.');
     if ((await auth.listCredentials(env, s.church)).length >= 50) return fail(409, '열쇠가 너무 많습니다. 안 쓰는 것을 지워 주세요.');
+    // 7단계 등급 한도: 기기 열쇠 전체 · 출력 열쇠 · 리모컨 PIN 수 (tiers/limits.mjs)
+    { const L = limitsOf((await tiers.tierOf(env, s.church)).tier, env); const have = await auth.listCredentials(env, s.church);
+      const over = (n, lim, what) => lim !== null && lim !== undefined && n >= lim ? fail(429, `이 등급은 ${what}을(를) ${lim}개까지 만듭니다.`, { code: 'tier_limit', limit: what === '기기 열쇠' ? 'credentials' : a.role === 'output' ? 'outputs' : 'remotes' }) : null;
+      const x = over(have.length, L.credentials, '기기 열쇠') || (a.role === 'output' ? over(have.filter(c => c.role === 'output').length, L.outputs, '출력 열쇠') : null) || (a.role === 'remote' ? over(have.filter(c => c.role === 'remote').length, L.remotes, '리모컨 PIN') : null);
+      if (x) return x; }
     const c = await auth.createCredential(env, s.church, a.role, a.label || '');
     // 열쇠 원문은 지금 한 번만 보여 준다. 출력 · 설치판 열쇠는 '교회.열쇠' 꼴로 쓴다
     return json({ ok: true, credential: { id: c.id, role: c.role, label: c.label, secret: c.secret, key: a.role === 'output' || a.role === 'bridge' ? `${s.church}.${c.secret}` : undefined } });

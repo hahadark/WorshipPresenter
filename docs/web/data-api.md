@@ -138,6 +138,8 @@ async function pullAll(store) {
 ```
 - 장절을 못 읽거나 범위 밖이면 **422** + 설치판과 같은 글 · 칸: `{ok:false, error, incomplete, ambiguous, rest, book:{id,name,short,chapters}, candidates:[…]}` (예: `요한복음 3장은 36절까지 있습니다.`, `요한` → `ambiguous:true` + 후보). 번역본이 없으면 404. 한 번에 20묶음까지.
 - 장절 해석은 `cloud/src/data/parser.mjs` — 설치판 `crates/wp-core/src/parser.rs` · `books.rs` 를 줄마다 옮긴 것이고, 책 목록은 `crates/wp-core/data/books.json` 을 그대로 묶는다. 입력 118개(`cloud/test/data-golden/cases.json`)를 Rust 코드로 돌린 정답과 정규화 · 책 이름 · 장절 · '장절처럼 보이나'까지 모두 같다. 설치판 파서가 바뀌면 `cloud/test/data-golden/Cargo.toml` 머리말대로 정답을 다시 만든다.
+- **7단계(등급)에서 더한 넣기 길** (주인 `manage`, 등급과 상관없이 같음 — 유료는 D1, 무료는 구글 드라이브 책 파일): `PUT /api/v1/bible/versions/{id}` `{name, language, licenseNote}` · `PUT …/{id}/books/{1~66}` `{chapters:[[[절, 본문], …], …], headings:[[장, 절, 글], …]}` · `DELETE …/{id}`. 도구 `scripts/bible-upload.mjs`. 번역본 수는 등급 한도(`tier_limit`). 자세히는 [`tiers.md`](tiers.md) 3-6.
+- **등급에 따라 생기는 오류 코드**(`drive_*` · `tier_*`)는 [`tiers.md`](tiers.md) 5절 — 무료 교회의 받기(`sync` · `include=payload`)는 한 쪽 본문이 40개까지라 `more` 를 꼭 따라갈 것.
 - 낱말 검색(FTS)은 아직 없다(D1 FTS5 · 행 읽기 어림이 필요 — 3단계에서 정할 것).
 
 **넣기 도구** `node scripts/bible-import.mjs` (`cloud/` 에서):

@@ -48,13 +48,18 @@ export async function pull(request, env, url, s) {
  * 본문: { mutations: [{ mutationId, kind, id, op:'put'|'delete', baseRevision, payload? }] } (최대 20개, 차례대로)
  * 답:   { ok, results: [{ mutationId, status:'applied'|'duplicate'|'conflict'|'invalid'|'missing', … }], head }
  * 하나가 충돌해도 나머지는 들어간다 (각자 판 확인). 충돌은 최신(current)을 싣는다 — 사본을 만들지 사람이 고르게.
+ * (아래 push 의 설명)
  */
-export async function push(request, env, url, s) {
+/**
+ * 올리기 본문 확인 (유료 D1 · 무료 드라이브가 같이 쓴다) → Response(오류) | { results, todo:[[i, w]] }
+ * results 에는 'invalid' 만 채워져 있고, todo 는 판을 확인해 쓸 것들 (차례 그대로).
+ */
+export async function readMutations(request, max = DATA_LIMITS.mutations) {
   const b = await readBody(request, DATA_LIMITS.document * 4);
   if (b.error) return b.error;
   const list = b.value?.mutations;
   if (!Array.isArray(list) || !list.length) return fail(400, 'mutations 가 비었습니다.');
-  if (list.length > DATA_LIMITS.mutations) return fail(413, `한 번에 ${DATA_LIMITS.mutations}개까지 올립니다.`);
+  if (list.length > max) return fail(413, `한 번에 ${max}개까지 올립니다.`);
   const results = new Array(list.length);
   const todo = [];
   const seen = new Set();
@@ -81,6 +86,13 @@ export async function push(request, env, url, s) {
     todo.push([i, w]);
   }
   if (total > DATA_LIMITS.document * 4) return fail(413, '한 번에 올리는 양이 너무 큽니다. 나눠 올려 주세요.');
+  return { results, todo };
+}
+
+export async function push(request, env, url, s) {
+  const m = await readMutations(request);
+  if (m instanceof Response) return m;
+  const { results, todo } = m;
   // 앞서 들어간 것은 다시 쓰지 않는다 (같은 문서 · 같은 결과를 돌려줌)
   const prev = await findMutations(env, s.church, todo.map(([, w]) => w.mutationId));
   const apply = [];
