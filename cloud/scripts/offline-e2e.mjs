@@ -214,7 +214,7 @@ async function main() {
   let dev = await startDev(port, insp);
   const link = cutter(vport, port);
   await link.up();
-  // 로컬 wrangler dev 는 정적 파일을 바꿔도 처음의 ETag 를 그대로 주고 조건부 요청에 304 를 준다(tmp/etag-probe 로 확인) →
+  // 로컬 wrangler dev 는 정적 파일을 바꿔도 처음의 ETag 를 그대로 주고 조건부 요청에 304 를 준다(scripts/etag-probe.mjs 로 확인) →
   // 브라우저의 서비스 워커 업데이트 확인이 '그대로' 로 본다. 실제 배포는 새 ETag 이므로, 배포처럼 다시 띄워 흉내 낸다
   redeploy = async () => {
     try { execFileSync('taskkill', ['/pid', String(dev.pid), '/t', '/f'], { stdio: 'ignore' }); } catch { /* 이미 */ }
