@@ -47,6 +47,7 @@ pub mod youtube; // 유튜브 주소 재생 (영상 순서, 임베드)
 pub mod webedit; // 웹 편집기 (다른 컴퓨터의 브라우저에서 큐시트 고치기, PIN)
 #[cfg(not(target_arch = "wasm32"))] // 소켓 · TLS 를 쓰는 설치판 쪽 연결 (브라우저 조작 화면은 /bridge 에 직접 붙는다)
 pub mod cloud; // 클라우드 연결 (웹판 1단계, docs/web/architecture.md) — 기본 꺼짐
+#[cfg(not(target_arch = "wasm32"))] // [웹판] 설치판 쪽 동기화 (브라우저 조작 화면은 web::store 가 같은 API 를 직접 부른다)
 pub mod cloudsync; // 클라우드 자료 동기화 (웹판 2단계 B, docs/web/sync.md) — 기본 꺼짐
 pub mod phonecam; // 휴대폰을 카메라로 (https · WebRTC 이어 주기)
 pub mod firewall; // Windows 방화벽: 휴대폰·내부망 연결 확인 · 열기

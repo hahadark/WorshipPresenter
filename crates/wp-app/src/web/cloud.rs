@@ -128,6 +128,8 @@ struct Bridge {
 
 #[derive(Default)]
 struct UiState {
+    /// 점검용 (?debug): 단추 자리 — 끝에서 끝 시험이 누르려고
+    rects: Vec<(String, egui::Rect)>,
     confirm_claim: bool,
     logged_out: bool,
     note: String,
@@ -325,6 +327,11 @@ fn set_standby(active: &Value) {
     });
 }
 
+/// 점검용: 띠의 단추 자리 {이름: [x, y]} (가운데)
+pub fn debug_rects() -> Value {
+    UI.with(|u| Value::Object(u.borrow().rects.iter().map(|(n, r)| (n.clone(), json!([r.center().x, r.center().y]))).collect()))
+}
+
 // ---------------- 위쪽 가운데 띠 ----------------
 
 fn open_tab(url: &str) {
@@ -336,6 +343,8 @@ fn open_tab(url: &str) {
 /// 조작 화면 위에 그리는 작은 띠 (WebApp::ui 가 프레임마다 부른다)
 pub fn ui(ctx: &egui::Context) {
     let Some(c) = cfg() else { return };
+    UI.with(|u| u.borrow_mut().rects.clear());
+    let note_rect = |name: &str, r: &egui::Response| UI.with(|u| u.borrow_mut().rects.push((name.to_string(), r.rect)));
     let st = state();
     let (text, color): (String, egui::Color32) = if c.demo {
         ("둘러보기 — 자료는 이 브라우저에만 남습니다".into(), egui::Color32::from_rgb(0x8b, 0x90, 0x99))
@@ -375,12 +384,16 @@ pub fn ui(ctx: &egui::Context) {
                 }
                 match st {
                     State::Standby { .. } if can("source") => {
-                        if ui.small_button("넘겨받기…").on_hover_text("이 웹 화면이 클라우드 출력의 송출을 맡습니다. 설치판의 클라우드 송출은 멈춥니다(설치판 자체의 예배당 창 · OBS 는 그대로).").clicked() {
+                        let b = ui.small_button("넘겨받기…").on_hover_text("이 웹 화면이 클라우드 출력의 송출을 맡습니다. 설치판의 클라우드 송출은 멈춥니다(설치판 자체의 예배당 창 · OBS 는 그대로).");
+                        note_rect("claim", &b);
+                        if b.clicked() {
                             UI.with(|u| u.borrow_mut().confirm_claim = true);
                         }
                     }
                     State::Active { claimed: true } => {
-                        if ui.small_button("설치판에 돌려주기").clicked() {
+                        let b = ui.small_button("설치판에 돌려주기");
+                        note_rect("release", &b);
+                        if b.clicked() {
                             release();
                         }
                     }
@@ -402,7 +415,9 @@ pub fn ui(ctx: &egui::Context) {
             ui.label(egui::RichText::new("예배 중이면 설치판을 쓰는 사람과 먼저 이야기하세요.").strong());
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui.button("넘겨받기").clicked() {
+                let b = ui.button("넘겨받기");
+                note_rect("confirm", &b);
+                if b.clicked() {
                     claim();
                     close = true;
                 }

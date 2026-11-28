@@ -76,7 +76,7 @@ impl eframe::App for WebApp {
             let live = serde_json::json!({ "version": l["version"], "hasLive": l["hasLive"], "visible": l["visible"], "title": l["passage"]["title"], "index": l["index"], "outputs": g.outputs.len() });
             (g.cue.as_ref().map(|c| serde_json::json!({ "id": c.id, "items": c.items })), ui.ctx().memory(|m| m.focused()).map(|i| format!("{i:?}")), live)
         };
-        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "versions": self.0.core.lock().store.list_versions().iter().map(|v| v.id.clone()).collect::<Vec<_>>() }).to_string();
+        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "cloudButtons": cloud::debug_rects(), "versions": self.0.core.lock().store.list_versions().iter().map(|v| v.id.clone()).collect::<Vec<_>>() }).to_string();
         DEBUG.with(|d| *d.borrow_mut() = s);
     }
 }

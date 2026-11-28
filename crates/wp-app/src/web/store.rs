@@ -325,14 +325,28 @@ async fn put(core: &Shared, k: &Key, payload: &Value) {
             c.mine.insert(mid.clone());
             c.warned = false;
         }),
-        409 => conflict(core, k, payload, &v["current"]).await,
+        // 판이 다름(충돌)만 사본 규칙. 등급의 drive_busy(409) 같은 것은 잠시 뒤 다시
+        409 if v["conflict"].as_bool().unwrap_or(false) || v["current"].is_object() => conflict(core, k, payload, &v["current"]).await,
         _ => {
-            let e = v["error"].as_str().unwrap_or("인터넷 연결을 확인해 주세요").to_string();
+            let e = save_error(st, &v);
             // 다음 고침 때 다시 해 본다 (sent 를 바꾸지 않음). 같은 오류를 자꾸 띄우지 않게 한 번만
             if !CL.with(|c| std::mem::replace(&mut c.borrow_mut().warned, true)) {
                 core.lock().notify(format!("교회 클라우드에 저장하지 못했습니다 ({st}): {e}"), "error");
             }
         }
+    }
+}
+
+/// 저장 오류 글 (교회 등급 · 구글 드라이브 오류 코드는 docs/web/tiers.md 5절)
+fn save_error(st: u16, v: &Value) -> String {
+    let e = v["error"].as_str().unwrap_or("인터넷 연결을 확인해 주세요").to_string();
+    match v["code"].as_str().unwrap_or("") {
+        "drive_disconnected" => "교회 구글 드라이브 연결이 끊겼습니다. 주인이 주인 화면에서 다시 연결해 주세요.".into(),
+        "drive_quota" => "교회 구글 드라이브 공간이 가득 찼습니다.".into(),
+        "drive_rate" | "tier_limit" if st == 429 => "요청이 많아 잠시 쉬었다가 다시 저장합니다.".into(),
+        "tier_moving" => "교회 자료를 옮기는 중이라 지금은 읽기만 됩니다.".into(),
+        "tier_blocked" => format!("이 교회 등급에서는 할 수 없는 일입니다: {e}"),
+        _ => e,
     }
 }
 
