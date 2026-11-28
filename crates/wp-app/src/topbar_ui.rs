@@ -278,22 +278,31 @@ impl App {
         let band = Rect::from_min_max(Pos2::new(screen.left() + 3.0, screen.bottom() - 3.0 - h), Pos2::new(screen.right() - 3.0, screen.bottom() - 3.0));
         ui.painter().rect_filled(band, theme::cr(theme::Rad::Sm), alpha(theme::mix(p.warn, 35.0, Color32::BLACK), 0.92));
         let key = crate::keys::label(self.core.lock().settings.get(), "toggleOutputWindow", "Ctrl+Shift+F");
-        let bw = 82.0_f32.min(band.width() * 0.45);
+        // 단추 폭은 글에 맞춤 (띠의 절반까지), 띠 글은 남는 자리에서 말줄임 — 아주 좁으면 아이콘만 (단추 밑으로 글이 들어가지 않게)
+        let bfont = theme::font(11.5, Weight::Bold);
+        let btxt = tr("지금 켜기");
+        let bw = (ui.painter().layout_no_wrap(btxt.clone(), bfont.clone(), p.send_fg).size().x + 16.0).min(band.width() * 0.5);
         let br = Rect::from_min_size(Pos2::new(band.right() - bw - 4.0, band.top() + 4.0), Vec2::new(bw, h - 8.0));
         let r = ui.interact(br, Id::new("live-output-on"), Sense::click()).on_hover_text(format!("{} ({key})", tr("예배당 모니터에 전체 화면 출력을 켭니다")));
         ui.painter().rect_filled(br, theme::cr(theme::Rad::Sm), if r.hovered() { Color32::WHITE } else { p.send_bg });
-        ui.painter().with_clip_rect(br).text(br.center(), Align2::CENTER_CENTER, tr("지금 켜기"), theme::font(11.5, Weight::Bold), p.send_fg);
+        ui.painter().with_clip_rect(br).text(br.center(), Align2::CENTER_CENTER, btxt, bfont, p.send_fg);
         widgets::mark("live-output-on", br);
         if r.clicked() {
             acts.push(Act::OutputToggle);
         }
         let tr_ = Rect::from_min_max(Pos2::new(band.left() + 8.0, band.top()), Pos2::new(br.left() - 6.0, band.bottom()));
-        icons::paint(ui, Rect::from_center_size(Pos2::new(tr_.left() + 7.0, band.center().y), Vec2::splat(14.0)), "monitor-off", Color32::WHITE);
-        // 좁은 뷰어에서는 긴 글이 잘리지 않게 짧은 글로 (2.1.0 다듬기)
-        let long = tr("예배당 화면 꺼짐 — 회중에게 안 보임");
-        let fits = ui.painter().layout_no_wrap(long.clone(), theme::font(11.5, Weight::SemiBold), Color32::WHITE).size().x <= tr_.width() - 22.0;
-        let text = if fits { long } else { tr("예배당 화면 꺼짐") };
-        ui.painter().with_clip_rect(tr_).text(Pos2::new(tr_.left() + 20.0, band.center().y), Align2::LEFT_CENTER, text, theme::font(11.5, Weight::SemiBold), Color32::WHITE);
+        if tr_.width() >= 14.0 {
+            icons::paint(ui, Rect::from_center_size(Pos2::new(tr_.left() + 7.0, band.center().y), Vec2::splat(14.0)), "monitor-off", Color32::WHITE);
+        }
+        // 좁은 뷰어에서는 짧은 글로 (2.1.0 다듬기), 그래도 넘치면 끝을 말줄임
+        let room = tr_.width() - 20.0;
+        if room >= 28.0 {
+            let font = theme::font(11.5, Weight::SemiBold);
+            let long = tr("예배당 화면 꺼짐 — 회중에게 안 보임");
+            let fits = ui.painter().layout_no_wrap(long.clone(), font.clone(), Color32::WHITE).size().x <= room;
+            let text = if fits { long } else { tr("예배당 화면 꺼짐") };
+            widgets::text_elided(ui, Pos2::new(tr_.left() + 20.0, band.center().y), Align2::LEFT_CENTER, &text, font, Color32::WHITE, room);
+        }
     }
 
     /// 송출했는데 예배당 화면이 꺼져 있고 자동으로 켜지도 않을 때, 꺼진 동안 한 번만 알림 + [예배당 화면 켜기]

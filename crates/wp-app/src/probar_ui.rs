@@ -183,6 +183,9 @@ pub(crate) fn icb(ui: &mut Ui, rect: Rect, id: Id, icon: &str, on: bool, tip: &s
 fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) -> Option<String> {
     use theme::Type;
     let p = pal();
+    // 표시창 밖으로 글이 나가지 않게 (좁은 막대에서 옆 도구를 덮지 않음)
+    let old_clip = ui.clip_rect();
+    ui.set_clip_rect(rect.intersect(old_clip));
     let pt = ui.painter().clone();
     pt.rect_filled(rect, theme::cr(theme::Rad::Lg), p.lcd);
     // 안으로 들어간 느낌: 위 어두운 선 · 아래 밝은 선
@@ -203,7 +206,9 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) -> Op
         pt.vline(x, rect.y_range().shrink(7.0), Stroke::new(1.0, sep));
     }
     let rest = rect.right() - x;
-    let live_w = (rest * 0.56).round();
+    // 아주 좁으면 '다음 순서' 칸을 빼고 '송출 중' 만 (다음 순서는 툴팁으로)
+    let show_next = rest >= 230.0;
+    let live_w = if show_next { (rest * 0.56).round() } else { rest };
     // ---- 송출 중
     {
         let r = Rect::from_min_max(Pos2::new(x + pad, rect.top()), Pos2::new(x + live_w - pad, rect.bottom()));
@@ -241,15 +246,22 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) -> Op
             }
         }
         x += live_w;
-        pt.vline(x, rect.y_range().shrink(7.0), Stroke::new(1.0, sep));
+        if show_next {
+            pt.vline(x, rect.y_range().shrink(7.0), Stroke::new(1.0, sep));
+        }
     }
     // ---- 다음 순서 (큐시트의 다음 순서 — 뷰어의 노랑 '다음'(미리보기)과 다른 것이라 이름을 '다음 순서' 로)
-    {
+    if !show_next {
+        if let Some((at, t)) = &info.next {
+            full.push(format!("{} {at} · {t}", tr("다음 순서")));
+        }
+    } else {
         let r = Rect::from_min_max(Pos2::new(x + pad, rect.top()), Pos2::new(rect.right() - pad, rect.bottom()));
         let lr = pt.text(Pos2::new(r.left(), label_y), Align2::LEFT_TOP, tr("다음 순서"), Type::Micro.font(), ll);
         match &info.next {
             Some((at, t)) => {
-                if !at.is_empty() {
+                // 시각은 이름표 옆에 자리가 있을 때만
+                if !at.is_empty() && lr.right() + theme::sp::X6 + 30.0 <= r.right() {
                     widgets::tnum(ui, Pos2::new(lr.right() + theme::sp::X6, label_y), Align2::LEFT_TOP, at, Type::Micro.font(), ll);
                 }
                 let (g, cut) = widgets::elide(ui, t, Type::BodyStrong.font(), lt, r.width());
@@ -263,6 +275,7 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) -> Op
             }
         }
     }
+    ui.set_clip_rect(old_clip);
     (!full.is_empty()).then(|| full.join("\n"))
 }
 
