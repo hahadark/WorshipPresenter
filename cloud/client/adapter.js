@@ -89,7 +89,8 @@
     self.emit = emit;
     self.link = new Link(path, function (m) {
       if (m.t === 'hello') { setState(m.online ? 'online' : 'offline'); emit('hello', { id: m.id }); }
-      else if (m.t === 'render' || m.t === 'draw') emit(m.t, m.data);
+      else if (m.t === 'render' || m.t === 'draw') { emit(m.t, m.data); if (m.t === 'render') try { window.dispatchEvent(new CustomEvent('wp-cloud-render', { detail: m.data })); } catch (e) { /* 옛 브라우저 */ } }
+      else if (m.t === 'rtc') hooks.forEach(function (f) { try { f(m); } catch (e) { /* 무시 */ } });
       else if (m.t === 'status') setState(m.online ? 'online' : 'offline');
     }, function (state) {
       self.readyState = state === 'open' ? 1 : 0;
@@ -104,6 +105,13 @@
     return u.origin === location.origin && u.pathname === '/events' ? new CloudEvents(path) : new NativeES(path, options);
   };
   window.EventSource.CONNECTING = 0; window.EventSource.OPEN = 1; window.EventSource.CLOSED = 2;
+
+  // 4단계 B 미디어(cloud/client/media/media.js)가 쓰는 길: 출력 화면의 실시간 연결로 휴대폰 카메라 신호를 주고받는다
+  var hooks = [];
+  window.WPCloud = {
+    send: function (obj) { return links.some(function (es) { return es.link.send(obj); }); },
+    on: function (f) { hooks.push(f); },
+  };
 
   // ---------- 4. 같은 PC 의 웹 조작 화면 (BroadcastChannel) ----------
   // 메시지 모양은 실시간 연결과 같다: { t:'render', client:'main', data } · { t:'draw', data }. church 가 있으면 같은 교회 것만.

@@ -4,6 +4,8 @@
 // - 리모컨 · 편집기 · 미디어 요청은 번호를 붙여 송출 주체에게 넘기고 답을 기다린다 (설치판은 밖으로 나가는 연결 하나만 연다).
 // 이 클래스는 Worker(index.mjs)만 부른다. 누구인지(x-wp-*)는 Worker 가 쿠키 · 열쇠를 확인해 붙인 값이다.
 import { DurableObject } from 'cloudflare:workers';
+import * as signal from './media/signal.mjs'; // 4단계 B 휴대폰 카메라 신호 (docs/web/media.md)
+import { freshen } from './media/routes.mjs';
 import { CLOSE, FROM_SOURCE, FROM_VIEWER, LIMITS, PROTOCOL, VIEW_COMMANDS, clientName, fail, json, mediaPath, unpackChunk } from './protocol.mjs';
 
 const OFFLINE = '설치판(워십프리젠터)이 클라우드에 연결되어 있지 않습니다.';
@@ -13,6 +15,7 @@ export class ChurchRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.renders = new Map(); // 화면 이름 → 출력 자료(JSON 글)
+    this.renderAt = new Map(); // 화면 이름 → 받은 때 (늦게 붙은 화면에 줄 때 시계를 맞춘다 — media/routes.mjs freshen)
     this.draw = null; // 화면에 그리기 (JSON 글)
     this.remote = null; // 리모컨 상태 (JSON 글)
     this.pending = new Map(); // 요청 번호 → 기다리는 답
@@ -39,6 +42,7 @@ export class ChurchRoom extends DurableObject {
     if (path === '/bridge') return this.acceptSource(request, who);
     if (path === '/events') return this.acceptViewer(request, url, who);
     if (path === '/internal/revoke') return this.revoke(url.searchParams.get('cred') || '');
+    if (path.startsWith('/rtc/')) return signal.roomFetch(this, request, url, who);
     if (path === '/r/state') return this.remoteState(request);
     if (path === '/api/ack') return json({ ok: true });
     if (path === '/api/command') return this.viewCommand(await request.json().catch(() => null));
@@ -141,10 +145,10 @@ export class ChurchRoom extends DurableObject {
   sendState(ws, name) {
     let missing = false;
     if (name === 'remote') {
-      if (this.remote) send(ws, `{"t":"remote","data":${this.remote}}`); else missing = true;
+      if (this.remote) send(ws, `{"t":"remote","data":${freshen(this.remote, Date.now() - (this.remoteAt || Date.now()))}}`); else missing = true;
     } else {
       const r = this.renders.get(name);
-      if (r) send(ws, `{"t":"render","data":${r}}`); else missing = true;
+      if (r) send(ws, `{"t":"render","data":${freshen(r, Date.now() - (this.renderAt.get(name) || Date.now()))}}`); else missing = true;
       if (name !== 'stage' && this.draw) send(ws, `{"t":"draw","data":${this.draw}}`);
     }
     if (missing) this.askSync();
@@ -161,7 +165,8 @@ export class ChurchRoom extends DurableObject {
     const a = this.att(ws);
     if (a.role === 'source' && a.standby) return typeof message === 'string' ? this.fromStandby(ws, a, message) : undefined;
     if (a.role === 'source') return typeof message === 'string' ? this.fromSource(ws, a, message) : this.chunk(message);
-    if (typeof message !== 'string' || message.length > 4096) return ws.close(CLOSE.protocol, 'too large');
+    if (a.role === 'phone') return signal.fromPhone(this, ws, a, message);
+    if (typeof message !== 'string' || message.length > signal.viewerLimit(message)) return ws.close(CLOSE.protocol, 'too large');
     if (a.exp && a.exp < Date.now()) return ws.close(CLOSE.revoked, 'expired');
     let m;
     try { m = JSON.parse(message); } catch { return ws.close(CLOSE.protocol, 'json'); }
@@ -170,6 +175,8 @@ export class ChurchRoom extends DurableObject {
       a.ack = { version: Number(m.version) || 0, width: Number(m.width) || 0, height: Number(m.height) || 0, visible: !!m.visible, at: Date.now() };
       ws.serializeAttachment(a);
       this.presenceSoon();
+    } else if (m.t === 'rtc') {
+      signal.fromViewer(this, ws, a, m);
     } else if (m.t === 'cmd' && a.client !== 'remote') {
       this.viewCommand(m);
     }
@@ -205,6 +212,7 @@ export class ChurchRoom extends DurableObject {
         if (!name || name === 'remote' || !m.data || typeof m.data !== 'object') return;
         const s = JSON.stringify(m.data);
         this.renders.set(name, s);
+        this.renderAt.set(name, Date.now());
         const frame = `{"t":"render","data":${s}}`;
         for (const v of this.viewers(name)) send(v, frame);
         break;
@@ -218,6 +226,7 @@ export class ChurchRoom extends DurableObject {
       case 'remote': {
         if (!m.data || typeof m.data !== 'object') return;
         this.remote = JSON.stringify(m.data);
+        this.remoteAt = Date.now();
         const frame = `{"t":"remote","data":${this.remote}}`;
         for (const v of this.viewers('remote')) send(v, frame);
         break;
@@ -291,7 +300,8 @@ export class ChurchRoom extends DurableObject {
   /** 리모컨 상태: 기억해 둔 것이 있으면 바로, 없으면 송출 주체에게 묻는다 */
   remoteState(request) {
     if (!this.source()) return fail(503, OFFLINE);
-    if (this.remote && this.remote.length > 2) return new Response(`{"ok":true,${this.remote.slice(1)}`, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+    const fresh = this.remote && freshen(this.remote, Date.now() - (this.remoteAt || Date.now()));
+    if (fresh && fresh.length > 2) return new Response(`{"ok":true,${fresh.slice(1)}`, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
     return this.relayJson(request, new URL(request.url));
   }
 

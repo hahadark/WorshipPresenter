@@ -362,6 +362,7 @@ pub async fn serve(core: Shared) -> anyhow::Result<u16> {
                 let app = router(core.clone());
                 crate::remote::init(core.clone()); // [트랙 D] 리모컨·내부망 서버를 설정에 맞춰 켜고 끔
                 crate::cloud::init(core.clone()); // 클라우드 연결 (웹판, 기본 꺼짐 — 켜야 밖으로 나감)
+                crate::cloudsync::init(core.clone()); // 클라우드 자료 동기화 (웹판 2단계 B, 기본 꺼짐)
                 tokio::spawn(async move {
                     if let Err(e) = axum::serve(l, app).await {
                         log::error!("서버 오류: {e}");

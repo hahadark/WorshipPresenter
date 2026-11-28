@@ -443,6 +443,7 @@ fn collect(core: &Core, sent: &mut Sent, renders: bool, draw: bool, remote: bool
     if renders {
         for c in clients(core) {
             let data = if c == "stage" { core.stage_payload() } else { core.output_payload(&c) };
+            let data = crate::cloudsync::for_output(data); // 2단계 B: 이 PC 파일 주소 → 자산 주소 · 중계 표 (동기화를 끄면 그대로)
             let k = tick_key(&data);
             if sent.render.get(&c) != Some(&k) {
                 out.push(format!(r#"{{"t":"render","client":{},"data":{data}}}"#, json!(c)));
@@ -459,6 +460,7 @@ fn collect(core: &Core, sent: &mut Sent, renders: bool, draw: bool, remote: bool
     }
     if remote {
         let v = crate::remote::state_for(core);
+        let v = crate::cloudsync::for_output(v); // 2단계 B
         let k = tick_key(&v);
         if sent.remote != k {
             out.push(format!(r#"{{"t":"remote","data":{v}}}"#));
@@ -470,6 +472,7 @@ fn collect(core: &Core, sent: &mut Sent, renders: bool, draw: bool, remote: bool
 
 /// 출력 화면의 영상 알림 (설치판 /api/command 의 videoMeta · videoEnded 와 같게)
 fn view_command(core: &Shared, m: &Value) {
+    let m = &crate::cloudsync::relay_command(m); // 2단계 B: 가린 영상 열쇠 → 원래
     let key = m["args"]["key"].as_str().unwrap_or("");
     let d = m["args"]["duration"].as_f64();
     match m["cmd"].as_str() {
@@ -538,6 +541,7 @@ fn handle_request(core: &Shared, cf: &Conf, m: &Value, out: &mpsc::SyncSender<Ou
         ("GET", p) if media_path(p) => {
             let port = core.lock().port;
             let mut url = format!("http://127.0.0.1:{port}{p}");
+            let m = &crate::cloudsync::relay_request(m); // 2단계 B: 중계 표(t) → 이 PC 경로(p)
             if let Some(obj) = m["query"].as_object().filter(|o| !o.is_empty()) {
                 let qs: Vec<String> = obj.iter().map(|(k, v)| format!("{}={}", enc(k), enc(v.as_str().unwrap_or("")))).collect();
                 url.push('?');

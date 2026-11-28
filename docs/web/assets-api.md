@@ -29,6 +29,7 @@
 | audio | mpeg · mp4 · aac · wav · ogg · flac | mp3 m4a aac wav ogg oga opus flac | 500 MiB |
 | font | ttf · otf · collection · woff · woff2 | ttf otf ttc woff woff2 | 50 MiB |
 | pdf | application/pdf | pdf | 200 MiB |
+| slides | PowerPoint: …presentationml.presentation · …presentationml.slideshow · vnd.ms-powerpoint (매크로 든 pptm 은 받지 않음) | pptx ppsx ppt pps | 500 MiB — 받기는 늘 `Content-Disposition: attachment` (브라우저가 그 자리에서 열지 않음). 2B 설치판이 찬양 · 광고 PPT 를 올린다 (2026-11-28 사관님 '슬라이드를 온라인에 저장') |
 
 - 종류가 비었거나 `application/octet-stream` 이면 확장자로 정한다. 종류와 확장자의 묶음이 다르면(그림이라면서 `.mp4`) 415. HTML · 스크립트 같은 것은 받지 않는다.
 - 이름 (`X-Asset-Name`, `encodeURIComponent`): **경로를 떼고** 파일 이름만 남긴다(`C:\Users\김택근\…\부활절.png` → `부활절.png`). R2 열쇠는 `churches/{교회}/assets/{sha256}/{안전한 이름}` — PC 경로 · 사용자 이름은 열쇠에도 목록에도 남지 않는다.

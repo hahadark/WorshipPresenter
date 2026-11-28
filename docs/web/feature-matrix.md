@@ -29,9 +29,9 @@
 | 순서: 제목 · 찬양 · 성경 · 공지 · 빈 화면 · 교독 | `cues.rs`, `slides.rs` | 그대로 됨 | 큐시트 JSON 모양 그대로 D1 `documents` 에 | 2, 3 |
 | 순서: 찬송가 · PPT | `hymns.rs`, `pptx/`, `pps.rs`, `hymnal.rs` | 방식이 달라짐 | 1단계: 설치판이 만든 그림을 `/hymn/…` 중계로 보여 줌(구현함). 2단계: 그림을 R2 로. `.pptx` 직접 그리기는 WASM 가능, `.ppt` '픽셀 그대로'는 PowerPoint 가 있는 설치판이 만들어 올림. 저작권 악보는 공개 주소 금지 | 1, 2, 5 |
 | 순서: 그림 · 악보 · 음악 · 영상 · 슬라이드쇼 | `library.rs`, `trackb.rs`, `music_ui.rs` | 방식이 달라짐 | 1단계: `/lib/file` · `/media` 를 설치판이 이진 조각으로 중계(구현함, 영상 Range 포함). 2단계: R2(비공개, 로그인 뒤 스트림). 영상 자동 재생은 브라우저 정책 때문에 소리 켠 재생에 한 번 누름이 필요할 수 있다 | 1, 2, 4 |
-| 순서: 카메라 | `cameras.rs`, `sources.rs`, `web/output` getUserMedia | 방식이 달라짐 | 출력 화면이 **자기 PC** 의 카메라를 연다. 장치 id 는 브라우저 · 사이트마다 달라 설치판의 id 가 클라우드 출력 PC 에서 맞지 않는다 → 이름으로 고르기 · 출력 PC 에서 고르기 | 4 |
-| 순서: 유튜브 | `youtube.rs`, `render.js` 임베드 | 그대로 됨 | 출력 페이지가 그대로 끼운다. 클라우드 주소(https)라 오히려 쉽다 | 1, 4 |
-| 순서: PDF | `pdf.rs` (Windows.Data.Pdf · PDFKit) | 방식이 달라짐 | 브라우저 pdf.js(Apache-2.0)로 쪽 그림을 만들어 R2 로, 또는 설치판이 만든 그림 중계 | 4 |
+| 순서: 카메라 | `cameras.rs`, `sources.rs`, `web/output` getUserMedia | 방식이 달라짐 | 출력 화면이 **자기 PC** 의 카메라를 연다. 장치 id 는 브라우저 · 사이트마다 달라 설치판의 id 가 클라우드 출력 PC 에서 맞지 않는다 → **이름으로 찾기 구현함**(`cameras[id].label`, `/cameras` 에서 짝 정하기, `docs/web/media.md` 2절) | 4 |
+| 순서: 유튜브 | `youtube.rs`, `render.js` 임베드 | 그대로 됨 | 출력 페이지가 그대로 끼운다 — 클라우드 출력에서 재생 확인함(iframe 의 referrerpolicy 덕에 페이지 no-referrer 와 무관). OBS 브라우저 소스는 확인 못 함 | 1, 4 |
+| 순서: PDF | `pdf.rs` (Windows.Data.Pdf · PDFKit) | 방식이 달라짐 | **구현함**: pdf.js 6.5.438 고정판(이 사이트에서) → 쪽 PNG → 2C R2 → 설치판과 같은 슬라이드쇼 순서 (`/cloud/media/pdf.mjs`, `docs/web/media.md` 4절) | 4 |
 | 소스 · 화면 구성 · 출력마다 다른 구성 · 전환 · 지금 한 번 | `sources.rs`, `scenes.rs`, `outputs.rs`, `scenectl.rs` | 그대로 됨 | 출력 자료(`scene` · `sources` · `layers`)에 이미 들어 있어 1단계 클라우드 출력도 같은 구성으로 그린다. 편집 화면은 4단계 | 1(그림), 4 |
 | 웹 페이지 소스 · 실시간 자막 소스(`caption`) | `sources.rs`, `voicefollow.rs` | 방식이 달라짐 | iframe 이 막히는 사이트(X-Frame-Options)는 설치판과 같이 안 됨. http 주소는 https 출력에서 섞인 내용으로 막힘 | 4 |
 | 화면에 그리기 · 강조 | `draw.rs`, `output.js` | 그대로 됨 | `draw` 메시지 그대로 중계(구현함). 그리는 화면은 3단계 | 1, 3 |
@@ -103,7 +103,7 @@
 | OBS 주소 복사 | `x:obs-url` | 그대로 됨 | 클라우드 주소(`/outputs/overlay?key=…`)를 주인 화면에서 만든다. **1단계 구현함** | 1 |
 | 내부망 출력 (다른 PC 의 OBS) | `d:lan` | 그대로 됨 (대체) | 클라우드 출력 주소가 같은 일을 교회 밖에서도 한다. 인터넷이 없을 때는 지금 내부망 출력을 그대로 씀 | 1, 6 |
 | 휴대폰 리모컨 | `d:remote` | 그대로 됨 | `web/remote` 페이지 그대로, PIN 은 클라우드 로그인 PIN. 상태는 1초 묻기 대신 실시간(요청 수 아낌). **1단계 구현함** | 1 |
-| 휴대폰 카메라 (QR) | `d:phonecam` | 방식이 달라짐 | 지금은 설치판 https 37560 이 WebRTC 신호를 잇는다. 웹에서는 중계실(DO)이 신호를 잇는다. 같은 와이파이가 아니면 TURN 이 필요할 수 있고, TURN 은 비용 확인 전에는 쓰지 않는다 | 4 |
+| 휴대폰 카메라 (QR) | `d:phonecam` | 방식이 달라짐 | **구현함**: 휴대폰 링크(서명 · 24시간) → 설치판 휴대폰 페이지 그대로, 신호는 교회 중계실(DO), 영상은 직접. 같은 Wi-Fi 는 됨, LTE 등은 TURN 필요 — 켜지 않음 (`docs/web/media.md` 3절) | 4 |
 | 클라우드 연결 (웹판) | `d:cloud` | 그대로 됨 | 웹판 자체의 설치판 쪽 연결 창(`cloud_ui.rs`). 웹 조작 화면에서는 필요 없음 | 1 |
 | 웹 편집기 | `d:webedit` | 그대로 됨 | `web/editor` 페이지 그대로, `/e/*` 를 설치판으로 되돌려 보냄(충돌 409 그대로). **1단계 구현함** | 1 |
 | 스트림덱 · 외부 단추 | `d:trigger` | 방식이 달라짐 | `trigger.rs` `/api/trigger/*` 는 이 PC 127.0.0.1 전용. 클라우드에 기기 열쇠가 있는 단추 주소를 두고 설치판으로 되돌려 보내는 것은 가능(아직 안 함) | 4 |

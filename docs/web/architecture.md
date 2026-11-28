@@ -124,6 +124,8 @@
 
 ## 6. 2단계 자료 계약 (2A 구현함 — 쓰는 법 · 예시 · 덧붙인 칸은 [`data-api.md`](data-api.md), 자산 길은 2C)
 
+> 2B 설치판 동기화(구현함): [`sync.md`](sync.md) — 설치판 문서 모양 · 충돌 사본 규칙 · 파일 주소 바꾸기(`/api/v1/assets/{id}?e=` · `wp-local:` · 출력 `?fallback=`).
+
 D1 (교회 단위, 모든 질의 `church_id = ?1`):
 
 ```sql
@@ -174,7 +176,7 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 | `web-assets` (2C) | R2 비공개 저장 · 올리기(해시) · Range 내보내기, 글꼴 | `cloud/src/assets/` | 2A 권한, **R2 켜기(사관님)** |
 | `web-egui` (3) | 웹 조작 화면 (지금 진행 중) | 새 WASM 크레이트 · `cloud/src/control/` · `cloud/client/control/` | 1단계 `/bridge`, 뒤에 2A |
 | `web-scenes` (4A) | 화면 구성 편집 · 출력별 구성 · 전환 (웹) | 3단계 화면 안의 새 모듈 | 3 |
-| `web-media` (4B) | 카메라(이름으로 고르기) · 휴대폰 카메라 신호(DO) · PDF(pdf.js) · 영상 | `cloud/src/media/` · `cloud/client/media/` | 2C, TURN 이 필요하면 비용 승인 |
+| `web-media` (4B) | 카메라(이름으로) · 휴대폰 카메라 신호(DO) · PDF(pdf.js) · 영상 · 유튜브 — **구현함: `docs/web/media.md`** | `cloud/src/media/` · `cloud/client/media/` | 2C, TURN 은 켜지 않음(비용 승인) |
 | `web-ai` (5) | AI 길(서버 쪽 키 보관 · 동의) · 음성 인식 선택 — **클라우드 쪽 구현함: `docs/web/ai.md`**. 변환(HWP/PPTX)은 wasm 에서 그대로 돌아 따로 만들 것 없음 | `cloud/src/ai/` · `migrations/0003_ai.sql` | 2A · 2C, 유료 모델 자동 호출 금지 |
 | `web-offline` (6) | Service Worker · IndexedDB · 충돌 화면 · 끊김 시험 | `cloud/client/offline/` · `cloud/src/sync/` 의 받기 쪽 | 2A · 2B · 3 |
 

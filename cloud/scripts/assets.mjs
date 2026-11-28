@@ -53,6 +53,16 @@ for (const f of readdirSync(join(cloud, 'client'))) {
   mkdirSync(join(out, 'cloud', 'control'), { recursive: true });
   copyFileSync(join(web, 'app', 'local-live.js'), join(out, 'cloud', 'control', 'local-live.js')); // 둘러보기 출력 (같은 브라우저)
 }
+// 4단계 B 미디어 부품 (client/media/*.js · *.mjs) + pdf.js 고정판 (package.json 의 pdfjs-dist, 예배 중 CDN 을 부르지 않게)
+mkdirSync(join(out, 'cloud', 'media'), { recursive: true });
+for (const f of readdirSync(join(cloud, 'client', 'media'))) {
+  if (/\.(m?js|css)$/.test(f)) copyFileSync(join(cloud, 'client', 'media', f), join(out, 'cloud', 'media', f));
+}
+mkdirSync(join(out, 'cloud', 'vendor', 'pdfjs'), { recursive: true });
+for (const f of ['pdf.min.mjs', 'pdf.worker.min.mjs']) copyFileSync(join(cloud, 'node_modules', 'pdfjs-dist', 'build', f), join(out, 'cloud', 'vendor', 'pdfjs', f));
+copyFileSync(join(cloud, 'node_modules', 'pdfjs-dist', 'LICENSE'), join(out, 'cloud', 'vendor', 'pdfjs', 'LICENSE.txt'));
+// 한글 PDF(CID 글꼴)에 필요한 CMap · 끼워 넣지 않은 기본 글꼴 · JPEG2000/JBIG2/색 프로필 풀이(wasm) 도 같은 곳에서
+for (const d of ['cmaps', 'standard_fonts', 'wasm', 'iccs']) cpSync(join(cloud, 'node_modules', 'pdfjs-dist', d), join(out, 'cloud', 'vendor', 'pdfjs', d), { recursive: true });
 // 정적 파일에도 보안 머리글 (Workers 정적 파일의 _headers 규칙)
 writeFileSync(join(out, '_headers'), ['/*', '  X-Content-Type-Options: nosniff', '  Referrer-Policy: no-referrer', ''].join('\n'));
 
