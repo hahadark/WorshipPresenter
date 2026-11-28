@@ -6,7 +6,7 @@
  *   WPW.icon('eye-off')               선 아이콘 (조작 화면과 같은 Lucide 한 벌, ISC 라이선스 https://lucide.dev)
  *   WPW.request(url, opts, ms)        fetch + 시간 제한 + JSON. 끊기면 { ok:false, network:true }
  *   WPW.feedback(btn, ok)             누른 단추에 성공(회색 점멸)/실패(주황 흔들림) + 진동
- *   WPW.toast(제목, 설명, {err, ms, key, icon, action:{label, fn}})  화면 위쪽 알림
+ *   WPW.toast(제목, 설명, {err, ms, key, icon, action:{label, fn}, above: 요소})  화면 위쪽 알림 (above 를 주면 그 요소 바로 위 — 누른 단추 옆 짧은 안내)
  *   WPW.wake.start()                  화면 꺼짐 방지 (Wake Lock → 안 되면 소리 없는 작은 영상), WPW.wake.on(cb)
  *   WPW.mobileGuard(onBack)           확대 · 당겨서 새로 고침 · 뒤로 가기 막기 (휴대폰 도구)
  */
@@ -156,16 +156,24 @@
   document.addEventListener('touchstart', function () {}, { passive: true }); // iOS: :active 켜기
 
   // ---------- 알림 (화면 위쪽 — 엄지가 닿는 아래 단추를 가리지 않게) ----------
-  var toastBox = null;
+  var topBox = null, nearBox = null;
+  function box(near) {
+    var b = near ? nearBox : topBox;
+    if (!b) {
+      b = document.createElement('div');
+      b.className = near ? 'toasts near' : 'toasts';
+      b.setAttribute('role', 'status');
+      b.setAttribute('aria-live', 'polite');
+      document.body.appendChild(b);
+      if (near) nearBox = b; else topBox = b;
+    }
+    return b;
+  }
   function toast(title, detail, o) {
     o = o || {};
-    if (!toastBox) {
-      toastBox = document.createElement('div');
-      toastBox.className = 'toasts';
-      toastBox.setAttribute('role', 'status');
-      toastBox.setAttribute('aria-live', 'polite');
-      document.body.appendChild(toastBox);
-    }
+    // above: 그 요소(아래 조작 막대 등) 바로 위에 — 위쪽 송출 표시를 가리지 않게
+    var toastBox = box(!!o.above);
+    if (o.above) toastBox.style.bottom = Math.max(8, window.innerHeight - o.above.getBoundingClientRect().top + 8) + 'px';
     if (o.key) { var same = toastBox.querySelector('[data-key="' + o.key + '"]'); if (same) same.remove(); }
     while (toastBox.children.length >= 2) toastBox.firstChild.remove();
     var el = document.createElement('div');

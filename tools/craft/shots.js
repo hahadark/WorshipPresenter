@@ -42,6 +42,8 @@ add('main-contrast', ['--win', W, ...live], { 'ui.theme': 'contrast' });
 add('main-empty', ['--win', W], { activeCueId: '' });
 add('main-preview', ['--win', W, ...base, '--item', '1']);
 add('main-bible', ['--win', W, ...base, '--search', '요3:16']);
+add('search-bad', ['--win', W, ...base, '--search', '요22:1']);
+add('main-bible-en', ['--win', W, ...base, '--search', '요3:16'], { uiLang: 'en' });
 add('main-direct', ['--win', W, ...live], { previewMode: false });
 add('main-liveonly', ['--win', W, ...live], { 'rsProLayout.viewerMode': 'live' });
 add('main-notify', ['--win', W, ...base, '--item', '2', '--send'], { 'output.autoOnSend': false });

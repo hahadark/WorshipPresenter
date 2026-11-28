@@ -1250,7 +1250,7 @@ impl App {
                 let ty = d.passage["itemType"].as_str().unwrap_or("");
                 if ty == "bible" {
                     let n = bible_verses(d).len();
-                    return (format!("{}. {} — {}", i + 1, t, d.passage["title"].as_str().unwrap_or("")), tr_args("{1}절 · {2}", &[&n, &d.passage["versionName"].as_str().unwrap_or("")]));
+                    return (format!("{}. {} — {}", i + 1, t, d.passage["title"].as_str().unwrap_or("")), verse_count_label(n, d.passage["versionName"].as_str().unwrap_or("")));
                 }
                 if ty == "audio" {
                     return (format!("{}. {}", i + 1, t), tr("음악 · 화면은 바뀌지 않습니다"));
@@ -1271,7 +1271,7 @@ impl App {
                 let span = pt.split_once(char::is_whitespace).map(|x| x.1).unwrap_or("");
                 return (p["title"].as_str().unwrap_or("").to_string(), tr_args("선택 {1}절 ({2}) · Shift+클릭으로 범위 조정", &[&(b - a + 1), &span]));
             }
-            return (p["title"].as_str().unwrap_or("").to_string(), tr_args("{1}절 · {2}", &[&n, &p["versionName"].as_str().unwrap_or("")]));
+            return (p["title"].as_str().unwrap_or("").to_string(), verse_count_label(n, p["versionName"].as_str().unwrap_or("")));
         }
         let n = r["results"].as_array().map(|v| v.len()).unwrap_or(0);
         (tr_args("“{1}” 본문 검색", &[&self.search.trim()]), format!("{}{}{}", n, if r["truncated"] == json!(true) { "+" } else { "" }, tr("건")))
@@ -1311,7 +1311,8 @@ impl App {
             }
             if r["ok"] != json!(true) {
                 egui::Frame::new().inner_margin(Margin::symmetric(14, 8)).show(ui, |ui| {
-                    ui.label(rich(r["error"].as_str().unwrap_or(""), 14.0, Weight::Regular, pal().danger_text));
+                    // 찾기 판 오류: 한국어면 조사 고르기('요한복음은(는)' → '요한복음은'), 영어면 번역 (A15)
+                    ui.label(rich(wp_core::i18n::tr_dyn(r["error"].as_str().unwrap_or("")), 14.0, Weight::Regular, pal().danger_text));
                     ui.add_space(6.0);
                     ui.horizontal_wrapped(|ui| {
                         for c in r["candidates"].as_array().into_iter().flatten() {
@@ -2470,4 +2471,9 @@ pub(crate) fn ce_select(ui: &mut egui::Ui, id: &str, cur: &mut String, opts: &[(
         }
     });
     *cur != before
+}
+
+/// 본문 판 머리 '6절 · 개역한글' (절 수). 영어는 '6 verses' · 한 절이면 '1 verse' (E3: 예전 'Verse 6' 은 6절째로 읽혔다)
+fn verse_count_label(n: usize, version: &str) -> String {
+    if n == 1 { tr_args("1절 · {1}", &[&version]) } else { tr_args("{1}절 · {2}", &[&n, &version]) }
 }

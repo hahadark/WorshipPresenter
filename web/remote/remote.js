@@ -380,6 +380,8 @@
     if (!on && tab === name) setTab('cue');
   }
   function setTab(name) {
+    // 탭을 옮기면 '길게 누르세요' 같은 짧은 안내는 닫는다 (N1)
+    document.querySelectorAll('.toasts.near .toast').forEach(function (x) { x.remove(); });
     var b = document.querySelector('[data-tab="' + name + '"]');
     if (!b || b.hidden) name = 'cue';
     tab = name;
@@ -456,7 +458,7 @@
     b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     b.addEventListener('click', function () {
       if (done) { done = false; return; }
-      W.toast(t('모두 끄기는 길게 누르세요', 'Press and hold to turn everything off'), t('글 · 배경 · 로고와 예배당 화면까지 모두 꺼집니다. 1초쯤 누르고 있으면 꺼집니다.', 'Text, background, logo and the sanctuary screen all go off. Hold for about a second.'), { icon: 'power', key: 'off', ms: 3500 });
+      W.toast(t('모두 끄기는 길게 누르세요', 'Press and hold to turn everything off'), t('글 · 배경 · 로고와 예배당 화면까지 모두 꺼집니다. 1초쯤 누르고 있으면 꺼집니다.', 'Text, background, logo and the sanctuary screen all go off. Hold for about a second.'), { icon: 'power', key: 'off', ms: 2000, above: $('transport') });
     });
   })();
 

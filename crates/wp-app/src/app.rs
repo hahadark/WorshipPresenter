@@ -936,7 +936,7 @@ impl App {
                         let n = res["passage"]["verses"].as_array().map(|x| x.len()).unwrap_or(0);
                         (true, wp_core::i18n::tr_args("✓ {1} ({2}절)", &[&res["passage"]["title"].as_str().unwrap_or(""), &n]))
                     } else {
-                        (false, res["error"].as_str().unwrap_or("").to_string())
+                        (false, wp_core::i18n::tr_dyn(res["error"].as_str().unwrap_or("")))
                     };
                     ui.data_mut(|d| d.insert_temp(id, m.clone()));
                     Some(m)

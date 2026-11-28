@@ -1,4 +1,5 @@
 {
+ "1절 · {1}": "1 verse · {1}",
  "눌러서 전문 보기": "Click to read it all",
  "{1} / {2} MB": "{1} / {2} MB",
  "이 슬라이드": "This slide",
@@ -1947,7 +1948,7 @@
  "{1}장을 요소로": "{1} slide(s) as elements",
  "{1}저장": "{1}Save",
  "{1}저장하고 연결": "{1}Save and connect",
- "{1}절 · {2}": "Verse {1} · {2}",
+ "{1}절 · {2}": "{1} verses · {2}",
  "{1}주보 {2}개를 받았습니다": "{1}Received {2} bulletins",
  "{1}줄씩": "{1} lines each",
  "{1}즉석 자막": "{1}Quick text",

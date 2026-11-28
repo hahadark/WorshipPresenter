@@ -120,6 +120,7 @@ textarea.fld { resize: vertical; line-height: 1.55; }
 
 /* ── 알림 (화면 위쪽 — 엄지가 닿는 아래 단추를 가리지 않게) ── */
 .toasts { position: fixed; z-index: 90; left: 0; right: 0; top: calc(var(--sat) + 52px); padding: 0 calc(10px + var(--sar)) 0 calc(10px + var(--sal)); pointer-events: none; }
+.toasts.near { top: auto; bottom: 80px; } /* 짧은 안내: 누른 단추 바로 위 (JS 가 bottom 을 막대 높이에 맞춤) */
 .toast {
   pointer-events: auto; display: flex; align-items: flex-start; max-width: 520px; margin: 0 auto 6px; padding: 10px 6px 10px 12px;
   background: var(--head); border-radius: var(--r); box-shadow: inset 0 0 0 1px var(--raised), 0 6px 16px rgba(0,0,0,.45);

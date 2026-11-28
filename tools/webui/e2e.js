@@ -59,6 +59,7 @@ async function remoteFlow(b, url, pin, m) {
     await p.tapOn('#xOff', 60);
     await sleep(500);
     ok(m.state.log.filter(x => x === 'off').length === before && await p.eval(`!!document.querySelector('.toast')`), '모두 끄기를 짧게 누르면 끄지 않고 안내만 (W1)');
+    ok(await p.eval(`(() => { const t = document.querySelector('.toasts.near .toast'); const b = document.getElementById('transport').getBoundingClientRect(); if (!t) return false; const r = t.getBoundingClientRect(); return r.bottom <= b.top + 1 && r.top > window.innerHeight * 0.4; })()`), "'길게 누르세요' 안내는 아래 막대 바로 위 — 위 송출 표시를 가리지 않음 (N1)");
     await p.tapOn('#xOff', 1200);
     await sleep(600);
     ok(m.state.log.filter(x => x === 'off').length === before + 1, '길게(1초) 누르면 모두 끄기');
