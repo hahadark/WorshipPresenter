@@ -77,7 +77,8 @@ function ws(p, headers) {
   const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; wait.set(i, { res, rej }); sock.send(JSON.stringify({ id: i, method, params })); });
   const ev = async (e) => { const x = await send('Runtime.evaluate', { expression: e, awaitPromise: true, returnByValue: true }); return x.result.value; };
   const shot = async (n) => { const x = await send('Page.captureScreenshot', { format: 'png' }); const f = path.join(out, `${which}-${n}.png`); fs.writeFileSync(f, Buffer.from(x.data, 'base64')); return f; };
-  const click = async (x, y) => { for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); };
+  // 실제 마우스처럼 옮긴 뒤 누른다 (egui 는 누르기 전 포인터 자리를 본다)
+  const click = async (x, y) => { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(60); for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); };
   const dbg = async () => { try { return JSON.parse(await ev('window.wpDebug ? window.wpDebug() : "null"')); } catch { return null; } };
   await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 960, deviceScaleFactor: 1, mobile: false });
