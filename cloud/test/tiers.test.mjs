@@ -147,3 +147,13 @@ test('OAuth state 쿠키: 서명 · 만료 · 고친 것 거절', async () => {
   assert.equal(await unpackState(env, old), null);
   assert.equal(body.length > 0, true);
 });
+
+test('둘러보기는 DEMO_ENABLED=1 일 때만 (기본 꺼짐)', async () => {
+  const { demoEnabled, demoAlive, enter } = await import('../src/tiers/demo.mjs');
+  assert.equal(demoEnabled({}), false);
+  assert.equal(demoEnabled({ DEMO_ENABLED: 'true' }), false);
+  assert.equal(demoEnabled({ DEMO_ENABLED: '1' }), true);
+  assert.equal(await demoAlive({}, 'demo'), false, '꺼지면 받은 데모 쿠키도 죽음');
+  const r = await enter(new Request('https://x/demo'), {}, new URL('https://x/demo'), null, () => null);
+  assert.equal(r.status, 404);
+});

@@ -9,6 +9,8 @@
   let church = frag.get('church') || q.get('c') || '';
   try { church = church || decodeURIComponent((document.cookie.match(/(?:^|; )wp_church=([^;]*)/) || [])[1] || ''); } catch (e) { /* 무시 */ }
   $('church').value = church;
+  // 둘러보기는 Worker 변수 DEMO_ENABLED=1 일 때만 보인다 (tiers/demo.mjs)
+  try { if (JSON.parse($('wp-cfg').textContent || '{}').demo) $('gdemo').hidden = false; } catch (e) { /* 꺼짐 */ }
   // 7단계: 구글로 시작하기 · 돌아온 까닭 (oauth.mjs back)
   const WHY = {
     name: '교회 이름을 2~60자로 적어 주세요.', 'church-id': '교회 ID 가 올바르지 않거나 쓸 수 없는 이름입니다.', 'church-taken': '이미 있는 교회 ID 입니다.',

@@ -11,6 +11,8 @@ import { forgetTier } from './index.mjs';
 import { DEMO_BIBLE, DEMO_DOCS, DEMO_SHAPE, demoVerse } from './demo-seed.mjs';
 
 export const DEMO = 'demo';
+/** 둘러보기를 켤지: Worker 변수 DEMO_ENABLED = '1' 일 때만 (기본 꺼짐 — 공개는 사관님이 정함). 끄면 /demo 404 · 이미 받은 데모 쿠키도 죽음 */
+export const demoEnabled = env => env.DEMO_ENABLED === '1';
 const rand = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => 'abcdefghijkmnopqrstuvwxyz23456789'[b % 33]).join('');
 const ipOf = request => request.headers.get('cf-connecting-ip') || 'local';
 
@@ -35,7 +37,7 @@ export function demoRate(request, env, now = Date.now()) {
 /** 데모 쿠키의 열쇠('d:…')가 살아 있나 — 데모 교회가 있고 막히지 않았으면 (30초 기억) */
 const alive = { at: 0, ok: false };
 export async function demoAlive(env, church, now = Date.now()) {
-  if (church !== DEMO) return false;
+  if (church !== DEMO || !demoEnabled(env)) return false;
   if (now - alive.at < 30_000) return alive.ok;
   const r = await env.DB.prepare("SELECT 1 AS x FROM churches WHERE id = ?1 AND tier = 'demo' AND disabled_at IS NULL").bind(DEMO).first();
   alive.at = now; alive.ok = !!r;
@@ -97,6 +99,7 @@ export async function ensureDemo(env, now = Date.now(), force = false) {
 
 /** GET /demo — 데모 쿠키를 주고 둘러보기 화면으로. 이미 데모 로그인이면 화면만 */
 export async function enter(request, env, url, session, page) {
+  if (!demoEnabled(env)) return fail(404, '둘러보기가 꺼져 있습니다.');
   if (!auth.configured(env)) return fail(503, '로그인이 아직 설정되지 않았습니다.');
   const now = Date.now();
   const L = limitsOf('demo', env);

@@ -235,7 +235,7 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 - 한도표는 `cloud/src/tiers/limits.mjs` 한 곳(값은 안 — 사관님이 정함). 화면 · 리모컨 수는 중계실이 `x-wp-max-*` 머리글로 받아 센다.
 - **무료 가입** = '구글로 시작하기'(`/auth/google/start?mode=signup`, 범위 `drive.file` + `openid email` — 구글의 비민감 범위라 보안 심사 없음). 드라이브 안은 `워십프리젠터/<교회 이름>/큐시트/…json · 성경/<번역본>/43 요한복음.json · 파일/그림/…`. 드라이브에는 조건부 쓰기가 없어 **판 번호는 D1 이 정하고**(잡기 → 드라이브 쓰기 → 마무리, 끊기면 다음 요청이 마무리 · 풀기), 드라이브 파일의 `version` 은 적어만 둔다.
 - **연결이 끊기면** 자료 길만 503 + 다시 연결 주소. 중계실 · 출력은 저장소를 보지 않으므로 **송출 중인 화면은 마지막 그대로**.
-- **둘러보기** `/demo`: 로그인 없이 2시간 데모 쿠키(역할 `demo`), 같이 보는 견본 교회, 실시간 중계실은 방문자마다 따로(`demo~d:…`), 파일 · AI · 초대 · 기기 열쇠 막음, 주소별 요청 한도.
+- **둘러보기** `/demo` (Worker 변수 `DEMO_ENABLED=1` 일 때만, 기본 꺼짐): 로그인 없이 2시간 데모 쿠키(역할 `demo`), 같이 보는 견본 교회, 실시간 중계실은 방문자마다 따로(`demo~d:…`), 파일 · AI · 초대 · 기기 열쇠 막음, 주소별 요청 한도.
 - **옮기기**(무료 ↔ 유료)는 관리자 길(`ADMIN_TOKEN`, `scripts/tier-move.mjs`) — 결제는 없다. 두 저장소가 `changes` 표를 같이 쓰고 revision 을 그대로 옮겨 동기화가 끊기지 않는다.
 - 시험: 단위 `test/tiers.test.mjs` · 끝에서 끝 `test/tiers-e2e/`(가짜 구글 `test/fake-google/server.mjs` — 진짜 구글은 부르지 않음). `npm run test:e2e` 가 가짜 구글을 띄우고 `--var GOOGLE_FAKE` 등으로 로컬 Worker 에 붙인다.
 - 새 Worker 비밀값 · 변수: `GOOGLE_CLIENT_ID` · `GOOGLE_CLIENT_SECRET`(없으면 구글 길 404) · (선택) `GOOGLE_REDIRECT_URI` · 시험용 `GOOGLE_FAKE`(로컬 주소만) · `TIER_CACHE_MS` · `TIER_OVERRIDES` · `SERVICE_OVERRIDES`. 배포 스크립트(`deploy.mjs`)는 아직 구글 비밀값을 넣지 않는다 — 사관님이 클라이언트를 만든 뒤 `wrangler secret put` (google-setup.md).

@@ -64,7 +64,7 @@ async function handle(request, env) {
   const method = request.method;
 
   if (path === '/health') return json({ ok: true, protocol: PROTOCOL, configured: auth.configured(env) });
-  if (path === '/login' && method === 'GET') return page('login', { v: PROTOCOL });
+  if (path === '/login' && method === 'GET') return page('login', { v: PROTOCOL, demo: demo.demoEnabled(env) });
   if (path === '/auth/login' && method === 'POST') return login(request, env, url);
   if (path === '/auth/logout' && method === 'POST') {
     if (!sameOrigin(request, url)) return fail(403, '다른 곳에서 온 요청입니다.');

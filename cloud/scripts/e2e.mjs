@@ -38,7 +38,7 @@ async function main() {
     dev = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(inspector), '--local', '--show-interactive-dev-session=false',
       '--var', `GOOGLE_FAKE:${fake.url}`, '--var', `GOOGLE_CLIENT_ID:${CLIENT_ID}`, '--var', `GOOGLE_CLIENT_SECRET:${CLIENT_SECRET}`,
       // 등급 기억을 끄고(옮기기 시험이 30초를 기다리지 않게) 데모 주소별 한도를 시험하기 쉽게 줄인다
-      '--var', 'TIER_CACHE_MS:0', '--var', 'SERVICE_OVERRIDES:{"freeSignupsPerDay":100000,"signupsPerIpPerHour":1000}', '--var', 'TIER_OVERRIDES:{"demo":{"perIpPerMinute":40,"entriesPerIpPerHour":200}}'], { cwd: cloud, stdio: ['ignore', 'pipe', 'pipe'] });
+      '--var', 'TIER_CACHE_MS:0', '--var', 'DEMO_ENABLED:1', '--var', 'SERVICE_OVERRIDES:{"freeSignupsPerDay":100000,"signupsPerIpPerHour":1000}', '--var', 'TIER_OVERRIDES:{"demo":{"perIpPerMinute":40,"entriesPerIpPerHour":200}}'], { cwd: cloud, stdio: ['ignore', 'pipe', 'pipe'] });
     let log = '';
     dev.stdout.on('data', d => { log += d; });
     dev.stderr.on('data', d => { log += d; });
