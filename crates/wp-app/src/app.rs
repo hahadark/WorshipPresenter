@@ -72,6 +72,8 @@ pub struct App {
     pub(crate) out: OutWin,
     pub(crate) monitor: usize,
     editor_on: bool,
+    /// 송출 중이어도 편집칸을 펼쳐 둘 순서 id (편집칸 단추 · F2 로 일부러 연 것)
+    editor_force: Option<String>,
     editor_reveal: bool,
     views: MonitorViews,
     last_flush: Instant,
@@ -221,7 +223,9 @@ impl App {
         let mut workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
         // 원본 dock.js:409 — 미리보기 끔(바로 송출)이면 미리보기 패널을 닫는다
         sync_preview_pane(&mut workspace.state, core.lock().settings.get()["previewMode"].as_bool().unwrap_or(true));
-        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */, viewer_direct_both: false }
+        // 편집칸 열림은 기억한다 (설정 rsEditorOpen, 없으면 열림 — 예전과 같음)
+        let editor_on = core.lock().settings.get()["rsEditorOpen"].as_bool().unwrap_or(true);
+        Self { editor_on, editor_force: None, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir, data_dir, search: String::new(), result: Value::Null, versions, sel: None, edit: None, out, monitor, last_flush: Instant::now(), focus_search: true, test: test_args(), tb: Default::default() /* [트랙 B] */, tc: Default::default() /* [트랙 C] */, viewer_direct_both: false }
     }
 
     pub(crate) fn snap(&self) -> Snap {
@@ -635,6 +639,8 @@ impl App {
         if on("cueNext", "Ctrl+ArrowDown") { acts.push(Act::CuePreviewStep(1)) }
         if on("cuePrev", "Ctrl+ArrowUp") { acts.push(Act::CuePreviewStep(-1)) }
         if on("toggleOutputWindow", "Ctrl+Shift+F") { acts.push(Act::OutputToggle) }
+        // Esc 는 열린 창을 먼저 닫는다 (control.js: '열린 창·후보 목록을 먼저 닫고, 닫을 것이 없을 때만 단축키'). 맨 위 창 하나씩 — widgets_win
+        crate::widgets_win::esc_first(ctx, typing);
         // Esc 는 열린 즉석 자막 칸을 먼저 닫고, 닫을 것이 없을 때만 보조 화면 끄기 (control.js BCQuick.close)
         if !typing && self.tb.quick && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { self.tb.quick = false }
         if on("outputOff", "Escape") && self.out.running() { acts.push(Act::OutputToggle) }
@@ -649,8 +655,8 @@ impl App {
             self.pro_toggle_viewers();
         }
         if on("toggleEditor", "Ctrl+Shift+E") {
-            self.editor_on = !self.editor_on;
-            if self.editor_on { self.editor_reveal = true; }
+            let sel = self.sel;
+            self.toggle_editor(ctx, sel);
         }
         if !typing {
             let pv = self.core.lock().pres.preview.as_ref().map(|p| (p.index, p.slides.len()));
@@ -663,7 +669,7 @@ impl App {
                     let (nav_arrows, nav_enter) = (crate::cue_ui::nav_takes_arrows(ctx), crate::cue_ui::nav_takes_enter(ctx));
                     if !nav_arrows && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowLeft)) { acts.push(Act::PreviewStep(-1)) }
                     if !nav_arrows && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowRight)) { acts.push(Act::PreviewStep(1)) }
-                    if !nav_enter && !crate::center_ui::results_focused(ctx) && ctx.input(|i| i.key_pressed(Key::Enter) && i.modifiers.is_none()) {
+                    if !nav_enter && !crate::widgets_win::modal_open(ctx) && !crate::center_ui::results_focused(ctx) && ctx.input(|i| i.key_pressed(Key::Enter) && i.modifiers.is_none()) {
                         ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
                         acts.push(Act::SendPreview)
                     }
@@ -756,8 +762,13 @@ impl App {
                     }
                 }
                 if s.items.is_empty() {
-                    ui.add_space(12.0);
-                    ui.label(crate::theme::rich(wp_core::i18n::tr("아래 버튼으로 예배 순서를 추가하세요."), 13.0, crate::theme::Weight::Regular, crate::theme::pal().muted));
+                    // 빈 큐시트: 첫 걸음 세 가지 (순서 넣기 · 가사 붙여 넣기 · 다른 큐시트 열기)
+                    let tr = wp_core::i18n::tr;
+                    if s.cue_id.is_empty() {
+                        crate::widgets::empty(ui, "folder-open", &tr("열린 큐시트가 없습니다"), &tr("위 폴더 단추에서 새 큐시트를 만들거나 기존 큐시트를 여세요."), None);
+                    } else {
+                        crate::widgets::empty(ui, "list", &tr("아직 순서가 없습니다"), &tr("· 아래 '순서 넣기' 로 성경 · 찬양 · 공지 · 제목을 넣습니다\n· 가사를 복사해 이 판에서 Ctrl+V 하면 찬양 순서가 됩니다\n· Ctrl+K 로 장절을 찾은 뒤 오른쪽 클릭 → 큐시트에 넣기"), None);
+                    }
                 }
             });
         });
@@ -778,8 +789,50 @@ impl App {
     pub(crate) fn show_item_editor(&mut self, i: usize) {
         self.sel = Some(i);
         self.edit = None;
-        self.editor_on = true;
+        self.set_editor_on(true);
         self.editor_reveal = true;
+        // 송출 중인 순서라도 일부러 연 것이면 펼친다 (아래 editor_hold)
+        self.editor_force = self.core.lock().cue.as_ref().and_then(|c| c.items.get(i)).and_then(|it| it["id"].as_str()).map(String::from);
+    }
+
+    /// 편집칸 켜고 끄기 + 기억 (설정 rsEditorOpen)
+    pub(crate) fn set_editor_on(&mut self, on: bool) {
+        self.editor_on = on;
+        if !on {
+            self.editor_force = None;
+        }
+        let mut c = self.core.lock();
+        if c.settings.get()["rsEditorOpen"].as_bool() != Some(on) {
+            c.settings.update(|d| d["rsEditorOpen"] = json!(on));
+        }
+    }
+
+    /// 송출 중인 순서를 고르면 편집칸을 접어 둔다 (진행 중에는 본문 · 슬라이드 줄이 먼저). 일부러 연 순서는 예외
+    pub(crate) fn editor_hold(&self, s: &Snap, i: usize) -> bool {
+        let live = s.live.as_ref().is_some_and(|l| l.deck.passage["cueIndex"].as_i64() == Some(i as i64) && l.deck.passage["cueId"].as_str().is_none_or(|c| c == s.cue_id));
+        live && self.editor_force.as_deref() != s.items.get(i).and_then(|it| it["id"].as_str())
+    }
+
+    /// 편집칸 단추 · Ctrl+Shift+E: 접혀 있던(송출 중이라 접어 둔) 순서면 펼치고, 아니면 켜고 끄기
+    pub(crate) fn toggle_editor(&mut self, _ctx: &egui::Context, sel: Option<usize>) {
+        let held = sel.and_then(|i| {
+            let snap_items = self.core.lock().cue.as_ref().and_then(|c| c.items.get(i).cloned());
+            snap_items.map(|it| (i, it))
+        });
+        let live_idx = self.core.lock().pres.live.as_ref().and_then(|l| l.deck.passage["cueIndex"].as_i64());
+        match held {
+            Some((i, it)) if self.editor_on && live_idx == Some(i as i64) && self.editor_force.as_deref() != it["id"].as_str() => {
+                self.editor_force = it["id"].as_str().map(String::from);
+                self.editor_reveal = true;
+            }
+            _ => {
+                let on = !self.editor_on;
+                self.set_editor_on(on);
+                if on {
+                    self.editor_reveal = true;
+                }
+            }
+        }
     }
 
     fn reveal_editor_panel(&mut self) {
@@ -797,14 +850,18 @@ impl App {
         // 검색칸은 원본처럼 머리 줄(topbar_ui::search_bar)에 있다.
         let selected = self.sel.filter(|i| *i < s.items.len());
         // .center-head: '본문 | 주석' · '편집칸' · 제목 + 부가 글 · '목록 | 격자 | 전체 격자 | 전체 목록' (center_ui.rs)
-        let mut editor_on = self.editor_on;
+        let held = selected.is_some_and(|i| self.editor_hold(s, i));
+        let shown = self.editor_on && !held;
+        let mut editor_on = shown;
         ui.spacing_mut().item_spacing.y = 0.0;
         self.center_head(ui, s, &mut editor_on, acts);
-        self.editor_on = editor_on;
+        if editor_on != shown {
+            self.toggle_editor(ui.ctx(), selected);
+        }
         // 원본처럼 순서를 골랐을 때만 편집칸을 보인다. 높이는 기본 본문 패널의 46%(control.css .cue-editor max-height 46%),
         // 아래 구분선을 끌어 바꾸고(설정 rsEditorFrac 에 기억, 두 번 누르면 처음대로), 머리의 '크게' 로 본문 패널 전체를 쓴다 (평가 8번).
         let mut big = false;
-        if let (true, Some(i)) = (self.editor_on, selected) {
+        if let (true, Some(i)) = (self.editor_on && !selected.is_some_and(|i| self.editor_hold(s, i)), selected) {
             big = editor_big(ui.ctx());
             let avail = ui.available_height();
             let frac_id = egui::Id::new("editor-frac-drag");
@@ -826,7 +883,7 @@ impl App {
                 let hot = resp.hovered() || resp.dragged();
                 if hot { ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical); }
                 let c = r.center();
-                ui.painter().line_segment([egui::pos2(c.x - 20.0, c.y), egui::pos2(c.x + 20.0, c.y)], egui::Stroke::new(3.0, if hot { p.accent } else { p.line2 }));
+                ui.painter().line_segment([egui::pos2(c.x - 20.0, c.y), egui::pos2(c.x + 20.0, c.y)], egui::Stroke::new(3.0, if hot { p.text2 } else { p.line2 }));
                 if resp.dragged() {
                     let nf = ((h + resp.drag_delta().y) / avail.max(1.0)).clamp(EDITOR_FRAC_MIN, EDITOR_FRAC_MAX);
                     ui.data_mut(|d| d.insert_temp(frac_id, nf));
@@ -1084,7 +1141,7 @@ impl App {
             acts.push(Act::RemoveItem(i));
         }
         if head.close {
-            self.editor_on = false;
+            self.set_editor_on(false);
             set_editor_big(ui.ctx(), false);
         }
         if head.big {
@@ -1139,24 +1196,44 @@ impl App {
             ui.horizontal(|ui| {
                 ui.set_min_height(26.0);
                 if p.bevel {
-                    // (나) 뷰어 머리: '다음'(노랑) · '송출 중'(빨강) 굵은 글자만 (배지 없이)
+                    // (나) 뷰어 머리: '다음'(노랑) · '송출 중'(빨강) 굵은 글자만 (배지 없이). 노랑 '다음' = F9 를 누르면 나갈 것
                     let (t, c) = if is_live { (tr("송출 중"), p.live_text) } else { (tr("다음"), p.next) };
-                    ui.add(egui::Label::new(theme::rich(t, 12.0, Weight::Bold, c)).selectable(false));
+                    let lr = ui.add(egui::Label::new(theme::ty(t, theme::Type::SmallStrong, c)).selectable(false));
+                    if !is_live {
+                        widgets::tip_auto(lr, &tr("송출 단추를 누르면 나갈 화면 (F9)"));
+                    }
                 } else if is_live { widgets::badge(ui, "LIVE", Badge::Live); } else { widgets::badge(ui, &tr("미리보기"), Badge::Pv); }
                 let info = deck.map(|d| deck_info(d, is_live)).unwrap_or_default();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    // 출력 고르기 (로드맵 3단계: 출력 목록을 따름 — 추가 출력이 없으면 예전처럼 [예배당 | OBS])
+                    // 출력 고르기 (로드맵 3단계: 출력 목록을 따름 — 추가 출력이 없으면 예전처럼 [예배당 | OBS]).
+                    // 전문가 테마: 뷰어마다 구획 단추 세 칸이 되풀이되던 것을 작은 고르기 칸 하나로 (같은 기능, 덜 시끄럽게)
                     let view = if is_live { &mut self.views.live } else { &mut self.views.preview };
                     if !s.extra_views.iter().any(|x| &x.id == view) && view != "overlay" {
                         view.clear();
                     }
                     let main_label = tr("예배당");
-                    let mut items: Vec<(String, &str)> = vec![(String::new(), main_label.as_str()), ("overlay".into(), "OBS")];
-                    items.extend(s.extra_views.iter().map(|x| (x.id.clone(), x.name.as_str())));
-                    widgets::segmented(ui, view, &items);
+                    if p.bevel {
+                        let mut items: Vec<(String, String)> = vec![(String::new(), main_label.clone()), ("overlay".into(), "OBS".into())];
+                        items.extend(s.extra_views.iter().map(|x| (x.id.clone(), x.name.clone())));
+                        let tw = items.iter().map(|(_, l)| ui.painter().layout_no_wrap(l.clone(), theme::Type::Small.font(), Color32::WHITE).size().x).fold(0.0, f32::max);
+                        let w = (tw + theme::sp::X8 + 16.0 + theme::sp::X8).ceil();
+                        let r = ui.scope(|ui| widgets::select(ui, ("viewer-out", is_live), view, &items, Some(w), theme::Ctl::Sm)).response;
+                        widgets::mark(if is_live { "lv-out" } else { "pv-out" }, r.rect);
+                    } else {
+                        let mut items: Vec<(String, &str)> = vec![(String::new(), main_label.as_str()), ("overlay".into(), "OBS")];
+                        items.extend(s.extra_views.iter().map(|x| (x.id.clone(), x.name.as_str())));
+                        widgets::segmented(ui, view, &items);
+                    }
                     if hidden { hidden_badge(ui, &tr("숨김 중")); }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        ui.add(egui::Label::new(theme::rich(info, if p.bevel { 12.0 } else { 14.0 }, if p.bevel { Weight::Regular } else { Weight::SemiBold }, if p.bevel { p.muted } else { p.text })).truncate().selectable(false));
+                        if p.bevel {
+                            let (g, cut) = widgets::elide(ui, &info, theme::Type::Small.font(), p.muted, ui.available_width());
+                            let (r, resp) = ui.allocate_exact_size(g.size(), Sense::hover());
+                            ui.painter().galley(r.min, g, p.muted);
+                            if cut { resp.on_hover_text(info.clone()); }
+                        } else {
+                            ui.add(egui::Label::new(theme::rich(info, 14.0, Weight::SemiBold, p.text)).truncate().selectable(false));
+                        }
                     });
                 });
             });
@@ -1216,7 +1293,8 @@ impl App {
                 let g = if g.size().x > room { ui.painter().layout_no_wrap(ph, theme::font((14.0 * room / g.size().x).max(7.0), Weight::Regular), p.muted2) } else { g };
                 ui.painter().galley(rect.center() - g.size() / 2.0, g, p.muted2);
             }
-            let border = if is_live { p.live } else { p.pv };
+            // 빈 뷰어는 회색 테두리 (빨강 = 무언가 송출 중일 때만, 노랑 = 다음에 올라간 것이 있을 때만)
+            let border = if deck.is_none() && p.bevel { p.line2 } else if is_live { p.live } else { p.pv };
             if hidden {
                 dashed_rect(ui, rect.shrink(1.0), egui::Stroke::new(2.0, border));
             } else {
@@ -1297,7 +1375,7 @@ impl App {
                 let (wd, dd) = (self.web_dir.clone(), self.data_dir.clone());
                 let c = paint::Ctx { web_dir: &wd, data_dir: &dd };
                 let sa = if strip { egui::ScrollArea::horizontal().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).auto_shrink([false, true]) } else { egui::ScrollArea::vertical().id_salt(format!("{}-slides", if is_live { "lv" } else { "pv" })).max_height(76.0).auto_shrink([false, true]) };
-                sa.show(ui, |ui| {
+                let so = sa.show(ui, |ui| {
                     let mut body = |ui: &mut egui::Ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(if strip { 6.0 } else { 4.0 }, 4.0);
                         let item = crate::center_ui::deck_item(s, d);
@@ -1323,6 +1401,17 @@ impl App {
                     };
                     if strip { ui.horizontal(|ui| body(ui)); } else { ui.horizontal_wrapped(|ui| body(ui)); }
                 });
+                if strip {
+                    // 줄이 넘치면 잘린 쪽 끝을 흐리게 (반쯤 잘린 칸이 '끝' 처럼 보이지 않게)
+                    let vbg = theme::mix(p.panel, 80.0, p.bg);
+                    let (r, off, cw) = (so.inner_rect, so.state.offset().x, so.content_size.x);
+                    if off + r.width() < cw - 1.0 {
+                        widgets::fade_edge(ui, r, false, vbg);
+                    }
+                    if off > 1.0 {
+                        widgets::fade_edge(ui, r, true, vbg);
+                    }
+                }
             }
         });
     }
@@ -1407,7 +1496,7 @@ impl App {
             out.push(Layer { act: LayerAct::Media, on: true, text, btn: "✕".into(), tip: tr("송출 배경 끄기 (카메라는 닫힘)"), icon: bg_icon(m["type"].as_str().unwrap_or("")) });
         }
         if c.layers.hide_bg {
-            out.push(Layer { act: LayerAct::BgOn, on: false, text: tr("배경 꺼짐"), btn: tr("다시 켜기"), tip: tr("배경(순서·템플릿 배경)을 다시 켭니다"), icon: "image" });
+            out.push(Layer { act: LayerAct::BgOn, on: false, text: tr("배경 숨김"), btn: tr("보이기"), tip: tr("배경(순서·템플릿 배경)을 다시 보입니다"), icon: "image" });
         } else {
             let kind_of = |u: &str| -> &'static str {
                 let l = u.to_ascii_lowercase();
@@ -1429,7 +1518,19 @@ impl App {
                 out.push(Layer { act: LayerAct::BgTpl, on: true, text, btn: "✕".into(), tip: tr("템플릿 배경 빼기 (단색으로, 이 템플릿을 쓰는 모든 순서)"), icon: bg_icon(bt) });
             }
         }
-        let ov: Vec<String> = c.overlays().into_iter().filter(|o| o["on"] == true).map(|o| {
+        // 이름 자막 · 회중 메시지 · 무대 메시지도 지금 떠 있으면 칩으로 (창을 닫아도, 리모컨 · 외부 단추로 띄운 것도 보이게)
+        if let Some(n) = c.name_tag_on() {
+            let who = [n["name"].as_str().unwrap_or(""), n["role"].as_str().unwrap_or("")].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" · ");
+            out.push(Layer { act: LayerAct::NameTag, on: true, text: format!("{}: {who}", tr("이름 자막")), btn: "✕".into(), tip: tr("이름 자막 내리기"), icon: "captions" });
+        }
+        if let Some(m) = &c.b.message {
+            let t = m.text.replace('\n', " ");
+            out.push(Layer { act: LayerAct::Message, on: true, text: format!("{}: {t}", tr("회중 메시지")), btn: "✕".into(), tip: tr("회중 메시지 내리기"), icon: "megaphone" });
+        }
+        if !c.b.stage.message.trim().is_empty() {
+            out.push(Layer { act: LayerAct::StageMsg, on: true, text: format!("{}: {}", tr("무대 메시지"), c.b.stage.message.trim()), btn: "✕".into(), tip: tr("무대 메시지 내리기 (무대 화면에만 보이던 것)"), icon: "mic" });
+        }
+        let ov: Vec<String> = c.overlays().into_iter().filter(|o| o["on"] == true && o["id"] != wp_core::overlays::NAME_TAG_ID).map(|o| {
             o["name"].as_str().filter(|x| !x.is_empty()).or(o["text"].as_str().filter(|x| !x.is_empty())).map(String::from).unwrap_or_else(|| tr("오버레이"))
         }).collect();
         if !ov.is_empty() {
@@ -1454,6 +1555,9 @@ impl App {
             LayerAct::Logo => acts.push(Act::ToggleLogo),
             LayerAct::Overlays => self.core.lock().toggle_overlays_off(),
             LayerAct::Draw => self.core.lock().draw_clear(),
+            LayerAct::NameTag => self.core.lock().hide_name_tag(),
+            LayerAct::Message => self.core.lock().clear_message(),
+            LayerAct::StageMsg => self.core.lock().stage_message(""),
             LayerAct::BgItem => {
                 // 지금 송출 중인 순서(열린 큐시트)에서 배경 빼기
                 let Some(l) = &s.live else { return };
@@ -1515,8 +1619,15 @@ fn dashed_rect(ui: &egui::Ui, r: egui::Rect, st: egui::Stroke) {
 fn count_label(ui: &mut egui::Ui, t: String) {
     let p = crate::theme::pal();
     // 2.1.0 다듬기: 전문가 테마는 이 줄의 '다음: …' 과 같은 12 단계 (예전 14 는 줄에서 혼자 컸다)
-    let g = ui.painter().layout_no_wrap(t, crate::theme::font(if p.bevel { 12.0 } else { 14.0 }, crate::theme::Weight::Regular), p.muted);
-    let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x.max(if p.bevel { 40.0 } else { 48.0 }), g.size().y), Sense::hover());
+    if p.bevel {
+        // 쪽 수는 자릿수 폭 고정 (넘길 때 글이 흔들리지 않게)
+        let g = crate::widgets::Tnum::new(ui, &t, crate::theme::Type::Small.font(), p.muted);
+        let (r, _) = ui.allocate_exact_size(Vec2::new(g.size.x.max(40.0), g.size.y), Sense::hover());
+        g.paint(ui, r.center(), egui::Align2::CENTER_CENTER, p.muted);
+        return;
+    }
+    let g = ui.painter().layout_no_wrap(t, crate::theme::font(14.0, crate::theme::Weight::Regular), p.muted);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x.max(48.0), g.size().y), Sense::hover());
     ui.painter().galley(r.center() - g.size() / 2.0, g, p.muted);
 }
 
@@ -1561,7 +1672,8 @@ fn next_hint(d: &Deck, continuous: bool) -> egui::text::LayoutJob {
     let fmt = |w: Weight, c: Color32| egui::TextFormat { font_id: font(12.0, w), color: c, valign: Align::Center, ..Default::default() };
     match d.slides.get(d.index + 1) {
         Some(nx) => {
-            job.append(&format!("{} ", tr("다음:")), 0.0, fmt(Weight::Regular, p.muted));
+            // 표시창 '다음 순서' · 노랑 '다음' 뷰어와 헷갈리지 않게, 이 줄은 같은 순서 안의 이어지는 장
+            job.append(&format!("{} ", tr("이어서:")), 0.0, fmt(Weight::Regular, p.muted));
             job.append(nx["ref"].as_str().unwrap_or(""), 0.0, fmt(Weight::Bold, p.text2));
             job.append(&format!(" {}", slide_snippet(nx)), 0.0, fmt(Weight::Regular, p.muted));
         }
@@ -1594,7 +1706,7 @@ fn thumb_chip(ui: &mut egui::Ui, text: &str, on: bool, is_live: bool) -> egui::R
     let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 16.0 + 2.0, g.size().y.max(16.0) + 6.0), Sense::click());
     let (bg, border) = match (on, is_live) {
         (true, true) => (p.live_bg, p.live),
-        (true, false) => (p.sel, p.accent),
+        (true, false) => (p.sel, crate::theme::pick()),
         _ if resp.hovered() => (p.hover, p.line2),
         _ => (p.panel2, p.line),
     };
@@ -1632,7 +1744,7 @@ fn slide_tile(ui: &mut egui::Ui, c: &paint::Ctx, sl: &Value, tpl: &Value, versio
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LayerAct { Content, Media, BgOn, BgItem, BgTpl, Overlays, Logo, Draw }
+enum LayerAct { Content, Media, BgOn, BgItem, BgTpl, Overlays, Logo, Draw, NameTag, Message, StageMsg }
 
 /// 지금 화면 칩 하나 (renderScreenLayers chip)
 struct Layer { act: LayerAct, on: bool, text: String, btn: String, tip: String, icon: &'static str }
@@ -2036,7 +2148,7 @@ impl App {
     /// 시험용 App (출력 창·점검 인자 없이)
     pub(crate) fn for_test(core: Shared, dir: std::path::PathBuf) -> Self {
         let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
-        Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir: dir.clone(), data_dir: dir, search: String::new(), result: Value::Null, versions: vec![], sel: None, edit: None, out: crate::outwin::OutWin::for_test(), monitor: 0, last_flush: Instant::now(), focus_search: false, test: None, tb: Default::default(), tc: Default::default(), viewer_direct_both: false }
+        Self { editor_on: true, editor_force: None, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir: dir.clone(), data_dir: dir, search: String::new(), result: Value::Null, versions: vec![], sel: None, edit: None, out: crate::outwin::OutWin::for_test(), monitor: 0, last_flush: Instant::now(), focus_search: false, test: None, tb: Default::default(), tc: Default::default(), viewer_direct_both: false }
     }
 }
 /// 머리 줄 · 아래 송출 줄 · 상태 · 알림 (Snap 의 private 필드를 읽도록 자식 모듈)

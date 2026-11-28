@@ -9,6 +9,29 @@ pub struct Monitor {
     pub name: String,
     pub size: (i32, i32),
     pub primary: bool,
+    /// 왼쪽 위 자리 (가상 화면 좌표) — '오른쪽 · 왼쪽' 자리 이름에 쓴다
+    pub pos: (i32, i32),
+}
+
+impl Monitor {
+    /// 봉사자가 알아볼 이름: '모니터 2 · 오른쪽' (주 모니터는 '모니터 1 · 조작 화면'). DISPLAY1 같은 장치 이름은 쓰지 않는다
+    pub fn label(&self, all: &[Monitor]) -> String {
+        use wp_core::i18n::{tr, tr_args};
+        let n = self.index + 1;
+        if self.primary {
+            return tr_args("모니터 {1} · 조작 화면", &[&n]);
+        }
+        let Some(main) = all.iter().find(|m| m.primary) else { return tr_args("모니터 {1}", &[&n]) };
+        let (dx, dy) = (self.pos.0 + self.size.0 / 2 - (main.pos.0 + main.size.0 / 2), self.pos.1 + self.size.1 / 2 - (main.pos.1 + main.size.1 / 2));
+        let side = if dx.abs() >= dy.abs() {
+            if dx > 0 { tr("오른쪽") } else { tr("왼쪽") }
+        } else if dy > 0 {
+            tr("아래")
+        } else {
+            tr("위")
+        };
+        tr_args("모니터 {1} · {2}", &[&n, &side])
+    }
 }
 
 pub struct OutWin {
@@ -99,7 +122,7 @@ impl OutWin {
                         return None;
                     }
                     let g: Vec<i32> = c[2].split(',').filter_map(|x| x.parse().ok()).collect();
-                    Some(Monitor { index: c[0].parse().ok()?, name: c[1].trim_start_matches(r"\\.\").to_string(), size: (*g.get(2)?, *g.get(3)?), primary: c[3] == "true" })
+                    Some(Monitor { index: c[0].parse().ok()?, name: c[1].trim_start_matches(r"\\.\").to_string(), size: (*g.get(2)?, *g.get(3)?), primary: c[3] == "true", pos: (*g.first()?, *g.get(1)?) })
                 })
                 .collect(),
             Err(e) => {

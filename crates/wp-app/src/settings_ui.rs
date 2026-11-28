@@ -107,6 +107,7 @@ pub fn shortcut_conflicts(s: &Value) -> Vec<(String, String)> {
 pub fn apply_ui_prefs(ctx: &egui::Context, s: &Value) {
     // control.css 테마 5개 (dark·light·contrast·warm·navy) → crate::theme (같은 테마면 아무것도 안 함)
     crate::theme::apply(ctx, crate::theme::ThemeId::from_setting(s["ui"]["theme"].as_str().unwrap_or("pro")));
+    crate::theme::set_reduce_motion(ctx, s["ui"]["reduceMotion"].as_bool().unwrap_or(false));
     let scale = s["ui"]["scale"].as_f64().unwrap_or(100.0).clamp(70.0, 200.0) as f32 / 100.0;
     if (ctx.zoom_factor() - scale).abs() > 0.001 {
         ctx.set_zoom_factor(scale);
@@ -231,8 +232,9 @@ impl SettingsUi {
         let w = 980f32.min(scr.width() - 24.0).max(420.0);
         let h = 700f32.min(scr.height() - crate::widgets::FLOAT_TOP - 16.0).max(320.0);
         let mut open = self.open;
-        let r = crate::widgets::float_window(ctx, "settings-center", tr("설정"), [w, h])
+        let r = crate::widgets_win::window(ctx, "settings-center", tr("설정"), [w, h])
             .open(&mut open)
+            .vscroll(false)
             .min_width(w.min(640.0))
             .min_height(h.min(360.0))
             .max_width((scr.width() - 8.0).max(w))
@@ -240,6 +242,21 @@ impl SettingsUi {
             .show(ctx, |ui| {
                 self.top(ui, core);
                 ui.separator();
+                if ui.available_width() < 760.0 {
+                    egui::ComboBox::from_id_salt("set-cat-compact").selected_text(tr(self.cat.name())).show_ui(ui, |ui| {
+                        for cat in Cat::ALL {
+                            if ui.selectable_label(self.cat == cat, tr(cat.name())).clicked() {
+                                self.cat = cat;
+                                self.query.clear();
+                                self.focus = None;
+                            }
+                        }
+                    });
+                    egui::ScrollArea::vertical().id_salt("set-body").auto_shrink([false, false]).show(ui, |ui| {
+                        if self.query.trim().is_empty() { self.page(ui, core, &v, now); } else { self.results(ui, &v, now); }
+                    });
+                    return;
+                }
                 let body_h = ui.available_height();
                 ui.horizontal_top(|ui| {
                     ui.allocate_ui_with_layout(egui::vec2(190.0, body_h), egui::Layout::top_down_justified(egui::Align::Min), |ui| self.cats(ui));
@@ -267,7 +284,7 @@ impl SettingsUi {
         let p = crate::theme::pal();
         ui.horizontal(|ui| {
             crate::icons::show(ui, "search", 16.0, p.muted);
-            let r = ui.add(egui::TextEdit::singleline(&mut self.query).hint_text(tr("설정 찾기 (예: 글자 크기, 모니터, F6)")).desired_width(330.0));
+            let r = ui.add(egui::TextEdit::singleline(&mut self.query).hint_text(tr("설정 찾기 (예: 글자 크기, 모니터, F6)")).desired_width((ui.available_width() * 0.46).min(330.0)));
             mark("set-search", r.rect);
             if !self.query.is_empty() && ui.add(Btn::new(tr("지우기")).size(Size::Sm).tooltip(tr("검색을 지우고 분류로 돌아갑니다"))).clicked() {
                 self.query.clear();
@@ -440,8 +457,8 @@ impl SettingsUi {
         let frame = egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(8, 6))
             .corner_radius(crate::theme::cr(crate::theme::Rad::Md))
-            .fill(if focused { p.accent_bg } else { egui::Color32::TRANSPARENT })
-            .stroke(if focused { egui::Stroke::new(1.5, p.accent) } else { egui::Stroke::NONE });
+            .fill(if focused { p.sel } else { egui::Color32::TRANSPARENT })
+            .stroke(if focused { egui::Stroke::new(1.5, crate::theme::pick()) } else { egui::Stroke::NONE });
         let r = frame
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -512,7 +529,7 @@ impl SettingsUi {
                 let shown_id = if it.id == "ui.theme" { crate::theme::ThemeId::from_setting(&s).id().to_string() } else { s.clone() };
                 let shown = opts.iter().find(|o| o.0 == shown_id).map(|o| tr(o.1)).unwrap_or(shown_id.clone());
                 let mut pick = None;
-                let r = egui::ComboBox::from_id_salt(("set-combo", it.id)).selected_text(shown).width(300.0).show_ui(ui, |ui| {
+                let r = egui::ComboBox::from_id_salt(("set-combo", it.id)).selected_text(shown).width(ui.available_width().min(300.0)).show_ui(ui, |ui| {
                     for (val, name) in opts {
                         let o = ui.selectable_label(shown_id == *val, tr(name));
                         mark(&format!("set-opt-{}-{}", it.id, val), o.rect);
@@ -532,7 +549,7 @@ impl SettingsUi {
                 let saved = cur.as_f64().unwrap_or(recommend).clamp(lo, hi);
                 let mut x = self.slider.filter(|s| s.0 == it.id).map(|s| s.1).unwrap_or(saved);
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().slider_width = 320.0;
+                    ui.spacing_mut().slider_width = (ui.available_width() - 75.0).clamp(80.0, 320.0);
                     let r = ui.add(egui::Slider::new(&mut x, lo..=hi).step_by(step).suffix(unit));
                     mark(&ctl, r.rect);
                     if r.dragged() {

@@ -130,6 +130,11 @@ impl App {
         let files: Vec<&Value> = files.iter().take(1000).collect();
         let rows = files.len().div_ceil(per_row);
         let mut act: Option<(&'static str, Value)> = None;
+        if files.is_empty() {
+            // 빈 상태: 큰 빈 칸 맨 아래 한 줄 대신 목록 자리 위쪽에 (디자인 체계 empty)
+            crate::widgets_win::empty(ui, "image", &wp_core::i18n::tr("찾는 그림·영상이 없습니다."), &wp_core::i18n::tr("폴더를 더하거나 찾는 말을 바꿔 보세요."));
+            return;
+        }
         egui::ScrollArea::vertical().id_salt("libgrid").auto_shrink([false, false]).show_rows(ui, ROW_H, rows, |ui, range| {
             for r in range {
                 ui.horizontal(|ui| {
@@ -202,9 +207,6 @@ impl App {
                 ui.add_space(4.0);
             }
         });
-        if files.is_empty() {
-            ui.label(RichText::new(wp_core::i18n::tr("찾는 그림·영상이 없습니다.")).color(crate::theme::pal().muted));
-        }
         if let Some((what, f)) = act {
             let url = f["url"].as_str().unwrap_or("").to_string();
             let name = f["name"].as_str().unwrap_or("").to_string();

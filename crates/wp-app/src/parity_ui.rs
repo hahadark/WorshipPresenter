@@ -402,8 +402,10 @@ pub fn handle_menu(id: &str) -> bool {
     true
 }
 
-/// 단축키 보기 창
+//// 단축키 보기 창: 하는 일끼리 묶고(송출 · 미리보기 · 큐시트 · 찾기와 창), 키는 키 모양 칩으로 (Escape → Esc, ArrowDown → ↓)
 pub fn show(app: &mut App, ctx: &egui::Context) {
+    use crate::widgets_win as win;
+    use wp_core::i18n::tr;
     let mut open = *KEYS_OPEN.lock();
     if !open {
         return;
@@ -412,27 +414,73 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let c = app.core.lock();
         (wp_core::settings::SHORTCUTS["labels"].clone(), c.settings.get()["shortcuts"].clone())
     };
-    crate::widgets::close_on_outside(ctx, egui::Id::unique("wp-float-shortcuts"), &mut open);
-    egui::Window::new(wp_core::i18n::tr("단축키")).id(egui::Id::unique("wp-float-shortcuts")).default_pos(crate::widgets::float_pos(ctx, egui::Id::unique("wp-float-shortcuts"), 420.0)).open(&mut open).default_width(420.0).collapsible(false).show(ctx, |ui| {
-        egui::Grid::new("keys").striped(true).num_columns(2).show(ui, |ui| {
-            for (k, label) in labels.as_object().cloned().unwrap_or_default() {
-                ui.label(RichText::new(keys[&k].as_str().unwrap_or("")).monospace().strong());
-                ui.label(label.as_str().unwrap_or(""));
-                ui.end_row();
+    let defaults = &wp_core::settings::SHORTCUTS["defaults"];
+    let key_of = |id: &str| keys[id].as_str().or(defaults[id].as_str()).unwrap_or("").to_string();
+    // (구획, [단축키 id 또는 고정 키 "=키|설명"])
+    const GROUPS: [(&str, &[&str]); 4] = [
+        ("송출", &["sendPreview", "sendNow", "nextSlide", "prevSlide", "=Space|다음 슬라이드 (입력칸 밖)", "toggleClear", "toggleOutputWindow", "outputOff"]),
+        ("미리보기", &["previewNextSlide", "previewPrevSlide", "previewNextVerse", "previewPrevVerse", "previewChapterStart"]),
+        ("큐시트", &["cueNext", "cuePrev", "cueEdit", "toggleEditor", "=Ctrl+E|슬라이드 편집", "=Ctrl+V|클립보드에서 붙여 넣기 (새 순서)", "=Ctrl+Z / Ctrl+Y|실행 취소 · 다시", "printCue"]),
+        ("찾기 · 창", &["focusSearch", "openBooks", "openHistory", "webLyrics", "quickText", "messages", "toggleViewers", "=Alt+1~9|매크로"]),
+    ];
+    let listed: Vec<&str> = GROUPS.iter().flat_map(|g| g.1.iter().copied()).collect();
+    crate::widgets_win::window(ctx, "shortcuts", tr("단축키"), [520.0, 620.0]).open(&mut open).show(ctx, |ui| {
+        let row = |ui: &mut egui::Ui, key: &str, what: &str| {
+            ui.horizontal(|ui| {
+                ui.set_min_height(crate::theme::ctl_h());
+                let (r, _) = ui.allocate_exact_size(egui::vec2(150.0, crate::theme::ctl_h()), egui::Sense::hover());
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                for (i, part) in key.split(" / ").enumerate() {
+                    if i > 0 {
+                        child.label(crate::theme::ty("/", crate::theme::Type::Small, crate::theme::pal().muted));
+                    }
+                    crate::widgets::kbd(&mut child, &key_name(part));
+                }
+                ui.add(egui::Label::new(crate::theme::ty(what, crate::theme::Type::Body, crate::theme::pal().text)).wrap());
+            });
+        };
+        for (head, ids) in GROUPS {
+            win::section(ui, &tr(head));
+            for id in ids.iter() {
+                if let Some(fixed) = id.strip_prefix('=') {
+                    let (k, l) = fixed.split_once('|').unwrap_or((fixed, ""));
+                    row(ui, k, &tr(l));
+                } else if let Some(l) = labels[*id].as_str() {
+                    row(ui, &key_of(id), &tr(l));
+                }
             }
-            for (k, l) in [("Ctrl+Z / Ctrl+Y", "실행 취소 · 다시"), ("Ctrl+E", "슬라이드 편집"), ("Ctrl+V", "클립보드에서 붙여 넣기 (새 순서)"), ("Alt+1~9", "매크로"), ("Space", "다음 슬라이드 (입력칸 밖)")] {
-                ui.label(RichText::new(k).monospace().strong());
-                ui.label(l);
-                ui.end_row();
+        }
+        // 묶음에 없는 새 단축키도 빠짐없이 (다른 작업에서 더한 것)
+        let rest: Vec<(String, String)> = labels.as_object().into_iter().flatten().filter(|(k, _)| !listed.contains(&k.as_str())).map(|(k, l)| (k.clone(), l.as_str().unwrap_or("").to_string())).collect();
+        if !rest.is_empty() {
+            win::section(ui, &tr("그 밖"));
+            for (k, l) in rest {
+                row(ui, &key_of(&k), &tr(&l));
             }
-        });
-        ui.label(RichText::new(wp_core::i18n::tr("단축키는 설정 → 단축키에서 바꿀 수 있습니다.")).small().color(crate::theme::pal().muted));
+        }
+        ui.add_space(crate::theme::sp::X8);
+        win::hint(ui, &tr("단축키는 설정 → 단축키에서 바꿀 수 있습니다."));
     });
     *KEYS_OPEN.lock() = open;
 }
 
-
-/// 원본과 같이 바로 앞 그림과 맞바꾼다. 첫 그림·잘못된 번호는 그대로 둔다.
+/// 설정에 적힌 키 이름을 화면에 보일 이름으로 (Escape → Esc, ArrowDown → ↓, Control → Ctrl)
+pub(crate) fn key_name(k: &str) -> String {
+    k.split('+')
+        .map(|p| match p.trim() {
+            "Escape" => "Esc",
+            "ArrowDown" => "↓",
+            "ArrowUp" => "↑",
+            "ArrowLeft" => "←",
+            "ArrowRight" => "→",
+            "Control" => "Ctrl",
+            "Delete" => "Del",
+            x => x,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+// 원본과 같이 바로 앞 그림과 맞바꾼다. 첫 그림·잘못된 번호는 그대로 둔다.
 fn slideshow_left(it: &mut Value, k: usize) -> bool {
     let Some(images) = it["images"].as_array_mut() else { return false };
     if k == 0 || k >= images.len() { return false; }

@@ -41,9 +41,7 @@ impl App {
     /// 판 보이기·숨기기와 크기 처음대로만 남았다. 예전에 저장한 작업공간(설정 rsWorkspace)은 지우지 않고 그대로 둔다.
     pub(crate) fn workspace_window(&mut self, ctx: &egui::Context) {
         let mut open = self.workspace.open;
-        let wid = egui::Id::unique("wp-float-workspace");
-        crate::widgets::close_on_outside(ctx, wid, &mut open);
-        egui::Window::new(tr("배치")).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 360.0)).open(&mut open).resizable(false).collapsible(false).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "workspace", tr("배치"), [460.0, 240.0]).open(&mut open).resizable(false).show(ctx, |ui| {
             crate::widgets::muted(ui, &tr("판을 접고 펴서 화면을 넓게 씁니다. 위 막대 양 끝의 단추와 같습니다."));
             ui.add_space(6.0);
             let mut side = self.pro_side_visible();

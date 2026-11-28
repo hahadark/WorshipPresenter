@@ -125,9 +125,7 @@ pub fn show(ctx: &egui::Context, core: &Shared) {
             Tool::WebEdit => "웹 편집기",
         };
         // 떠 있는 창 기본 자리 (widgets::float_pos) · 제목 번역
-        let wid = egui::Id::unique(("wp-float", title));
-        crate::widgets::close_on_outside(ctx, wid, &mut keep);
-        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 520.0)).open(&mut keep).default_width(520.0).collapsible(false).show(ctx, |ui| match t {
+        crate::widgets_win::window(ctx, title, wp_core::i18n::tr(title), [580.0, 540.0]).open(&mut keep).show(ctx, |ui| match t {
             Tool::Remote => remote(ui, core),
             Tool::Trigger => trigger(ui, core),
             Tool::Devices => devices(ui, core),

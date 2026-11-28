@@ -14,33 +14,236 @@ use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Margin, Rich
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-/// 기본 단추·입력칸 높이 (css `--ctl-h`)
+/// 기본 단추·입력칸 높이 (css `--ctl-h`) — 옛 테마(어둡게 · 밝게 · 고대비 · 따뜻하게 · 푸른 밤)
 pub const CTL_H: f32 = 34.0;
-/// 지금 테마의 기본 단추·입력칸 높이 (전문가용은 28 — 시안의 촘촘한 판)
+/// 지금 테마의 보통 조절 칸 높이 = [`ctl`]`(Ctl::Md)`
 pub fn ctl_h() -> f32 {
-    if pal().bevel { 28.0 } else { CTL_H }
+    ctl(Ctl::Md)
 }
-/// (나) 전문가용: 판 머리 띠 높이 (.ph 30px)
-pub const HEAD_H: f32 = 30.0;
-/// (나) 전문가용: 표 줄 높이 (.r>span 30px)
-pub const ROW_H: f32 = 30.0;
-/// (나) 전문가용: 위 컨트롤 막대 높이 (.cb 58px)
-pub const BAR_H: f32 = 58.0;
-/// (나) 전문가용: 인스펙터 구획 머리 높이 (.sh 26px)
-pub const SECTION_H: f32 = 26.0;
+
+// ================================================================ 디자인 체계 토큰 (2026-11-28 craft-main)
+// 규칙 · 견본 그림: docs/design-system.md · 견본 창: `wp-app --specimen` (specimen.rs)
+// 숫자를 화면 코드에 직접 쓰지 말고 여기 이름으로: 간격 `sp::X8` · 높이 `ctl(Ctl::Md)` · 글자 `Type::Body.font()` ·
+// 둥글기 `cr(Rad::Md)` · 선 `LINE` · 색 `pal().…` · 움직임 `anim_bool(…, T_FAST)`.
+
+/// 간격 눈금 — 8 아래는 2px, 그 위는 4px 격자. 여백 · 틈은 이 값만 쓴다.
+/// X2 붙은 것(아이콘과 글) · X4 한 묶음 안 · X6 줄 사이 · X8 조절 칸 사이 · X12 판 안쪽 여백 · X16 구획 사이 · X24 큰 묶음
+pub mod sp {
+    pub const X2: f32 = 2.0;
+    pub const X4: f32 = 4.0;
+    pub const X6: f32 = 6.0;
+    pub const X8: f32 = 8.0;
+    pub const X12: f32 = 12.0;
+    pub const X16: f32 = 16.0;
+    pub const X20: f32 = 20.0;
+    pub const X24: f32 = 24.0;
+    pub const X32: f32 = 32.0;
+    /// 판 안쪽 좌우 여백 (판 머리 글 · 표 첫 칸 · 인스펙터 줄이 같은 세로선에서 시작)
+    pub const PANE: f32 = 12.0;
+}
+
+/// 조절 칸 높이 단계
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ctl {
+    /// 작게 22: 판 머리 안 구획 단추 · 인스펙터의 촘촘한 칸 · 꼬리표
+    Sm,
+    /// 보통 26: 단추 · 입력칸 · 팝업 단추 (기본)
+    Md,
+    /// 크게 32: 컨트롤 막대의 이전 · 송출 · 다음
+    Lg,
+}
+
+/// 조절 칸 높이 (지금 테마). 옛 테마는 24 · 34 · 40
+pub fn ctl(k: Ctl) -> f32 {
+    match (k, pal().bevel) {
+        (Ctl::Sm, true) => 22.0,
+        (Ctl::Md, true) => 26.0,
+        (Ctl::Lg, true) => 32.0,
+        (Ctl::Sm, false) => 24.0,
+        (Ctl::Md, false) => CTL_H,
+        (Ctl::Lg, false) => 40.0,
+    }
+}
+
+/// 위 컨트롤 막대 높이 (12 + 32 + 12)
+pub const BAR_H: f32 = 56.0;
+/// 판 머리 띠 높이
+pub const HEAD_H: f32 = 28.0;
+/// 표 · 목록 줄 높이
+pub const ROW_H: f32 = 28.0;
+/// 접는 구획 머리 높이
+pub const SECTION_H: f32 = 24.0;
+/// 아래 상태 줄 높이
+pub const STATUS_H: f32 = 24.0;
+
+/// 선 굵기: 가는 선 (구분선 · 테두리)
+pub const LINE: f32 = 1.0;
+/// 선 굵기: 강조 (다음 뷰어 테두리 · 초점 고리 · 끼움 선)
+pub const LINE_EMPH: f32 = 2.0;
+/// 선 굵기: 송출 중 뷰어 테두리 (화면에서 가장 굵은 선은 이것 하나)
+pub const LINE_LIVE: f32 = 3.0;
+
+/// 글자 크기 단계 — 크기 다섯(10.5 · 11.5 · 12.5 · 14 · 20)에 굵기를 얹은 여덟 가지. 이 밖의 크기를 쓰지 않는다
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Type {
+    /// 10.5 Medium · 줄 14 — 아주 작은 이름표: 표시창 이름표 · 시간표 눈금 · 단축키 칩 · 슬라이드 번호
+    Micro,
+    /// 11.5 Regular · 줄 16 — 양식 이름표 · 부가 글 · 표의 둘째 글 · 상태 줄
+    Small,
+    /// 11.5 SemiBold · 줄 16 — 구획 머리 · 표 머리 · 뷰어 이름표('다음' · '송출 중')
+    SmallStrong,
+    /// 12.5 Regular · 줄 18 — 본문: 단추 · 표의 첫 글 · 입력칸 · 메뉴
+    Body,
+    /// 12.5 SemiBold · 줄 18 — 판 머리 제목 · 고른 줄 · 주된 단추 · 표시창의 순서 이름
+    BodyStrong,
+    /// 14 SemiBold · 줄 20 — 판 안의 제목 하나 (지금 고른 순서 이름) · 창 제목
+    Title,
+    /// 14 Regular · 줄 22 — 읽는 글: 가사 · 성경 본문 · 공지 내용 (본문 목록과 긴 입력칸)
+    Read,
+    /// 20 SemiBold · 줄 24 · 숫자 폭 고정 — 표시창의 시각
+    Display,
+}
+
+impl Type {
+    pub const ALL: [Type; 8] = [Type::Micro, Type::Small, Type::SmallStrong, Type::Body, Type::BodyStrong, Type::Title, Type::Read, Type::Display];
+    pub fn size(self) -> f32 {
+        match self {
+            Type::Micro => 10.5,
+            Type::Small | Type::SmallStrong => 11.5,
+            Type::Body | Type::BodyStrong => 12.5,
+            Type::Title | Type::Read => 14.0,
+            Type::Display => 20.0,
+        }
+    }
+    pub fn weight(self) -> Weight {
+        match self {
+            Type::Micro => Weight::Medium,
+            Type::Small | Type::Body | Type::Read => Weight::Regular,
+            Type::SmallStrong | Type::BodyStrong | Type::Title | Type::Display => Weight::SemiBold,
+        }
+    }
+    /// 줄 높이 (여러 줄 글의 줄 사이 · 한 줄 글이 차지하는 높이)
+    pub fn line(self) -> f32 {
+        match self {
+            Type::Micro => 14.0,
+            Type::Small | Type::SmallStrong => 16.0,
+            Type::Body | Type::BodyStrong => 18.0,
+            Type::Title => 20.0,
+            Type::Read => 22.0,
+            Type::Display => 24.0,
+        }
+    }
+    pub fn font(self) -> FontId {
+        font(self.size(), self.weight())
+    }
+    /// 견본 창 · 문서에 쓰는 이름
+    pub fn name(self) -> &'static str {
+        match self {
+            Type::Micro => "Micro",
+            Type::Small => "Small",
+            Type::SmallStrong => "SmallStrong",
+            Type::Body => "Body",
+            Type::BodyStrong => "BodyStrong",
+            Type::Title => "Title",
+            Type::Read => "Read",
+            Type::Display => "Display",
+        }
+    }
+}
+
+/// 글자 단계로 RichText (`ui.label(theme::ty("글", Type::Small, pal().muted))`)
+pub fn ty(text: impl Into<String>, t: Type, color: Color32) -> RichText {
+    RichText::new(text).font(t.font()).color(color)
+}
+
+// ---------------------------------------------------------------- 움직임
+
+/// 올림 · 눌림 (초)
+pub const T_FAST: f32 = 0.09;
+/// 고름 이동 · 접기/펴기 (초)
+pub const T_MED: f32 = 0.13;
+
+/// 설정 '움직임 줄이기' (`ui.reduceMotion`, 기본 꺼짐)
+static REDUCE_MOTION: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn reduce_motion() -> bool {
+    REDUCE_MOTION.load(Ordering::Relaxed)
+}
+
+/// 움직임 줄이기를 켜고 끈다 (egui 기본 움직임 — 접기 · 스크롤 · 팝업 — 도 같이). 같은 값이면 아무것도 안 한다
+pub fn set_reduce_motion(ctx: &egui::Context, on: bool) {
+    let want = if on { 0.0 } else { T_MED };
+    if REDUCE_MOTION.swap(on, Ordering::Relaxed) == on && (ctx.global_style().animation_time - want).abs() < 0.001 {
+        return;
+    }
+    ctx.all_styles_mut(|s| s.animation_time = want);
+}
+
+fn ease_out(t: f32) -> f32 {
+    let u = 1.0 - t.clamp(0.0, 1.0);
+    1.0 - u * u * u
+}
+
+/// 켜짐/꺼짐을 0~1 로 부드럽게 (올림 · 눌림 · 고름). 움직이는 동안에만 다시 그리기를 부른다 — 가만히 있으면 0번.
+/// 움직임 줄이기면 바로 0 또는 1
+pub fn anim_bool(ctx: &egui::Context, id: egui::Id, on: bool, secs: f32) -> f32 {
+    if reduce_motion() {
+        return if on { 1.0 } else { 0.0 };
+    }
+    ease_out(ctx.animate_bool_with_time(id, on, secs))
+}
+
+/// 값을 목표로 부드럽게 (구획 단추의 고른 칸 자리 · 밑줄 자리). 움직임 줄이기면 바로 목표
+pub fn anim_value(ctx: &egui::Context, id: egui::Id, target: f32, secs: f32) -> f32 {
+    if reduce_motion() {
+        return target;
+    }
+    ctx.animate_value_with_time(id, target, secs)
+}
+
+// ---------------------------------------------------------------- 상태별 색
+
+/// 고른 것 표시 선 (색 견본 · 정렬 칸 · 고른 칸 테두리). 전문가 테마는 밝은 무채색 — 노랑은 '다음' 에만. 옛 테마는 강조색
+pub fn pick() -> Color32 {
+    let p = pal();
+    if p.bevel { p.text } else { p.accent }
+}
+
+/// 눌림: 바탕을 조금 어둡게 (어두운 테마 · 밝은 테마 모두 '들어간' 쪽)
+pub fn press(c: Color32) -> Color32 {
+    if pal().dark { mix(c, 84.0, Color32::BLACK) } else { mix(c, 86.0, Color32::BLACK) }
+}
+
+/// 두 색 사이 (t = 0 → a, 1 → b). 투명도도 같이 섞는다
+pub fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let f = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    Color32::from_rgba_premultiplied(f(a.r(), b.r()), f(a.g(), b.g()), f(a.b(), b.b()), f(a.a(), b.a()))
+}
+
+/// 누를 수 있는 바탕의 상태 색: 보통 → 올림(hover 0~1) → 눌림(press 0~1)
+pub fn state_fill(base: Color32, hover: f32, pressed: f32) -> Color32 {
+    let c = lerp(base, lift(base), hover);
+    lerp(c, press(base), pressed)
+}
+
+/// 꺼진 것의 글 · 아이콘 색 (바탕색과 섞어 흐리게 — 투명도를 쓰지 않아 겹쳐도 얼룩이 없다)
+pub fn disabled(c: Color32, ground: Color32) -> Color32 {
+    mix(c, 38.0, ground)
+}
 
 /// 둥글기 단계. 숫자를 직접 쓰지 말고 [`cr`] · [`radius`] 로 (테마마다 값이 다르다: 전문가용은 더 각지게)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rad {
-    /// 1~2px: 작은 막대·손잡이
+    /// 2: 작은 막대 · 손잡이 · 진행 막대
     Xs,
-    /// 3~5px: 칩·작은 칸·썸네일
+    /// 조절 칸 안에 들여 그리는 것 (전문가 3): 구획 단추의 고른 칸 · 꼬리표 · 단축키 칩
     Sm,
-    /// 6px: 단추·입력칸 (css --radius)
+    /// 조절 칸 (전문가 4 한 가지): 단추 · 입력칸 · 팝업 단추 · 구획 단추 바탕
     Md,
-    /// 8px: 메뉴·큰 상자·검색칸
+    /// 떠 있는 것 (전문가 6): 메뉴 · 툴팁 · 펼침 목록
     Lg,
-    /// 10~12px: 창·카드
+    /// 창 (전문가 6)
     Xl,
 }
 
@@ -54,13 +257,15 @@ pub fn radius_for(id: ThemeId, k: Rad) -> u8 {
     let pro = id == ThemeId::Pro || id == ThemeId::ProLight;
     match (k, pro) {
         (Rad::Xs, _) => 2,
+        // 전문가 테마: 판은 0(둥글리지 않음), 조절 칸은 4 한 가지. Sm 3 은 조절 칸 안에 1px 들여 그리는 것(고른 칸 · 꼬리표)의 같은 중심 둥글기,
+        // 떠 있는 것(메뉴 · 툴팁 · 창)만 6
         (Rad::Sm, true) => 3,
         (Rad::Sm, false) => 4,
-        (Rad::Md, true) => 5,
+        (Rad::Md, true) => 4,
         (Rad::Md, false) => RADIUS,
         (Rad::Lg, true) => 6,
         (Rad::Lg, false) => 8,
-        (Rad::Xl, true) => 8,
+        (Rad::Xl, true) => 6,
         (Rad::Xl, false) => CARD_RADIUS,
     }
 }
@@ -188,6 +393,15 @@ pub struct Palette {
     pub send_fg: Color32,
     /// 단추를 테두리 대신 위·아래 선으로 도드라지게 (전문가용)
     pub bevel: bool,
+    // ---- 디자인 체계 색 역할 (2026-11-28)
+    /// 키보드 초점 고리 · 입력칸 초점 테두리 · 글 커서. 전문가 테마는 밝은 무채색(빨강 · 노랑과 겹치지 않게), 옛 테마는 강조색
+    pub focus: Color32,
+    /// 조절 칸(단추 · 팝업 단추 · 입력칸)의 가는 테두리
+    pub ctl_line: Color32,
+    /// 막대(컨트롤 막대) 위 단추 바탕 — 판 위 단추(raised)보다 한 단계 밝다
+    pub bar_raised: Color32,
+    /// 오류 · 주의 띠 바탕 (주황을 판 색에 섞은 것)
+    pub danger_bg: Color32,
 }
 
 /// `#rrggbb` / `#rgb` → 색 (상수 표만 쓰므로 틀리면 바로 드러나게 panic)
@@ -269,6 +483,10 @@ fn build(id: ThemeId, v: [&str; 24]) -> Palette {
         send_bg: c[21],
         send_fg: Color32::WHITE,
         bevel: false,
+        focus: c[18],
+        ctl_line: c[3],
+        bar_raised: c[2],
+        danger_bg: mix(c[17], 18.0, panel),
     }
 }
 
@@ -318,6 +536,12 @@ fn build_pro() -> Palette {
     p.send_bg = hex("#e8e8ea");
     p.send_fg = hex("#1a1a1a");
     p.bevel = true;
+    // 판 위 단추는 판에서 두 단계만 올라온 회색(물러나 있게), 막대 위 이전 · 다음 단추는 한 단계 더 밝게
+    p.raised = hex("#434346");
+    p.bar_raised = hex("#505054");
+    p.ctl_line = hex("#1b1b1d");
+    p.focus = hex("#f2f2f4");
+    p.danger_bg = hex("#4a3324");
     p
 }
 
@@ -367,6 +591,10 @@ fn build_pro_light() -> Palette {
     p.send_bg = hex("#1d1d1f");
     p.send_fg = hex("#f4f4f5");
     p.bevel = true;
+    p.bar_raised = hex("#f6f6f7");
+    p.ctl_line = hex("#b4b4ba");
+    p.focus = hex("#1d1d1f");
+    p.danger_bg = hex("#f6dcc6");
     p
 }
 
@@ -457,24 +685,26 @@ pub fn style(s: &mut egui::Style, p: &Palette) {
         open: wv(p.sunken, p.line2, p.text),
     };
     if p.bevel {
-        // 전문가용: egui 기본 단추·고르기 칸도 도드라진 회색 (.pop #48484b), 테두리 없이
+        // 전문가용: egui 기본 단추 · 고르기 칸 · 입력칸 (창 안의 ui.button · ComboBox · TextEdit · DragValue 가 모두 이 모양)
+        //  보통 = 도드라진 회색 + 어두운 가는 테두리 · 올림 = 밝게 · 눌림/초점 = 밝게 + 초점 테두리 · 펼침 = 입력칸 바탕
+        // (egui 는 '눌리는 중' 과 '키보드 초점' 을 같은 상태로 그린다 → 눌림을 어둡게 하면 초점이 꺼진 것처럼 보여 테두리로 나타낸다)
         let raised = p.raised;
-        v.widgets.inactive = WidgetVisuals { bg_fill: raised, weak_bg_fill: raised, bg_stroke: Stroke::new(1.0, p.edge), corner_radius: cr(Rad::Md), fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
         let hov = if p.dark { mix(raised, 80.0, Color32::WHITE) } else { mix(raised, 90.0, Color32::BLACK) };
-        v.widgets.hovered = WidgetVisuals { bg_fill: hov, weak_bg_fill: hov, bg_stroke: Stroke::new(1.0, p.edge), corner_radius: cr(Rad::Md), fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
-        v.widgets.active = v.widgets.hovered;
-        v.widgets.open = WidgetVisuals { bg_fill: p.field_or_sunken(), weak_bg_fill: p.field_or_sunken(), bg_stroke: Stroke::new(1.0, p.accent), corner_radius: cr(Rad::Md), fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
-        v.widgets.noninteractive.corner_radius = cr(Rad::Md);
+        let md = cr(Rad::Md);
+        v.widgets.inactive = WidgetVisuals { bg_fill: raised, weak_bg_fill: raised, bg_stroke: Stroke::new(LINE, p.ctl_line), corner_radius: md, fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
+        v.widgets.hovered = WidgetVisuals { bg_fill: hov, weak_bg_fill: hov, bg_stroke: Stroke::new(LINE, p.ctl_line), corner_radius: md, fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
+        v.widgets.active = WidgetVisuals { bg_fill: hov, weak_bg_fill: hov, bg_stroke: Stroke::new(LINE, p.focus), corner_radius: md, fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
+        v.widgets.open = WidgetVisuals { bg_fill: p.field_or_sunken(), weak_bg_fill: p.field_or_sunken(), bg_stroke: Stroke::new(LINE, p.focus), corner_radius: md, fg_stroke: Stroke::new(1.0, p.text), expansion: 0.0 };
+        v.widgets.noninteractive.corner_radius = md;
     }
     // 고른 것: button.on / .view-tabs .on (sel 바탕, 글자는 text). 포커스된 입력칸 테두리도 이 색을 쓴다(egui 제약)
     v.selection = Selection { bg_fill: p.sel, stroke: Stroke::new(1.0, p.text) };
     v.hyperlink_color = p.hl;
     if p.bevel {
-        // 전문가 테마 (어둡게 · 밝게): 입력칸 초점 테두리 · 고른 글 바탕 · 체크 · 라디오는 회색 한 벌, 링크도 회색 글
+        // 전문가 테마 (어둡게 · 밝게): 입력칸 초점 테두리 = 초점색, 고른 글 바탕 · 체크 · 라디오는 회색 한 벌, 링크도 회색 글
         // (노랑은 '다음', 빨강은 '송출 중' 에만 — egui 기본 푸른 선택색이 남지 않게)
-        v.selection = Selection { bg_fill: p.sel, stroke: Stroke::new(1.0, p.text2) };
+        v.selection = Selection { bg_fill: p.sel, stroke: Stroke::new(LINE, p.focus) };
         v.hyperlink_color = p.text2;
-        v.widgets.inactive.fg_stroke = Stroke::new(1.0, p.text);
     }
     v.faint_bg_color = p.panel2;
     v.extreme_bg_color = p.sunken; // 입력칸·스크롤 바탕
@@ -496,17 +726,33 @@ pub fn style(s: &mut egui::Style, p: &Palette) {
     v.striped = false;
     v.slider_trailing_fill = true;
     v.indent_has_left_vline = false;
-    v.text_cursor.stroke = Stroke::new(2.0, p.accent);
+    // 글 커서: 전문가 테마는 초점색(노랑은 '다음' 에만) · 옛 테마는 강조색
+    v.text_cursor.stroke = if p.bevel { Stroke::new(1.5, p.focus) } else { Stroke::new(2.0, p.accent) };
+    // 툴팁: 멈춰 있을 때 0.45초 뒤, 폭 320 (긴 설명이 한 줄로 화면을 가로지르지 않게)
+    s.interaction.tooltip_delay = 0.45;
+    s.interaction.show_tooltips_only_when_still = true;
 
-    // 글자 크기: html 14px 기준
-    s.text_styles = [
-        (TextStyle::Small, FontId::new(12.0, FontFamily::Proportional)),
-        (TextStyle::Body, FontId::new(if p.bevel { 12.5 } else { BASE }, FontFamily::Proportional)),
-        (TextStyle::Button, FontId::new(if p.bevel { 12.5 } else { BASE }, FontFamily::Proportional)),
-        (TextStyle::Heading, FontId::new(16.0, FontFamily::Name(BOLD.into()))),
-        (TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace)),
-    ]
-    .into();
+    // 글자 크기: 전문가 테마는 글자 단계(Type) 그대로 · 옛 테마는 html 14px 기준
+    s.text_styles = if p.bevel {
+        [
+            (TextStyle::Small, Type::Small.font()),
+            (TextStyle::Body, Type::Body.font()),
+            (TextStyle::Button, Type::Body.font()),
+            (TextStyle::Heading, Type::Title.font()),
+            (TextStyle::Monospace, FontId::new(12.0, FontFamily::Monospace)),
+        ]
+        .into()
+    } else {
+        [
+            (TextStyle::Small, FontId::new(12.0, FontFamily::Proportional)),
+            (TextStyle::Body, FontId::new(BASE, FontFamily::Proportional)),
+            (TextStyle::Button, FontId::new(BASE, FontFamily::Proportional)),
+            (TextStyle::Heading, FontId::new(16.0, FontFamily::Name(BOLD.into()))),
+            (TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace)),
+        ]
+        .into()
+    };
+    s.animation_time = if reduce_motion() { 0.0 } else { T_MED };
 
     let sp = &mut s.spacing;
     sp.item_spacing = Vec2::new(8.0, 6.0);
@@ -519,11 +765,19 @@ pub fn style(s: &mut egui::Style, p: &Palette) {
     sp.icon_spacing = 6.0;
     sp.combo_height = 320.0;
     if p.bevel {
-        // 전문가용: 촘촘한 판 (.fld · .pop 높이 22, 줄 사이 6)
-        sp.item_spacing = Vec2::new(6.0, 5.0);
-        sp.button_padding = Vec2::new(8.0, 3.0);
-        sp.interact_size = Vec2::new(36.0, 22.0);
+        // 전문가용: 조절 칸 높이 보통(26) · 줄 사이 6 · 칸 사이 8. 인스펙터처럼 촘촘한 곳은 그 자리에서 Ctl::Sm 으로 낮춘다 (widgets::dense)
+        let h = 26.0; // = ctl(Ctl::Md) — pal() 이 아직 이 테마가 아닐 수 있어 숫자로 (아래 시험 tokens_agree 가 지킨다)
+        sp.item_spacing = Vec2::new(self::sp::X8, self::sp::X6);
+        sp.button_padding = Vec2::new(self::sp::X8, 3.0);
+        sp.interact_size = Vec2::new(36.0, h);
         sp.window_margin = Margin::same(12);
+        sp.menu_margin = Margin::same(4);
+        sp.icon_width = 14.0;
+        sp.icon_width_inner = 8.0;
+        sp.icon_spacing = self::sp::X6;
+        sp.slider_rail_height = 4.0;
+        sp.tooltip_width = 320.0;
+        sp.indent = self::sp::X16;
     }
     // 얇은 스크롤바: 폭 10px, 손잡이는 3px 안쪽 여백(테두리 투명) → 보이는 막대 4px, 바탕 투명
     let sc = &mut sp.scroll;
@@ -745,5 +999,27 @@ mod tests {
         // 옛 밝게 · 고대비는 그대로
         assert!(!palette_of(ThemeId::Light).bevel && !palette_of(ThemeId::Contrast).bevel);
         assert_eq!(radius_for(id, Rad::Md), radius_for(ThemeId::Pro, Rad::Md));
+    }
+
+    #[test]
+    fn tokens_agree() {
+        // style() 가 숫자로 쓴 전문가 조절 칸 높이(26)가 ctl(Ctl::Md) 와 같아야 한다
+        let mut st = egui::Style::default();
+        let p = palette_of(ThemeId::Pro);
+        style(&mut st, &p);
+        assert_eq!(st.spacing.interact_size.y, 26.0);
+        // 글자 단계: 크기 다섯 가지, 줄 높이는 크기보다 크다
+        let mut sizes: Vec<u32> = Type::ALL.iter().map(|t| (t.size() * 10.0) as u32).collect();
+        sizes.sort();
+        sizes.dedup();
+        assert_eq!(sizes.len(), 5);
+        for t in Type::ALL {
+            assert!(t.line() > t.size(), "{}", t.name());
+        }
+        // 4px 격자 (2 · 6 은 촘촘한 보정만)
+        for v in [sp::X4, sp::X8, sp::X12, sp::X16, sp::X20, sp::X24, sp::X32, sp::PANE] {
+            assert_eq!(v % 4.0, 0.0);
+        }
+        assert_eq!(radius_for(ThemeId::Pro, Rad::Md), 4);
     }
 }

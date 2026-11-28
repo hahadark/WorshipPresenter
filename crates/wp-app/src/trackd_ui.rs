@@ -166,9 +166,8 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
             Win::Update => "새 버전",
         };
         // 떠 있는 창 기본 자리: 큐시트·메뉴줄을 가리지 않게 (widgets::float_pos)
-        let wid = egui::Id::unique(("wp-float", title));
-        crate::widgets::close_on_outside(ctx, wid, &mut keep);
-        egui::Window::new(wp_core::i18n::tr(title)).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).default_height(match w { Win::Bulletin => (ctx.content_rect().height() - 150.0).clamp(300.0, 760.0), Win::Output => (ctx.content_rect().height() - 160.0).clamp(300.0, 760.0), _ => 0.0 }).min_height(if w == Win::Output { 280.0 } else { 0.0 }).max_height(if w == Win::Output { (ctx.content_rect().height() - 120.0).max(300.0) } else { f32::INFINITY }).collapsible(false).vscroll(matches!(w, Win::Bulletin | Win::Output)).show(ctx, |ui| match w {
+        let size = match w { Win::Bulletin | Win::Output => [620.0, 720.0], Win::Update => [600.0, 620.0], Win::Obs => [560.0, 480.0] };
+        crate::widgets_win::window(ctx, title, wp_core::i18n::tr(title), size).open(&mut keep).show(ctx, |ui| match w {
             Win::Bulletin => bulletin_ui(ui, &core),
             Win::Output => output_ui(ui, app),
             Win::Obs => obs_ui(ui, &core),
@@ -592,9 +591,14 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
         });
     });
     form_row(ui, &wp_core::i18n::tr("모니터"), |ui| {
-        for m in app.out.monitors.clone() {
-            let t = format!("{}  {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s("  (주 모니터 · 조작 화면)") } else { "" });
-            if ui.radio(app.monitor == m.index, t).clicked() {
+        let all = app.out.monitors.clone();
+        if all.is_empty() {
+            crate::widgets_win::hint(ui, &wp_core::i18n::tr("모니터를 찾지 못했습니다. 모니터를 연결한 뒤 '모니터 다시 찾기' 를 누르세요."));
+        }
+        for m in all.clone() {
+            // '모니터 2 · 오른쪽  3840×2160' — 장치 이름(DISPLAY2)은 마우스를 올리면
+            let t = format!("{}  {}×{}", m.label(&all), m.size.0, m.size.1);
+            if ui.radio(app.monitor == m.index, t).on_hover_text(&m.name).clicked() {
                 app.monitor = m.index;
                 core.lock().settings.update(|d| d["rsOutputMonitor"] = json!(m.index));
                 if app.out.running() {
@@ -603,7 +607,7 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
                 }
             }
         }
-        if ui.small_button(wp_core::i18n::tr("모니터 다시 찾기")).clicked() {
+        if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("모니터 다시 찾기")).icon("refresh-cw").size(crate::widgets::Size::Sm).tooltip(wp_core::i18n::tr("모니터를 새로 연결했거나 뺐으면 누르세요"))).clicked() {
             app.out.refresh_monitors();
         }
     });
@@ -800,163 +804,90 @@ fn ime_on_focus(app: &App, ctx: &egui::Context) {
     }
 }
 pub(crate) fn update_ui(ui: &mut egui::Ui, core: &Shared) {
-    let st = wp_core::updates::status(core.lock().settings.get());
-    ui.label(wp_core::i18n::tr_args(
-        "지금 버전: {1}",
-        &[&(st["current"].as_str().unwrap_or(""))],
-    ));
-    if st["releaseHold"] == true {
-        ui.colored_label(Color32::YELLOW, st["holdReason"].as_str().unwrap_or(""));
+    use crate::widgets_win as win;
+    use wp_core::i18n::{tr, tr_args};
+    let mut st = wp_core::updates::status(core.lock().settings.get());
+    // 캡처 전용 상태. 네트워크 · 다운로드 · 설치를 실행하지 않는다.
+    if win::open_x("update-new") || win::open_x("update-dl") || win::open_x("update-err") {
+        st["state"] = json!(if win::open_x("update-dl") { "downloading" } else if win::open_x("update-err") { "error" } else { "available" });
+        st["version"] = json!("2.1.2");
+        st["notes"] = json!("# 새 소식\n## 더 편한 예배 준비\n- 창 크기와 단추 배치를 다듬었습니다.\n- 작은 화면에서도 설정을 고칠 수 있습니다.\n\n## 안정성\n- 큐시트 관리 목록의 줄 겹침을 고쳤습니다.");
+        st["percent"] = json!(42);
+        st["received"] = json!(42000000);
+        st["total"] = json!(100000000);
+        st["error"] = json!(tr("새 버전 정보를 가져오지 못했습니다."));
+        st["canDownload"] = json!(false);
+        st["canInstall"] = json!(false);
     }
-    if let Some(e) = st["downloadError"].as_str() {
-        ui.colored_label(Color32::YELLOW, e);
-    }
-    match st["state"].as_str().unwrap_or("idle") {
-        "checking" => {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label(wp_core::i18n::tr("확인하는 중…"));
-            });
-        }
+    let state = st["state"].as_str().unwrap_or("idle");
+    let busy = matches!(state, "checking" | "downloading" | "verifying" | "installing");
+    let portable = st["portable"] == true;
+    win::value_row(ui, 80.0, &tr("지금 버전"), st["current"].as_str().unwrap_or(""));
+    if st["releaseHold"] == true { win::status(ui, win::Tone::Warn, st["holdReason"].as_str().unwrap_or("")); }
+    if let Some(e) = st["downloadError"].as_str().filter(|s| !s.is_empty()) { win::error(ui, e, &tr("인터넷 연결을 확인하고 다시 시도하세요.")); }
+    match state {
         "available" | "ready" | "cancelled" => {
-            ui.label(
-                RichText::new(wp_core::i18n::tr_args(
-                    "새 버전 {1} 이 나왔습니다{2}",
-                    &[
-                        &(st["version"].as_str().unwrap_or("")),
-                        &(if st["skipped"] == true {
-                            wp_core::i18n::tr_s(" (건너뛰기로 함)")
-                        } else {
-                            ""
-                        }),
-                    ],
-                ))
-                .strong()
-                .color(crate::theme::pal().hl),
-            );
-            egui::ScrollArea::vertical()
-                .max_height(260.0)
-                .show(ui, |ui| {
-                    ui.label(plain_notes(st["notes"].as_str().unwrap_or("")));
-                });
-            ui.horizontal(|ui| {
-                if let Some(u) = st["notesUrl"]
-                    .as_str()
-                    .filter(|u| u.starts_with("https://github.com/"))
-                {
-                    if ui.button(wp_core::i18n::tr("릴리스 설명 열기")).clicked() {
-                        let _ = wp_core::trackd::open_link(u);
-                    }
+            ui.add_space(6.0);
+            ui.label(crate::theme::rich(tr_args("새 버전 {1}", &[&st["version"].as_str().unwrap_or("")]), 18.0, crate::theme::Weight::SemiBold, crate::theme::pal().text));
+            if st["skipped"] == true { win::hint(ui, &tr("이 버전은 건너뛰기로 했습니다.")); }
+            win::section(ui, &tr("새 소식"));
+            egui::ScrollArea::vertical().id_salt("update-notes").max_height(230.0).show(ui, |ui| {
+                ui.add(egui::Label::new(plain_notes(st["notes"].as_str().unwrap_or(""))).wrap());
+            });
+            ui.horizontal_wrapped(|ui| {
+                if let Some(u) = st["notesUrl"].as_str().filter(|u| u.starts_with("https://github.com/")) {
+                    if ui.add(win::small(tr("릴리스 설명 열기"))).clicked() { let _ = wp_core::trackd::open_link(u); }
                 }
                 if st["skipped"] == true {
-                    if ui.button(wp_core::i18n::tr("건너뛰기 취소")).clicked() {
-                        wp_core::updates::unskip(core);
-                    }
-                } else if ui.button(wp_core::i18n::tr("이 버전 건너뛰기")).clicked() {
-                    wp_core::updates::skip(core);
-                }
+                    if ui.add(win::small(tr("건너뛰기 취소"))).clicked() { wp_core::updates::unskip(core); }
+                } else if ui.add(win::small(tr("이 버전 건너뛰기"))).clicked() { wp_core::updates::skip(core); }
             });
+            if state == "ready" { win::status(ui, win::Tone::Ok, &tr("검증을 마쳤습니다. 설치하면 프로그램이 종료됩니다.")); }
+            if state == "cancelled" { win::hint(ui, &tr("다운로드를 취소했습니다.")); }
         }
+        "checking" => win::busy(ui, &tr("새 버전을 확인하는 중…")),
         "downloading" | "verifying" => {
-            ui.label(if st["state"] == "verifying" {
-                wp_core::i18n::tr("SHA-256 검증 중…")
-            } else {
-                wp_core::i18n::tr("다운로드 중…")
-            });
-            ui.add(
-                egui::ProgressBar::new(st["percent"].as_f64().unwrap_or(0.0) as f32 / 100.0)
-                    .show_percentage(),
-            );
-            ui.label(wp_core::i18n::tr_args("{1} / {2} 바이트", &[&st["received"], &st["total"]]));
-            if ui.button(wp_core::i18n::tr("다운로드 취소")).clicked() {
-                wp_core::updates::cancel();
-            }
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(100));
+            win::busy(ui, &tr(if state == "verifying" { "SHA-256 검증 중…" } else { "다운로드 중…" }));
+            ui.add(egui::ProgressBar::new(st["percent"].as_f64().unwrap_or(0.0) as f32 / 100.0).show_percentage());
+            let mb = |v: &Value| format!("{:.1}", v.as_f64().unwrap_or(0.0) / 1_048_576.0);
+            win::hint(ui, &tr_args("{1} / {2} MB", &[&mb(&st["received"]), &mb(&st["total"])]));
+            if ui.add(win::small(tr("다운로드 취소"))).clicked() { wp_core::updates::cancel(); }
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
-        "installing" => {
-            ui.label(wp_core::i18n::tr("설치 프로그램에 명시적 설치 요청을 전달했습니다."));
-        }
-        "latest" => {
-            ui.label(
-                RichText::new(wp_core::i18n::tr("지금이 최신 버전입니다."))
-                    .color(crate::theme::pal().ok_text),
-            );
-        }
-        "error" => {
-            ui.label(
-                RichText::new(st["error"].as_str().unwrap_or(""))
-                    .color(crate::theme::pal().danger_text),
-            );
-        }
-        _ => {}
+        "installing" => win::busy(ui, &tr("설치 프로그램을 여는 중…")),
+        "latest" => win::status(ui, win::Tone::Ok, &tr("지금이 최신 버전입니다.")),
+        "error" => win::error(ui, st["error"].as_str().unwrap_or(""), &tr("인터넷 연결을 확인한 뒤 '지금 확인'을 누르세요.")),
+        _ => { win::lead(ui, &tr("새 버전을 확인하고 변경 내용을 살펴봅니다.")); }
     }
-    ui.separator();
-    if st["state"] == "ready" { ui.label(wp_core::i18n::tr("SHA-256 검증 완료. 설치 준비됨. 자동 설치하지 않습니다.")); }
-    if st["state"] == "cancelled" { ui.label(wp_core::i18n::tr("다운로드를 취소했습니다.")); }
-    // [갈래 D] 포터블·개발 실행: 받기·설치 단추가 왜 꺼져 있는지 보이게 (전에는 '받을 새 버전이 없거나…' 라고만 떠서 이유를 알 수 없었다)
-    let portable = st["portable"] == true;
-    if portable {
-        ui.label(RichText::new(wp_core::i18n::tr(wp_core::updates::PORTABLE_NOTE)).color(crate::theme::pal().warn));
-    }
-    let why_off = if portable { wp_core::updates::PORTABLE_NOTE } else { "받을 새 버전이 없거나 이미 받는 중입니다" };
-    ui.horizontal(|ui| {
-        if ui.add_enabled(st["canDownload"] == true, egui::Button::new(wp_core::i18n::tr("검증하여 다운로드"))).on_disabled_hover_text(wp_core::i18n::tr(why_off)).clicked() {
-            if let Err(e) = wp_core::updates::download(core) { core.lock().notify(e, "warn"); }
-        }
-        if ui.add_enabled(st["canInstall"] == true, egui::Button::new(wp_core::i18n::tr("지금 설치 요청 (프로그램 종료)"))).on_disabled_hover_text(wp_core::i18n::tr("먼저 새 버전을 받아 검증을 마쳐야 합니다")).clicked() {
-            match wp_core::updates::install_now(core) {
-                Ok(()) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
-                Err(e) => core.lock().notify(e, "warn"),
+    if portable { win::hint(ui, &tr(wp_core::updates::PORTABLE_NOTE)); }
+    win::footer(ui, |ui| {
+        if st["canInstall"] == true {
+            if crate::widgets::confirm_delete(ui, egui::Id::new("update-install"), &tr("지금 설치 요청 (프로그램 종료)"), &tr("새 버전을 설치할까요? 프로그램이 종료됩니다.")) {
+                match wp_core::updates::install_now(core) {
+                    Ok(()) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
+                    Err(e) => core.lock().notify(e, "warn"),
+                }
             }
+        } else if matches!(state, "available" | "cancelled") {
+            if ui.add(win::primary(tr("검증하여 다운로드")).enabled(st["canDownload"] == true).tooltip(tr(if portable { wp_core::updates::PORTABLE_NOTE } else { "다운로드 뒤 SHA-256 으로 검증합니다" }))).clicked() {
+                if let Err(e) = wp_core::updates::download(core) { core.lock().notify(e, "warn"); }
+            }
+            if ui.add(win::secondary(tr("지금 확인")).enabled(!busy)).clicked() { wp_core::updates::check(core, true); }
+        } else if ui.add(win::primary(tr("지금 확인")).enabled(!busy)).clicked() || (!busy && win::enter(ui)) {
+            wp_core::updates::check(core, true);
         }
     });
-    let mut repo = st["repo"].as_str().unwrap_or("").to_string();
-    ui.horizontal(|ui| {
-        ui.label(wp_core::i18n::tr("확인할 저장소"));
-        if ui
-            .add(
-                egui::TextEdit::singleline(&mut repo)
-                    .hint_text(wp_core::i18n::tr(
-                        "비워 두면 hahadark/WorshipPresenter",
-                    ))
-                    .desired_width(320.0),
-            )
-            .changed()
-        {
-            core.lock()
-                .settings
-                .update(|d| d["updateRepo"] = json!(repo));
-        }
+    ui.add_space(6.0);
+    egui::CollapsingHeader::new(tr("업데이트 설정")).id_salt("update-settings").show(ui, |ui| {
+        let mut repo = st["repo"].as_str().unwrap_or("").to_string();
+        win::field(ui, &tr("확인할 저장소"), |ui| {
+            if ui.add(egui::TextEdit::singleline(&mut repo).hint_text("hahadark/WorshipPresenter").desired_width(ui.available_width())).changed() { core.lock().settings.update(|d| d["updateRepo"] = json!(repo)); }
+        });
+        let mut auto = core.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true);
+        if ui.checkbox(&mut auto, tr("켤 때 새 버전 확인")).changed() { core.lock().settings.update(|d| d["autoUpdate"] = json!(auto)); }
+        let mut tel = core.lock().settings.get()["telemetry"].as_bool().unwrap_or(true);
+        if ui.checkbox(&mut tel, tr("익명 사용 통계 보내기 (하루 한 번: 무작위 설치 번호 · 버전 · 언어 · OS)")).changed() { core.lock().settings.update(|d| d["telemetry"] = json!(tel)); }
     });
-    let mut auto = core.lock().settings.get()["autoUpdate"]
-        .as_bool()
-        .unwrap_or(true);
-    if ui
-        .checkbox(&mut auto, wp_core::i18n::tr("켤 때 새 버전 확인"))
-        .changed()
-    {
-        core.lock()
-            .settings
-            .update(|d| d["autoUpdate"] = json!(auto));
-    }
-    let mut tel = core.lock().settings.get()["telemetry"]
-        .as_bool()
-        .unwrap_or(true);
-    if ui
-        .checkbox(
-            &mut tel,
-            wp_core::i18n::tr(
-                "익명 사용 통계 보내기 (하루 한 번: 무작위 설치 번호 · 버전 · 언어 · OS)",
-            ),
-        )
-        .changed()
-    {
-        core.lock().settings.update(|d| d["telemetry"] = json!(tel));
-    }
-    if ui.button(wp_core::i18n::tr("지금 확인")).clicked() {
-        wp_core::updates::check(core, true);
-    }
 }
 
 /// [갈래 D] 첫 화면: 1.x(Electron 판) 자료가 이 판 자료보다 최근에 바뀌었으면 다시 가져올지 묻는다.

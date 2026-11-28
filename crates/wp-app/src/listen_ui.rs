@@ -449,7 +449,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     let mut do_start = false;
     let mut do_stop = false;
     let mut put_next: Option<String> = None;
-    crate::widgets::float_window(ctx, "listen", tr("음성 인식: 구절 따라가기 · 실시간 자막"), [580.0, 700.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "listen", tr("음성 인식: 구절 따라가기 · 실시간 자막"), [580.0, 700.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
         let p = crate::theme::pal();
         ui.label(RichText::new(tr("마이크 소리를 이 PC 안에서 글로 바꾸고, '요한복음 15장 5절' 같은 말을 찾아 목록에 보여 줍니다. 음성은 PC 밖으로 나가지 않습니다. 찾은 구절은 '다음' 칸까지만 올리고 송출은 하지 않습니다.")).small().color(p.muted));
         ui.add_space(4.0);

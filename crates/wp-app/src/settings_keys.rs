@@ -199,7 +199,7 @@ impl SettingsUi {
                         bad = true;
                     }
                 }
-                ui.label(RichText::new(if def.is_empty() { "—".to_string() } else { def.clone() }).color(p.muted));
+                ui.label(RichText::new(if def.is_empty() { "—".to_string() } else { crate::parity_ui::key_name(&def) }).color(p.muted)); // 보일 이름 (Escape → Esc · ArrowDown → ↓)
                 ui.horizontal(|ui| {
                     if bad {
                         let e = ui.label(RichText::new(tr_args("'{1}' 은 알 수 없는 키라 저장하지 않았습니다. 예: F6, Ctrl+K, PageDown", &[&draft.trim()])).small().color(p.danger_text));

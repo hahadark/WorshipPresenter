@@ -79,7 +79,7 @@ pub fn show(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     if std::mem::take(&mut s.auto) {
         rule(app, s);
     }
-    crate::widgets::float_window(ctx, "say", tr("말로 시키기"), [600.0, 460.0]).open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "say", tr("말로 시키기"), [600.0, 460.0]).open(&mut open).show(ctx, |ui| {
         let p = crate::theme::pal();
         ui.label(RichText::new(tr("하고 싶은 일을 말로 쓰면 프로그램의 명령으로 바꿔 보여 줍니다. [실행] 을 눌러야 합니다. 송출 · 삭제 · 화면 지우기는 말로 시킬 수 없습니다. 찾기칸에서 '>' 로 시작해도 됩니다.")).small().color(p.muted));
         let r = ui.add(egui::TextEdit::singleline(&mut s.text).desired_width(f32::INFINITY).hint_text(tr("예) 지난주 큐시트 복사해서 설교 제목을 '은혜' 로, 본문은 롬 8:28 로 바꿔")));

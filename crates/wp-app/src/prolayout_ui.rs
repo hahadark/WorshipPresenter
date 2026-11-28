@@ -17,7 +17,7 @@ use crate::theme::{self, Weight, pal};
 use crate::widgets;
 use eframe::egui::{self, Align, Id, Layout, Margin, Pos2, Rect, Sense, Stroke, UiBuilder, Vec2};
 use serde_json::json;
-use wp_core::i18n::tr;
+use wp_core::i18n::{tr, tr_args};
 
 /// 지난 프레임의 창 폭 (접기 기본값을 정할 때)
 pub(crate) static LAST_W: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -240,12 +240,19 @@ impl App {
                     let tpl = s.templates.iter().find(|x| x.0 == s.active_main).map(|x| x.1.clone()).unwrap_or_default();
                     (match idx { Some(i) => format!("{} {}", i + 1, t), None => t.to_string() }, format!("{} · {} '{}'", tr(crate::center_ui::type_name(ty)), tr("템플릿"), tpl))
                 }
-                None => (tr("고른 순서 없음"), tr("큐시트 순서나 본문을 누르면 여기에 나옵니다")),
+                // 고른 순서가 없으면 아래 칸은 지금 템플릿 전체를 고친다 — 그것을 머리에 밝힌다
+                None => {
+                    let tpl = s.templates.iter().find(|x| x.0 == s.active_main).map(|x| x.1.clone()).unwrap_or_default();
+                    (tr_args("템플릿 '{1}'", &[&tpl]), tr("고른 순서가 없어 템플릿 전체를 고칩니다 (이 템플릿을 쓰는 모든 순서)"))
+                }
             };
             egui::Frame::new().inner_margin(Margin { left: 12, right: 12, top: 9, bottom: 8 }).show(ui, |ui| {
-                ui.add(egui::Label::new(theme::rich(title, 14.0, Weight::Bold, p.text)).truncate().selectable(false));
+                ui.add(egui::Label::new(theme::ty(title, theme::Type::Title, p.text)).truncate().selectable(false));
                 ui.add_space(2.0);
-                ui.add(egui::Label::new(theme::rich(sub, 11.5, Weight::Regular, p.muted)).truncate().selectable(false));
+                let r = ui.add(egui::Label::new(theme::ty(sub.clone(), theme::Type::Small, p.muted)).truncate().selectable(false));
+                if r.hovered() {
+                    r.on_hover_text(sub);
+                }
             });
             ui.painter().hline(ui.max_rect().x_range(), ui.cursor().top(), Stroke::new(1.0, p.line));
         }
@@ -253,7 +260,10 @@ impl App {
         match tab {
             InsTab::Text => self.quick_panel(ui, s, acts),
             InsTab::Stage => {
-                egui::ScrollArea::vertical().id_salt("pro-stage").auto_shrink([false, false]).show(ui, |ui| self.workspace_stage(ui));
+                egui::ScrollArea::vertical().id_salt("pro-stage").auto_shrink([false, false]).show(ui, |ui| {
+                    // 판 안쪽 여백 12 (글자 탭과 같은 세로선)
+                    egui::Frame::new().inner_margin(Margin { left: 12, right: 12, top: 8, bottom: 12 }).show(ui, |ui| self.workspace_stage(ui));
+                });
             }
             InsTab::Sources => {
                 egui::ScrollArea::vertical().id_salt("pro-sources").auto_shrink([false, false]).show(ui, |ui| self.sources_panel(ui));
@@ -299,6 +309,7 @@ impl App {
         let vh = if big { 0.0 } else { ((full.height() - 6.0) * ratio).clamp(180.0_f32.min(full.height() * 0.5), (full.height() - 160.0).max(180.0)) };
         if vh > 0.0 {
             let top = Rect::from_min_size(full.min, Vec2::new(full.width(), vh));
+            crate::widgets_win::note_viewers(ui.ctx(), top); // 진행용 창이 이 자리를 피해 뜬다 (craft-windows)
             ui.scope_builder(UiBuilder::new().max_rect(top).id_salt("pro-viewers"), |ui| {
                 ui.set_clip_rect(top.intersect(ui.clip_rect()));
                 let mut pick = None;
@@ -330,7 +341,7 @@ impl App {
             // 끌어서 높이 바꾸기 (6px)
             let div = Rect::from_min_size(Pos2::new(full.left(), full.top() + vh), Vec2::new(full.width(), 6.0));
             let resp = ui.interact(div, Id::new("pro-center-split"), Sense::drag());
-            ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.accent, 0.45) } else { p.edge });
+            ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.text2, 0.45) } else { p.edge });
             if resp.hovered() || resp.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
             }
@@ -375,6 +386,7 @@ impl App {
         let direct = self.core.lock().direct_mode();
         let vw = live_only_width(full.width(), saved);
         let right = Rect::from_min_max(Pos2::new(full.right() - vw, full.top()), full.max);
+        crate::widgets_win::note_viewers(ui.ctx(), right);
         let div = Rect::from_min_max(Pos2::new(right.left() - 6.0, full.top()), Pos2::new(right.left(), full.bottom()));
         let left = Rect::from_min_max(full.min, Pos2::new(div.left(), full.bottom()));
         // ---- 오른쪽 칸: 머리 '보기' [둘 다 | 송출 중만] · 송출 뷰어 · (미리보기 모드) 노랑 '다음' 줄
@@ -402,7 +414,7 @@ impl App {
         // ---- 끌어서 폭 바꾸기 (6px 세로 띠, 설정 rsProLayout.liveW)
         let resp = ui.interact(div, Id::new("pro-live-split"), Sense::drag());
         widgets::mark("pro-live-split", div);
-        ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.accent, 0.45) } else { p.edge });
+        ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.text2, 0.45) } else { p.edge });
         if resp.hovered() || resp.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }

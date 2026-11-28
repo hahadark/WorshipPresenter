@@ -334,6 +334,7 @@ pub fn paint_scene(ui: &egui::Ui, c: &Ctx, rect: Rect, scene: &Value, slide: Opt
             continue;
         }
         let (bx, inner, v) = scene_box(canvas, l, t);
+        let radius = (l["radius"].as_f64().unwrap_or(0.0) as f32 * sc).min(bx.width().min(bx.height()) / 2.0);
         let mut child = egui::Ui::new(ui.ctx().clone(), ui.id().with(("wp-scene-layer", l["id"].as_str().unwrap_or(""))), egui::UiBuilder::new().max_rect(inner).layer_id(ui.layer_id()));
         child.set_clip_rect(bx.intersect(canvas).intersect(ui.clip_rect()));
         let op = l["opacity"].as_f64().unwrap_or(1.0).clamp(0.0, 1.0) as f32;
@@ -347,7 +348,7 @@ pub fn paint_scene(ui: &egui::Ui, c: &Ctx, rect: Rect, scene: &Value, slide: Opt
             s if s.starts_with("camera:") || s.starts_with("src-") => {
                 // 자리 표시: 어두운 상자 + 이름 (실제 영상 · 웹 페이지는 출력 화면에서만)
                 let p = child.painter_at(bx);
-                p.rect_filled(bx, 0.0, Color32::from_rgb(28, 30, 36));
+                p.rect_filled(bx, radius, Color32::from_rgb(28, 30, 36));
                 let fs = (bx.height() * 0.09).clamp(9.0, 22.0);
                 let name = name_of(s);
                 p.text(bx.center(), Align2::CENTER_CENTER, name, FontId::proportional(fs), Color32::from_gray(170));
@@ -357,9 +358,8 @@ pub fn paint_scene(ui: &egui::Ui, c: &Ctx, rect: Rect, scene: &Value, slide: Opt
         let bw = l["border"]["width"].as_f64().unwrap_or(0.0) as f32;
         if bw > 0.0 {
             let col = l["border"]["color"].as_str().and_then(parse_color).unwrap_or(Color32::WHITE);
-            let r = (l["radius"].as_f64().unwrap_or(0.0) as f32 * sc).min(bx.width().min(bx.height()) / 2.0);
             let w = (bw * sc).max(1.0);
-            child.painter_at(bx).rect_stroke(bx.shrink(w / 2.0), r, Stroke::new(w, col.gamma_multiply(op)), egui::StrokeKind::Middle);
+            child.painter_at(bx).rect_stroke(bx.shrink(w / 2.0), radius, Stroke::new(w, col.gamma_multiply(op)), egui::StrokeKind::Middle);
         }
     }
 }

@@ -169,10 +169,10 @@ fn clear_items(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
         let c = app.core.lock();
         (c.layers.hide_bg, !c.b.saved_overlays.is_empty(), c.layers.media.clone(), c.layers.logo)
     };
-    if item(ui, "clear", None, &tr("글자 숨김·복원"), "F10", true, false) {
+    if item(ui, "clear", None, &tr(if app.core.lock().pres.live.as_ref().is_some_and(|l| !l.visible) { "글자 보이기" } else { "글자 숨김" }), "F10", true, false) {
         acts.push(Act::ToggleClear);
     }
-    if item(ui, "bg", None, &tr(if hide_bg { "배경 다시 켜기" } else { "배경 지우기" }), "", true, false) {
+    if item(ui, "bg", None, &tr(if hide_bg { "배경 보이기" } else { "배경 숨김" }), "", true, false) {
         acts.push(Act::ToggleBg);
     }
     if item(ui, "ovoff", None, &tr(if ov_off { "오버레이 다시 켜기" } else { "오버레이 끄기" }), "", true, false) {
@@ -184,7 +184,7 @@ fn clear_items(app: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     if item(ui, "logo", None, &tr(if logo { "로고 화면 끄기" } else { "로고 화면" }), "", true, false) {
         acts.push(Act::ToggleLogo);
     }
-    if item(ui, "all", None, &tr("모두 지우기"), "", true, true) {
+    if item(ui, "all", None, &tr("모두 숨김"), "", true, true) {
         acts.push(Act::ClearAll);
         music_fade(2000);
     }

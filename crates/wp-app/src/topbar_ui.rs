@@ -73,7 +73,7 @@ impl App {
         let rad = if small { crate::theme::cr(crate::theme::Rad::Md) } else { crate::theme::cr(crate::theme::Rad::Lg) };
         if focused {
             // box-shadow: 0 0 0 3px accent 25%
-            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(3.0, alpha(p.accent, 0.25)), StrokeKind::Outside));
+            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(3.0, alpha(p.focus, 0.18)), StrokeKind::Outside));
         }
         shapes.push(Shape::rect_filled(rect, rad, p.sunken));
         if p.bevel && !focused {
@@ -83,7 +83,7 @@ impl App {
                 shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(1.0, p.line2), StrokeKind::Inside));
             }
         } else {
-            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(p.border_w, if focused { p.accent } else if hov { p.line2 } else { p.line }), StrokeKind::Inside));
+            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(p.border_w, if focused { p.focus } else if hov { p.line2 } else { p.line }), StrokeKind::Inside));
         }
         ui.painter().set(bg, Shape::Vec(shapes));
         icons::paint(ui, Rect::from_center_size(Pos2::new(rect.left() + icon_x + icon_s / 2.0, rect.center().y), Vec2::splat(icon_s)), "search", p.muted);
@@ -278,22 +278,31 @@ impl App {
         let band = Rect::from_min_max(Pos2::new(screen.left() + 3.0, screen.bottom() - 3.0 - h), Pos2::new(screen.right() - 3.0, screen.bottom() - 3.0));
         ui.painter().rect_filled(band, theme::cr(theme::Rad::Sm), alpha(theme::mix(p.warn, 35.0, Color32::BLACK), 0.92));
         let key = crate::keys::label(self.core.lock().settings.get(), "toggleOutputWindow", "Ctrl+Shift+F");
-        let bw = 82.0_f32.min(band.width() * 0.45);
+        // 단추 폭은 글에 맞춤 (띠의 절반까지), 띠 글은 남는 자리에서 말줄임 — 아주 좁으면 아이콘만 (단추 밑으로 글이 들어가지 않게)
+        let bfont = theme::font(11.5, Weight::Bold);
+        let btxt = tr("지금 켜기");
+        let bw = (ui.painter().layout_no_wrap(btxt.clone(), bfont.clone(), p.send_fg).size().x + 16.0).min(band.width() * 0.5);
         let br = Rect::from_min_size(Pos2::new(band.right() - bw - 4.0, band.top() + 4.0), Vec2::new(bw, h - 8.0));
         let r = ui.interact(br, Id::new("live-output-on"), Sense::click()).on_hover_text(format!("{} ({key})", tr("예배당 모니터에 전체 화면 출력을 켭니다")));
         ui.painter().rect_filled(br, theme::cr(theme::Rad::Sm), if r.hovered() { Color32::WHITE } else { p.send_bg });
-        ui.painter().with_clip_rect(br).text(br.center(), Align2::CENTER_CENTER, tr("지금 켜기"), theme::font(11.5, Weight::Bold), p.send_fg);
+        ui.painter().with_clip_rect(br).text(br.center(), Align2::CENTER_CENTER, btxt, bfont, p.send_fg);
         widgets::mark("live-output-on", br);
         if r.clicked() {
             acts.push(Act::OutputToggle);
         }
         let tr_ = Rect::from_min_max(Pos2::new(band.left() + 8.0, band.top()), Pos2::new(br.left() - 6.0, band.bottom()));
-        icons::paint(ui, Rect::from_center_size(Pos2::new(tr_.left() + 7.0, band.center().y), Vec2::splat(14.0)), "monitor-off", Color32::WHITE);
-        // 좁은 뷰어에서는 긴 글이 잘리지 않게 짧은 글로 (2.1.0 다듬기)
-        let long = tr("예배당 화면 꺼짐 — 회중에게 안 보임");
-        let fits = ui.painter().layout_no_wrap(long.clone(), theme::font(11.5, Weight::SemiBold), Color32::WHITE).size().x <= tr_.width() - 22.0;
-        let text = if fits { long } else { tr("예배당 화면 꺼짐") };
-        ui.painter().with_clip_rect(tr_).text(Pos2::new(tr_.left() + 20.0, band.center().y), Align2::LEFT_CENTER, text, theme::font(11.5, Weight::SemiBold), Color32::WHITE);
+        if tr_.width() >= 14.0 {
+            icons::paint(ui, Rect::from_center_size(Pos2::new(tr_.left() + 7.0, band.center().y), Vec2::splat(14.0)), "monitor-off", Color32::WHITE);
+        }
+        // 좁은 뷰어에서는 짧은 글로 (2.1.0 다듬기), 그래도 넘치면 끝을 말줄임
+        let room = tr_.width() - 20.0;
+        if room >= 28.0 {
+            let font = theme::font(11.5, Weight::SemiBold);
+            let long = tr("예배당 화면 꺼짐 — 회중에게 안 보임");
+            let fits = ui.painter().layout_no_wrap(long.clone(), font.clone(), Color32::WHITE).size().x <= room;
+            let text = if fits { long } else { tr("예배당 화면 꺼짐") };
+            widgets::text_elided(ui, Pos2::new(tr_.left() + 20.0, band.center().y), Align2::LEFT_CENTER, &text, font, Color32::WHITE, room);
+        }
     }
 
     /// 송출했는데 예배당 화면이 꺼져 있고 자동으로 켜지도 않을 때, 꺼진 동안 한 번만 알림 + [예배당 화면 켜기]
@@ -327,8 +336,9 @@ impl App {
             return false;
         }
         let p = pal();
+        // 오류는 주황(빨강은 송출 중에만), 성공은 회색 — 전문가 테마 규칙. 옛 테마는 예전 색
         let c = match *kind {
-            "error" => p.live,
+            "error" => if p.bevel { p.danger_text } else { p.live },
             "warn" => p.warn,
             "ok" => p.ok_text,
             _ => p.text2,
@@ -336,13 +346,41 @@ impl App {
         let (dot, _) = ui.allocate_exact_size(Vec2::new(10.0, 18.0), Sense::hover());
         ui.painter().circle_filled(dot.center(), 4.0, c);
         let room = (ui.available_width() * 0.6).max(120.0);
-        let lr = ui.scope(|ui| {
-            ui.set_max_width(room);
-            ui.add(egui::Label::new(theme::rich(wp_core::i18n::tr_dyn(msg), 12.0, Weight::SemiBold, p.text)).truncate().selectable(false).sense(Sense::click()))
-        }).inner.on_hover_text(format!("{}\n({})", wp_core::i18n::tr_dyn(msg), tr("눌러서 닫기")));
+        let full = wp_core::i18n::tr_dyn(msg);
+        let font = if p.bevel { theme::Type::SmallStrong.font() } else { theme::font(12.0, Weight::SemiBold) };
+        let (g, cut) = widgets::elide(ui, &full, font, p.text, room);
+        let (lrect, lr) = ui.allocate_exact_size(g.size(), Sense::click());
+        ui.painter().galley(lrect.min, g, p.text);
+        if lr.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
         widgets::mark("toast-msg", lr.rect);
-        if lr.clicked() {
-            acts.push(Act::ToastDismiss);
+        if cut {
+            // 잘린 알림: 누르면 전문 + 할 일 (닫지 않음)
+            let lr = lr.on_hover_text(tr("눌러서 전문 보기"));
+            egui::Popup::menu(&lr).frame(crate::menubar::drop_frame()).gap(4.0).show(|ui| {
+                ui.set_max_width(420.0);
+                ui.add(egui::Label::new(theme::ty(full.clone(), theme::Type::Body, p.text)).wrap());
+                ui.add_space(theme::sp::X8);
+                ui.horizontal(|ui| {
+                    if let Some(a) = s.toast_act {
+                        let (label, icon) = toast_button(a);
+                        if ui.add(Btn::new(label).icon(icon).size(Size::Sm)).clicked() {
+                            acts.push(Act::ToastAct(a));
+                            ui.close();
+                        }
+                    }
+                    if ui.add(Btn::new(tr("닫기")).size(Size::Sm)).clicked() {
+                        acts.push(Act::ToastDismiss);
+                        ui.close();
+                    }
+                });
+            });
+        } else {
+            let lr = lr.on_hover_text(format!("{full}\n({})", tr("눌러서 닫기")));
+            if lr.clicked() {
+                acts.push(Act::ToastDismiss);
+            }
         }
         if let Some(a) = s.toast_act {
             let (label, icon) = toast_button(a);

@@ -540,7 +540,7 @@ fn row_pro(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
     let mut edit = false;
     let mut send = false;
     let ew = 24.0;
-    let edit_rect = Rect::from_min_size(Pos2::new(rect.right() - PRO_MIN_W - PRO_TIME_W - ew - 2.0, rect.top() + 3.0), Vec2::new(ew, h - 6.0));
+    let edit_rect = Rect::from_min_size(Pos2::new(rect.right() - PRO_MIN_W - PRO_TIME_W - ew - 2.0, rect.top() + 2.0), Vec2::new(ew, h - 4.0));
     let send_rect = edit_rect.translate(Vec2::new(-(ew + 2.0), 0.0));
     let sr = hovered.then(|| ui.interact(send_rect, resp.id.with("send"), Sense::click()).on_hover_text(tr(if ty == "audio" { "이 음악 재생 (두 번 누르기와 같음)" } else { "이 순서 바로 송출 (두 번 누르기와 같음)" })));
     if sr.as_ref().is_some_and(|r| r.clicked()) {
@@ -775,7 +775,7 @@ fn add_btn(ui: &mut egui::Ui, w: f32, ic: Option<&str>, ink: Color32, label: &st
     if ui.is_rect_visible(rect) {
         let r = if resp.is_pointer_button_down_on() { rect.translate(Vec2::new(0.0, 0.5)) } else { rect };
         let (bg, bd) = if hov { (p.hover, p.line2) } else { (p.panel2, p.line) };
-        let (bd, fg) = if active { (p.accent, p.accent) } else { (bd, p.text) };
+        let (bd, fg) = if active { (crate::theme::pick(), crate::theme::pick()) } else { (bd, p.text) };
         let pt = ui.painter();
         pt.rect(r, crate::theme::cr(crate::theme::Rad::Md), bg, Stroke::new(p.border_w, bd), StrokeKind::Inside);
         let mut g = ui.painter().layout_no_wrap(label.to_string(), theme::font(12.0, Weight::Regular), fg);
@@ -790,7 +790,7 @@ fn add_btn(ui: &mut egui::Ui, w: f32, ic: Option<&str>, ink: Color32, label: &st
         let mut x = r.center().x - total / 2.0;
         let cy = r.center().y;
         if let Some(n) = ic {
-            let col = if more { if active { p.accent } else if hov { p.text } else { p.muted } } else { ink };
+            let col = if more { if active { crate::theme::pick() } else if hov { p.text } else { p.muted } } else { ink };
             icons::paint(ui, Rect::from_min_size(Pos2::new(x, cy - 7.5), Vec2::splat(15.0)), n, col);
             x += icw;
         }
@@ -798,7 +798,7 @@ fn add_btn(ui: &mut egui::Ui, w: f32, ic: Option<&str>, ink: Color32, label: &st
         pt.galley(Pos2::new(x, cy - g.size().y / 2.0), g, fg);
         x += gw;
         if more {
-            icons::paint(ui, Rect::from_min_size(Pos2::new(x + 2.0, cy - 6.5), Vec2::splat(13.0)), "chevron-down", if active { p.accent } else if hov { p.text } else { p.muted });
+            icons::paint(ui, Rect::from_min_size(Pos2::new(x + 2.0, cy - 6.5), Vec2::splat(13.0)), "chevron-down", if active { crate::theme::pick() } else if hov { p.text } else { p.muted });
         }
     }
     if hov {
@@ -1049,7 +1049,7 @@ pub fn windows(app: &mut App, ui: &mut egui::Ui, sel_item: Option<(usize, &Value
     let ctx = ui.ctx().clone();
     let mut open: bool = ctx.data(|d| d.get_temp(id(HYMN_PICK))).unwrap_or(false);
     if open {
-        crate::widgets::float_window(&ctx, "cue-hymn-win", tr("찬송가·PPT 넣기"), [460.0, 520.0]).open(&mut open).show(&ctx, |ui| {
+        crate::widgets_win::window(&ctx, "cue-hymn-win", tr("찬송가·PPT 넣기"), [460.0, 520.0]).open(&mut open).show(&ctx, |ui| {
             crate::hymns_ui::tab(app, ui, acts);
         });
         ctx.data_mut(|d| d.insert_temp(id(HYMN_PICK), open));
@@ -1064,7 +1064,7 @@ pub fn windows(app: &mut App, ui: &mut egui::Ui, sel_item: Option<(usize, &Value
     }
     if win == item_id {
         let mut o = true;
-        crate::widgets::float_window(&ctx, "cue-ppt-win", tr("PPT 도구"), [420.0, 360.0]).open(&mut o).show(&ctx, |ui| {
+        crate::widgets_win::window(&ctx, "cue-ppt-win", tr("PPT 도구"), [420.0, 360.0]).open(&mut o).show(&ctx, |ui| {
             crate::hymns_ui::ppt_box(app, ui, i, it);
         });
         if !o {
@@ -1206,7 +1206,7 @@ pub fn books(app: &mut App, ui: &mut egui::Ui) {
                             }
                             if focus_ring && chap_cur == Some((bid, ch)) {
                                 // :focus-visible 테두리
-                                ui.painter().rect_stroke(r.rect.expand(1.0), crate::theme::cr(crate::theme::Rad::Md), Stroke::new(2.0, p.accent), StrokeKind::Outside);
+                                ui.painter().rect_stroke(r.rect.expand(1.0), crate::theme::cr(crate::theme::Rad::Md), Stroke::new(2.0, p.focus), StrokeKind::Outside);
                                 if moved {
                                     r.scroll_to_me(None);
                                 }

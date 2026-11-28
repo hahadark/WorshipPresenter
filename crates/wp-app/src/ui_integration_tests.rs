@@ -163,6 +163,7 @@ fn headless_app(h: &Harness) -> super::App {
         last_flush: std::time::Instant::now(),
         focus_search: false,
         editor_on: true,
+        editor_force: None,
         editor_reveal: false,
         views: super::MonitorViews::default(),
         test: None,
@@ -615,4 +616,23 @@ fn drag_is_blocked_for_song_with_singing_order() {
     assert_eq!(h.item(), before, "부를 순서가 정해진 찬양은 차례를 바꾸지 않음");
     let toast = h.core.lock().toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
     assert!(toast.contains("부를 순서"), "까닭을 알림: {toast}");
+}
+
+#[test]
+fn editor_open_is_remembered_and_live_item_folds() {
+    // 디자인 체계 2차 (craft-main): 편집칸 열림 기억 · 송출 중인 순서를 고르면 접어 둠 · 편집칸 단추로 일부러 펼치기
+    let h = Harness::new(json!({"id":"ed-live","type":"title","title":"설교"}));
+    let mut app = headless_app(&h);
+    app.set_editor_on(false);
+    assert_eq!(h.core.lock().settings.get()["rsEditorOpen"], json!(false));
+    app.set_editor_on(true);
+    assert_eq!(h.core.lock().settings.get()["rsEditorOpen"], json!(true));
+    app.apply(vec![super::Act::SendItem(0)]);
+    let s = app.snap();
+    assert!(app.editor_hold(&s, 0), "송출 중인 순서는 편집칸을 접어 둔다");
+    app.toggle_editor(&h.ctx, Some(0));
+    let s = app.snap();
+    assert!(app.editor_on && !app.editor_hold(&s, 0), "편집칸 단추로 일부러 펼친다");
+    app.toggle_editor(&h.ctx, Some(0));
+    assert!(!app.editor_on, "한 번 더 누르면 닫는다");
 }

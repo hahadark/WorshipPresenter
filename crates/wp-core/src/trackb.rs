@@ -355,6 +355,23 @@ impl Core {
         let Some(ms) = crate::localtime::ms_until(hm, now) else { anyhow::bail!(crate::i18n::tr("이미 지난 시각입니다.")) };
         self.stage_timer("start", ms as f64 / 60000.0)
     }
+    /// 즉석 자막이 지금 송출 중인가 (quick_send 가 만든 묶음: cueIndex -1 · 제목 '즉석 자막')
+    pub fn quick_is_live(&self) -> bool {
+        self.pres.live.as_ref().is_some_and(|l| l.visible && l.deck.passage["cueIndex"] == -1 && l.deck.passage["itemTitle"] == "즉석 자막")
+    }
+    /// 즉석 자막을 내린다: 앞에 송출하던 화면(`prev`)으로 돌아가거나, 없으면 글자만 숨긴다.
+    /// 되돌리는 것은 새 송출이 아니므로 송출 기록 · 사용 기록(저작권 보고)에 다시 넣지 않는다.
+    pub fn quick_take_down(&mut self, prev: Option<crate::presentation::Deck>) {
+        if !self.quick_is_live() {
+            return;
+        }
+        let back = prev.is_some_and(|d| self.pres.send_live(Some(d)));
+        if !back {
+            self.pres.clear();
+        }
+        self.emit(Ev::Live);
+        self.emit(Ev::Ui);
+    }
     pub fn stage_message(&mut self, text: &str) {
         self.b.stage.message = text.chars().take(300).collect();
         self.changed(true);

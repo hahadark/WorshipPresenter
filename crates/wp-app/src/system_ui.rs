@@ -81,7 +81,7 @@ impl App {
         Desktop {
             monitors: self.out.monitors.len(),
             output_running: running,
-            output_monitor: m.as_ref().map(|m| format!("{} {}×{}", m.name, m.size.0, m.size.1)).unwrap_or_default(),
+            output_monitor: m.as_ref().map(|m| format!("{} ({}) {}×{}", m.label(&self.out.monitors), m.name, m.size.0, m.size.1)).unwrap_or_default(),
             same_as_control: m.is_some_and(|m| m.primary),
             obs_ws,
         }
@@ -121,44 +121,50 @@ impl App {
         if !open {
             return;
         }
-        crate::widgets::float_window(ctx, "sync", wp_core::i18n::tr("여러 PC 동기화 · 백업"), [540.0, 460.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "sync", wp_core::i18n::tr("여러 PC 동기화 · 백업"), [540.0, 460.0]).open(&mut open).show(ctx, |ui| {
             let info = self.core.lock().sync_info();
-            ui.label(RichText::new(wp_core::i18n::tr("원드라이브 같은 동기화 폴더를 고르면 찬양 · 큐시트 · 오버레이를 그 폴더의 WorshipCue-sync.json 으로 주고받습니다 (기존 워십프리젠터와 같은 파일). 시작할 때 읽고, 바뀌면 1분 안에, 끝날 때 씁니다.")).small());
-            ui.horizontal(|ui| {
-                let dir = info["dir"].as_str().unwrap_or("");
-                ui.label(if dir.is_empty() { RichText::new(wp_core::i18n::tr("동기화 꺼짐")).color(crate::theme::pal().muted) } else { RichText::new(dir.clone()).strong() });
-            });
+            use crate::widgets_win as win;
+            win::section(ui, &wp_core::i18n::tr("여러 PC 동기화"));
+            win::lead(ui, &wp_core::i18n::tr("원드라이브 같은 동기화 폴더로 찬양 · 큐시트 · 오버레이를 다른 PC 와 주고받습니다."));
             let mut note = String::new();
-            ui.horizontal(|ui| {
-                if ui.button(wp_core::i18n::tr("폴더 고르기…")).clicked() {
-                    if let Some(d) = rfd::FileDialog::new().pick_folder() {
-                        let r = self.core.lock().set_sync_dir(&d.to_string_lossy());
-                        note = match r { Ok(_) => "동기화 폴더를 정하고 주고받았습니다.".into(), Err(e) => e.to_string() };
-                    }
+            let dir = info["dir"].as_str().unwrap_or("").to_string();
+            win::field(ui, &wp_core::i18n::tr("동기화 폴더"), |ui| {
+                if dir.is_empty() {
+                    ui.label(crate::theme::ty(&wp_core::i18n::tr("동기화 꺼짐"), crate::theme::Type::Body, crate::theme::pal().muted));
+                } else {
+                    ui.add(egui::Label::new(crate::theme::ty(&dir, crate::theme::Type::Body, crate::theme::pal().text)).truncate()).on_hover_text(&dir);
                 }
-                if !info["dir"].as_str().unwrap_or("").is_empty() {
-                    if ui.button(wp_core::i18n::tr("지금 동기화")).clicked() {
-                        let r = self.core.lock().sync_now();
-                        note = match r { Ok(v) => format!("받음: 찬양 {} · 큐시트 {} · 오버레이 {} / 보냄: 찬양 {} · 큐시트 {}", v["imported"]["songs"], v["imported"]["cues"], v["imported"]["overlays"], v["exported"]["songs"], v["exported"]["cues"]), Err(e) => e.to_string() };
+                ui.horizontal_wrapped(|ui| {
+                    if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("폴더 고르기…")).icon("folder-open").size(crate::widgets::Size::Sm)).clicked() {
+                        if let Some(d) = rfd::FileDialog::new().pick_folder() {
+                            let r = self.core.lock().set_sync_dir(&d.to_string_lossy());
+                            note = match r { Ok(_) => format!("✓ {}", wp_core::i18n::tr("동기화 폴더를 정하고 주고받았습니다.")), Err(e) => format!("✗ {e}") };
+                        }
                     }
-                    if ui.button(wp_core::i18n::tr("동기화 끄기")).clicked() {
-                        let _ = self.core.lock().set_sync_dir("");
+                    if !dir.is_empty() {
+                        if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("지금 동기화")).icon("refresh-cw").size(crate::widgets::Size::Sm)).clicked() {
+                            let r = self.core.lock().sync_now();
+                            note = match r { Ok(v) => format!("✓ {}", wp_core::i18n::tr_args("받음: 찬양 {1} · 큐시트 {2} · 오버레이 {3} / 보냄: 찬양 {4} · 큐시트 {5}", &[&v["imported"]["songs"], &v["imported"]["cues"], &v["imported"]["overlays"], &v["exported"]["songs"], &v["exported"]["cues"]])), Err(e) => format!("✗ {e}") };
+                        }
+                        if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("동기화 끄기")).size(crate::widgets::Size::Sm)).clicked() {
+                            let _ = self.core.lock().set_sync_dir("");
+                        }
                     }
-                }
+                });
+                win::hint(ui, &wp_core::i18n::tr("폴더의 WorshipCue-sync.json 을 씁니다 (기존 워십프리젠터와 같은 파일). 시작할 때 읽고, 바뀌면 1분 안에, 끝날 때 씁니다."));
             });
-            egui::Grid::new("syncinfo").num_columns(2).show(ui, |ui| {
-                ui.label(wp_core::i18n::tr("이 PC")); ui.label(info["host"].as_str().unwrap_or("")); ui.end_row();
-                ui.label(wp_core::i18n::tr("마지막으로 받음")); ui.label(ago(info["lastImport"].as_str().unwrap_or(""))); ui.end_row();
-                ui.label(wp_core::i18n::tr("마지막으로 보냄")); ui.label(ago(info["lastExport"].as_str().unwrap_or(""))); ui.end_row();
-                ui.label(wp_core::i18n::tr("동기화 파일을 쓴 PC")); ui.label(format!("{} {}", info["remoteHost"].as_str().unwrap_or(""), ago(info["remoteAt"].as_str().unwrap_or("")))); ui.end_row();
-            });
+            let lw = crate::widgets::form_label_w(ui.available_width());
+            win::value_row(ui, lw, &wp_core::i18n::tr("이 PC"), info["host"].as_str().unwrap_or(""));
+            win::value_row(ui, lw, &wp_core::i18n::tr("마지막으로 받음"), &ago(info["lastImport"].as_str().unwrap_or("")));
+            win::value_row(ui, lw, &wp_core::i18n::tr("마지막으로 보냄"), &ago(info["lastExport"].as_str().unwrap_or("")));
+            win::value_row(ui, lw, &wp_core::i18n::tr("동기화 파일을 쓴 PC"), &format!("{} {}", info["remoteHost"].as_str().unwrap_or(""), ago(info["remoteAt"].as_str().unwrap_or(""))));
             if let Some(e) = info["error"].as_str().filter(|x| !x.is_empty()) {
-                ui.label(RichText::new(e).color(crate::theme::pal().danger_text));
+                win::status(ui, win::Tone::Error, e);
             }
             crate::widgets::group_head(ui, &wp_core::i18n::tr("백업 (하루 한 번 자동 · 10일치 보관)"));
             let restore_busy = ST.lock().restore_busy;
             if restore_busy {
-                ui.label(RichText::new("되돌리기 예약 파일을 복사하고 있습니다. 끝날 때까지 기다려 주세요.").color(crate::theme::pal().warn));
+                crate::widgets_win::busy(ui, &wp_core::i18n::tr("되돌리기 예약 파일을 복사하고 있습니다. 끝날 때까지 기다려 주세요."));
             }
             if info["restorePending"] == true {
                 ui.horizontal(|ui| {
@@ -171,10 +177,10 @@ impl App {
 // 큰 DB 를 복사하는 동안 화면이 멈추지 않게 따로 스레드에서
                     let dir = self.data_dir.clone();
                     let ctx2 = ui.ctx().clone();
-                    note = "백업하는 중…".into();
+                    note = format!("…{}", wp_core::i18n::tr("백업하는 중"));
                     std::thread::spawn(move || {
                         let r = wp_core::sync::backup_files(&dir);
-                        ST.lock().note = match r { Ok(b) => format!("백업했습니다: {}", b["day"].as_str().unwrap_or("")), Err(e) => format!("백업 실패: {e}") };
+                        ST.lock().note = match r { Ok(b) => format!("✓ {}", wp_core::i18n::tr_args("백업했습니다: {1}", &[&b["day"].as_str().unwrap_or("")])), Err(e) => format!("✗ {}", wp_core::i18n::tr_args("백업하지 못했습니다: {1}", &[&e])) };
                         ctx2.request_repaint();
                     });
                 }
@@ -193,11 +199,11 @@ impl App {
                             // 큰 파일 복사는 별도 스레드에서. 복사 중 중복 예약과 취소는 막는다.
                             let (dir, day, ctx2) = (self.data_dir.clone(), b["day"].as_str().unwrap_or("").to_string(), ui.ctx().clone());
                             ST.lock().restore_busy = true;
-                            note = "되돌리기 예약하는 중…".into();
+                            note = format!("…{}", wp_core::i18n::tr("되돌리기 예약하는 중"));
                             std::thread::spawn(move || {
                                 let r = wp_core::sync::restore_files(&dir, &day);
                                 let mut state = ST.lock();
-                                state.note = match r { Ok(_) => format!("{day} 로 되돌리기를 예약했습니다. 프로그램을 다시 시작하세요."), Err(e) => e.to_string() };
+                                state.note = match r { Ok(_) => format!("✓ {}", wp_core::i18n::tr_args("{1} 로 되돌리기를 예약했습니다. 프로그램을 다시 시작하세요.", &[&day])), Err(e) => format!("✗ {e}") };
                                 state.restore_busy = false;
                                 drop(state);
                                 ctx2.request_repaint();
@@ -249,7 +255,7 @@ impl App {
             });
             if !note.is_empty() { ST.lock().note = note; }
             let n = ST.lock().note.clone();
-            if !n.is_empty() { ui.label(RichText::new(wp_core::i18n::tr_dyn(&n)).small().color(crate::theme::pal().ok_text)); }
+            if !n.is_empty() { crate::widgets_win::message(ui, &wp_core::i18n::tr_dyn(&n)); } // ✓ · ✗ 로 시작하면 아이콘 + 색
         });
         ST.lock().sync = open;
     }
@@ -265,33 +271,55 @@ impl App {
             let r = wp_core::diagnose::diagnose(&mut self.core.lock(), &d);
             ST.lock().diag_result = r;
         }
-        crate::widgets::float_window(ctx, "diag", wp_core::i18n::tr("연결 점검 (예배 전 점검)"), [600.0, 560.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "diag", wp_core::i18n::tr("연결 점검 (예배 전 점검)"), [600.0, 560.0]).open(&mut open).show(ctx, |ui| {
+            use crate::widgets_win as win;
+            use wp_core::i18n::{tr, tr_args, tr_dyn_deep};
             let r = ST.lock().diag_result.clone();
-            ui.horizontal(|ui| {
-                let (f, w) = (r["summary"]["fail"].as_u64().unwrap_or(0), r["summary"]["warn"].as_u64().unwrap_or(0));
-                let (t, c) = if f > 0 { (wp_core::i18n::tr_args("문제 {1}곳 · 확인 {2}곳", &[&f, &w]), crate::theme::pal().danger_text) } else if w > 0 { (wp_core::i18n::tr_args("확인할 곳 {1}곳", &[&w]), crate::theme::pal().warn) } else { (wp_core::i18n::tr("모두 괜찮습니다"), crate::theme::pal().ok_text) };
-                ui.label(RichText::new(t).strong().color(c));
-                if ui.button(wp_core::i18n::tr("다시 점검")).clicked() { ST.lock().diag_result = Value::Null; }
-                if ui.button(wp_core::i18n::tr("로그 묶음 저장…")).on_hover_text(wp_core::i18n::tr("문제를 알릴 때 보낼 글 파일 (열쇠·PIN·AI 키는 가림)")).clicked() { self.save_log_bundle(); }
-                if ui.button(wp_core::i18n::tr("로그 폴더")).clicked() { handle_menu(self, "b:logs"); }
-            });
-            ui.separator();
+            let (f, w) = (r["summary"]["fail"].as_u64().unwrap_or(0), r["summary"]["warn"].as_u64().unwrap_or(0));
+            // 맨 위 한 줄: 결과 요약 (문제 = 주황 · 확인 = 깃발 · 괜찮음 = 회색 체크)
+            if f > 0 {
+                win::status(ui, win::Tone::Error, &tr_args("문제 {1}곳 · 확인 {2}곳", &[&f, &w]));
+            } else if w > 0 {
+                win::status(ui, win::Tone::Warn, &tr_args("확인할 곳 {1}곳", &[&w]));
+            } else {
+                win::status(ui, win::Tone::Ok, &tr("모두 괜찮습니다"));
+            }
             crate::firewall_ui::row(ui); // 휴대폰 리모컨 · 내부망 출력 · 휴대폰 카메라가 들어오는 길
-            ui.separator();
-            egui::ScrollArea::vertical().id_salt("diag").auto_shrink([false, false]).show(ui, |ui| {
-                for x in r["items"].as_array().into_iter().flatten() {
-                    let st = x["status"].as_str().unwrap_or("").to_string();
-                    ui.horizontal_wrapped(|ui| {
-                        crate::widgets::status_mark(ui, &st);
-                        ui.label(RichText::new(wp_core::i18n::tr_dyn_deep(x["title"].as_str().unwrap_or(""))).strong());
-                        ui.label(wp_core::i18n::tr_dyn_deep(x["detail"].as_str().unwrap_or("")));
+            win::section(ui, &tr("점검 결과"));
+            for x in r["items"].as_array().into_iter().flatten() {
+                let st = x["status"].as_str().unwrap_or("").to_string();
+                ui.horizontal_top(|ui| {
+                    crate::widgets::status_mark(ui, &st);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        ui.add(egui::Label::new(crate::theme::ty(&tr_dyn_deep(x["title"].as_str().unwrap_or("")), crate::theme::Type::BodyStrong, crate::theme::pal().text)).wrap());
+                        let detail = tr_dyn_deep(x["detail"].as_str().unwrap_or(""));
+                        if !detail.trim().is_empty() {
+                            ui.add(egui::Label::new(crate::theme::ty(&detail, crate::theme::Type::Body, crate::theme::pal().text2)).wrap());
+                        }
+                        for f in x["fix"].as_array().into_iter().flatten().filter_map(|f| f.as_str()) {
+                            win::hint(ui, &format!("· {}", tr_dyn_deep(f)));
+                        }
                     });
-                    for f in x["fix"].as_array().into_iter().flatten().filter_map(|f| f.as_str()) {
-                        ui.label(RichText::new(format!("    · {}", wp_core::i18n::tr_dyn_deep(f))).small().color(crate::theme::pal().muted));
+                });
+                ui.add_space(crate::theme::sp::X4);
+            }
+            win::footer_split(
+                ui,
+                |ui| {
+                    if ui.add(win::secondary(tr("로그 묶음 저장…")).tooltip(tr("문제를 알릴 때 보낼 글 파일 (열쇠·PIN·AI 키는 가림)"))).clicked() {
+                        self.save_log_bundle();
                     }
-                    ui.add_space(4.0);
-                }
-            });
+                    if ui.add(win::secondary(tr("로그 폴더")).icon("folder-open")).clicked() {
+                        handle_menu(self, "b:logs");
+                    }
+                },
+                |ui| {
+                    if ui.add(win::primary(tr("다시 점검")).icon("refresh-cw")).clicked() {
+                        ST.lock().diag_result = Value::Null;
+                    }
+                },
+            );
         });
         ST.lock().diag = open;
     }
@@ -302,7 +330,7 @@ impl App {
         if !open {
             return;
         }
-        crate::widgets::float_window(ctx, "draw", wp_core::i18n::tr("화면에 그리기 · 강조"), [720.0, 500.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "draw", wp_core::i18n::tr("화면에 그리기 · 강조"), [720.0, 500.0]).live(ctx).open(&mut open).show(ctx, |ui| {
             let mut st = ST.lock();
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut st.spot_mode, false, wp_core::i18n::tr("펜"));
@@ -410,7 +438,7 @@ impl App {
         if !open {
             return;
         }
-        crate::widgets::float_window(ctx, "cameras", wp_core::i18n::tr("카메라 설정"), [520.0, 440.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "cameras", wp_core::i18n::tr("카메라 설정"), [520.0, 440.0]).open(&mut open).show(ctx, |ui| {
             ui.label(RichText::new(wp_core::i18n::tr("카메라(웹캠 · 캡처보드)마다 해상도 · 프레임 · 좌우 반전 · 밝기를 정합니다. 출력 화면이 카메라를 열 때 씁니다.")).small());
             // 화면 셋 공용 목록(camscan): 연결된 카메라 → 설정에 있는 카메라 → 큐시트의 카메라 순서
             crate::camscan::scan_bar(ui, &self.core);

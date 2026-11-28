@@ -158,6 +158,7 @@ pub static ITEMS: &[Item] = &[
     adv(keep("port", Cat::Obs, &["port"], "로컬 서버 포트", "출력 주소에 쓰는 포트 번호입니다. 다른 프로그램과 겹칠 때만 바꾸세요. 프로그램을 다시 켜야 적용되고, OBS 에 넣어 둔 주소도 바꿔야 합니다.", "포트 번호 네트워크 주소 37528", Kind::Int { lo: 1024, hi: 65535 })),
     // ---------------- 조작 화면 ----------------
     val("ui.theme", Cat::Ui, &["ui", "theme"], "테마", "조작 화면의 색입니다. 예배당 화면 모양과는 상관없습니다.", "색 어둡게 밝게 다크 라이트 고대비 화면 색", Kind::Choice(THEMES)),
+    val("ui.reduceMotion", Cat::Ui, &["ui", "reduceMotion"], "움직임 줄이기", "조절 칸과 구획이 바로 바뀝니다. 송출 화면의 전환에는 영향을 주지 않습니다.", "움직임 애니메이션 모션 접근성", Kind::Toggle),
     val("ui.scale", Cat::Ui, &["ui", "scale"], "글자 크기", "조작 화면의 글자와 단추 크기입니다. 막대를 놓으면 적용됩니다.", "확대 축소 크게 작게 배율 줌 폰트", Kind::Slider { lo: 70.0, hi: 200.0, step: 5.0, unit: "%", recommend: 100.0 }),
     keep("uiLang", Cat::Ui, &["uiLang"], "Language · 언어", "조작 화면과 출력 화면 안내 글의 언어입니다.", "한국어 영어 English Korean language", Kind::Choice(LANGS)),
     val("ui.directLiveOnly", Cat::Ui, &["ui", "directLiveOnly"], "바로 송출 모드에서는 자동으로 송출 뷰어만", "미리보기를 끄고 바로 송출할 때는 '다음' 뷰어가 쓸모없으니 송출 중 뷰어 하나만 보이고 본문·편집 자리를 넓힙니다. 미리보기 모드로 돌아오면 원래 고른 보기 방식으로 돌아갑니다.", "뷰어 하나 송출 중만 미리보기 프리뷰 프로그램 바로 송출 작업 공간 넓게", Kind::Toggle),

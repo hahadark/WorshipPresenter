@@ -89,7 +89,7 @@ fn swatch(ui: &mut egui::Ui, c: &str, on: bool) -> Response {
             pt.rect_filled(r, rad, crate::paint::parse_color(c).unwrap_or(Color32::WHITE));
         }
         pt.rect_stroke(r, rad, Stroke::new(1.0, Color32::from_gray(0x11)), egui::StrokeKind::Inside);
-        pt.rect_stroke(r.expand(1.0), rad, Stroke::new(if on { 2.0 } else { 1.0 }, if on { p.accent } else { p.line2 }), egui::StrokeKind::Outside);
+        pt.rect_stroke(r.expand(1.0), rad, Stroke::new(if on { 2.0 } else { 1.0 }, if on { crate::theme::pick() } else { p.line2 }), egui::StrokeKind::Outside);
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
@@ -112,9 +112,9 @@ fn swatch(ui: &mut egui::Ui, c: &str, on: bool) -> Response {
     } else {
         pt.circle_filled(ctr, 11.0, crate::paint::parse_color(c).unwrap_or(Color32::WHITE));
     }
-    pt.circle_stroke(ctr, 11.0, Stroke::new(2.0, if on { p.accent } else { p.line2 }));
+    pt.circle_stroke(ctr, 11.0, Stroke::new(2.0, if on { crate::theme::pick() } else { p.line2 }));
     if on {
-        pt.circle_stroke(ctr, 15.0, Stroke::new(2.0, p.accent));
+        pt.circle_stroke(ctr, 15.0, Stroke::new(2.0, crate::theme::pick()));
     }
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -217,7 +217,7 @@ fn pos_grid(ui: &mut egui::Ui, valign: &str, col_align: &str) -> Option<(&'stati
             let cr = Rect::from_min_size(Pos2::new(r.left() + 1.0 + pad + x as f32 * (cw + gap), r.top() + 1.0 + pad + y as f32 * (ch + gap)), Vec2::new(cw, ch));
             let resp = ui.interact(cr, egui::Id::new(("tc-pos", y, x)), Sense::click()).on_hover_text(format!("{} · {}", tr(vl), tr(al)));
             let on = *v == valign && *a == col_align;
-            let (bg, border) = if on { (p.sel, p.accent) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
+            let (bg, border) = if on { (p.sel, crate::theme::pick()) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
             ui.painter().rect(cr, crate::theme::cr(crate::theme::Rad::Sm), bg, Stroke::new(1.0, border), StrokeKind::Inside);
             // 안쪽 표시: Electron 에서는 <i> 가 폭 없는 격자 칸에 들어가 왼쪽·오른쪽 칸에만 작은 세로 점(2×5)으로 보인다
             if *a != "center" {
@@ -238,18 +238,20 @@ fn pos_grid(ui: &mut egui::Ui, valign: &str, col_align: &str) -> Option<(&'stati
 fn hang_btn(ui: &mut egui::Ui, on: bool) -> Response {
     let p = pal();
     let label = tr(if on { "내어쓰기 켜짐" } else { "내어쓰기 꺼짐" });
-    let g = ui.painter().layout_no_wrap(label, theme::font(14.0, Weight::Regular), p.text);
+    // 전문가 테마: 인스펙터 글자 단계(Body 12.5)와 조절 칸 높이에 맞춤, 켜짐은 고름 회색 (노랑은 '다음' 에만)
+    let g = ui.painter().layout_no_wrap(label, if p.bevel { theme::Type::Body.font() } else { theme::font(14.0, Weight::Regular) }, p.text);
     let w = 12.0 + 37.0 + 8.0 + g.size().x + 12.0;
-    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::click());
-    let (bg, border) = if on { (p.pv_bg, p.pv) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, if p.bevel { 40.0 } else { 46.0 }), Sense::click());
+    let (bg, border) = if on { if p.bevel { (p.sel, theme::pick()) } else { (p.pv_bg, p.pv) } } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
     let pt = ui.painter();
     pt.rect(r, crate::theme::cr(crate::theme::Rad::Md), bg, Stroke::new(1.0, border), StrokeKind::Inside);
     // 아이콘: [1][긴 줄] / [  ][짧은 줄] / [2][긴 줄]
     let x0 = r.left() + 12.0;
     let cy = r.center().y;
     let small = theme::font(9.0, Weight::Bold);
-    pt.text(Pos2::new(x0 + 8.0, cy - 8.0), egui::Align2::RIGHT_CENTER, "1", small.clone(), p.hl);
-    pt.text(Pos2::new(x0 + 8.0, cy + 8.0), egui::Align2::RIGHT_CENTER, "2", small, p.hl);
+    let num_c = if p.bevel { p.text2 } else { p.hl };
+    pt.text(Pos2::new(x0 + 8.0, cy - 8.0), egui::Align2::RIGHT_CENTER, "1", small.clone(), num_c);
+    pt.text(Pos2::new(x0 + 8.0, cy + 8.0), egui::Align2::RIGHT_CENTER, "2", small, num_c);
     for (dy, ww) in [(-8.0, 26.0), (0.0, 18.0), (8.0, 26.0)] {
         pt.rect_filled(Rect::from_min_size(Pos2::new(x0 + 11.0, cy + dy - 1.5), Vec2::new(ww, 3.0)), crate::theme::cr(crate::theme::Rad::Xs), p.text2);
     }
@@ -274,7 +276,7 @@ fn grad_swatch(ui: &mut egui::Ui, css: &str, on: bool) -> Response {
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(0, 2, 3);
     ui.painter().add(mesh);
-    ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Md), Stroke::new(2.0, if on { p.accent } else { p.line2 }), StrokeKind::Inside);
+    ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Md), Stroke::new(2.0, if on { crate::theme::pick() } else { p.line2 }), StrokeKind::Inside);
     resp.on_hover_text(tr("테마 배경 (그라데이션)"))
 }
 
@@ -307,7 +309,7 @@ pub(crate) fn basic_controls(ui: &mut egui::Ui, t: &mut Value) -> Out {
                 names.insert(0, cur.clone());
             }
             let mut sel = cur.clone();
-            egui::ComboBox::from_id_salt("tc-font").selected_text(rich(&cur, 15.0, Weight::Regular, pal().text)).width(ui.available_width()).height(360.0).show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt("tc-font").selected_text(if pal().bevel { rich(&cur, theme::Type::Body.size(), Weight::Regular, pal().text) } else { rich(&cur, 15.0, Weight::Regular, pal().text) }).width(ui.available_width()).height(360.0).show_ui(ui, |ui| {
                 for n in &names {
                     ui.selectable_value(&mut sel, n.clone(), n);
                 }

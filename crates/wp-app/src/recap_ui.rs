@@ -159,7 +159,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     let mut rebuild = st.out.iter().all(|x| x.is_empty());
     let mut pick_rec = false;
     let s = &mut *st;
-    crate::widgets::float_window(ctx, "recap", tr("예배 후 정리"), [700.0, 640.0]).open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "recap", tr("예배 후 정리"), [700.0, 640.0]).open(&mut open).show(ctx, |ui| {
         let p = crate::theme::pal();
         ui.label(RichText::new(tr("그날 송출한 기록(사용 기록)과 받아 적은 설교로 순서별 시간 표시 · 유튜브 설명 · 설교 요약 재료 · 쇼츠 후보(시간 구간)를 만듭니다. 복사하거나 저장해 쓰세요.")).small().color(p.muted));
         ui.horizontal_wrapped(|ui| {

@@ -55,7 +55,7 @@ impl App {
         if !open {
             return;
         }
-        widgets::float_window(ctx, "names", tr("이름 자막"), [520.0, 560.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "names", tr("이름 자막"), [520.0, 560.0]).live(ctx).open(&mut open).show(ctx, |ui| {
             let p = crate::theme::pal();
             ui.label(RichText::new(tr("설교자 · 기도자 · 특송 이름을 명단에 적어 두고 [띄우기]를 누르면 화면 아래에 이름과 직분이 나옵니다. 휴대폰 리모컨에서도 누를 수 있습니다.")).small().color(p.muted));
             ui.add_space(4.0);

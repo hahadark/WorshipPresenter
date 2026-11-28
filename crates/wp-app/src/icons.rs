@@ -15,10 +15,15 @@ use eframe::egui::{self, Color32, Rect, Response, Sense, Vec2};
 use std::collections::HashMap;
 
 static SRC: &str = include_str!("../../../web/shared/icons.js");
+static CRAFT: &str = include_str!("../../../assets/icons/craft.json");
+/// 고유 아이콘 한 벌(assets/icons/craft.json, 16px 격자 · 선 1.25)을 쓸지. **예전 Lucide 로 되돌리려면 이 한 줄을 false 로.**
+/// 실행할 때만 잠깐 견주려면 환경변수 `WP_ICONS=lucide`. craft 에 없는 이름은 늘 Lucide(web/shared/icons.js)
+const USE_CRAFT_ICONS: bool = true;
+static LEGACY: once_cell::sync::Lazy<bool> = once_cell::sync::Lazy::new(|| !USE_CRAFT_ICONS || std::env::var("WP_ICONS").is_ok_and(|v| v == "lucide"));
 
 /// 이름 → SVG 문서 (흰 선, 24×24, stroke-width 2, fill none)
 static SVGS: once_cell::sync::Lazy<HashMap<&'static str, &'static [u8]>> = once_cell::sync::Lazy::new(|| {
-    parse(SRC)
+    let mut result: HashMap<_, _> = parse(SRC)
         .into_iter()
         .map(|(name, body)| {
             let doc = format!(
@@ -27,7 +32,15 @@ static SVGS: once_cell::sync::Lazy<HashMap<&'static str, &'static [u8]>> = once_
             );
             (name, &*Box::leak(doc.into_bytes().into_boxed_slice()))
         })
-        .collect()
+        .collect();
+    if !*LEGACY {
+        let paths: HashMap<&'static str, &'static str> = serde_json::from_str(CRAFT).expect("craft icon source");
+        for (name, body) in paths {
+            let doc = format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#ffffff" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">{body}</svg>"##);
+            result.insert(name, &*Box::leak(doc.into_bytes().into_boxed_slice()));
+        }
+    }
+    result
 });
 
 /// icons.js 의 `const PATHS = { 'name': '<path …/>', … }` 를 읽는다 (주석 `<!-- … -->` 는 뺀다)

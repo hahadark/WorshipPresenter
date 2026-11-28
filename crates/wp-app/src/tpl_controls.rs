@@ -109,7 +109,7 @@ pub fn switch_widget(ui: &mut egui::Ui, on: &mut bool) -> Response {
     }
     let k = ui.ctx().animate_bool(resp.id, *on);
     // 전문가 테마: 켜짐 = 밝은 회색 바탕 · 어두운 손잡이 (노랑은 '다음' 에만)
-    let bg = if *on { if p.bevel { p.text2 } else { p.accent } } else if resp.hovered() { p.line2 } else { p.line };
+    let bg = if *on { if p.bevel { p.text2 } else { crate::theme::pick() } } else if resp.hovered() { p.line2 } else { p.line };
     ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Xl), bg);
     let x = egui::lerp(r.left() + 10.0..=r.right() - 10.0, k);
     ui.painter().circle_filled(Pos2::new(x, r.center().y), 7.0, if p.bevel && *on { p.panel } else { p.text });
@@ -163,7 +163,7 @@ pub fn swatch(ui: &mut egui::Ui, c: Color32, on: bool, tip: &str) -> Response {
         }
         pt.rect_filled(r, rad, c);
         pt.rect_stroke(r, rad, Stroke::new(1.0, Color32::from_gray(0x11)), egui::StrokeKind::Inside);
-        pt.rect_stroke(r.expand(1.0), rad, Stroke::new(if on { 2.0 } else { 1.0 }, if on { p.accent } else if resp.hovered() { p.muted } else { p.line2 }), egui::StrokeKind::Outside);
+        pt.rect_stroke(r.expand(1.0), rad, Stroke::new(if on { 2.0 } else { 1.0 }, if on { crate::theme::pick() } else if resp.hovered() { p.muted } else { p.line2 }), egui::StrokeKind::Outside);
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
@@ -183,9 +183,9 @@ pub fn swatch(ui: &mut egui::Ui, c: Color32, on: bool, tip: &str) -> Response {
         }
     }
     pt.circle_filled(ctr, 11.0, c);
-    pt.circle_stroke(ctr, 11.0, Stroke::new(1.5, if on { p.accent } else if resp.hovered() { p.muted } else { p.line2 }));
+    pt.circle_stroke(ctr, 11.0, Stroke::new(1.5, if on { crate::theme::pick() } else if resp.hovered() { p.muted } else { p.line2 }));
     if on {
-        pt.circle_stroke(ctr, 14.5, Stroke::new(2.0, p.accent));
+        pt.circle_stroke(ctr, 14.5, Stroke::new(2.0, crate::theme::pick()));
     }
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -204,7 +204,7 @@ fn rainbow(ui: &mut egui::Ui, open: bool) -> Response {
         let col: Color32 = egui::ecolor::Hsva::new(k as f32 / n as f32, 0.85, 1.0, 1.0).into();
         ui.painter().add(Shape::convex_polygon(vec![ctr, ctr + Vec2::angled(a0) * 11.0, ctr + Vec2::angled(a1) * 11.0], col, Stroke::NONE));
     }
-    ui.painter().circle_stroke(ctr, 11.0, Stroke::new(1.5, if open { p.accent } else { p.line2 }));
+    ui.painter().circle_stroke(ctr, 11.0, Stroke::new(1.5, if open { crate::theme::pick() } else { p.line2 }));
     ui.painter().text(ctr, egui::Align2::CENTER_CENTER, "+", theme::font(14.0, Weight::Bold), Color32::WHITE);
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -311,7 +311,7 @@ pub fn align_seg(ui: &mut egui::Ui, salt: &str, cur: &str, kinds: &[&str]) -> Op
             (_, true) => CornerRadius { nw: 0, sw: 0, ne: 6, se: 6 },
             _ => CornerRadius::ZERO,
         };
-        let (bg, border) = if on { (p.sel, if p.bevel { p.text2 } else { p.accent }) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
+        let (bg, border) = if on { (p.sel, crate::theme::pick()) } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
         ui.painter().rect(r, corner, bg, Stroke::new(1.0, border), StrokeKind::Inside);
         paint_align_icon(ui, Rect::from_center_size(r.center(), Vec2::new(18.0, 16.0)), k, if on { p.text } else { p.text2 });
         let tip = match *k {
@@ -345,7 +345,7 @@ pub fn pos_grid(ui: &mut egui::Ui, salt: &str, cells: &[&[(&str, &str)]], cur: &
             let cr = Rect::from_min_size(Pos2::new(r.left() + pad + x as f32 * (cw + gap), r.top() + pad + y as f32 * (chh + gap)), Vec2::new(cw, chh));
             let resp = ui.interact(cr, ui.scope_id().with((salt, y, x)), Sense::click());
             let on = *v == cur;
-            let (bg, border) = if on { if p.bevel { (p.sel, p.text2) } else { (p.accent, p.accent) } } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
+            let (bg, border) = if on { if p.bevel { (p.sel, p.text2) } else { (crate::theme::pick(), crate::theme::pick()) } } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
             ui.painter().rect(cr, crate::theme::cr(crate::theme::Rad::Sm), bg, Stroke::new(1.0, border), StrokeKind::Inside);
             // 칸 안 작은 막대: 그 칸에 글이 놓이는 모양
             let bar_x = match x {
@@ -418,7 +418,7 @@ pub fn section<R>(ui: &mut egui::Ui, id: &str, icon: &str, title: &str, force: O
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 10.0, r.center().y), Vec2::splat(14.0)), if open { "chevron-down" } else { "chevron-right" }, p.muted);
-    crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 30.0, r.center().y), Vec2::splat(16.0)), icon, if open { p.accent } else { p.muted });
+    crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 30.0, r.center().y), Vec2::splat(16.0)), icon, if open { crate::theme::pick() } else { p.muted });
     pt.text(Pos2::new(r.left() + 44.0, r.center().y), egui::Align2::LEFT_CENTER, tr(title), theme::font(14.0, Weight::SemiBold), p.text);
     pt.hline(r.x_range(), r.bottom(), Stroke::new(1.0, p.line_soft));
     let resp = resp.on_hover_text(tr(if open { "누르면 접기" } else { "누르면 펼치기" }));

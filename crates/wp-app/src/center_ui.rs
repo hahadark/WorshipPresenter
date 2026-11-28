@@ -777,7 +777,7 @@ fn slide_row(ui: &mut egui::Ui, c: &paint::Ctx, label: &str, gc: Option<Color32>
         }
         if msel {
             // outline: 3px solid accent; outline-offset: -1px
-            ui.painter().rect_stroke(rect.shrink(1.0), CornerRadius::ZERO, Stroke::new(3.0, p.accent), StrokeKind::Inside);
+            ui.painter().rect_stroke(rect.shrink(1.0), CornerRadius::ZERO, Stroke::new(3.0, theme::pick()), StrokeKind::Inside);
         }
     }
     if resp.hovered() {
@@ -1000,7 +1000,7 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             let pt = ui.painter();
             let ms = msel(k);
             // .sg-cell.msel: accent 16% 바탕
-            pt.rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), if ms { theme::mix(p.accent, 16.0, p.sunken) } else if hot { p.hover } else { p.sunken });
+            pt.rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), if ms { theme::mix(theme::pick(), 12.0, p.sunken) } else if hot { p.hover } else { p.sunken });
             let screen = Rect::from_min_size(r.min + Vec2::splat(3.0), Vec2::new(cw - 6.0, sh));
             paint::paint_slide(ui, c, screen, Some(s), tpl, version, true, false, false); // logo=로고 화면(F 로고 켜기) 아님
             let lab = slide_label(s);
@@ -1018,7 +1018,7 @@ fn thumb_cells(ui: &mut egui::Ui, id: egui::Id, c: &paint::Ctx, slides: &[Value]
             }
             if ms {
                 // outline: 3px solid accent
-                ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Md), Stroke::new(3.0, p.accent), StrokeKind::Inside);
+                ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Md), Stroke::new(3.0, theme::pick()), StrokeKind::Inside);
             }
             if let Some(op) = widgets::hover_ops(ui, id.with(("ops", k)), r, &ops(s)) {
                 out = Some(Hit::Op(k, op));
@@ -1073,7 +1073,7 @@ impl App {
         // 여러 장을 고른 중이면 머리 줄 자리에 '고른 슬라이드 N장' 줄 (.msel-bar: accent 24% 바탕 · 아래 2px accent)
         let many = ms_many(&st, s);
         let mut bar_act: Option<(&'static str, bool)> = None;
-        let fill = if many.is_some() { theme::mix(pal().accent, 24.0, pal().panel) } else { Color32::TRANSPARENT };
+        let fill = if many.is_some() { theme::mix(theme::pick(), 14.0, pal().panel) } else { Color32::TRANSPARENT };
         // .center-head: padding 8px 12px · gap 8 · 아래 line
         let head = egui::Frame::new().fill(fill).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
             if let Some((i, ks)) = &many {
@@ -1158,7 +1158,7 @@ impl App {
         });
         let r = head.response.rect;
         if many.is_some() {
-            ui.painter().hline(ui.max_rect().x_range(), r.bottom() - 0.5, Stroke::new(2.0, pal().accent));
+            ui.painter().hline(ui.max_rect().x_range(), r.bottom() - 0.5, Stroke::new(2.0, theme::pick()));
         } else {
             ui.painter().hline(ui.max_rect().x_range(), r.bottom(), Stroke::new(1.0, pal().line));
         }
@@ -1217,6 +1217,11 @@ impl App {
                 _ => {
                     if st.cue_mode && s.preview.as_ref().and_then(cue_index).is_some() {
                         self.item_list(ui, &mut st, s, acts)
+                    } else if self.result.is_null() && self.search.trim().is_empty() && s.preview.is_none() {
+                        // 아무것도 찾지 않았고 고른 것도 없을 때: 빈 칸 대신 할 일 안내
+                        if widgets::empty(ui, "search", &tr("찾거나 고른 본문이 여기에 나옵니다"), &tr("· Ctrl+K 로 장절(요3:16) · 찬양 제목 · 낱말을 찾습니다\n· 왼쪽 큐시트의 순서를 누르면 그 슬라이드가 여기에 나옵니다\n· 줄을 누르면 '다음' 에 오르고, 두 번 누르거나 F9 를 누르면 송출합니다"), Some(&tr("찾기 (Ctrl+K)"))) {
+                            self.focus_search = true;
+                        }
                     } else {
                         // center_results 가 상태를 읽고 쓰므로 앞뒤로 맞춘다
                         save(ui.ctx(), st.clone());
@@ -1255,7 +1260,7 @@ impl App {
         }
         let r = &self.result;
         if r.is_null() || r["ok"] != json!(true) {
-            return (tr("검색 결과"), String::new());
+            return (if self.search.trim().is_empty() { String::new() } else { tr("검색 결과") }, String::new());
         }
         if r["mode"] == "reference" {
             let p = &r["passage"];
@@ -2280,7 +2285,7 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool, msel: 
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click_and_drag());
     if ui.is_rect_visible(rect) {
         let pt = ui.painter();
-        pt.rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), if msel { theme::mix(p.accent, 16.0, p.sunken) } else { p.sunken });
+        pt.rect_filled(rect, crate::theme::cr(crate::theme::Rad::Sm), if msel { theme::mix(theme::pick(), 12.0, p.sunken) } else { p.sunken });
         let y0 = rect.top() + 5.0 + (14.0 * 1.4 - 12.0 * 1.3) / 2.0;
         pt.galley(Pos2::new(rect.left() + 8.0 + 12.0 * 1.6 - kg.size().x, y0), kg, p.hl);
         if let Some(g) = lg {
@@ -2303,7 +2308,7 @@ fn all_line(ui: &mut egui::Ui, k: usize, s: &Value, pv: bool, live: bool, msel: 
         }
         if msel {
             // #cueGrid .msel: outline 3px accent
-            pt.rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(3.0, p.accent), StrokeKind::Inside);
+            pt.rect_stroke(rect, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(3.0, theme::pick()), StrokeKind::Inside);
         }
     }
     if resp.hovered() {
@@ -2340,7 +2345,14 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved:
         icons::paint(ui, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icons::for_type(ty), if p.bevel { p.muted } else { p.hl });
         // 목록에서 누른 이름 그대로 ('6. 설교') + 종류 꼬리표 (평가 20번). 이름이 없으면 예전처럼 'N번 종류'
         let title = title.trim();
-        if title.is_empty() {
+        if p.bevel {
+            // 순서 이름은 바로 위 본문 판 머리에 이미 있다 → 여기는 '편집칸 · 6번 찬양' 만 (이름이 두 번 나오지 않게)
+            ui.add(egui::Label::new(crate::theme::ty(tr("편집칸"), crate::theme::Type::SmallStrong, p.text2)).selectable(false));
+            let r = ui.add(egui::Label::new(crate::theme::ty(tr_args("{1}번 {2}", &[&(i + 1), &tr(type_name(ty))]), crate::theme::Type::Small, p.muted)).selectable(false));
+            if !title.is_empty() {
+                r.on_hover_text(format!("{}. {title}", i + 1));
+            }
+        } else if title.is_empty() {
             ui.label(rich(tr_args("{1}번 {2}", &[&(i + 1), &tr(type_name(ty))]), 14.0, Weight::Bold, p.text));
         } else {
             ui.add(egui::Label::new(rich(format!("{}. {title}", i + 1), 14.0, Weight::Bold, p.text)).truncate().selectable(false));
