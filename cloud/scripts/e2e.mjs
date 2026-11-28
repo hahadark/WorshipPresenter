@@ -4,7 +4,7 @@
 // - 견본 교회 열쇠가 없으면 scripts/seed.mjs 로 만든다 (.secrets/, Git 제외).
 // - WP_BASE 를 주면 이미 떠 있는 클라우드에 대고 돌린다 (그때는 띄우지 않는다).
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,8 @@ async function main() {
     execFileSync(process.execPath, [join(cloud, 'scripts', 'seed.mjs')], { cwd: cloud, stdio: 'inherit' });
   }
   execFileSync(process.execPath, [join(cloud, 'scripts', 'assets.mjs')], { cwd: cloud, stdio: 'inherit' });
+  // 로컬에서만 가짜 AI 공급자를 켠다 (AI_MOCK=1, 배포에는 넣지 않음 — docs/web/ai.md)
+  { const dv = join(cloud, '.dev.vars'); const t = readFileSync(dv, 'utf8'); if (!/^AI_MOCK=/m.test(t)) writeFileSync(dv, t.trimEnd() + '\nAI_MOCK=1\n'); }
   // 앞 실행 뒤에 새 마이그레이션이 생겼어도 로컬 D1 을 맞춘다 (2단계 0002_* ~)
   if (!process.env.WP_BASE) execFileSync(process.execPath, [wrangler, 'd1', 'migrations', 'apply', 'worshippresenter-web', '--local'], { cwd: cloud, stdio: 'ignore' });
   // 앞 실행의 틀린 횟수가 남아 잠금이 걸리지 않게 (로컬 D1 만)
@@ -42,8 +44,8 @@ async function main() {
     }
     console.log(`로컬 클라우드: ${base}`);
   }
-  // 기본: test/e2e/*.test.mjs (1단계) + test/data-e2e/*.test.mjs (2단계 A) + test/assets-e2e/*.test.mjs (2단계 C)
-  const all = ['e2e', 'data-e2e', 'assets-e2e'].flatMap(d => existsSync(join(cloud, 'test', d)) ? readdirSync(join(cloud, 'test', d)).filter(f => f.endsWith('.test.mjs')).sort().map(f => join('test', d, f)) : []);
+  // 기본: test/e2e/*.test.mjs (1단계) + test/data-e2e/*.test.mjs (2단계 A) + test/assets-e2e/*.test.mjs (2단계 C) + test/ai-e2e/*.test.mjs (5단계)
+  const all = ['e2e', 'data-e2e', 'assets-e2e', 'ai-e2e'].flatMap(d => existsSync(join(cloud, 'test', d)) ? readdirSync(join(cloud, 'test', d)).filter(f => f.endsWith('.test.mjs')).sort().map(f => join('test', d, f)) : []);
   const files = process.argv.slice(2).length ? process.argv.slice(2) : all;
   const t = spawn(process.execPath, ['--test', '--test-concurrency=1', '--test-timeout=30000', '--test-force-exit', ...files], { cwd: cloud, stdio: 'inherit', env: { ...process.env, WP_BASE: base } });
   const code = await new Promise(r => t.on('exit', r));

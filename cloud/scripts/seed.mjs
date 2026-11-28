@@ -29,7 +29,8 @@ if (!auth) {
 }
 if (!remote) {
   // wrangler dev 가 읽는 비밀값 파일
-  writeFileSync(join(cloud, '.dev.vars'), `AUTH_SECRET=${auth.AUTH_SECRET}\nADMIN_TOKEN=${auth.ADMIN_TOKEN}\n`);
+  // AI_MOCK=1: 가짜 AI 공급자(mock://)를 로컬에서만 허락 (docs/web/ai.md). 배포 비밀값에는 넣지 않는다 (deploy.mjs 는 AUTH_SECRET 만)
+  writeFileSync(join(cloud, '.dev.vars'), `AUTH_SECRET=${auth.AUTH_SECRET}\nADMIN_TOKEN=${auth.ADMIN_TOKEN}\nAI_MOCK=1\n`);
 }
 
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';

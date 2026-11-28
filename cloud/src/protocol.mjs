@@ -2,6 +2,7 @@
 // 이 파일은 Worker · 중계실(Durable Object) · 시험이 함께 쓴다. Cloudflare 전용 API 를 쓰지 않는다.
 import { dataRoute } from './data/routes.mjs'; // 2단계 A 길 (docs/web/data-api.md)
 import { assetRoute } from './assets/routes.mjs'; // 2단계 C 길 (docs/web/assets-api.md)
+import { aiRoute } from './ai/routes.mjs'; // 5단계 AI 길 (docs/web/ai.md)
 
 export const PROTOCOL = 1;
 
@@ -11,9 +12,9 @@ export const ROLES = ['owner', 'bridge', 'output', 'remote', 'editor', 'member-e
 /** 할 수 있는 일: view 출력 보기 · remote 리모컨 조작 · editor 큐시트 고치기 · manage 기기 열쇠 관리 · source 송출 주체로 붙기 */
 // 2단계: read 교회 자료 읽기 · write 고치기 (/api/v1/documents · sync · bible)
 const CAPS = {
-  owner: ['view', 'remote', 'editor', 'manage', 'source', 'read', 'write'],
+  owner: ['view', 'remote', 'editor', 'manage', 'source', 'read', 'write', 'ai'], // ai: 5단계 AI 부르기 (docs/web/ai.md)
   bridge: ['source', 'read', 'write'],
-  'member-editor': ['view', 'remote', 'editor', 'read', 'write'],
+  'member-editor': ['view', 'remote', 'editor', 'read', 'write', 'ai'],
   'member-viewer': ['view', 'read'],
   output: ['view'],
   remote: ['remote'],
@@ -79,7 +80,7 @@ export function route(method, path, query) {
   if (get && path === '/api/v1/room') return { kind: 'room', cap: 'manage' };
   if (path === '/api/v1/credentials' && (get || post)) return { kind: 'api', cap: 'manage' };
   if (method === 'DELETE' && /^\/api\/v1\/credentials\/[A-Za-z0-9]{6,24}$/.test(path)) return { kind: 'api', cap: 'manage' };
-  return dataRoute(method, path) || assetRoute(method, path);
+  return dataRoute(method, path) || assetRoute(method, path) || aiRoute(method, path);
 }
 
 /** 출력 화면이 /api/command 로 알릴 수 있는 것 (설치판 내부망 출력과 같은 경계). 그 밖의 명령은 클라우드에서 받지 않는다. */
