@@ -194,6 +194,6 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 
 - 설계 · 계약: **docs/web/architecture.md** (마지막 절 '1단계 구현 상태'), 기능 대조표 docs/web/feature-matrix.md. Cloudflare 쪽은 `cloud/` (README).
 - 설치판 '클라우드 연결'(기본 꺼짐): `wp-core/src/cloud.rs` · `wp-app/src/cloud_ui.rs`. 창은 리모컨 · 웹 편집기 창의 단추와 `--tool cloud` (메뉴 줄은 아직 — 메뉴 표 시험).
-- 시험: `cd cloud; npm test; npm run test:e2e` · 설치판과 함께 `node scripts/desktop-e2e.mjs --exe ..	arget\debug\wp-app.exe` (격리 자료 · 다른 포트, `--base <주소> --sample sample.remote.json` 이면 배포한 미리보기에).
+- 시험: `cd cloud; npm test; npm run test:e2e` · 설치판과 함께 `node scripts/desktop-e2e.mjs --exe ..\target\debug\wp-app.exe` (격리 자료 · 다른 포트, `--base <주소> --sample sample.remote.json` 이면 배포한 미리보기에).
 - 미리보기: https://worshippresenter-web.hahadark-media.workers.dev (견본 교회 sample 만, 열쇠는 cloud/.secrets/ — 커밋 금지).
 
