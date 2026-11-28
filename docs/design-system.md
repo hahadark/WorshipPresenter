@@ -68,4 +68,64 @@ Pretendard만 사용한다. `theme::ty(text, Type, color)` 또는 `Type::… .fo
 
 `node tools/craft/shots.js --exe target/debug/wp-app.exe --seed tmp/craft/seed --out tmp/craft/after --only specimen`로 테마와 배율별 그림을 만든다. 앱이 직접 찍고 종료하며 키보드·마우스를 건드리지 않는다. 실제 주 화면의 전후 쌍은 `tmp/craft/before`, `tmp/craft/after`에 보관한다.
 
-견본 그림은 검증 후 이 문서에 추가한다. 아이콘 원본·이름표는 다음 커밋에서 추가한다.
+![부품 견본 (전문가 테마 · 150%)](images/craft/specimen.jpg)
+
+## 아이콘
+
+- 원본: `assets/icons/craft.json` (이름 → 16×16 viewBox 안의 SVG 경로). 선 1.25 · 둥근 끝 · 둥근 이음, 채우지 않음. 큰 모양은 0.5 칸에 맞춰 100 · 125 · 150% 에서 흐리지 않게.
+- 낱개 SVG: `python tools/craft/icons.py` 가 `assets/icons/craft/<이름>.svg` 를 만든다 (`--check` 는 같은지만 본다). 고친 뒤에는 이 명령을 다시 돌려 둘을 맞춘다.
+- 쓰는 법: `icons::paint(ui, rect, "이름", 색)` · `icons::show(ui, "이름", 크기, 색)`. 창(F2)도 같은 이름을 쓴다. craft 에 없는 이름은 Lucide(web/shared/icons.js) 그대로 나온다.
+- **되돌리기**: `crates/wp-app/src/icons.rs` 의 `const USE_CRAFT_ICONS: bool = true;` 를 `false` 로 바꾸면 예전 Lucide 한 벌. 실행할 때만 견주려면 환경변수 `WP_ICONS=lucide`.
+- 견본: `wp-app --specimen icons --shot x.png` (16 · 20 · 24px).
+
+이름표 (100개): `align-center` · `align-justify` · `align-left` · `align-right` · `arrow-down` · `arrow-left` · `arrow-right` · `arrow-up` · `bold` · `book-open` · `brush` · `camera` · `captions` · `check` · `chevron-down` · `chevron-left` · `chevron-right` · `chevron-up` · `chevrons-down` · `chevrons-up` · `circle` · `circle-check` · `circle-help` · `circle-x` · `clapperboard` · `clock` · `columns-2` · `copy` · `copy-plus` · `download` · `eraser` · `external-link` · `eye` · `eye-off` · `file-text` · `flag` · `folder` · `folder-open` · `globe` · `grip-vertical` · `hand` · `home` · `image` · `images` · `info` · `italic` · `keyboard` · `layers` · `layout-grid` · `link` · `list` · `maximize` · `megaphone` · `mic` · `minimize` · `minus` · `monitor` · `monitor-off` · `more-horizontal` · `mouse-pointer-2` · `music` · `music-2` · `palette` · `panel-bottom` · `panel-left` · `panel-right` · `pause` · `pencil` · `play` · `plus` · `power` · `presentation` · `redo-2` · `refresh-cw` · `rotate-ccw` · `rows-2` · `save` · `scan` · `scissors` · `search` · `settings` · `skip-back` · `skip-forward` · `sliders-horizontal` · `square` · `square-pen` · `tag` · `text` · `timer` · `trash-2` · `triangle-alert` · `type` · `underline` · `undo-2` · `upload` · `video` · `volume-2` · `volume-x` · `wifi` · `x`
+
+![아이콘 견본](images/craft/icons.jpg)
+
+## 이번에 더한 공용 부품 (2026-11-28 2차)
+
+| 부품 | 쓰는 곳 |
+|---|---|
+| `theme::pick()` | 고른 것 표시 선 (색 견본 · 정렬 칸 · 여러 장 고름 · 고른 줄 테두리). 전문가 테마는 밝은 무채색, 옛 테마는 강조색. 노랑(`next` · `accent`)은 '다음' 에만 |
+| `widgets::fade_edge(ui, rect, left, 바탕)` | 넘치는 가로 줄의 끝을 흐리게 (슬라이드 줄) |
+| `widgets::elide` · `Tnum` | 말줄임 · 자릿수 폭 고정 숫자 (표시창 · 시간표 · 쪽 수) |
+| `probar_ui::BarFit` | 컨트롤 막대가 폭에 따라 덜어 내는 단계 (아래 표). 시험 `bar_never_overlaps_and_steps_in_order` |
+
+### 컨트롤 막대 폭 단계 (`BarFit::fit`)
+
+넓을 때 모습에서 하나씩 덜어 내고 겹치지 않는다(665px = 1000×640 · 150% 까지 시험).
+1 찾기칸 260 → 180 · 2 도구 이름 빼고 아이콘만(이름은 툴팁 첫머리) · 3 송출 단추 좁게 · 4 찾기칸 140 · 5 표시창 '지금' 칸 빼기(툴팁) ·
+6 송출 단추의 F9 글 빼기 · 7 찾기칸 120 · 8 판 접기 · 설정 아이콘 빼기(보기 · 파일 메뉴에 같은 것) · 9 틈 8 · 찾기칸 104.
+표시창('송출 중' 이 읽혀야 함)은 찾기칸보다 나중에 줄인다. 도구 칸 폭은 가장 긴 이름에 맞춘다(영어).
+
+## 주 화면 정리 (craft-main)
+
+![전후 1600×960](images/craft/compare-main-1600.jpg)
+
+| 구역 | 바뀐 것 |
+|---|---|
+| 표시창 | [지금 \| 송출 중 \| 다음 순서]. 송출 중 칸이 가장 넓고 제목 14 굵게, 숫자는 자릿수 고정(초가 바뀌어도 흔들리지 않음), 넘치면 말줄임 + 툴팁. 숨겼으면 '· 글자 숨김' / '· 화면 비움' 주황 |
+| '다음' 의 뜻 | 노랑 '다음' 뷰어 = F9 로 나갈 것 (툴팁). 표시창은 '다음 순서', 슬라이드 아래 줄은 '이어서:' |
+| 뷰어 | 출력 고르기 [예배당 \| OBS \| 로비] 구획 단추 → 작은 고르기 칸 (뷰어마다 따로 고르는 기능은 그대로). 빈 뷰어 테두리는 회색 |
+| 편집칸 | 머리의 순서 이름(본문 판 머리와 겹침) → '편집칸 · 6번 찬양'. 열림/닫힘을 기억(설정 `rsEditorOpen`). 송출 중인 순서를 고르면 접어 둔다 — 편집칸 단추 · F2 · Ctrl+Shift+E 로 펼침 |
+| 노랑 · 빨강 규칙 | 판 접기 아이콘 · 찾기칸 초점 · 즉석 자막 켜짐 · 시간표 무대 타이머 · 색 견본 · 정렬 칸 · 여러 장 고름 · 판 손잡이 · 순서 넣기 펼침 → 회색. 상태 줄 오류 → 주황 |
+| 시간표 | 막대 글은 말줄임(글자 중간에서 잘리지 않음), 좁은 막대는 번호만, 구성 줄은 이름 하나 + 개수, 눈금 숫자 폭 고정 |
+| 인스펙터 | 무대 탭 = 글자 탭 양식(구획 머리 · 이름표 열 78 · 여백 12), 지금 떠 있는 무대 메시지. 글꼴 고르기 · 내어쓰기 단추를 글자 단계에. 고른 순서 없으면 "템플릿 '…'" + '템플릿 전체를 고칩니다' |
+| 빈 상태 | 빈 큐시트(순서 넣기 · Ctrl+V 가사 · 찾아서 넣기), 빈 본문(Ctrl+K · 순서 누르기 · F9) |
+| 말 | 숨김 · 보이기 한 쌍: 글자 숨김/보이기 · 배경 숨김/보이기 · 모두 숨김, 도구 이름 '지우기' → '화면 비우기' (하는 일은 같음) |
+| 지금 화면 칩 | 이름 자막 · 회중 메시지 · 무대 메시지도 칩으로 (✕ 로 내림) |
+| 상태 줄 | 잘린 알림은 눌러서 전문 + 할 일, 잘리지 않은 것은 예전처럼 눌러 닫기 |
+| 끌어서 차례 바꾸기 | 끼움 선 = 초점색 2px + 왼쪽 동그라미, 끌리는 줄 이름표, 제자리 흐림 |
+
+### 자리 옮긴 조작 (예전 자리 → 새 자리)
+
+| 조작 | 예전 | 새 자리 |
+|---|---|---|
+| 뷰어 출력 고르기 | 뷰어 머리 구획 단추 세 칸 | 뷰어 머리 오른쪽 작은 고르기 칸 (같은 목록) |
+| 판 접기 · 설정 아이콘 (아주 좁은 창) | 막대 양 끝 | 보기 메뉴 '판 보이기 · 숨기기' · 설정 메뉴 (넓으면 예전 자리 그대로) |
+| 무대 탭 일시정지 · 계속 | 글자 단추 둘 | '조절' 줄 첫 아이콘 하나 (진행 중이면 일시정지, 멈췄으면 계속) |
+| 무대 탭 '그 시각까지 시작' | 단추 이름 | '몇 시까지' 줄의 [시작] (같은 동작) |
+| 무대 화면 주소 | 단추 줄 안 흐린 글 | [주소 복사] 단추 아래 흐린 글 |
+
+단축키는 하나도 바꾸지 않았다.
+
