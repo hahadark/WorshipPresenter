@@ -93,8 +93,10 @@ fn slide_text(sl: &Value) -> String {
     }
     match sl["kind"].as_str().unwrap_or("") {
         "title" => [sl["ref"].as_str().unwrap_or(""), sl["subtitle"].as_str().unwrap_or("")].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" · "),
-        "video" => "🎬 영상".into(),
-        k @ ("image" | "score") => sl["caption"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| if k == "score" { "🎼 악보".into() } else { "🖼 이미지".into() }),
+        // 종류는 live.kind 로도 알려 준다 (새 화면은 아이콘으로 그림). 그림 글자(이모지)는 쓰지 않는다
+        "video" => crate::i18n::tr("영상").into(),
+        k @ ("image" | "score") => sl["caption"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| if k == "score" { crate::i18n::tr("악보").into() } else { crate::i18n::tr("그림").into() }),
+        "camera" => sl["camera"]["label"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| crate::i18n::tr("카메라").into()),
         "blank" => "(빈 화면)".into(),
         _ => {
             let t = sl["parts"].as_array().into_iter().flatten().map(|p| p["text"].as_str().unwrap_or("")).collect::<Vec<_>>().join(" ");
@@ -114,13 +116,19 @@ pub fn state_for(core: &Core) -> Value {
     let image = if (sl["kind"] == "image" || sl["kind"] == "score") && sl["image"].as_str().is_some_and(|x| !x.is_empty()) { sl["image"].clone() } else { json!("") };
     let labels: Vec<String> = live["slides"].as_array().into_iter().flatten().map(|x| x.as_str().unwrap_or("").strip_prefix('¶').unwrap_or("").to_string()).collect();
     let s = core.settings.get();
+    // 덧붙인 필드(새 리모컨 화면용 — 예전 화면은 모르는 필드를 그냥 지나친다):
+    //   live.kind · nextKind(슬라이드 종류 → 아이콘), live.cueId(송출 중인 것이 어느 큐시트의 순서인지 — 열린 큐시트와 다르면 줄 표시를 하지 않게),
+    //   live.nextItem(마지막 장에서 '다음' 을 누르면 넘어갈 순서), cue.id, 순서의 note(진행 메모), app(언어 · 판)
+    let kind = |x: &Value| x["kind"].as_str().unwrap_or("").to_string();
     json!({
         "live": {
             "has": live["hasLive"], "visible": live["visible"], "index": live["index"], "count": live["count"],
             "title": if title.is_null() { json!("") } else { title }, "text": slide_text(sl), "next": slide_text(&live["nextSlide"]),
             "image": image, "labels": labels, "cueIndex": p["cueIndex"].as_i64().unwrap_or(-1),
+            "kind": kind(sl), "nextKind": kind(&live["nextSlide"]), "cueId": p["cueId"].as_str().unwrap_or(""), "nextItem": next_item_title(core, p),
         },
-        "cue": core.cue.as_ref().map(|c| json!({ "name": c.name, "items": c.items.iter().map(|it| json!({ "title": it["title"], "type": it["type"] })).collect::<Vec<_>>() })),
+        "cue": core.cue.as_ref().map(|c| json!({ "id": c.id, "name": c.name, "items": c.items.iter().map(|it| json!({ "title": it["title"], "type": it["type"], "note": it["note"].as_str().unwrap_or("").chars().take(80).collect::<String>() })).collect::<Vec<_>>() })),
+        "app": { "lang": if s["uiLang"] == "en" { "en" } else { "ko" }, "version": env!("CARGO_PKG_VERSION") },
         // Rust 판은 조작 화면이 같은 프로그램이라 늘 열려 있음
         "control": true,
         "stage": { "message": core.b.stage.message, "timer": core.b.stage.timer_json() }, // [트랙 B]
@@ -147,6 +155,17 @@ pub fn scenes_state(core: &Core) -> Value {
         })
         .collect();
     json!({ "outputs": outs, "list": list.iter().map(|x| json!({ "id": x["id"], "name": x["name"] })).collect::<Vec<_>>() })
+}
+
+/// 송출 중인 순서 다음에 올 순서의 제목 (마지막 장에서 '다음' 을 누르면 넘어갈 곳).
+/// 송출 중인 것이 열린 큐시트의 순서이고 '끝에서 다음 순서로'(cueAdvance)가 켜져 있을 때만 — 아니면 빈 글.
+fn next_item_title(core: &Core, p: &Value) -> String {
+    let (Some(c), Some(id), Some(ci)) = (core.cue.as_ref(), p["cueId"].as_str().filter(|x| !x.is_empty()), p["cueIndex"].as_i64().filter(|i| *i >= 0)) else { return String::new() };
+    if c.id != id || core.settings.get()["cueAdvance"].as_bool() == Some(false) {
+        return String::new();
+    }
+    // 음악 순서는 건너뛴다 (trigger::advance_live_cue 와 같은 규칙)
+    c.items.iter().skip(ci as usize + 1).find(|it| it["type"] != "audio").and_then(|it| it["title"].as_str()).unwrap_or("").to_string()
 }
 
 /// 리모컨에서 할 수 있는 일만
@@ -202,11 +221,38 @@ fn js(code: StatusCode, v: Value) -> Response {
 async fn file(web: &Path, rel: &str, ty: &'static str, lang_en: bool) -> Response {
     match tokio::fs::read(web.join(rel)).await {
         Ok(buf) => {
-            let buf = if lang_en && rel.ends_with(".html") { with_lang(&buf, "/").into_bytes() } else { buf };
+            let buf = if rel.ends_with(".html") { with_app_lang(&buf, lang_en).into_bytes() } else { buf };
             ([(header::CONTENT_TYPE, ty), (header::CACHE_CONTROL, "no-cache")], buf).into_response()
         }
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// 웹 화면(휴대폰 리모컨 · 휴대폰 카메라 · 웹 편집기)에 앱의 화면 언어를 알려 준다: `<html lang="ko" data-app-lang="ko|en">`.
+/// 화면마다 작은 사전을 따로 갖고 있어(shared/ui/wpweb.js 의 WPW.dict) 큰 영어 사전(i18n-en.js)을 휴대폰에 내려보내지 않는다.
+pub fn with_app_lang(buf: &[u8], en: bool) -> String {
+    String::from_utf8_lossy(buf).replacen(r#"<html lang="ko">"#, if en { r#"<html lang="ko" data-app-lang="en">"# } else { r#"<html lang="ko" data-app-lang="ko">"# }, 1)
+}
+
+/// 세 웹 화면이 함께 쓰는 모양 · 도구 · 글꼴 (`/wpui/<이름>`). 정해 둔 이름만 — 다른 파일은 열어 주지 않는다.
+/// 인터넷 없이 내부망에서만 열리므로 글꼴(Pretendard)도 이 PC 가 준다. 글꼴은 주소에 ?v= 를 붙여 부르고 오래 기억하게 한다.
+pub async fn ui_asset(web: &Path, name: &str) -> Response {
+    let (rel, ty, cache) = match name {
+        "wpweb.css" => ("shared/ui/wpweb.css", "text/css; charset=utf-8", "no-cache"),
+        "wpweb.js" => ("shared/ui/wpweb.js", "text/javascript; charset=utf-8", "no-cache"),
+        "pretendard.woff2" => ("shared/fonts/PretendardVariable.woff2", "font/woff2", "public, max-age=31536000, immutable"),
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    match tokio::fs::read(web.join(rel)).await {
+        Ok(buf) => ([(header::CONTENT_TYPE, ty), (header::CACHE_CONTROL, cache)], buf).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `/wpui/<이름>` (리모컨 · 도킹 · 휴대폰 카메라 · 웹 편집기 서버가 함께 씀)
+pub async fn ui_route(State(core): State<Shared>, axum::extract::Path(name): axum::extract::Path<String>) -> Response {
+    let w = core.lock().web_dir.clone();
+    ui_asset(&w, &name).await
 }
 
 /// 화면 언어가 영어면 <html data-lang="en"> 과 번역 스크립트 (server.js withLang)
@@ -230,11 +276,12 @@ async fn r_js(State(core): State<Shared>, uri: axum::http::Uri) -> Response {
     let (w, _) = web_lang(&core);
     let rel = match uri.path() {
         "/remote.js" => "remote/remote.js",
+        "/remote.css" => "remote/remote.css",
         "/groups.js" => "shared/groups.js",
         "/i18n.js" => "shared/i18n.js",
         _ => "shared/i18n-en.js",
     };
-    file(&w, rel, "text/javascript; charset=utf-8", false).await
+    file(&w, rel, if rel.ends_with(".css") { "text/css; charset=utf-8" } else { "text/javascript; charset=utf-8" }, false).await
 }
 async fn r_state(State(core): State<Shared>, ConnectInfo(addr): ConnectInfo<SocketAddr>, Query(q): Query<HashMap<String, String>>) -> Response {
     let c = core.lock();
@@ -267,6 +314,8 @@ pub fn remote_router(core: Shared) -> Router {
         .route("/", get(r_index))
         .route("/index.html", get(r_index))
         .route("/remote.js", get(r_js))
+        .route("/remote.css", get(r_js))
+        .route("/wpui/{name}", get(ui_route))
         .route("/groups.js", get(r_js))
         .route("/i18n.js", get(r_js))
         .route("/i18n-en.js", get(r_js))
@@ -304,6 +353,8 @@ pub fn dock_routes() -> Router<Shared> {
         .route("/dock", get(dock_index))
         .route("/dock/", get(dock_index))
         .route("/remote.js", get(r_js))
+        .route("/remote.css", get(r_js))
+        .route("/wpui/{name}", get(ui_route))
         .route("/groups.js", get(r_js))
         .route("/i18n.js", get(r_js))
         .route("/i18n-en.js", get(r_js))
