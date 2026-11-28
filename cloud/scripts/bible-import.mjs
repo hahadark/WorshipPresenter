@@ -6,7 +6,9 @@
 //   … --remote --license-ok   배포한 D1 에 넣음. 저작권 허락이 있는 번역본만 — 어떤 번역본을 올릴지는 사관님이 정한다.
 // - 실제 자료를 건드리지 않게 db 를 먼저 임시 폴더로 복사해서(-wal · -shm 포함) 그 사본만 읽는다.
 // - 같은 교회 · 같은 번역본을 다시 넣으면 앞의 것을 지우고 새로 넣는다.
-// - D1 원격은 SQL 문 하나 100 KB 까지라 INSERT 를 90 KB 아래로 나눈다.
+// - D1 은 SQL 문 하나 100 KB(바이트)까지라 INSERT 를 90,000 바이트 아래로 나눈다. 글자 수가 아니라 UTF-8 바이트로 잰다
+//   (한글은 한 글자 3바이트 — 글자 수로 재던 때는 장이 많은 번역본에서 SQLITE_TOOBIG 으로 실패했다).
+// - 넣을 때는 SQL 을 4 MiB 아래의 파일 여러 개로 나눠 차례로 실행한다 (한 번에 큰 파일을 보내지 않게).
 import { DatabaseSync } from 'node:sqlite';
 import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -75,6 +77,10 @@ try {
   }
 
   const q = s => `'${String(s).replace(/'/g, "''")}'`;
+  /** D1 SQL 문 하나의 한도는 100,000 바이트 — 넉넉히 아래로 */
+  const MAX_STATEMENT = Number(opt('--max-statement', 90_000));
+  /** 한 번에 실행하는 SQL 파일 크기 */
+  const MAX_FILE = Number(opt('--max-file', 4 * 1024 * 1024));
   const now = Date.now();
   const sql = [
     `DELETE FROM bible_verses WHERE church_id = ${q(church)} AND version = ${q(v.id)};`,
@@ -82,13 +88,17 @@ try {
     `INSERT INTO bible_versions (church_id, id, name, license_note, verses, language, structure, imported_at) VALUES (${q(church)}, ${q(v.id)}, ${q(v.name)}, ${q(v.copyright || v.license)}, ${rows.length}, ${q(v.language || 'ko')}, ${q(JSON.stringify(structure))}, ${now})
      ON CONFLICT (church_id, id) DO UPDATE SET name = excluded.name, license_note = excluded.license_note, verses = excluded.verses, language = excluded.language, structure = excluded.structure, imported_at = excluded.imported_at;`,
   ];
+  const bytes = t => Buffer.byteLength(t, 'utf8');
   const chunked = (table, cols, list, row) => {
-    let cur = [], size = 0;
-    const flush = () => { if (cur.length) sql.push(`INSERT INTO ${table} (${cols}) VALUES\n${cur.join(',\n')};`); cur = []; size = 0; };
+    const head = `INSERT INTO ${table} (${cols}) VALUES\n`;
+    let cur = [], size = bytes(head) + 1;
+    const flush = () => { if (cur.length) sql.push(`${head}${cur.join(',\n')};`); cur = []; size = bytes(head) + 1; };
     for (const x of list) {
       const t = row(x);
-      if (size + t.length > 90_000) flush();
-      cur.push(t); size += t.length + 2;
+      const n = bytes(t) + 2;
+      if (size + n > MAX_STATEMENT && cur.length) flush();
+      if (bytes(head) + n > MAX_STATEMENT) die(`절 하나가 SQL 문 한도보다 큽니다 (${n} 바이트).`);
+      cur.push(t); size += n;
     }
     flush();
   };
@@ -104,8 +114,22 @@ try {
   console.log(`${v.name}(${v.id}) → 교회 '${church}': 절 ${rows.length}개 · 소제목 ${heads.length}개 · 책 ${books.size}권 · SQL ${(text.length / 1024).toFixed(0)} KiB`);
   if (has('--local') || has('--remote')) {
     const wrangler = join(cloud, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
-    execFileSync(process.execPath, [wrangler, 'd1', 'execute', 'worshippresenter-web', has('--remote') ? '--remote' : '--local', '-c', config, '--file', out, '-y'], {
-      cwd: cloud, stdio: ['ignore', has('--quiet') ? 'ignore' : 'inherit', 'inherit'], env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
+    // SQL 문을 4 MiB 아래의 파일 여러 개로 나눠 차례로 (맨 앞 파일에 지우기 · 번역본 줄이 먼저 들어간다)
+    const parts = [];
+    let cur = [], size = 0;
+    for (const st of sql) {
+      const n = bytes(st) + 1;
+      if (size + n > MAX_FILE && cur.length) { parts.push(cur.join('\n')); cur = []; size = 0; }
+      cur.push(st); size += n;
+    }
+    if (cur.length) parts.push(cur.join('\n'));
+    parts.forEach((t, i) => {
+      const f = join(work, `part-${String(i + 1).padStart(3, '0')}.sql`);
+      writeFileSync(f, t);
+      execFileSync(process.execPath, [wrangler, 'd1', 'execute', 'worshippresenter-web', has('--remote') ? '--remote' : '--local', '-c', config, '--file', f, '-y'], {
+        cwd: cloud, stdio: ['ignore', has('--quiet') ? 'ignore' : 'inherit', 'inherit'], env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
+      });
+      if (parts.length > 1) console.log(`  ${i + 1}/${parts.length} 넣음`);
     });
     console.log(has('--remote') ? '배포한 D1 에 넣었습니다.' : '로컬 D1 에 넣었습니다.');
   } else if (opt('--out')) console.log(`SQL: ${out}`);
