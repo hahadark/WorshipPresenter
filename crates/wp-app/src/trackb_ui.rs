@@ -31,6 +31,8 @@ pub struct TbState {
     quick_text: String,
     quick_was_open: bool,
     quick_focus: bool,
+    /// 즉석 자막을 보내기 바로 전에 송출하던 묶음 ([내리기] 로 돌아갈 곳)
+    quick_prev: Option<Deck>,
     timer_min: String,
     /// 무대 타이머 '몇 시까지' 칸 ("11:00")
     timer_at: String,
@@ -433,7 +435,7 @@ impl App {
     // ---------------- 오버레이 ----------------
     fn overlays_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.overlays;
-        crate::widgets_win::window(ctx, "overlays", wp_core::i18n::tr("오버레이"), [460.0, 420.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "overlays", wp_core::i18n::tr("오버레이"), [460.0, 420.0]).live(ctx).open(&mut open).show(ctx, |ui| {
             self.overlays_panel(ui);
         });
         self.tb.overlays = open;
@@ -500,7 +502,7 @@ impl App {
     // ---------------- 회중 메시지 ----------------
     fn message_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.message;
-        crate::widgets_win::window(ctx, "message", wp_core::i18n::tr("회중 메시지"), [460.0, 480.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "message", wp_core::i18n::tr("회중 메시지"), [460.0, 480.0]).live(ctx).open(&mut open).show(ctx, |ui| {
             use crate::widgets::{self, Btn, HoverOp, Kind, Size};
             use crate::theme::pal;
             use wp_core::i18n::tr;
@@ -627,35 +629,58 @@ impl App {
         // 창이 닫혀 있으면 읽지 않는다. 폴더 경로만 잠금 안에서 꺼내고 파일은 잠금 밖에서 (전에는 매 프레임 잠금을 쥔 채 읽었다)
         let quick_dir = self.core.lock().data_dir.clone();
         let recent = if open { quick_recent(&quick_dir) } else { vec![] };
-        crate::widgets_win::window(ctx, "quick", wp_core::i18n::tr("즉석 자막"), [420.0, 200.0]).open(&mut open).show(ctx, |ui| {
-            ui.label(RichText::new(wp_core::i18n::tr("Enter 송출 · Shift+Enter 줄 바꿈 · Esc 닫기")).small().weak());
-            let r = ui.add(egui::TextEdit::multiline(&mut self.tb.quick_text).id(input_id).desired_rows(3).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("예: 예배 후 전 교인 식사가 있습니다")));
+        let mut down = false;
+        let live_now = self.core.lock().quick_is_live();
+        crate::widgets_win::window(ctx, "quick", wp_core::i18n::tr("즉석 자막"), [440.0, 330.0]).live(ctx).open(&mut open).show(ctx, |ui| {
+            use crate::widgets::{Btn, Kind, Size};
+            use crate::widgets_win as win;
+            use wp_core::i18n::tr;
+            win::lead(ui, &tr("쓴 글을 송출 화면(예배당 · 방송)에 곧바로 띄웁니다."));
+            let r = ui.add(egui::TextEdit::multiline(&mut self.tb.quick_text).id(input_id).desired_rows(3).desired_width(f32::INFINITY).hint_text(tr("예: 예배 후 전 교인 식사가 있습니다")));
             crate::widgets::mark("quick-input", r.rect);
             if self.tb.quick_focus { if r.has_focus() { self.tb.quick_focus = false } else { r.request_focus() } }
+            win::hint(ui, &tr("Enter 송출 · Shift+Enter 줄 바꿈 · Esc 닫기"));
+            ui.add_space(crate::theme::sp::X4);
             ui.horizontal(|ui| {
-                let b = ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("송출 (Enter)")).kind(crate::widgets::Kind::Primary)); // 이 창의 주된 일 하나
-                crate::widgets::mark("quick-send", b.rect);
-                send |= b.clicked();
-                let c = ui.button(wp_core::i18n::tr("큐시트에 넣기")).on_hover_text(wp_core::i18n::tr("고른 순서 다음에 '공지' 순서로 넣습니다"));
+                let c = ui.add(Btn::new(tr("큐시트에 넣기")).icon("plus").tooltip(tr("고른 순서 다음에 '공지' 순서로 넣습니다")));
                 crate::widgets::mark("quick-cue", c.rect);
                 add = c.clicked();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let b = ui.add(Btn::new(tr("송출")).kind(Kind::Primary).icon("play").tooltip(tr("지금 송출 화면에 띄웁니다 (Enter)"))); // 이 창의 주된 일 하나
+                    crate::widgets::mark("quick-send", b.rect);
+                    send |= b.clicked();
+                    let d = ui.add(Btn::new(tr("내리기")).enabled(live_now).tooltip(if live_now { tr("즉석 자막을 내리고 앞에 송출하던 화면으로 돌아갑니다") } else { tr("지금 송출 중인 즉석 자막이 없습니다") }));
+                    crate::widgets::mark("quick-down", d.rect);
+                    down = d.clicked();
+                });
             });
-            ui.label(RichText::new(wp_core::i18n::tr("최근에 보낸 글")).small().weak());
+            if live_now {
+                win::status(ui, win::Tone::Info, &tr("지금 즉석 자막이 송출 중입니다."));
+            }
+            win::section(ui, &tr("최근에 보낸 글"));
             if recent.is_empty() {
-                ui.label(RichText::new(wp_core::i18n::tr("보낸 글이 여기에 남습니다. 누르면 다시 송출합니다.")).weak());
+                win::hint(ui, &tr("보낸 글이 여기에 남습니다. 누르면 다시 송출합니다."));
             }
             for (i, q) in recent.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    let b = ui.button(q.replace('\n', " / ")).on_hover_text(wp_core::i18n::tr("누르면 이 글을 다시 송출"));
-                    crate::widgets::mark(&format!("quick-recent-{i}"), b.rect);
-                    if b.clicked() { resend = Some(q.clone()); }
-                    if ui.small_button("✎").on_hover_text(wp_core::i18n::tr("입력칸으로 가져와 고치기")).clicked() { edit = Some(q.clone()); }
-                    let d = ui.small_button("✕").on_hover_text(wp_core::i18n::tr("목록에서 지우기"));
-                    crate::widgets::mark(&format!("quick-forget-{i}"), d.rect);
-                    if d.clicked() { forget = Some(q.clone()); }
-                });
+                let (rect, resp) = win::list_row(ui, crate::theme::ctl_h() + 2.0, false);
+                let one = q.replace('\n', " / ");
+                let ops_w = 2.0 * (crate::theme::ctl(crate::theme::Ctl::Sm) + 4.0);
+                crate::widgets::text_elided(ui, egui::pos2(rect.left() + 8.0, rect.center().y), egui::Align2::LEFT_CENTER, &one, crate::theme::Type::Body.font(), crate::theme::pal().text, rect.width() - 16.0 - ops_w);
+                let resp = resp.on_hover_text(tr("누르면 이 글을 다시 송출"));
+                crate::widgets::mark(&format!("quick-recent-{i}"), rect);
+                let s = crate::theme::ctl(crate::theme::Ctl::Sm);
+                let fr = egui::Rect::from_center_size(egui::pos2(rect.right() - 4.0 - s / 2.0, rect.center().y), egui::vec2(s, s));
+                let er = fr.translate(egui::vec2(-(s + 4.0), 0.0));
+                let e = win::place(ui, er, |ui| ui.add(Btn::icon_only("pencil").kind(Kind::Ghost).size(Size::Sm).tooltip(tr("입력칸으로 가져와 고치기"))));
+                let d = win::place(ui, fr, |ui| ui.add(Btn::icon_only("x").kind(Kind::Ghost).size(Size::Sm).tooltip(tr("목록에서 지우기"))));
+                crate::widgets::mark(&format!("quick-forget-{i}"), fr);
+                if e.clicked() { edit = Some(q.clone()); } else if d.clicked() { forget = Some(q.clone()); } else if resp.clicked() { resend = Some(q.clone()); }
             }
         });
+        if down {
+            let prev = self.tb.quick_prev.take();
+            self.core.lock().quick_take_down(prev);
+        }
         if send {
             let text = self.tb.quick_text.clone();
             if self.quick_send(&text) {
@@ -705,15 +730,20 @@ impl App {
         if slides.is_empty() { return false; }
         let n = slides.len();
         let d = Deck { passage: json!({ "title": "즉석 자막", "itemTitle": "즉석 자막", "versionName": "", "cueIndex": -1, "cueId": "", "itemType": "text" }), slides, index: 0 };
+        // [내리기] 로 돌아갈 곳: 즉석 자막을 연달아 보내면 처음 것 앞의 화면을 그대로 둔다
+        if !c.quick_is_live() {
+            self.tb.quick_prev = c.pres.live.as_ref().filter(|l| l.visible).map(|l| l.deck.clone());
+        }
         c.send_deck(d);
         quick_remember(&c.data_dir, &text);
         if n > 1 { c.notify(tr_args("즉석 자막을 송출했습니다 ({1}장 — F6 으로 넘김)", &[&n]), "ok"); } else { c.notify(tr("즉석 자막을 송출했습니다."), "ok"); }
         true
     }
     // ---------------- 무대 화면 ----------------
+    // 진행 중에 여는 창이라 뷰어(다음 · 송출 중) 밖에 뜬다 (widgets_win::live). 본문은 인스펙터 '무대' 탭과 같은 workspace_stage
     fn stage_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.stage;
-        crate::widgets_win::window(ctx, "stage", wp_core::i18n::tr("무대 화면"), [440.0, 360.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "stage", wp_core::i18n::tr("무대 화면"), [440.0, 560.0]).live(ctx).open(&mut open).show(ctx, |ui| {
             self.workspace_stage(ui);
         });
         self.tb.stage = open;
@@ -721,9 +751,9 @@ impl App {
 
     pub(crate) fn workspace_stage(&mut self, ui: &mut egui::Ui) {
         // 인스펙터 '무대' 탭 · 무대 화면 창이 같이 쓴다. 양식은 '글자' 탭과 같게: 구획 머리(group_head) + 이름표 열(tpl_controls::row, 78)
-        let (timer, port, presets, shown_msg) = {
+        let (timer, port, presets, shown_msg, pin_now) = {
             let c = self.core.lock();
-            (c.b.stage.timer_json(), c.port, c.settings.get()["stagePresets"].as_array().cloned().unwrap_or_default(), c.b.stage.message.clone())
+            (c.b.stage.timer_json(), c.port, c.settings.get()["stagePresets"].as_array().cloned().unwrap_or_default(), c.b.stage.message.clone(), c.b.stage.pin.clone())
         };
         use crate::theme::{self, pal, Type};
         use crate::tpl_controls::row;
@@ -831,6 +861,9 @@ impl App {
                 }
             });
         });
+        if !self.tb.note.is_empty() {
+            crate::widgets_win::status(ui, crate::widgets_win::Tone::Error, &wp_core::i18n::tr_dyn(&self.tb.note));
+        }
         // ---- 무대 메시지 (설교자에게만)
         widgets::group_head(ui, &tr("무대 메시지"));
         if !shown_msg.trim().is_empty() {
@@ -845,11 +878,12 @@ impl App {
                 }
             });
         }
-        ui.add(egui::TextEdit::singleline(&mut self.tb.stage_msg).desired_width(f32::INFINITY).hint_text(tr("무대 메시지 (설교자에게만)")));
+        let mr = ui.add(egui::TextEdit::singleline(&mut self.tb.stage_msg).desired_width(f32::INFINITY).hint_text(tr("무대 메시지 (설교자에게만)")));
+        let go = mr.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)); // 글칸에서 Enter = 보내기
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = theme::sp::X4;
             let empty = self.tb.stage_msg.trim().is_empty();
-            if ui.add(Btn::new(tr("보내기")).size(Size::Sm).kind(Kind::Primary).enabled(!empty).tooltip(if empty { tr("보낼 글을 먼저 쓰세요") } else { tr("무대 화면에 띄웁니다") })).clicked() {
+            if (ui.add(Btn::new(tr("보내기")).size(Size::Sm).kind(Kind::Primary).enabled(!empty).tooltip(if empty { tr("보낼 글을 먼저 쓰세요") } else { tr("무대 화면에 띄웁니다 (Enter)") })).clicked() || go) && !empty {
                 self.core.lock().stage_message(&self.tb.stage_msg.clone());
             }
             let has = !shown_msg.trim().is_empty();
@@ -860,12 +894,26 @@ impl App {
         });
         // ---- 고정 (지금 슬라이드 대신 계속 보이기)
         widgets::group_head(ui, &tr("고정 (지금 슬라이드 대신 계속 보이기)"));
+        // 지금 고정한 것 (리모컨 · 외부 단추로 고정한 것도) — 없으면 아무것도 그리지 않음
+        if let Some(pin) = &pin_now {
+            let what = if pin["mode"] == "order" { tr("순서표") } else { pin["name"].as_str().filter(|x| !x.is_empty()).or(pin["text"].as_str()).unwrap_or("").replace('\n', " / ") };
+            ui.horizontal(|ui| {
+                widgets::status_dot(ui, p.text2, &tr("지금 고정"));
+                let (g, cut) = widgets::elide(ui, &what, Type::Small.font(), p.text, ui.available_width());
+                let (r, resp) = ui.allocate_exact_size(g.size(), Sense::hover());
+                ui.painter().galley(r.min, g, p.text);
+                if cut {
+                    resp.on_hover_text(what.clone());
+                }
+            });
+        }
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = theme::sp::X4;
             if ui.add(Btn::new(tr("순서표")).size(Size::Sm).tooltip(tr("큐시트 순서표를 무대 화면에 고정"))).clicked() {
                 let _ = self.core.lock().stage_pin_set(Some(&json!({ "mode": "order", "name": "순서표" })));
             }
-            if ui.add(Btn::new(tr("풀기")).size(Size::Sm).tooltip(tr("고정을 풀고 지금 슬라이드를 보입니다"))).clicked() {
+            let pinned = pin_now.is_some();
+            if ui.add(Btn::new(tr("풀기")).size(Size::Sm).enabled(pinned).tooltip(if pinned { tr("고정을 풀고 지금 슬라이드를 보입니다") } else { tr("고정한 것이 없습니다") })).clicked() {
                 let _ = self.core.lock().stage_pin_set(None);
             }
         });
@@ -945,7 +993,7 @@ impl App {
     // ---------------- 매크로 ----------------
     fn macros_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.macros;
-        crate::widgets_win::window(ctx, "macros", wp_core::i18n::tr("매크로 (Alt+1~9)"), [420.0, 320.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "macros", wp_core::i18n::tr("매크로 (Alt+1~9)"), [420.0, 320.0]).live(ctx).open(&mut open).show(ctx, |ui| {
             let list = self.core.lock().settings.get()["macros"].as_array().cloned().unwrap_or_default();
             for (i, m) in list.iter().enumerate() {
                 ui.horizontal(|ui| {

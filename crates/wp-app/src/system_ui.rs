@@ -302,7 +302,7 @@ impl App {
         if !open {
             return;
         }
-        crate::widgets_win::window(ctx, "draw", wp_core::i18n::tr("화면에 그리기 · 강조"), [720.0, 500.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "draw", wp_core::i18n::tr("화면에 그리기 · 강조"), [720.0, 500.0]).live(ctx).open(&mut open).show(ctx, |ui| {
             let mut st = ST.lock();
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut st.spot_mode, false, wp_core::i18n::tr("펜"));

@@ -267,14 +267,14 @@ pub fn open_x(name: &str) -> bool {
 
 /// 창 맨 위 한 줄 설명 (이 창이 무엇을 하는지). 12px · 둘째 글색 · 줄바꿈
 pub fn lead(ui: &mut Ui, text: &str) -> Response {
-    let r = ui.add(egui::Label::new(theme::rich(text, 12.0, Weight::Regular, pal().text2)).wrap());
-    ui.add_space(4.0);
+    let r = ui.add(egui::Label::new(theme::ty(text, theme::Type::Body, pal().text2)).wrap());
+    ui.add_space(theme::sp::X4);
     r
 }
 
 /// 조절 칸 아래 짧은 도움말. 11.5px · 흐린 글 · 줄바꿈
 pub fn hint(ui: &mut Ui, text: &str) -> Response {
-    ui.add(egui::Label::new(theme::rich(text, 11.5, Weight::Regular, pal().muted)).wrap())
+    ui.add(egui::Label::new(theme::ty(text, theme::Type::Small, pal().muted)).wrap())
 }
 
 /// 구획 머리 (인스펙터 띠와 같은 부품)
@@ -353,7 +353,7 @@ pub fn split_tone(msg: &str) -> (Tone, &str) {
 fn tone_look(t: Tone) -> (&'static str, Color32) {
     let p = pal();
     match t {
-        Tone::Ok => ("check", p.ok_text),
+        Tone::Ok => ("check", p.text2), // 성공은 회색 (디자인 체계)
         Tone::Error => ("circle-x", p.danger_text),
         Tone::Warn => ("flag", p.warn),
         Tone::Info => ("info", p.muted),
@@ -401,23 +401,14 @@ pub fn error(ui: &mut Ui, text: &str, next: &str) {
     }
 }
 
-/// 빈 상태: 흐린 아이콘 + 한 줄 제목 + 다음에 할 일. 목록 자리에 왼쪽 위로 맞춘다 (가운데 큰 안내 금지)
+/// 빈 상태: 흐린 아이콘 + 한 줄 제목 + 다음에 할 일 (디자인 체계 `widgets::empty`). 목록 자리에 왼쪽 위로 맞춘다
 pub fn empty(ui: &mut Ui, icon: &str, title: &str, next: &str) {
-    let p = pal();
-    ui.add_space(10.0);
-    ui.horizontal_top(|ui| {
-        ui.add_space(6.0);
-        let (r, _) = ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::hover());
-        icons::paint(ui, r, icon, p.muted2);
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
-            ui.add(egui::Label::new(theme::rich(title, 12.5, Weight::Medium, p.text2)).wrap());
-            if !next.trim().is_empty() {
-                ui.add(egui::Label::new(theme::rich(next, 11.5, Weight::Regular, p.muted)).wrap());
-            }
-        });
-    });
-    ui.add_space(6.0);
+    widgets::empty(ui, icon, title, next, None);
+}
+
+/// 빈 상태 + 할 일 단추 하나. 눌렀으면 true
+pub fn empty_action(ui: &mut Ui, icon: &str, title: &str, next: &str, action: &str) -> bool {
+    widgets::empty(ui, icon, title, next, Some(action))
 }
 
 // ---------------------------------------------------------------- 단추 · 아래 줄
