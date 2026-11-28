@@ -5,7 +5,7 @@
 //! 시안의 '음악 · OBS 장면' 줄은 예정 자료가 없어 넣지 않았다. 끌어서 길이 바꾸기 같은 조작도 없다.
 //! 좁은 창(높이 760 미만)에서는 머리 띠만 보이고, 머리의 단추로 펼친다.
 use crate::app::{App, Snap};
-use crate::theme::{self, Weight, alpha, mix, pal};
+use crate::theme::{self, alpha, mix, pal};
 use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
 use serde_json::Value;
 use wp_core::i18n::{tr, tr_args};
@@ -54,6 +54,18 @@ fn tick_step(px_per_min: f32) -> (f64, f64) {
     if px_per_min * 10.0 >= 50.0 { (5.0, 10.0) } else if px_per_min * 20.0 >= 50.0 { (10.0, 20.0) } else { (15.0, 30.0) }
 }
 
+/// 막대 안 글: 넘치면 글자 중간이 아니라 끝에 말줄임표 (자리가 아주 좁으면 그리지 않음). 그린 폭
+fn bar_text(ui: &egui::Ui, pt: &egui::Painter, pos: Pos2, align: Align2, text: &str, font: egui::FontId, color: Color32, max_w: f32) -> f32 {
+    if max_w < 10.0 {
+        return 0.0;
+    }
+    let (g, _) = crate::widgets::elide(ui, text, font, color, max_w);
+    let r = align.anchor_size(pos, g.size());
+    let w = g.size().x;
+    pt.galley(r.min, g, color);
+    w
+}
+
 /// 화면 구성 줄 (보기 전용): 기본과 다른 구성을 쓰는 순서는 막대, 기본을 바꾸는 순서는 앞에 작은 표시
 fn scene_lane(ui: &egui::Ui, pt: &egui::Painter, lane: Rect, clips: &[Clip], xof: &dyn Fn(f64) -> f32, s: &Snap) {
     let p = pal();
@@ -69,9 +81,15 @@ fn scene_lane(ui: &egui::Ui, pt: &egui::Painter, lane: Rect, clips: &[Clip], xof
         if !mark.is_empty() {
             pt.rect_filled(r, theme::cr(theme::Rad::Sm), p.raised);
             pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(1.0, p.line2), egui::StrokeKind::Inside);
-            let short = mark.split(" · ").map(|x| x.split(": ").nth(1).unwrap_or(x)).collect::<Vec<_>>().join(" · ");
-            pt.with_clip_rect(r.shrink2(Vec2::new(5.0, 0.0))).text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, short, theme::font(10.5, Weight::Regular), p.text);
-            crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 8.0, r.center().y), Vec2::splat(10.0)), "layout-grid", p.text2);
+            // 막대에는 구성 이름 하나만 (출력이 여럿이면 첫 것 + 개수) — 나머지는 툴팁
+            let names: Vec<&str> = mark.split(" · ").map(|x| x.split(": ").nth(1).unwrap_or(x)).collect();
+            let short = if names.len() > 1 { format!("{} +{}", names[0], names.len() - 1) } else { names.first().copied().unwrap_or("").to_string() };
+            let icon_room = r.width() >= 30.0;
+            if icon_room {
+                crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.left() + 9.0, r.center().y), Vec2::splat(12.0)), "layout-grid", p.text2);
+            }
+            let tx = r.left() + if icon_room { 18.0 } else { 4.0 };
+            bar_text(ui, pt, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, &short, theme::Type::Micro.font(), p.text, r.right() - 4.0 - tx);
             drew = true;
         }
         if !act.is_empty() {
@@ -91,7 +109,7 @@ fn scene_lane(ui: &egui::Ui, pt: &egui::Painter, lane: Rect, clips: &[Clip], xof
         }
     }
     if !drew {
-        pt.text(Pos2::new(lane.left() + LABEL_W + 12.0, lane.center().y), Align2::LEFT_CENTER, tr("모든 순서가 출력 기본 구성을 씁니다"), theme::font(10.5, Weight::Regular), p.muted2);
+        pt.text(Pos2::new(lane.left() + LABEL_W + 12.0, lane.center().y), Align2::LEFT_CENTER, tr("모든 순서가 출력 기본 구성을 씁니다"), theme::Type::Micro.font(), p.muted2);
     }
     if let Some(t) = tip {
         ui.interact(lane, Id::new("pro-tl-scene-lane"), Sense::hover()).on_hover_text(t);
@@ -134,8 +152,8 @@ impl App {
         let (hr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), HEAD_H), Sense::hover());
         ui.painter().rect_filled(hr, 0.0, p.head);
         ui.painter().hline(hr.x_range(), hr.bottom() - 0.5, Stroke::new(1.0, p.edge));
-        let mut x = hr.left() + 10.0;
-        let g = ui.painter().layout_no_wrap(tr("예배 시간표"), theme::font(12.0, Weight::SemiBold), p.text);
+        let mut x = hr.left() + theme::sp::PANE;
+        let g = ui.painter().layout_no_wrap(tr("예배 시간표"), theme::Type::BodyStrong.font(), p.text);
         let gw = g.size().x;
         ui.painter().galley(Pos2::new(x, hr.center().y - g.size().y / 2.0), g, p.text);
         x += gw + 10.0;
@@ -145,7 +163,7 @@ impl App {
             None if s.items.is_empty() => tr("큐시트가 비어 있습니다"),
             None => tr("큐시트에 시작 시각을 넣으면 예정 시각이 보입니다 (큐시트 관리 · 편집칸)"),
         };
-        ui.painter().with_clip_rect(hr).text(Pos2::new(x, hr.center().y), Align2::LEFT_CENTER, sub, theme::font(11.5, Weight::Regular), p.muted);
+        bar_text(ui, ui.painter(), Pos2::new(x, hr.center().y), Align2::LEFT_CENTER, &sub, theme::Type::Small.font(), p.muted, (hr.right() - 200.0 - x).max(0.0));
         // 오른쪽: 늦음 · 접기 단추
         let fold_r = Rect::from_center_size(Pos2::new(hr.right() - 22.0, hr.center().y), Vec2::new(28.0, 22.0));
         let fr = ui.interact(fold_r, Id::new("pro-tl-fold"), Sense::click()).on_hover_text(if open { tr("시간표 접기") } else { tr("시간표 펼치기") });
@@ -161,7 +179,7 @@ impl App {
         if let Some(d) = delay {
             let m = d.round() as i64;
             let (t, c) = if m > 0 { (tr_args("지금 {1}분 늦음", &[&m]), p.warn) } else if m < 0 { (tr_args("지금 {1}분 빠름", &[&(-m)]), p.ok_text) } else { (tr("계획대로"), p.muted) };
-            ui.painter().text(Pos2::new(fold_r.left() - 10.0, hr.center().y), Align2::RIGHT_CENTER, t, theme::font(11.5, Weight::SemiBold), c);
+            ui.painter().text(Pos2::new(fold_r.left() - 10.0, hr.center().y), Align2::RIGHT_CENTER, t, theme::Type::SmallStrong.font(), c);
         }
         if !open {
             return;
@@ -184,11 +202,14 @@ impl App {
             let lr = Rect::from_min_size(r.min, Vec2::new(LABEL_W, r.height()));
             pt.rect_filled(lr, 0.0, mix(p.head, 60.0, p.panel));
             pt.vline(lr.right() - 0.5, lr.y_range(), Stroke::new(1.0, p.edge));
-            pt.text(Pos2::new(lr.left() + 10.0, lr.top() + 7.0), Align2::LEFT_TOP, a, theme::font(11.5, Weight::SemiBold), p.text2);
+            // 이름표: 판 왼쪽 여백 12 에 맞춤. 높은 줄은 두 줄, 낮은 줄은 한 줄로 가운데
+            let x0 = lr.left() + theme::sp::PANE;
             if r.height() > 36.0 {
-                pt.text(Pos2::new(lr.left() + 10.0, lr.top() + 23.0), Align2::LEFT_TOP, b, theme::font(11.0, Weight::Regular), p.muted);
+                pt.text(Pos2::new(x0, r.top() + 7.0), Align2::LEFT_TOP, a, theme::Type::SmallStrong.font(), p.text2);
+                pt.text(Pos2::new(x0, r.top() + 23.0), Align2::LEFT_TOP, b, theme::Type::Micro.font(), p.muted);
             } else {
-                pt.text(Pos2::new(lr.left() + 40.0, lr.top() + 7.0), Align2::LEFT_TOP, b, theme::font(11.0, Weight::Regular), p.muted);
+                let w = pt.text(Pos2::new(x0, r.center().y), Align2::LEFT_CENTER, a, theme::Type::SmallStrong.font(), p.text2).width();
+                pt.text(Pos2::new(x0 + w + theme::sp::X6, r.center().y), Align2::LEFT_CENTER, b, theme::Type::Micro.font(), p.muted);
             }
             pt.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.line_soft));
         }
@@ -198,10 +219,10 @@ impl App {
         let Some((t0, clips)) = planned.filter(|_| total > 0.0) else {
             // 자료가 없으면 안내만 (막대를 지어내지 않는다)
             let msg = if s.items.is_empty() { tr("큐시트를 열면 순서가 여기에 시간 막대로 놓입니다.") } else if start.trim().is_empty() { tr("큐시트 시작 시각(예: 11:00)과 순서마다 길이(분)를 넣으면 예배 시간표가 그려집니다.") } else { tr("순서마다 길이(분)를 넣으면 예배 시간표가 그려집니다. (편집칸 '길이')") };
-            pt.text(Pos2::new(track.left() + 12.0, lane1.center().y), Align2::LEFT_CENTER, msg, theme::font(12.0, Weight::Regular), p.muted);
+            bar_text(ui, &pt, Pos2::new(track.left() + 12.0, lane1.center().y), Align2::LEFT_CENTER, &msg, theme::Type::Small.font(), p.muted, track.width() - 24.0);
             self.timer_lane(ui, &pt, lane2, track, None, now_min);
             if has_scenes {
-                pt.text(Pos2::new(track.left() + 12.0, lane3.center().y), Align2::LEFT_CENTER, tr("순서 길이를 넣으면 기본과 다른 화면 구성이 여기에 보입니다."), theme::font(11.0, Weight::Regular), p.muted2);
+                pt.text(Pos2::new(track.left() + 12.0, lane3.center().y), Align2::LEFT_CENTER, tr("순서 길이를 넣으면 기본과 다른 화면 구성이 여기에 보입니다."), theme::Type::Micro.font(), p.muted2);
             }
             return;
         };
@@ -216,7 +237,7 @@ impl App {
             let x = xof(m);
             pt.vline(x, (br.top() + RULER_H - 6.0)..=(br.top() + RULER_H), Stroke::new(1.0, p.line2));
             if ((m / major).round() * major - m).abs() < 0.01 {
-                pt.text(Pos2::new(x + 3.0, br.top() + 4.0), Align2::LEFT_TOP, hm(m), theme::font(10.0, Weight::Regular), p.muted2);
+                crate::widgets::tnum(ui, Pos2::new(x + 3.0, br.top() + 3.0), Align2::LEFT_TOP, &hm(m), theme::Type::Micro.font(), p.muted2);
             }
             m += minor;
         }
@@ -252,17 +273,23 @@ impl App {
             let it = &s.items[c.index];
             let name = it["title"].as_str().filter(|x| !x.is_empty()).map(String::from).unwrap_or_else(|| tr(crate::center_ui::type_name(it["type"].as_str().unwrap_or(""))));
             let detail = crate::cue_ui::detail(it);
-            let clip_pt = pt.with_clip_rect(r.shrink2(Vec2::new(6.0, 0.0)));
-            let wide = r.width() > 34.0;
-            let label = if wide { format!("{} {}", c.index + 1, name) } else { format!("{}", c.index + 1) };
-            clip_pt.text(Pos2::new(r.left() + 6.0, r.top() + 4.0), Align2::LEFT_TOP, label, theme::font(11.5, Weight::Medium), fg);
-            if wide && !detail.is_empty() && r.width() > 60.0 {
-                clip_pt.text(Pos2::new(r.left() + 6.0, r.top() + 19.0), Align2::LEFT_TOP, &detail, theme::font(10.5, Weight::Regular), sub_c);
-            }
-            // 출력마다 다른 화면 구성 (로드맵 3단계): 막대 오른쪽 위 작은 격자 아이콘
+            // 출력마다 다른 화면 구성 (로드맵 3단계): 막대 오른쪽 위 작은 격자 아이콘 — 글은 그 자리를 빼고 잰다
             let mark = s.scene_marks.get(c.index).filter(|m| !m.is_empty());
-            if mark.is_some() && r.width() > 40.0 {
-                crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.right() - 9.0, r.top() + 10.0), Vec2::splat(11.0)), "layout-grid", sub_c);
+            let icon = mark.is_some() && r.width() > 60.0;
+            if icon {
+                crate::icons::paint(ui, Rect::from_center_size(Pos2::new(r.right() - 10.0, r.top() + 11.0), Vec2::splat(12.0)), "layout-grid", sub_c);
+            }
+            let room = r.width() - 12.0 - if icon { 16.0 } else { 0.0 };
+            // 좁은 막대는 번호만, 번호도 안 들어가면 비움 (글자 중간에서 잘리지 않게)
+            let num = format!("{}", c.index + 1);
+            let num_w = crate::widgets::Tnum::new(ui, &num, theme::Type::Small.font(), fg).size.x;
+            if room >= num_w + 34.0 {
+                bar_text(ui, &pt, Pos2::new(r.left() + 6.0, r.top() + 5.0), Align2::LEFT_TOP, &format!("{num} {name}"), theme::Type::Small.font(), fg, room);
+                if !detail.is_empty() && room >= 40.0 {
+                    bar_text(ui, &pt, Pos2::new(r.left() + 6.0, r.top() + 20.0), Align2::LEFT_TOP, &detail, theme::Type::Micro.font(), sub_c, r.width() - 12.0);
+                }
+            } else if room >= num_w {
+                crate::widgets::tnum(ui, Pos2::new(r.left() + 6.0, r.top() + 5.0), Align2::LEFT_TOP, &num, theme::Type::Small.font(), fg);
             }
             if hover_pos.is_some_and(|hp| r.contains(hp)) {
                 let sc = mark.map(|m| format!("\n{}: {m}", tr("화면 구성"))).unwrap_or_default();
@@ -300,10 +327,11 @@ impl App {
                 }
                 let r = Rect::from_min_max(Pos2::new(xof(c.start) + 1.0, lane.top() + 5.0), Pos2::new((xof(c.start + mins) - 1.0).max(xof(c.start) + 3.0), lane.bottom() - 5.0));
                 pt.rect_filled(r, theme::cr(theme::Rad::Sm), p.raised);
-                pt.with_clip_rect(r.shrink2(Vec2::new(5.0, 0.0))).text(Pos2::new(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, tr_args("타이머 {1}:00", &[&(mins as i64)]), theme::font(10.5, Weight::Regular), p.text);
+                bar_text(ui, pt, Pos2::new(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, &tr_args("타이머 {1}:00", &[&(mins as i64)]), theme::Type::Micro.font(), p.text, r.width() - 12.0);
                 drew = true;
             }
-            // 지금 돌고 있는 타이머 (예정과 따로, 빨간 테두리 없이 노란 글)
+            // 지금 돌고 있는 타이머 (예정과 따로): 밝은 테두리 + 밝은 글 — 노랑은 '다음' 에만, 빨강은 송출 중에만
+            let tc = p.text;
             if timer.running || timer.remaining > 0 {
                 let left_ms = if timer.running { timer.end_at - wp_core::util::now_ms() } else { timer.remaining };
                 let start = now_min - (timer.duration - left_ms).max(0) as f64 / 60_000.0;
@@ -314,17 +342,17 @@ impl App {
                 if x1 - x0 >= 40.0 {
                     let r = Rect::from_min_max(Pos2::new(x0, lane.top() + 8.0), Pos2::new(x1, lane.bottom() - 8.0));
                     crate::widgets::mark("timeline-timer", r);
-                    pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(1.5, p.next), egui::StrokeKind::Inside);
-                    pt.with_clip_rect(r).text(Pos2::new(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, label, theme::font(10.5, Weight::SemiBold), p.next);
+                    pt.rect_stroke(r, theme::cr(theme::Rad::Sm), Stroke::new(1.5, tc), egui::StrokeKind::Inside);
+                    bar_text(ui, pt, Pos2::new(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, &label, theme::Type::Micro.font(), tc, r.width() - 12.0);
                 } else {
                     // 지금 시각이 시간표 범위 밖(예배 전 · 뒤)이거나 너무 짧아 칸이 안 보이면: 줄 끝 쪽에 글로 (예전에는 칸이 화면 밖에 그려져 줄이 비어 보였다)
                     let past = xof(now_min) > track.right();
                     let (pos, align) = if past { (Pos2::new(track.right() - 10.0, lane.center().y), Align2::RIGHT_CENTER) } else { (Pos2::new(track.left() + 12.0, lane.center().y), Align2::LEFT_CENTER) };
-                    let g = pt.layout_no_wrap(label, theme::font(10.5, Weight::SemiBold), p.next);
+                    let g = pt.layout_no_wrap(label, theme::Type::Micro.font(), tc);
                     let rr = align.anchor_size(pos, g.size()).expand2(Vec2::new(6.0, 3.0));
                     pt.rect_filled(rr, theme::cr(theme::Rad::Sm), p.panel);
-                    pt.rect_stroke(rr, theme::cr(theme::Rad::Sm), Stroke::new(1.5, p.next), egui::StrokeKind::Inside);
-                    pt.galley(rr.min + Vec2::new(6.0, 3.0), g, p.next);
+                    pt.rect_stroke(rr, theme::cr(theme::Rad::Sm), Stroke::new(1.5, tc), egui::StrokeKind::Inside);
+                    pt.galley(rr.min + Vec2::new(6.0, 3.0), g, tc);
                     crate::widgets::mark("timeline-timer", rr);
                 }
                 ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
@@ -333,12 +361,12 @@ impl App {
         } else if timer.running || timer.remaining > 0 {
             let left_ms = if timer.running { timer.end_at - wp_core::util::now_ms() } else { timer.remaining };
             let sec = (left_ms.max(0) / 1000) as i64;
-            pt.text(Pos2::new(track.left() + 12.0, lane.center().y), Align2::LEFT_CENTER, format!("{} {:02}:{:02}", tr("무대 타이머"), sec / 60, sec % 60), theme::font(11.0, Weight::SemiBold), p.next);
+            pt.text(Pos2::new(track.left() + 12.0, lane.center().y), Align2::LEFT_CENTER, format!("{} {:02}:{:02}", tr("무대 타이머"), sec / 60, sec % 60), theme::Type::SmallStrong.font(), p.text);
             ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
             drew = true;
         }
         if !drew {
-            pt.text(Pos2::new(track.left() + 12.0, lane.center().y), Align2::LEFT_CENTER, tr("무대 타이머 없음"), theme::font(11.0, Weight::Regular), p.muted2);
+            pt.text(Pos2::new(track.left() + 12.0, lane.center().y), Align2::LEFT_CENTER, tr("무대 타이머 없음"), theme::Type::Small.font(), p.muted2);
         }
     }
 }

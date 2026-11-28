@@ -17,7 +17,7 @@ use crate::theme::{self, Weight, pal};
 use crate::widgets;
 use eframe::egui::{self, Align, Id, Layout, Margin, Pos2, Rect, Sense, Stroke, UiBuilder, Vec2};
 use serde_json::json;
-use wp_core::i18n::tr;
+use wp_core::i18n::{tr, tr_args};
 
 /// 지난 프레임의 창 폭 (접기 기본값을 정할 때)
 pub(crate) static LAST_W: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -240,12 +240,19 @@ impl App {
                     let tpl = s.templates.iter().find(|x| x.0 == s.active_main).map(|x| x.1.clone()).unwrap_or_default();
                     (match idx { Some(i) => format!("{} {}", i + 1, t), None => t.to_string() }, format!("{} · {} '{}'", tr(crate::center_ui::type_name(ty)), tr("템플릿"), tpl))
                 }
-                None => (tr("고른 순서 없음"), tr("큐시트 순서나 본문을 누르면 여기에 나옵니다")),
+                // 고른 순서가 없으면 아래 칸은 지금 템플릿 전체를 고친다 — 그것을 머리에 밝힌다
+                None => {
+                    let tpl = s.templates.iter().find(|x| x.0 == s.active_main).map(|x| x.1.clone()).unwrap_or_default();
+                    (tr_args("템플릿 '{1}'", &[&tpl]), tr("고른 순서가 없어 템플릿 전체를 고칩니다 (이 템플릿을 쓰는 모든 순서)"))
+                }
             };
             egui::Frame::new().inner_margin(Margin { left: 12, right: 12, top: 9, bottom: 8 }).show(ui, |ui| {
-                ui.add(egui::Label::new(theme::rich(title, 14.0, Weight::Bold, p.text)).truncate().selectable(false));
+                ui.add(egui::Label::new(theme::ty(title, theme::Type::Title, p.text)).truncate().selectable(false));
                 ui.add_space(2.0);
-                ui.add(egui::Label::new(theme::rich(sub, 11.5, Weight::Regular, p.muted)).truncate().selectable(false));
+                let r = ui.add(egui::Label::new(theme::ty(sub.clone(), theme::Type::Small, p.muted)).truncate().selectable(false));
+                if r.hovered() {
+                    r.on_hover_text(sub);
+                }
             });
             ui.painter().hline(ui.max_rect().x_range(), ui.cursor().top(), Stroke::new(1.0, p.line));
         }
@@ -253,7 +260,10 @@ impl App {
         match tab {
             InsTab::Text => self.quick_panel(ui, s, acts),
             InsTab::Stage => {
-                egui::ScrollArea::vertical().id_salt("pro-stage").auto_shrink([false, false]).show(ui, |ui| self.workspace_stage(ui));
+                egui::ScrollArea::vertical().id_salt("pro-stage").auto_shrink([false, false]).show(ui, |ui| {
+                    // 판 안쪽 여백 12 (글자 탭과 같은 세로선)
+                    egui::Frame::new().inner_margin(Margin { left: 12, right: 12, top: 8, bottom: 12 }).show(ui, |ui| self.workspace_stage(ui));
+                });
             }
             InsTab::Sources => {
                 egui::ScrollArea::vertical().id_salt("pro-sources").auto_shrink([false, false]).show(ui, |ui| self.sources_panel(ui));

@@ -203,6 +203,12 @@ pub fn anim_value(ctx: &egui::Context, id: egui::Id, target: f32, secs: f32) -> 
 
 // ---------------------------------------------------------------- 상태별 색
 
+/// 고른 것 표시 선 (색 견본 · 정렬 칸 · 고른 칸 테두리). 전문가 테마는 밝은 무채색 — 노랑은 '다음' 에만. 옛 테마는 강조색
+pub fn pick() -> Color32 {
+    let p = pal();
+    if p.bevel { p.text } else { p.accent }
+}
+
 /// 눌림: 바탕을 조금 어둡게 (어두운 테마 · 밝은 테마 모두 '들어간' 쪽)
 pub fn press(c: Color32) -> Color32 {
     if pal().dark { mix(c, 84.0, Color32::BLACK) } else { mix(c, 86.0, Color32::BLACK) }

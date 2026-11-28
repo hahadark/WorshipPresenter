@@ -781,7 +781,7 @@ pub fn paint_progress(ui: &Ui, rect: Rect, frac: Option<f32>, time: f64) {
         }
         None => {
             let seg = rect.width() * 0.3;
-            let t = if theme::reduce_motion() { 0.35 } else { ((time * 0.9).fract() as f32) };
+            let t = if theme::reduce_motion() { 0.35 } else { (time * 0.9).fract() as f32 };
             let x = rect.left() - seg + (rect.width() + seg) * t;
             let r = Rect::from_min_max(Pos2::new(x.max(rect.left()), rect.top()), Pos2::new((x + seg).min(rect.right()), rect.bottom()));
             if r.width() > 0.5 {

@@ -39,6 +39,8 @@ pub(crate) struct LcdInfo {
     pub next: Option<(String, String)>,
     /// 바로 송출 방식 (누르면 바로 나감) — 표시창 '송출 중' 이름표 옆에 글자로
     pub direct: bool,
+    /// 회중 화면에 지금 무엇이 숨겨져 있는지: None · Some("글자 숨김") · Some("화면 비움")
+    pub hidden: Option<String>,
 }
 
 /// 순서 이름 (번호 + 제목) — 큐시트 순서면 'N 제목', 아니면 제목만
@@ -83,7 +85,12 @@ pub(crate) fn lcd_info(ctx: &egui::Context, s: &Snap, planned: &[String]) -> Lcd
             (planned.get(i).cloned().unwrap_or_default(), format!("{} {}", i + 1, name))
         })
     };
-    LcdInfo { live, next, direct: false }
+    let hidden = match (s.live.as_ref().is_some_and(|l| !l.visible), s.hide_bg) {
+        (true, true) => Some(tr("화면 비움")),
+        (true, false) => Some(tr("글자 숨김")),
+        _ => None,
+    };
+    LcdInfo { live, next, direct: false, hidden }
 }
 
 /// 막대 위 도드라진 단추 (.tpb) — 아이콘(+글)
@@ -207,15 +214,21 @@ fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) -> Op
             let t = widgets::tnum(ui, Pos2::new(lx, label_y), Align2::LEFT_TOP, &format!("{:02}:{:02}", sec / 60, sec % 60), Type::Micro.font(), p.live_text);
             lx = t.right() + theme::sp::X6;
         }
+        if let Some(h) = &info.hidden {
+            // 숨김은 주의(주황) — 회중에게 지금 안 보인다
+            let r = pt.text(Pos2::new(lx, label_y), Align2::LEFT_TOP, format!("· {h}"), Type::Micro.font(), p.warn);
+            lx = r.right() + theme::sp::X6;
+        }
         if info.direct {
             pt.text(Pos2::new(lx, label_y), Align2::LEFT_TOP, format!("· {}", tr("바로 송출")), Type::Micro.font(), ll);
         }
         match &info.live {
             Some((t, k, _)) => {
                 let kw = if k.is_empty() { 0.0 } else { widgets::Tnum::new(ui, k, Type::Small.font(), lt).size.x + theme::sp::X6 };
-                let (g, cut) = widgets::elide(ui, t, Type::Title.font(), lt, r.width() - kw);
+                let tc = if info.hidden.is_some() { ll } else { lt };
+                let (g, cut) = widgets::elide(ui, t, Type::Title.font(), tc, r.width() - kw);
                 let gw = g.size().x;
-                pt.galley(Pos2::new(r.left(), value_y - g.size().y), g, lt);
+                pt.galley(Pos2::new(r.left(), value_y - g.size().y), g, tc);
                 if cut {
                     full.push(t.clone());
                 }
@@ -437,11 +450,11 @@ impl App {
         }
         x += tool_w;
         let more_on = s.hide_bg || s.logo;
-        let r = tool(ui, tr_(x), Id::new("pro-clear"), "eraser", &tr("지우기"), more_on.then_some(p.warn), narrow, &tr("예배당 화면 비우기: 배경 지우기 · 로고 화면 · 모두 지우기 (큐시트 순서는 그대로)"));
+        let r = tool(ui, tr_(x), Id::new("pro-clear"), "eraser", &tr("화면 비우기"), more_on.then_some(p.warn), narrow, &tr("예배당 화면 비우기: 배경 숨김 · 로고 화면 · 모두 숨김 (큐시트 순서는 그대로)"));
         widgets::mark("pro-clear", r.rect);
         egui::Popup::menu(&r).frame(menubar::drop_frame()).gap(2.0).show(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            if menubar::item_row(ui, Some("image"), &tr("배경 지우기"), "", s.hide_bg.then_some(true)).clicked() {
+            if menubar::item_row(ui, Some("image"), &tr("배경 숨김"), "", s.hide_bg.then_some(true)).clicked() {
                 acts.push(Act::ToggleBg);
                 ui.close();
             }
@@ -450,7 +463,7 @@ impl App {
                 ui.close();
             }
             menubar::sep(ui);
-            if menubar::item_row(ui, Some("x"), &tr("모두 지우기"), "", None).on_hover_text(tr("예배당 화면을 모두 비움: 글자·배경·로고 (큐시트 순서는 지우지 않음)")).clicked() {
+            if menubar::item_row(ui, Some("eye-off"), &tr("모두 숨김"), "", None).on_hover_text(tr("예배당 화면을 모두 비움: 글자 · 배경 · 로고 · 오버레이를 숨김 (큐시트 순서는 그대로)")).clicked() {
                 acts.push(Act::ClearAll);
                 ui.close();
             }

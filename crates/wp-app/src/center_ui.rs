@@ -1217,6 +1217,11 @@ impl App {
                 _ => {
                     if st.cue_mode && s.preview.as_ref().and_then(cue_index).is_some() {
                         self.item_list(ui, &mut st, s, acts)
+                    } else if self.result.is_null() && self.search.trim().is_empty() && s.preview.is_none() {
+                        // 아무것도 찾지 않았고 고른 것도 없을 때: 빈 칸 대신 할 일 안내
+                        if widgets::empty(ui, "search", &tr("찾거나 고른 본문이 여기에 나옵니다"), &tr("· Ctrl+K 로 장절(요3:16) · 찬양 제목 · 낱말을 찾습니다\n· 왼쪽 큐시트의 순서를 누르면 그 슬라이드가 여기에 나옵니다\n· 줄을 누르면 '다음' 에 오르고, 두 번 누르거나 F9 를 누르면 송출합니다"), Some(&tr("찾기 (Ctrl+K)"))) {
+                            self.focus_search = true;
+                        }
                     } else {
                         // center_results 가 상태를 읽고 쓰므로 앞뒤로 맞춘다
                         save(ui.ctx(), st.clone());
@@ -1255,7 +1260,7 @@ impl App {
         }
         let r = &self.result;
         if r.is_null() || r["ok"] != json!(true) {
-            return (tr("검색 결과"), String::new());
+            return (if self.search.trim().is_empty() { String::new() } else { tr("검색 결과") }, String::new());
         }
         if r["mode"] == "reference" {
             let p = &r["passage"];

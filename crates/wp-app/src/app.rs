@@ -757,8 +757,13 @@ impl App {
                     }
                 }
                 if s.items.is_empty() {
-                    ui.add_space(12.0);
-                    ui.label(crate::theme::rich(wp_core::i18n::tr("아래 버튼으로 예배 순서를 추가하세요."), 13.0, crate::theme::Weight::Regular, crate::theme::pal().muted));
+                    // 빈 큐시트: 첫 걸음 세 가지 (순서 넣기 · 가사 붙여 넣기 · 다른 큐시트 열기)
+                    let tr = wp_core::i18n::tr;
+                    if s.cue_id.is_empty() {
+                        crate::widgets::empty(ui, "folder-open", &tr("열린 큐시트가 없습니다"), &tr("위 폴더 단추에서 새 큐시트를 만들거나 기존 큐시트를 여세요."), None);
+                    } else {
+                        crate::widgets::empty(ui, "list", &tr("아직 순서가 없습니다"), &tr("· 아래 '순서 넣기' 로 성경 · 찬양 · 공지 · 제목을 넣습니다\n· 가사를 복사해 이 판에서 Ctrl+V 하면 찬양 순서가 됩니다\n· Ctrl+K 로 장절을 찾은 뒤 오른쪽 클릭 → 큐시트에 넣기"), None);
+                    }
                 }
             });
         });
@@ -1475,7 +1480,7 @@ impl App {
             out.push(Layer { act: LayerAct::Media, on: true, text, btn: "✕".into(), tip: tr("송출 배경 끄기 (카메라는 닫힘)"), icon: bg_icon(m["type"].as_str().unwrap_or("")) });
         }
         if c.layers.hide_bg {
-            out.push(Layer { act: LayerAct::BgOn, on: false, text: tr("배경 꺼짐"), btn: tr("다시 켜기"), tip: tr("배경(순서·템플릿 배경)을 다시 켭니다"), icon: "image" });
+            out.push(Layer { act: LayerAct::BgOn, on: false, text: tr("배경 숨김"), btn: tr("보이기"), tip: tr("배경(순서·템플릿 배경)을 다시 보입니다"), icon: "image" });
         } else {
             let kind_of = |u: &str| -> &'static str {
                 let l = u.to_ascii_lowercase();
@@ -1497,7 +1502,19 @@ impl App {
                 out.push(Layer { act: LayerAct::BgTpl, on: true, text, btn: "✕".into(), tip: tr("템플릿 배경 빼기 (단색으로, 이 템플릿을 쓰는 모든 순서)"), icon: bg_icon(bt) });
             }
         }
-        let ov: Vec<String> = c.overlays().into_iter().filter(|o| o["on"] == true).map(|o| {
+        // 이름 자막 · 회중 메시지 · 무대 메시지도 지금 떠 있으면 칩으로 (창을 닫아도, 리모컨 · 외부 단추로 띄운 것도 보이게)
+        if let Some(n) = c.name_tag_on() {
+            let who = [n["name"].as_str().unwrap_or(""), n["role"].as_str().unwrap_or("")].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" · ");
+            out.push(Layer { act: LayerAct::NameTag, on: true, text: format!("{}: {who}", tr("이름 자막")), btn: "✕".into(), tip: tr("이름 자막 내리기"), icon: "captions" });
+        }
+        if let Some(m) = &c.b.message {
+            let t = m.text.replace('\n', " ");
+            out.push(Layer { act: LayerAct::Message, on: true, text: format!("{}: {t}", tr("회중 메시지")), btn: "✕".into(), tip: tr("회중 메시지 내리기"), icon: "megaphone" });
+        }
+        if !c.b.stage.message.trim().is_empty() {
+            out.push(Layer { act: LayerAct::StageMsg, on: true, text: format!("{}: {}", tr("무대 메시지"), c.b.stage.message.trim()), btn: "✕".into(), tip: tr("무대 메시지 내리기 (무대 화면에만 보이던 것)"), icon: "mic" });
+        }
+        let ov: Vec<String> = c.overlays().into_iter().filter(|o| o["on"] == true && o["id"] != wp_core::overlays::NAME_TAG_ID).map(|o| {
             o["name"].as_str().filter(|x| !x.is_empty()).or(o["text"].as_str().filter(|x| !x.is_empty())).map(String::from).unwrap_or_else(|| tr("오버레이"))
         }).collect();
         if !ov.is_empty() {
@@ -1522,6 +1539,9 @@ impl App {
             LayerAct::Logo => acts.push(Act::ToggleLogo),
             LayerAct::Overlays => self.core.lock().toggle_overlays_off(),
             LayerAct::Draw => self.core.lock().draw_clear(),
+            LayerAct::NameTag => self.core.lock().hide_name_tag(),
+            LayerAct::Message => self.core.lock().clear_message(),
+            LayerAct::StageMsg => self.core.lock().stage_message(""),
             LayerAct::BgItem => {
                 // 지금 송출 중인 순서(열린 큐시트)에서 배경 빼기
                 let Some(l) = &s.live else { return };
@@ -1708,7 +1728,7 @@ fn slide_tile(ui: &mut egui::Ui, c: &paint::Ctx, sl: &Value, tpl: &Value, versio
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LayerAct { Content, Media, BgOn, BgItem, BgTpl, Overlays, Logo, Draw }
+enum LayerAct { Content, Media, BgOn, BgItem, BgTpl, Overlays, Logo, Draw, NameTag, Message, StageMsg }
 
 /// 지금 화면 칩 하나 (renderScreenLayers chip)
 struct Layer { act: LayerAct, on: bool, text: String, btn: String, tip: String, icon: &'static str }
