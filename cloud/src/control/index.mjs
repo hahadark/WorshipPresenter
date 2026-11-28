@@ -6,6 +6,10 @@
 // 번역본이 바뀌었을 때만 다시 받음). /api/v1/bible/passage 는 한 번에 한 책의 일부라 번역본 전체를 넣기에 맞지 않다.
 // 계약: docs/web/architecture.md 5절 · docs/web/egui-web.md
 import { fail, json } from '../protocol.mjs';
+import { tierOf } from '../tiers/index.mjs';
+import { bookSplit, verRow } from '../drive/bible.mjs'; // 무료(구글 드라이브) 교회: 책 파일에서 (6단계 덧붙임)
+import { bookChapter, bookHeadings, DriveError } from '../drive/format.mjs';
+import { driveFail } from '../drive/docs.mjs';
 
 const VERSION_RE = /^[A-Za-z0-9_.-]{1,40}$/;
 
@@ -28,6 +32,11 @@ async function book(env, url, s) {
   const v = url.searchParams.get('version') || '';
   const b = Number(url.searchParams.get('book'));
   if (!VERSION_RE.test(v) || !Number.isInteger(b) || b < 1 || b > 66) return fail(400, '번역본 · 책 번호를 확인해 주세요.');
+  // 등급 저장소를 따른다: 무료 교회는 성경이 구글 드라이브의 책 파일에 있다 (D1 에는 장절 구조만) — tiers.md 3-6
+  const t = s.tier || (await tierOf(env, s.church));
+  if (t.store === 'drive') {
+    try { return await driveBook(env, s, v, b); } catch (e) { if (e instanceof DriveError) return driveFail(e); throw e; }
+  }
   const ver = await env.DB.prepare('SELECT imported_at AS importedAt FROM bible_versions WHERE church_id = ?1 AND id = ?2').bind(s.church, v).first();
   if (!ver) return fail(404, '선택한 번역본 데이터가 없습니다.');
   const [vs, hs] = await env.DB.batch([
@@ -36,5 +45,21 @@ async function book(env, url, s) {
   ]);
   // 배열로 (JSON 이 작고, Worker CPU 를 덜 씀)
   return json({ ok: true, version: v, book: b, importedAt: ver.importedAt, verses: vs.results.map(x => [x.c, x.v, x.t]), headings: hs.results.map(x => [x.c, x.v, x.t]) },
+    200, { 'cache-control': 'private, max-age=300' });
+}
+
+/** 무료(드라이브) 교회의 책 하나 — 유료와 같은 답 모양 {verses:[[장,절,글]…], headings:[[장,절,글]…]} */
+async function driveBook(env, s, v, b) {
+  const ver = await verRow(env, s.church, v);
+  if (!ver) return fail(404, '선택한 번역본 데이터가 없습니다.');
+  let map = {};
+  try { map = JSON.parse(ver.books || '{}'); } catch { /* 빈 것 */ }
+  const fileId = map[b]?.f;
+  if (!fileId) return fail(404, '이 책의 본문이 없습니다.');
+  const split = await bookSplit(env, s.church, fileId);
+  if (!split) return fail(502, '드라이브의 성경 파일을 읽을 수 없습니다 (드라이브에서 고쳤을 수 있습니다).', { code: 'drive_corrupt' });
+  const verses = [];
+  for (let c = 1; c <= split.head.chapterCount; c++) for (const [verse, text] of bookChapter(split, c)) verses.push([c, verse, text]);
+  return json({ ok: true, version: v, book: b, importedAt: ver.importedAt, verses, headings: bookHeadings(split) },
     200, { 'cache-control': 'private, max-age=300' });
 }

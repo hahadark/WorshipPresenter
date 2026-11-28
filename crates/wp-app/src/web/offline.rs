@@ -136,6 +136,41 @@ pub fn start(on_online: impl Fn() + 'static) {
     tick.forget();
 }
 
+thread_local! {
+    /// 이 탭이 이 교회의 조작 화면 주인(송출 · 저장)인가 — None = 아직 모름
+    static PRIMARY: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// 송출 · 저장해도 되는 탭인가 (offline.js 의 탭 잠금). 보관함이 없는 페이지(내 PC 시험)는 늘 그렇다
+pub fn is_primary() -> bool {
+    !available() || PRIMARY.with(|p| p.get()) == Some(true)
+}
+/// 다른 탭이 쓰는 중이라 보기 전용인가
+pub fn is_secondary() -> bool {
+    available() && PRIMARY.with(|p| p.get()) == Some(false)
+}
+
+/// 이 탭이 주인이면 f 를 부른다 (잠금이 정해질 때까지 0.2초마다 본다). 보기 전용이면 부르지 않는다 — 앞 탭이 닫혀 잠금을 받으면 페이지가 다시 열린다
+pub fn when_primary(f: impl FnOnce() + 'static) {
+    if !available() {
+        PRIMARY.with(|p| p.set(Some(true)));
+        f();
+        return;
+    }
+    let tab = read_js()["tab"].as_str().unwrap_or("none").to_string();
+    match tab.as_str() {
+        "primary" | "none" => {
+            PRIMARY.with(|p| p.set(Some(true)));
+            f();
+        }
+        "secondary" | "promoted" => {
+            PRIMARY.with(|p| p.set(Some(false)));
+            log::info!("같은 브라우저의 다른 탭이 이 교회 조작 화면을 쓰는 중 — 이 탭은 보기 전용");
+        }
+        _ => wp_core::web::defer(200, move || when_primary(f)),
+    }
+}
+
 pub fn net() -> Net {
     ST.with(|s| s.borrow().net.clone())
 }
@@ -158,7 +193,7 @@ pub fn debug() -> Value {
             Net::Offline => json!("offline"),
             Net::Blocked { code, .. } => json!(format!("blocked:{code}")),
         };
-        json!({ "net": net, "pending": s.pending, "loaded": s.loaded, "update": s.js["update"], "sw": s.js["sw"], "version": s.js["version"], "controlled": s.js["controlled"],
+        json!({ "net": net, "tab": if is_secondary() { "secondary" } else if is_primary() { "primary" } else { "pending" }, "pending": s.pending, "loaded": s.loaded, "update": s.js["update"], "sw": s.js["sw"], "version": s.js["version"], "controlled": s.js["controlled"],
             "buttons": Value::Object(s.rects.iter().map(|(n, r)| (n.clone(), json!([r.center().x, r.center().y]))).collect()) })
     })
 }
@@ -173,7 +208,8 @@ pub fn ui(ctx: &egui::Context, live: bool) {
         s.rects.clear();
         (s.net.clone(), s.pending, s.loaded, s.js["update"].as_bool().unwrap_or(false))
     });
-    if net == Net::Online && !update {
+    let secondary = is_secondary();
+    if net == Net::Online && !update && !secondary {
         ST.with(|s| s.borrow_mut().info = false);
         return;
     }
@@ -201,6 +237,13 @@ pub fn ui(ctx: &egui::Context, live: bool) {
                         s.info = !s.info;
                     });
                 }
+            }
+            if secondary {
+                egui::Frame::new().fill(egui::Color32::from_rgb(0x22, 0x24, 0x28)).stroke(egui::Stroke::new(1.0, GRAY)).corner_radius(10.0).inner_margin(egui::Margin::symmetric(10, 3)).show(ui, |ui| {
+                    ui.label(egui::RichText::new("보기 전용 · 이 브라우저의 다른 탭이 이 교회 조작 화면을 쓰는 중 (그 탭을 닫으면 이 탭이 이어받음)").size(12.0));
+                })
+                .response
+                .on_hover_text("같은 브라우저에서 두 탭이 함께 송출하거나 고친 것을 올리면 서로 덮어씁니다. 이 탭에서 고친 것은 저장되지 않고, 출력 창 · 클라우드에도 보내지 않습니다.");
             }
             if update {
                 egui::Frame::new().fill(egui::Color32::from_rgb(0x22, 0x24, 0x28)).stroke(egui::Stroke::new(1.0, GRAY)).corner_radius(10.0).inner_margin(egui::Margin::symmetric(10, 3)).show(ui, |ui| {

@@ -580,6 +580,14 @@ fn prefetch_images(core: &Shared) {
     }
 }
 
+/// 이 탭이 주인이 된 뒤 (탭 잠금) — 미뤄 둔 올리기 · 받기
+pub fn kick(core: Shared) {
+    wasm_bindgen_futures::spawn_local(async move {
+        record(&core).await;
+        sync_now(core).await;
+    });
+}
+
 /// 로그인한 조작 화면: (보관한 것으로 먼저 열기) → 받기 · 올리기 → 고칠 때마다 줄에 → 20초마다 받기
 pub fn cloud_start(core: Shared) {
     wasm_bindgen_futures::spawn_local(async move {
@@ -653,8 +661,8 @@ fn watch(core: Shared) {
 
 /// 이 화면에서 바뀐 문서를 줄에 쓴다 (보내기 전에 IndexedDB 에)
 async fn record(core: &Shared) {
-    if !CL.with(|c| c.borrow().ready) {
-        return;
+    if !CL.with(|c| c.borrow().ready) || !offline::is_primary() {
+        return; // 보기 전용 탭(같은 브라우저의 다른 탭이 주인)은 올릴 줄을 건드리지 않는다
     }
     let now = exported(core);
     if !super::cloud::can("write") {
@@ -675,7 +683,7 @@ async fn record(core: &Shared) {
 
 /// 줄에 있는 것을 20개씩 올린다
 async fn push(core: Shared) {
-    if !CL.with(|c| c.borrow().ready) || !super::cloud::can("write") {
+    if !CL.with(|c| c.borrow().ready) || !super::cloud::can("write") || !offline::is_primary() {
         return;
     }
     let go = CL.with(|c| {

@@ -64,6 +64,9 @@ fn post(bc: &web_sys::BroadcastChannel, msg: &Value) {
 impl Live {
     /// 바뀐 화면만 (force 면 모두)
     fn push(&mut self, force: bool) {
+        if !super::offline::is_primary() {
+            return; // 6단계: 같은 브라우저의 다른 탭이 송출 중 — 이 탭은 보기 전용
+        }
         let (renders, draw) = {
             let c = self.core.lock();
             let r: Vec<(String, Value)> = clients(&c).into_iter().map(|cl| {
@@ -123,7 +126,7 @@ impl Live {
                     c.emit(Ev::Outputs);
                 }
             }
-            Some("cmd") => {
+            Some("cmd") if super::offline::is_primary() => {
                 // 출력 화면의 영상 알림 (설치판 /api/command 의 videoMeta · videoEnded 만)
                 let key = m["args"]["key"].as_str().unwrap_or("").to_string();
                 let dur = m["args"]["duration"].as_f64();

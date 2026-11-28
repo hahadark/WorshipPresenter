@@ -152,4 +152,6 @@ test('조작 화면 페이지에만 offline.js (둘러보기 · 로그인 전은
   assert.equal(offlineTag({ authed: false }), '');
   const pages = readFileSync(join(here, '..', 'src', 'pages.mjs'), 'utf8');
   assert.match(pages, /name === 'control'.*offlineTag\(cfg\)/, '조작 화면 페이지에 끼운다');
+  assert.match(pages, /cfg\.page === 'output' \|\| cfg\.page === 'stage'\) \? offlineTag\(cfg\)/, '출력 · 무대 화면에도 (출력 전용 PC 오프라인)');
+  assert.match(pages, /name === 'owner' \|\| name === 'denied' \? page\.replace\('<\/head>', `\$\{logoutTag\}/, '로그아웃 단추가 있는 페이지에 로그아웃 helper');
 });

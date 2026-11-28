@@ -240,6 +240,20 @@ test('무료: 성경 넣기 (책 단위 드라이브 파일) → 장절은 유�
   for (const v of ['FREEV2', 'FREEV3']) assert.equal((await req(`/api/v1/bible/versions/${v}`, { method: 'DELETE', cookie: ownerA, headers: W })).status, 200);
 });
 
+test('무료: 웹 조작 화면의 책 받기(/api/v1/control/bible/book)도 드라이브 책 파일에서 (6단계 덧붙임)', async () => {
+  let r = await req('/api/v1/control/bible/book?version=FREEV&book=43', { cookie: ownerA });
+  assert.equal(r.status, 200, r.text);
+  const want = SHAPE.filter(x => x[0] === 43).reduce((n, x) => n + x[2], 0);
+  assert.equal(r.json.verses.length, want);
+  const v316 = r.json.verses.find(x => x[0] === 3 && x[1] === 16);
+  assert.equal(v316[2], verseText('A', 43, 3, 16));
+  assert.deepEqual(r.json.headings.map(h => h.slice(0, 2)), [[3, 1], [3, 16]]);
+  assert.ok(r.json.importedAt);
+  // 넣지 않은 책 · 없는 번역본
+  assert.equal((await req('/api/v1/control/bible/book?version=FREEV&book=2', { cookie: ownerA })).status, 404);
+  assert.equal((await req('/api/v1/control/bible/book?version=NOPE&book=43', { cookie: ownerA })).status, 404);
+});
+
 // 1×1 PNG
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5f3c2d90000000049454e44ae426082', 'hex');
 

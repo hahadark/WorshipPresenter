@@ -77,7 +77,11 @@
       creds();
     }
   });
-  $('logout').onclick = async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); location.replace('/login'); };
+  $('logout').onclick = async () => {
+    // 6단계: 이 브라우저에 못 올린 고친 것이 있으면 한 번 묻고, 보관한 교회 자료를 지운다 (client/offline/offline.js)
+    if (window.wpOffline && !(await window.wpOffline.beforeLogout())) return;
+    await api('/auth/logout', { method: 'POST' }).catch(() => {}); location.replace('/login');
+  };
   room(); creds();
   setInterval(() => { if (!document.hidden) room(); }, 15000); // 숨긴 탭은 묻지 않는다 (요청 수)
 })();

@@ -119,8 +119,10 @@ async function browser() {
     const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true });
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
     const logs = [];
+    const dialogs = [];
+    const box = { accept: true };
     handlers.set(sessionId, m => {
-      if (m.method === 'Page.javascriptDialogOpening') send('Page.handleJavaScriptDialog', { accept: true }, sessionId).catch(() => {});
+      if (m.method === 'Page.javascriptDialogOpening') { dialogs.push({ type: m.params.type, message: m.params.message }); send('Page.handleJavaScriptDialog', { accept: box.accept }, sessionId).catch(() => {}); }
       else if (m.method === 'Runtime.consoleAPICalled') logs.push(m.params.args.map(a => a.value ?? a.description).join(' '));
       else if (m.method === 'Runtime.exceptionThrown') logs.push('[exception] ' + JSON.stringify(m.params.exceptionDetails).slice(0, 300));
     });
@@ -132,7 +134,8 @@ async function browser() {
     await s('Page.setWebLifecycleState', { state: 'active' }).catch(() => {});
     const ev = async e => { const x = await s('Runtime.evaluate', { expression: e, awaitPromise: true, returnByValue: true }); return x.result.value; };
     return {
-      name, logs, send: s, ev,
+      name, logs, dialogs, box, send: s, ev,
+      close: () => send('Target.closeTarget', { targetId }),
       go: async url => { const r = await s('Page.navigate', { url }); await s('Page.setWebLifecycleState', { state: 'active' }).catch(() => {}); return r; },
       reload: async () => { const r = await s('Page.reload', { ignoreCache: false }); await s('Page.setWebLifecycleState', { state: 'active' }).catch(() => {}); return r; },
       front: () => s('Page.bringToFront'),
@@ -259,13 +262,29 @@ async function main() {
       const g = await googleSignup(fake.url, email, '오프라인 무료 교회');
       const me = await api(g.join('; '), 'GET', '/api/v1/tier');
       check('무료 교회 (구글 드라이브 저장소)', me.json && me.json.tier === 'free' && me.json.store === 'drive', me.json && { tier: me.json.tier, store: me.json.store });
-      await scenario({ cookie: g, church: (await api(g.join('; '), 'GET', '/api/v1/me')).json.church, link, bible: false, update: false, fake: fake.url, email });
+      await uploadBible(g.join('; '));
+      await scenario({ cookie: g, church: (await api(g.join('; '), 'GET', '/api/v1/me')).json.church, link, bible: true, update: false, fake: fake.url, email });
     }
   } catch (e) {
     console.error(e);
     check('시험이 끝까지 돎', false, String(e && e.message || e));
   }
   await finish();
+}
+
+/** 견본 개역한글(공공 영역, web/app/sample/seed.json) 을 번역본 넣기 길로 — 무료는 구글 드라이브 책 파일이 된다 */
+async function uploadBible(ck) {
+  const krv = seed().versions[0];
+  let r = await api(ck, 'PUT', '/api/v1/bible/versions/krv', { name: krv.meta.name, language: 'ko', licenseNote: krv.meta.license });
+  check('(준비) 무료 교회 번역본 넣기', r.status === 201 || r.status === 200, r.status);
+  const byBook = new Map();
+  for (const [b, c, v, t] of krv.verses) { if (!byBook.has(b)) byBook.set(b, []); byBook.get(b).push([c, v, t]); }
+  for (const [b, list] of byBook) {
+    const n = Math.max(...list.map(x => x[0]));
+    const chapters = Array.from({ length: n }, (_, i) => list.filter(x => x[0] === i + 1).map(x => [x[1], x[2]]));
+    r = await api(ck, 'PUT', `/api/v1/bible/versions/krv/books/${b}`, { chapters, headings: [] });
+    if (r.status !== 200) { check(`(준비) 책 ${b} 넣기`, false, r.json); return; }
+  }
 }
 
 async function googleSignup(G, email, name) {
@@ -343,6 +362,14 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
   check('송출 → 클라우드 출력', cloud1);
   await ctl.shot('1-online');
 
+  // 출력 전용 PC (OBS · 예배당 PC 처럼): 다른 브라우저에서 출력 열쇠 주소로 연다 → 서비스 워커가 담음 (6단계 (나))
+  const okey = (await api(ck, 'POST', '/api/v1/credentials', { role: 'output', label: '오프라인 시험 OBS' })).json?.credential?.key;
+  const obsB = await browser();
+  const obs = await obsB.tab('obs');
+  await obs.go(VIA + '/outputs/main?key=' + encodeURIComponent(okey || ''));
+  const obsOk = await until(async () => (await obs.ev('!!(navigator.serviceWorker && navigator.serviceWorker.controller)')) && (await obs.ev('document.body.innerText')).includes(line1), 120000, 500);
+  check('출력 전용 PC: 서비스 워커가 맡고 클라우드 화면을 받음', obsOk, line1);
+
   if (!args.includes('--update-only')) {
   // ===== 끊김 =====
   step('끊음');
@@ -404,6 +431,12 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
   check('출력 창도 끊긴 채 새로 고침 → 지금 화면을 다시 받음', shown);
   await ctl.shot('3-offline-reloaded');
   await outTab.shot('3-output-offline');
+  // 출력 전용 PC 도 끊긴 채 새로 고침 → 페이지가 뜨고(서비스 워커) 마지막 화면(끊기기 전 클라우드에서 받은 것)을 다시 보임
+  await obs.reload();
+  const restored = await until(async () => (await obs.ev('document.readyState')) === 'complete' && (await obs.ev('document.documentElement.dataset.cloudRestored')) === '1' && (await obs.ev('document.body.innerText')).includes(line1), 20000, 500);
+  check('출력 전용 PC 를 끊긴 채 새로 고침 → 마지막 화면을 다시 보임', restored, line1);
+  await obs.shot('3-obs-offline-restored');
+  obsB.close();
   const leaked = cv.q.filter(m => m.t === 'render').length - before;
   check('끊긴 동안 클라우드 출력에는 아무것도 가지 않음 (마지막 화면 유지)', leaked === 0, leaked);
 
@@ -479,7 +512,52 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
       } else check("'바꾸기' 단추", false);
     } finally { writeFileSync(swFile, orig); }
   }
-  writeFileSync(join(out, `${tierName}-logs.txt`), [...ctl.logs, '--- output ---', ...outTab.logs, '--- service worker ---', ...b.swlog].join('\n'));
+  // ===== (라) 같은 브라우저 둘째 조작 탭: 보기 전용 → 앞 탭을 닫으면 이어받음 =====
+  let main = ctl;
+  if (update) {
+    // 앞 탭(주인)이 지금 무언가를 송출하고 있게 — 둘째 탭의 송출이 이것을 바꾸지 못해야 한다
+    await ctl.front().catch(() => {});
+    await pick(ctl, 1); await ctl.click(...SEND);
+    const shownMain = await until(async () => (await outTab.ev('document.body.innerText')).includes(line1), 10000);
+    check('(준비) 앞 탭이 송출 중', shownMain, line1);
+    const ctl2 = await b.tab('control2');
+    await ctl2.go(VIA + '/control/?debug=1');
+    let d2 = await until(async () => { const x = await ctl2.dbg(); return x && x.store && x.store.ready && x.offline && x.offline.tab === 'secondary' ? x : null; }, 60000);
+    check('같은 브라우저 둘째 조작 탭은 보기 전용 (송출 주체로 안 붙음)', d2 && /Off/.test(d2.cloud), d2 && { tab: d2.offline.tab, cloud: d2.cloud });
+    await ctl2.shot('7-second-tab');
+    const before2 = await outTab.ev('document.body.innerText');
+    await pick(ctl2, 0); // '예배로 부름' (제목) → 송출
+    await ctl2.click(...SEND); await sleep(2500);
+    const after2 = await outTab.ev('document.body.innerText');
+    check('보기 전용 탭의 송출은 같은 브라우저 출력 창에 가지 않음', after2.includes(line1) && !after2.includes('예배로 부름'), { before: before2.slice(0, 40), after: after2.slice(0, 40) });
+    await ctl.close();
+    d2 = await until(async () => { const x = await ctl2.dbg(); return x && x.store && x.store.ready && x.offline && x.offline.tab === 'primary' && /Active/.test(x.cloud) ? x : null; }, 60000, 500);
+    check('앞 탭을 닫으면 둘째 탭이 이어받음 (다시 열려 송출 주체)', d2, d2 && { tab: d2.offline.tab, cloud: d2.cloud });
+    main = ctl2;
+  }
+
+  // ===== (가) 로그아웃: 못 올린 것이 있으면 묻고, 확인하면 이 브라우저 보관을 지움 (앱 껍데기는 남김) =====
+  const pendingNow = ((await main.dbg()) || { offline: {} }).offline.pending || 0;
+  const own = await b.tab('owner');
+  await own.go(VIA + '/owner');
+  await until(async () => (await own.ev("!!document.getElementById('logout') && !!window.wpOffline")), 20000);
+  const idbCount = () => own.ev(`new Promise(res => { const r = indexedDB.open('wp-offline', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => { const q = r.result.transaction('kv').objectStore('kv').count(); q.onsuccess = () => { r.result.close(); res(q.result); }; }; r.onerror = () => res(-1); })`);
+  const before3 = await idbCount();
+  if (pendingNow > 0) {
+    own.box.accept = false;
+    await own.ev("document.getElementById('logout').click(), 1"); await sleep(1500);
+    const asked = own.dialogs.find(x => x.type === 'confirm');
+    const stay = (await own.ev('location.pathname')) === '/owner' && (await idbCount()) === before3;
+    check(`로그아웃: 못 올린 것 ${pendingNow}개 → 묻고, 취소하면 그대로 (보관 남음 · 로그인 유지)`, asked && /올리지 않은 고친 것 \d+개/.test(asked.message) && stay, asked && asked.message.slice(0, 40));
+    own.box.accept = true;
+  }
+  await own.ev("document.getElementById('logout').click(), 1");
+  await until(async () => /\/login/.test(await own.ev('location.pathname').catch(() => '')), 15000);
+  const after3 = await own.ev(`(async () => { const n = await new Promise(res => { const r = indexedDB.open('wp-offline', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => { const q = r.result.transaction('kv').objectStore('kv').count(); q.onsuccess = () => { r.result.close(); res(q.result); }; }; }); const k = await caches.keys(); return JSON.stringify({ n, pages: k.includes('wp-pages-v1'), shell: k.some(x => x.startsWith('wp-shell-')), path: location.pathname }); })()`).then(JSON.parse).catch(e => ({ error: String(e) }));
+  check(pendingNow > 0 ? '로그아웃 확인 → 이 브라우저 보관(못 올린 것 포함) 지움 · 앱 껍데기는 남음' : '로그아웃 (못 올린 것 없음 → 묻지 않고) → 보관 지움 · 앱 껍데기는 남음',
+    after3.n === 0 && !after3.pages && after3.shell && before3 > 0 && (pendingNow > 0 || own.dialogs.length === 0), { before: before3, ...after3, dialogs: own.dialogs.length });
+
+  writeFileSync(join(out, `${tierName}-logs.txt`), [...main.logs, '--- output ---', ...outTab.logs, '--- service worker ---', ...b.swlog].join('\n'));
   try { cv.s.close(); } catch { /* 이미 */ }
   b.close();
 }

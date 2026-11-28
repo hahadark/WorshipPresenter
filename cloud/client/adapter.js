@@ -87,9 +87,24 @@
       self.dispatchEvent(ev);
     }
     self.emit = emit;
+    // (6단계 덧붙임) 마지막 화면을 이 브라우저에 적어 둔다 → 인터넷이 끊긴 채 새로 고쳐도(서비스 워커가 페이지를 줌) 그 화면을 다시 보인다.
+    // 열고 2.5초 동안 아무것도 오지 않고 · 클라우드에 붙지 못했고 · 6시간 안의 것일 때만 (예배 전 켠 PC 에 지난주 화면이 뜨지 않게)
+    var lastKey = 'wp-last:' + (CFG.church || '') + ':' + self.client;
+    var gotRender = false;
+    self.remember = function (data) {
+      gotRender = true;
+      try { var t = JSON.stringify({ at: Date.now(), data: data }); if (t.length < 1500000) localStorage.setItem(lastKey, t); } catch (e) { /* 저장소 없음 · 가득 참 */ }
+    };
+    if (CFG.authed && (CFG.page === 'output' || CFG.page === 'stage')) setTimeout(function () {
+      if (gotRender || self.link.isOpen()) return;
+      try {
+        var x = JSON.parse(localStorage.getItem(lastKey) || 'null');
+        if (x && x.data && Date.now() - x.at < 6 * 3600 * 1000) { emit('render', x.data); root.dataset.cloudRestored = '1'; }
+      } catch (e) { /* 없음 */ }
+    }, 2500);
     self.link = new Link(path, function (m) {
       if (m.t === 'hello') { setState(m.online ? 'online' : 'offline'); emit('hello', { id: m.id }); }
-      else if (m.t === 'render' || m.t === 'draw') { emit(m.t, m.data); if (m.t === 'render') try { window.dispatchEvent(new CustomEvent('wp-cloud-render', { detail: m.data })); } catch (e) { /* 옛 브라우저 */ } }
+      else if (m.t === 'render' || m.t === 'draw') { emit(m.t, m.data); if (m.t === 'render') { self.remember(m.data); try { window.dispatchEvent(new CustomEvent('wp-cloud-render', { detail: m.data })); } catch (e) { /* 옛 브라우저 */ } } }
       else if (m.t === 'rtc') hooks.forEach(function (f) { try { f(m); } catch (e) { /* 무시 */ } });
       else if (m.t === 'status') setState(m.online ? 'online' : 'offline');
     }, function (state) {
@@ -121,7 +136,7 @@
       var m = e.data;
       if (!m || (m.church && CFG.church && m.church !== CFG.church)) return;
       links.forEach(function (es) {
-        if (m.t === 'render' && m.client === es.client) es.emit('render', m.data);
+        if (m.t === 'render' && m.client === es.client) { es.emit('render', m.data); es.remember(m.data); }
         else if (m.t === 'draw' && es.client !== 'stage') es.emit('draw', m.data);
       });
     };

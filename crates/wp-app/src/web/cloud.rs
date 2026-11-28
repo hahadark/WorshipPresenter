@@ -396,6 +396,7 @@ pub fn ui(ctx: &egui::Context) {
         return;
     } else {
         match &st {
+            State::Off if super::offline::is_secondary() => ("보기 전용 — 이 브라우저의 다른 탭이 송출 중".into(), egui::Color32::from_rgb(0x8b, 0x90, 0x99)),
             State::Off if !can("source") => (format!("{} · {}", c.church, if can("write") { "편집자 — 송출은 주인만" } else { "보기만" }), egui::Color32::from_rgb(0x8b, 0x90, 0x99)),
             State::Off | State::Connecting => ("클라우드에 잇는 중…".into(), egui::Color32::from_rgb(0xe0, 0xa0, 0x60)),
             State::Active { claimed: true } => ("클라우드 송출: 이 웹 화면 (넘겨받음)".into(), egui::Color32::from_rgb(0xe5, 0x48, 0x4d)),

@@ -110,6 +110,28 @@
     setInterval(check, 30 * 60 * 1000); // 30분마다 새 판이 있나 (바꾸지는 않는다)
   }
 
+  // 같은 브라우저에서 조작 화면 탭은 하나만 송출 · 저장 (Web Locks). 둘째 탭은 '보기 전용' 으로 기다리다가,
+  // 앞 탭이 닫히면 잠금을 받아 다시 열려 이어받는다 (지금 화면 · 올릴 줄을 깨끗이 다시 읽으려고)
+  S.tab = 'none';
+  if (CFG.authed && CFG.page === 'control' && CFG.role !== 'demo') {
+    var lockName = 'wp-control:' + (CFG.church || '');
+    var hold = function () { return new Promise(function () { /* 탭이 닫힐 때까지 쥔다 */ }); };
+    if (navigator.locks && navigator.locks.request) {
+      S.tab = 'pending';
+      navigator.locks.request(lockName, { ifAvailable: true }, function (l) {
+        if (l) { S.tab = 'primary'; return hold(); }
+        S.tab = 'secondary';
+        navigator.locks.request(lockName, function () {
+          S.tab = 'promoted';
+          window.wpIsLive = function () { return false; }; // 보기 전용 탭은 송출하지 않았다 — 떠나기 물음 없이
+          setTimeout(function () { location.reload(); }, 300);
+          return hold();
+        });
+        return null;
+      }).catch(function () { S.tab = 'primary'; });
+    } else S.tab = 'primary'; // 잠금이 없는 브라우저 — 예전처럼
+  }
+
   window.addEventListener('online', function () { S.online = true; S.wake++; check(); });
   window.addEventListener('offline', function () { S.online = false; });
 
@@ -136,9 +158,40 @@
     for (var k = 0; k < 3; k++) next();
   }
 
+  /** 이 브라우저에 보관한 교회 자료를 지운다 — 교회 문서 · 올릴 줄 · 받은 차례(wp-offline) · 성경(wp-web) · 담아 둔 페이지 · 교회 파일 · 출력 마지막 화면.
+   *  앱 껍데기(wp-shell-*, 공개 코드)는 남긴다. 다른 탭이 열고 있어도 되게 데이터베이스를 지우지 않고 안을 비운다 */
+  function clearStore(name) {
+    return new Promise(function (res) {
+      var r = indexedDB.open(name, 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+      r.onsuccess = function () {
+        var d = r.result;
+        try { var t = d.transaction('kv', 'readwrite'); t.objectStore('kv').clear(); t.oncomplete = t.onerror = t.onabort = function () { d.close(); res(); }; } catch (e) { d.close(); res(); }
+      };
+      r.onerror = function () { res(); };
+    });
+  }
+  function forget() {
+    var jobs = [clearStore('wp-offline'), clearStore('wp-web')];
+    if (window.caches) jobs.push(caches.delete('wp-pages-v1'), caches.delete('wp-files-v1'));
+    try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf('wp-last:') === 0) localStorage.removeItem(k); }); } catch (e) { /* 저장소 없음 */ }
+    return Promise.all(jobs.map(function (p) { return Promise.resolve(p).catch(function () {}); }));
+  }
+  /** 로그아웃 바로 전에 부른다 → true 면 로그아웃해도 된다. 못 올린 고친 것이 있으면 한 번 묻고, 지운다 */
+  function beforeLogout() {
+    return kv.list('o|').then(function (t) {
+      var n = 0;
+      try { n = JSON.parse(t).length; } catch (e) { /* 없음 */ }
+      if (n > 0 && !window.confirm('올리지 않은 고친 것 ' + n + '개가 있습니다.\n\n로그아웃하면 이 브라우저에 보관한 교회 자료와 함께 지워져 교회 클라우드에 올라가지 않습니다.\n\n그래도 로그아웃할까요?\n(취소하면 그대로 두고, 조작 화면이 인터넷에 이어지면 올립니다.)')) return false;
+      return forget().then(function () { return true; });
+    });
+  }
+
   window.wpOffline = {
+    beforeLogout: beforeLogout,
+    forget: forget,
     kv: kv,
-    state: function () { return JSON.stringify({ sw: S.sw, update: S.update, version: S.version, online: S.online, error: S.error, wake: S.wake, persisted: !!S.persisted, installRetries: S.retries || 0, log: S.log, controlled: !!(navigator.serviceWorker && navigator.serviceWorker.controller) }); },
+    state: function () { return JSON.stringify({ sw: S.sw, update: S.update, version: S.version, online: S.online, error: S.error, wake: S.wake, persisted: !!S.persisted, installRetries: S.retries || 0, log: S.log, tab: S.tab, controlled: !!(navigator.serviceWorker && navigator.serviceWorker.controller) }); },
     applyUpdate: applyUpdate,
     check: check,
     prefetch: prefetch,

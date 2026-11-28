@@ -264,7 +264,12 @@ pub fn start() {
                     if authed {
                         store::cloud_start(shared.clone()); // 큐시트 · 찬양: /api/v1/documents · sync
                         bible::start(shared.clone()); // 성경: 교회 번역본 (IndexedDB 에 보관)
-                        cloud::start_bridge(shared.clone()); // 송출 주체 (/bridge, 주인만)
+                        let sb = shared.clone();
+                        offline::when_primary(move || {
+                            cloud::start_bridge(sb.clone());
+                            live::push_all(); // 잠금이 정해지기 전에 출력 창이 달라고 한 지금 화면
+                            store::kick(sb); // 잠금이 정해지기 전에 미룬 올리기
+                        }); // 송출 주체 (/bridge, 주인만 · 같은 브라우저에서 한 탭만 — 6단계 탭 잠금)
                     } else {
                         store::start(shared.clone()); // 둘러보기 · 시험: localStorage
                     }
