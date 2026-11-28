@@ -89,7 +89,8 @@ function ws(p, headers) {
   check('조작 화면이 뜸 (/control/)', times && times.painted, times);
   // 문서 · 성경 · 송출 주체
   let d = null;
-  for (let i = 0; i < 60; i++) { d = await dbg(); if (d && d.cue && d.cue.id === 'cloud-cue-1' && (d.versions || []).includes('krv') && /Active/.test(d.cloud)) break; await sleep(300); }
+  // 같은 로컬 D1 에 다른 시험(media-e2e)의 큐시트가 있을 수 있다 → 이 시험의 큐시트를 연다 (큐시트 고르기와 같은 길)
+  for (let i = 0; i < 60; i++) { try { await ev("window.wpOpenCue && window.wpOpenCue('cloud-cue-1'); 1"); } catch {} d = await dbg(); if (d && d.cue && d.cue.id === 'cloud-cue-1' && (d.versions || []).includes('krv') && /Active/.test(d.cloud)) break; await sleep(300); }
   check('교회 큐시트를 받아 엶', d && d.cue && d.cue.id === 'cloud-cue-1', d && d.cue && d.cue.id);
   check('교회 성경 번역본을 받음', d && (d.versions || []).includes('krv'), d && d.versions);
   check('송출 주체로 붙음 (설치판 없음)', d && /Active/.test(d.cloud), d && d.cloud);
