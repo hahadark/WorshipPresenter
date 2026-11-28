@@ -2340,7 +2340,14 @@ pub(crate) fn ce_head(ui: &mut egui::Ui, i: usize, ty: &str, title: &str, saved:
         icons::paint(ui, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icons::for_type(ty), if p.bevel { p.muted } else { p.hl });
         // 목록에서 누른 이름 그대로 ('6. 설교') + 종류 꼬리표 (평가 20번). 이름이 없으면 예전처럼 'N번 종류'
         let title = title.trim();
-        if title.is_empty() {
+        if p.bevel {
+            // 순서 이름은 바로 위 본문 판 머리에 이미 있다 → 여기는 '편집칸 · 6번 찬양' 만 (이름이 두 번 나오지 않게)
+            ui.add(egui::Label::new(crate::theme::ty(tr("편집칸"), crate::theme::Type::SmallStrong, p.text2)).selectable(false));
+            let r = ui.add(egui::Label::new(crate::theme::ty(tr_args("{1}번 {2}", &[&(i + 1), &tr(type_name(ty))]), crate::theme::Type::Small, p.muted)).selectable(false));
+            if !title.is_empty() {
+                r.on_hover_text(format!("{}. {title}", i + 1));
+            }
+        } else if title.is_empty() {
             ui.label(rich(tr_args("{1}번 {2}", &[&(i + 1), &tr(type_name(ty))]), 14.0, Weight::Bold, p.text));
         } else {
             ui.add(egui::Label::new(rich(format!("{}. {title}", i + 1), 14.0, Weight::Bold, p.text)).truncate().selectable(false));

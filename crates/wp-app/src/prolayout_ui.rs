@@ -330,7 +330,7 @@ impl App {
             // 끌어서 높이 바꾸기 (6px)
             let div = Rect::from_min_size(Pos2::new(full.left(), full.top() + vh), Vec2::new(full.width(), 6.0));
             let resp = ui.interact(div, Id::new("pro-center-split"), Sense::drag());
-            ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.accent, 0.45) } else { p.edge });
+            ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.text2, 0.45) } else { p.edge });
             if resp.hovered() || resp.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
             }
@@ -402,7 +402,7 @@ impl App {
         // ---- 끌어서 폭 바꾸기 (6px 세로 띠, 설정 rsProLayout.liveW)
         let resp = ui.interact(div, Id::new("pro-live-split"), Sense::drag());
         widgets::mark("pro-live-split", div);
-        ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.accent, 0.45) } else { p.edge });
+        ui.painter().rect_filled(div, 0.0, if resp.hovered() || resp.dragged() { theme::alpha(p.text2, 0.45) } else { p.edge });
         if resp.hovered() || resp.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }

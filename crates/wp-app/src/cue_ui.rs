@@ -540,7 +540,7 @@ fn row_pro(ui: &mut egui::Ui, i: usize, it: &Value, st: &RowState) -> RowOut {
     let mut edit = false;
     let mut send = false;
     let ew = 24.0;
-    let edit_rect = Rect::from_min_size(Pos2::new(rect.right() - PRO_MIN_W - PRO_TIME_W - ew - 2.0, rect.top() + 3.0), Vec2::new(ew, h - 6.0));
+    let edit_rect = Rect::from_min_size(Pos2::new(rect.right() - PRO_MIN_W - PRO_TIME_W - ew - 2.0, rect.top() + 2.0), Vec2::new(ew, h - 4.0));
     let send_rect = edit_rect.translate(Vec2::new(-(ew + 2.0), 0.0));
     let sr = hovered.then(|| ui.interact(send_rect, resp.id.with("send"), Sense::click()).on_hover_text(tr(if ty == "audio" { "이 음악 재생 (두 번 누르기와 같음)" } else { "이 순서 바로 송출 (두 번 누르기와 같음)" })));
     if sr.as_ref().is_some_and(|r| r.clicked()) {

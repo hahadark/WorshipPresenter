@@ -662,7 +662,8 @@
  "ui": {
   "theme": "pro",
   "scale": 100,
-  "directLiveOnly": true
+  "directLiveOnly": true,
+  "reduceMotion": false
  },
  "droppedFiles": [],
  "uiLang": "ko",

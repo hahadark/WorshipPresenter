@@ -163,6 +163,7 @@ fn headless_app(h: &Harness) -> super::App {
         last_flush: std::time::Instant::now(),
         focus_search: false,
         editor_on: true,
+        editor_force: None,
         editor_reveal: false,
         views: super::MonitorViews::default(),
         test: None,

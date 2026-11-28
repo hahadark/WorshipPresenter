@@ -73,7 +73,7 @@ impl App {
         let rad = if small { crate::theme::cr(crate::theme::Rad::Md) } else { crate::theme::cr(crate::theme::Rad::Lg) };
         if focused {
             // box-shadow: 0 0 0 3px accent 25%
-            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(3.0, alpha(p.accent, 0.25)), StrokeKind::Outside));
+            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(3.0, alpha(p.focus, 0.18)), StrokeKind::Outside));
         }
         shapes.push(Shape::rect_filled(rect, rad, p.sunken));
         if p.bevel && !focused {
@@ -83,7 +83,7 @@ impl App {
                 shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(1.0, p.line2), StrokeKind::Inside));
             }
         } else {
-            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(p.border_w, if focused { p.accent } else if hov { p.line2 } else { p.line }), StrokeKind::Inside));
+            shapes.push(Shape::rect_stroke(rect, rad, Stroke::new(p.border_w, if focused { p.focus } else if hov { p.line2 } else { p.line }), StrokeKind::Inside));
         }
         ui.painter().set(bg, Shape::Vec(shapes));
         icons::paint(ui, Rect::from_center_size(Pos2::new(rect.left() + icon_x + icon_s / 2.0, rect.center().y), Vec2::splat(icon_s)), "search", p.muted);

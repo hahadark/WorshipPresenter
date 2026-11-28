@@ -874,7 +874,8 @@ pub fn hover_ops(ui: &Ui, id: egui::Id, cell: Rect, ops: &[HoverOp]) -> Option<&
     if ops.is_empty() || !ui.rect_contains_pointer(cell) {
         return None;
     }
-    let s = HOVER_BTN.min(cell.height() - 4.0).max(16.0);
+    // 줄 높이 28 (디자인 체계 ROW_H) 에서도 누름 자리 24 를 지킨다
+    let s = HOVER_BTN.min(cell.height() - 2.0).max(16.0);
     let inset = if cell.height() >= s + 12.0 { 6.0 } else { ((cell.height() - s) / 2.0).max(0.0) };
     let (mut lx, mut rx) = (cell.left() + inset, cell.right() - inset);
     let y = cell.top() + inset;

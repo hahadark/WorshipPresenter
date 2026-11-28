@@ -89,7 +89,7 @@ pub(crate) fn lcd_info(ctx: &egui::Context, s: &Snap, planned: &[String]) -> Lcd
 /// 막대 위 도드라진 단추 (.tpb) — 아이콘(+글)
 fn tp_button(ui: &mut Ui, rect: Rect, id: Id, icon: &str, label: &str, kbd: &str, send: bool, tip: &str) -> Response {
     let p = pal();
-    let resp = ui.interact(rect, id, Sense::click()).on_hover_text(tip);
+    let resp = widgets::tip_auto(ui.interact(rect, id, Sense::click()), tip);
     let hov = resp.hovered();
     let (bg, fg) = if send {
         (if hov { if p.bevel && p.dark { Color32::WHITE } else { mix(p.send_bg, 85.0, Color32::WHITE) } } else { p.send_bg }, p.send_fg)
@@ -129,7 +129,9 @@ fn tp_button(ui: &mut Ui, rect: Rect, id: Id, icon: &str, label: &str, kbd: &str
 /// 아이콘 위 · 이름 아래 도구 (.tool). `on` 이면 강조색, `narrow` 면 이름 없이 아이콘만
 fn tool(ui: &mut Ui, rect: Rect, id: Id, icon: &str, label: &str, on: Option<Color32>, narrow: bool, tip: &str) -> Response {
     let p = pal();
-    let resp = ui.interact(rect, id, Sense::click()).on_hover_text(tip);
+    // 아이콘만일 때는 툴팁 첫머리에 이름을 붙인다 (이름 없는 아이콘이 무엇인지)
+    let tip = if narrow && !tip.starts_with(label) { format!("{label} — {tip}") } else { tip.to_string() };
+    let resp = widgets::tip_auto(ui.interact(rect, id, Sense::click()), &tip);
     let hov = resp.hovered();
     if hov || on.is_some() {
         ui.painter().rect_filled(rect.shrink2(Vec2::new(1.0, 3.0)), theme::cr(theme::Rad::Md), if on.is_some() { alpha(on.unwrap_or(p.hover), 0.16) } else { p.hover });
@@ -149,96 +151,191 @@ fn tool(ui: &mut Ui, rect: Rect, id: Id, icon: &str, label: &str, on: Option<Col
     resp
 }
 
-/// 작은 아이콘 단추 (.icb: 30×26), `on` 이면 노랑
+/// 작은 아이콘 단추 (.icb: 30×26). `on`(판이 보임 · 켜짐)이면 고름 회색 바탕 + 밝은 아이콘 — 노랑은 '다음' 에만
 pub(crate) fn icb(ui: &mut Ui, rect: Rect, id: Id, icon: &str, on: bool, tip: &str) -> Response {
     let p = pal();
-    let resp = ui.interact(rect, id, Sense::click()).on_hover_text(tip);
+    let resp = widgets::tip_auto(ui.interact(rect, id, Sense::click()), tip);
+    let hov = theme::anim_bool(ui.ctx(), id.with("hov"), resp.hovered(), theme::T_FAST);
+    let base = if on { p.sel } else { Color32::TRANSPARENT };
+    let bg = theme::lerp(base, if on { theme::lift(p.sel) } else { p.hover }, hov);
+    if bg.a() > 0 {
+        ui.painter().rect_filled(rect, theme::cr(theme::Rad::Md), bg);
+    }
     if resp.hovered() {
-        ui.painter().rect_filled(rect, theme::cr(theme::Rad::Md), p.hover);
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(17.0)), icon, if on { p.accent } else { p.text2 });
+    if resp.has_focus() {
+        widgets::focus_ring(ui, rect, theme::radius(theme::Rad::Md));
+    }
+    icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)), icon, if on || resp.hovered() { p.text } else { p.text2 });
     resp
 }
 
-/// 상태 표시창 (.lcd)
-fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) {
+/// 상태 표시창 (.lcd): [지금 | 송출 중 | 다음 순서]. 화면에서 가장 먼저 읽혀야 할 '송출 중' 칸이 가장 넓고 글이 크다.
+/// 숫자(시각 · 경과 · 쪽)는 자릿수 폭을 고정해 초가 바뀌어도 글이 흔들리지 않는다. 잘린 글이 있으면 그 전문을 돌려준다(툴팁)
+fn paint_lcd(ui: &mut Ui, rect: Rect, info: &LcdInfo, clock: Option<&str>) -> Option<String> {
+    use theme::Type;
     let p = pal();
-    let pt = ui.painter();
+    let pt = ui.painter().clone();
     pt.rect_filled(rect, theme::cr(theme::Rad::Lg), p.lcd);
     // 안으로 들어간 느낌: 위 어두운 선 · 아래 밝은 선
     pt.hline(rect.x_range().shrink(4.0), rect.top() + 0.5, Stroke::new(1.0, Color32::from_black_alpha(160)));
     pt.hline(rect.x_range().shrink(4.0), rect.bottom() + 0.5, Stroke::new(1.0, alpha(Color32::WHITE, 0.08)));
-    let label_f = theme::font(9.5, Weight::SemiBold);
     let sep = mix(p.lcd, 70.0, Color32::WHITE);
-    let mut cols: Vec<(f32, Box<dyn Fn(&egui::Painter, Rect)>)> = vec![];
-    if let Some(c) = clock {
-        let c = c.to_string();
-        let lf = label_f.clone();
-        let (lt, ll) = (p.lcd_text, p.lcd_label);
-        cols.push((112.0, Box::new(move |pt: &egui::Painter, r: Rect| {
-            pt.text(Pos2::new(r.left() + 12.0, r.top() + 6.0), Align2::LEFT_TOP, tr("예배 시각"), lf.clone(), ll);
-            pt.text(Pos2::new(r.left() + 12.0, r.bottom() - 4.0), Align2::LEFT_BOTTOM, &c, theme::font(20.0, Weight::SemiBold), lt);
-        })));
-    }
-    let rest = (rect.width() - cols.iter().map(|c| c.0).sum::<f32>()) / 2.0;
-    let (live_c, next_c) = (p.live_text, p.next);
-    let lt = p.lcd_text;
-    let ll = p.lcd_label;
-    let live = info.live.clone();
-    let direct = info.direct;
-    let warn_c = p.warn;
-    let lf = label_f.clone();
-    cols.push((rest, Box::new(move |pt: &egui::Painter, r: Rect| {
-        let r = r.shrink2(Vec2::new(12.0, 0.0));
-        let pt = pt.with_clip_rect(r);
-        match &live {
-            Some((t, k, sec)) => {
-                let lr = pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, format!("{} · {:02}:{:02}", tr("송출 중"), sec / 60, sec % 60), lf.clone(), live_c);
-                if direct {
-                    pt.text(Pos2::new(lr.right() + 6.0, r.top() + 6.0), Align2::LEFT_TOP, tr("바로 송출"), lf.clone(), warn_c);
-                }
-                let g = pt.layout_no_wrap(t.clone(), theme::font(13.0, Weight::Bold), lt);
-                let gw = g.size().x;
-                pt.galley(Pos2::new(r.left(), r.bottom() - 6.0 - g.size().y), g, lt);
-                if !k.is_empty() {
-                    pt.text(Pos2::new(r.left() + gw + 6.0, r.bottom() - 6.0), Align2::LEFT_BOTTOM, k, theme::font(12.0, Weight::Regular), lt);
-                }
-            }
-            None => {
-                let lr = pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, tr("송출 중"), lf.clone(), ll);
-                if direct {
-                    pt.text(Pos2::new(lr.right() + 6.0, r.top() + 6.0), Align2::LEFT_TOP, tr("바로 송출"), lf.clone(), warn_c);
-                }
-                pt.text(Pos2::new(r.left(), r.bottom() - 6.0), Align2::LEFT_BOTTOM, tr("없음"), theme::font(13.0, Weight::Bold), ll);
-            }
-        }
-    })));
-    let next = info.next.clone();
-    cols.push((rest, Box::new(move |pt: &egui::Painter, r: Rect| {
-        let r = r.shrink2(Vec2::new(12.0, 0.0));
-        let pt = pt.with_clip_rect(r);
-        match &next {
-            Some((at, t)) => {
-                let head = if at.is_empty() { tr("다음") } else { format!("{} · {}", tr("다음"), at) };
-                pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, head, label_f.clone(), next_c);
-                pt.text(Pos2::new(r.left(), r.bottom() - 6.0), Align2::LEFT_BOTTOM, t, theme::font(13.0, Weight::Bold), lt);
-            }
-            None => {
-                pt.text(Pos2::new(r.left(), r.top() + 6.0), Align2::LEFT_TOP, tr("다음"), label_f.clone(), ll);
-                pt.text(Pos2::new(r.left(), r.bottom() - 6.0), Align2::LEFT_BOTTOM, tr("없음"), theme::font(13.0, Weight::Bold), ll);
-            }
-        }
-    })));
+    let (lt, ll) = (p.lcd_text, p.lcd_label);
+    let pad = theme::sp::X12;
+    let label_y = rect.top() + 5.0;
+    let value_y = rect.bottom() - 5.0;
+    let mut full: Vec<String> = vec![];
     let mut x = rect.left();
-    let n = cols.len();
-    for (k, (w, f)) in cols.into_iter().enumerate() {
-        let r = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(w, rect.height()));
-        f(pt, r);
-        x += w;
-        if k + 1 < n {
-            pt.vline(x, rect.y_range().shrink(7.0), Stroke::new(1.0, sep));
+    // ---- 지금 (시각)
+    if let Some(c) = clock {
+        pt.text(Pos2::new(x + pad, label_y), Align2::LEFT_TOP, tr("지금"), Type::Micro.font(), ll);
+        widgets::tnum(ui, Pos2::new(x + pad, value_y + 1.0), Align2::LEFT_BOTTOM, c, Type::Display.font(), lt);
+        x += CLOCK_W;
+        pt.vline(x, rect.y_range().shrink(7.0), Stroke::new(1.0, sep));
+    }
+    let rest = rect.right() - x;
+    let live_w = (rest * 0.56).round();
+    // ---- 송출 중
+    {
+        let r = Rect::from_min_max(Pos2::new(x + pad, rect.top()), Pos2::new(x + live_w - pad, rect.bottom()));
+        let on = info.live.is_some();
+        let lr = pt.text(Pos2::new(r.left(), label_y), Align2::LEFT_TOP, tr("송출 중"), Type::Micro.font(), if on { p.live_text } else { ll });
+        let mut lx = lr.right() + theme::sp::X6;
+        if let Some((_, _, sec)) = &info.live {
+            let t = widgets::tnum(ui, Pos2::new(lx, label_y), Align2::LEFT_TOP, &format!("{:02}:{:02}", sec / 60, sec % 60), Type::Micro.font(), p.live_text);
+            lx = t.right() + theme::sp::X6;
         }
+        if info.direct {
+            pt.text(Pos2::new(lx, label_y), Align2::LEFT_TOP, format!("· {}", tr("바로 송출")), Type::Micro.font(), ll);
+        }
+        match &info.live {
+            Some((t, k, _)) => {
+                let kw = if k.is_empty() { 0.0 } else { widgets::Tnum::new(ui, k, Type::Small.font(), lt).size.x + theme::sp::X6 };
+                let (g, cut) = widgets::elide(ui, t, Type::Title.font(), lt, r.width() - kw);
+                let gw = g.size().x;
+                pt.galley(Pos2::new(r.left(), value_y - g.size().y), g, lt);
+                if cut {
+                    full.push(t.clone());
+                }
+                if !k.is_empty() {
+                    widgets::tnum(ui, Pos2::new(r.left() + gw + theme::sp::X6, value_y - 1.0), Align2::LEFT_BOTTOM, k, Type::Small.font(), ll);
+                }
+            }
+            None => {
+                pt.text(Pos2::new(r.left(), value_y), Align2::LEFT_BOTTOM, tr("없음"), Type::Title.font(), ll);
+            }
+        }
+        x += live_w;
+        pt.vline(x, rect.y_range().shrink(7.0), Stroke::new(1.0, sep));
+    }
+    // ---- 다음 순서 (큐시트의 다음 순서 — 뷰어의 노랑 '다음'(미리보기)과 다른 것이라 이름을 '다음 순서' 로)
+    {
+        let r = Rect::from_min_max(Pos2::new(x + pad, rect.top()), Pos2::new(rect.right() - pad, rect.bottom()));
+        let lr = pt.text(Pos2::new(r.left(), label_y), Align2::LEFT_TOP, tr("다음 순서"), Type::Micro.font(), ll);
+        match &info.next {
+            Some((at, t)) => {
+                if !at.is_empty() {
+                    widgets::tnum(ui, Pos2::new(lr.right() + theme::sp::X6, label_y), Align2::LEFT_TOP, at, Type::Micro.font(), ll);
+                }
+                let (g, cut) = widgets::elide(ui, t, Type::BodyStrong.font(), lt, r.width());
+                pt.galley(Pos2::new(r.left(), value_y - g.size().y), g, lt);
+                if cut {
+                    full.push(t.clone());
+                }
+            }
+            None => {
+                pt.text(Pos2::new(r.left(), value_y), Align2::LEFT_BOTTOM, tr("없음"), Type::BodyStrong.font(), ll);
+            }
+        }
+    }
+    (!full.is_empty()).then(|| full.join("\n"))
+}
+
+/// 표시창의 '지금' 칸 폭
+const CLOCK_W: f32 = 104.0;
+
+/// 컨트롤 막대가 폭에 맞춰 줄어드는 단계. 넓을 때 모습에서 하나씩 덜어 내고, 어떤 폭에서도 겹치지 않는다.
+///  1 찾기칸 260 → 180 · 2 도구 이름 빼고 아이콘만 · 3 송출 단추 좁게 · 4 찾기칸 140 · 5 표시창 '지금' 칸 빼기(툴팁으로) ·
+///  6 송출 단추의 단축키 글 빼기 · 7 찾기칸 120 · 8 판 접기 · 설정 아이콘 빼기(보기 · 파일 메뉴에 같은 것) · 9 틈 8 · 찾기칸 104 · 표시창 최소 150.
+///  표시창('송출 중' 이 읽혀야 함)은 찾기칸보다 나중에 줄인다
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BarFit {
+    pub toggles: bool,
+    pub tool_label: bool,
+    pub send_w: f32,
+    pub send_kbd: bool,
+    pub clock: bool,
+    pub search_w: f32,
+    pub gap: f32,
+    pub lcd_w: f32,
+    pub step: u8,
+}
+
+impl BarFit {
+    pub(crate) fn tool_w(&self) -> f32 {
+        if self.tool_label { 56.0 } else { 36.0 }
+    }
+    fn left_w(&self) -> f32 {
+        if self.toggles { 12.0 + 30.0 + 2.0 + 30.0 } else { 0.0 }
+    }
+    fn right_w(&self) -> f32 {
+        self.search_w + 6.0 + 30.0 + if self.toggles { 2.0 + 30.0 + 2.0 + 30.0 } else { 0.0 } + 12.0
+    }
+    fn tp_w(&self) -> f32 {
+        44.0 + 2.0 + self.send_w + 2.0 + 44.0
+    }
+    fn lcd_min(&self) -> f32 {
+        if self.clock {
+            CLOCK_W + 2.0 * 130.0
+        } else if self.gap > 8.0 {
+            280.0
+        } else {
+            150.0
+        }
+    }
+    fn fixed(&self) -> f32 {
+        self.left_w() + self.tp_w() + self.tool_w() * 4.0 + self.right_w() + 4.0 * self.gap
+    }
+    pub(crate) fn total(&self) -> f32 {
+        self.fixed() + self.lcd_w
+    }
+
+    pub(crate) fn fit(w: f32) -> BarFit {
+        let mut f = BarFit { toggles: true, tool_label: true, send_w: 150.0, send_kbd: true, clock: true, search_w: 260.0, gap: 12.0, lcd_w: 0.0, step: 0 };
+        let ok = |f: &BarFit| f.fixed() + f.lcd_min() <= w;
+        // 1 찾기칸을 줄여 맞출 수 있으면 거기까지만
+        if !ok(&f) {
+            f.step = 1;
+            let over = f.fixed() + f.lcd_min() - w;
+            f.search_w = (260.0 - over).max(180.0);
+        }
+        let steps: [fn(&mut BarFit); 8] = [
+            |f| f.tool_label = false,
+            |f| f.send_w = 118.0,
+            |f| f.search_w = 140.0,
+            |f| f.clock = false,
+            |f| {
+                f.send_kbd = false;
+                f.send_w = 92.0;
+            },
+            |f| f.search_w = 120.0,
+            |f| f.toggles = false,
+            |f| {
+                f.gap = 8.0;
+                f.search_w = 104.0;
+            },
+        ];
+        for (i, st) in steps.iter().enumerate() {
+            if ok(&f) {
+                break;
+            }
+            st(&mut f);
+            f.step = i as u8 + 2;
+        }
+        f.lcd_w = (w - f.fixed()).clamp(f.lcd_min(), 480.0);
+        f
     }
 }
 
@@ -253,34 +350,37 @@ impl App {
         let sk = |id: &str, d: &str| crate::keys::label(&shortcut_settings, id, d);
         let w = bar.width();
         let cy = bar.center().y;
-        // 폭에 따라: 도구 이름 · 예배 시각 칸
-        let narrow = w < 1360.0;
-        let tool_w = if narrow { 38.0 } else { 56.0 };
-        let send_w = if w < 1200.0 { 118.0 } else { 150.0 };
-        let left_w = 12.0 + 30.0 + 2.0 + 30.0;
-        let search_w = (w * 0.14).clamp(150.0, 260.0);
-        let right_w = search_w + 6.0 + 30.0 + 2.0 + 30.0 + 2.0 + 30.0 + 12.0;
+        // 폭에 따라 단계적으로 덜어 낸다 (BarFit::fit — 어떤 폭에서도 겹치지 않게)
+        let fit = BarFit::fit(w);
+        let narrow = !fit.tool_label;
+        let tool_w = fit.tool_w();
+        let send_w = fit.send_w;
+        let gap = fit.gap;
+        let left_w = if fit.toggles { 12.0 + 30.0 + 2.0 + 30.0 } else { 0.0 };
+        let search_w = fit.search_w;
+        let right_w = search_w + 6.0 + 30.0 + if fit.toggles { 2.0 + 30.0 + 2.0 + 30.0 } else { 0.0 } + 12.0;
         let tp_w = 44.0 + 2.0 + send_w + 2.0 + 44.0;
         let tools_w = tool_w * 4.0;
-        let room = w - left_w - right_w - tp_w - tools_w - 4.0 * 12.0;
-        let lcd_w = room.clamp(200.0, 470.0);
-        let show_clock = lcd_w >= 380.0;
-        let center_w = tp_w + 12.0 + lcd_w + 12.0 + tools_w;
+        let lcd_w = fit.lcd_w;
+        let show_clock = fit.clock;
+        let center_w = tp_w + gap + lcd_w + gap + tools_w;
         // 가운데 묶음: 남는 자리 가운데 (모자라면 왼쪽 묶음 바로 뒤)
-        let free_l = bar.left() + left_w + 12.0;
-        let free_r = bar.right() - right_w - 12.0;
+        let free_l = bar.left() + left_w + gap;
+        let free_r = bar.right() - right_w - gap;
         let cx0 = (free_l + ((free_r - free_l) - center_w).max(0.0) / 2.0).max(free_l);
 
-        // ---- 왼쪽: 사이드바 · 시간표
-        let r1 = Rect::from_center_size(Pos2::new(bar.left() + 12.0 + 15.0, cy), Vec2::new(30.0, 26.0));
-        let side_on = self.pro_side_visible();
-        if icb(ui, r1, Id::new("pro-side"), "panel-left", side_on, &tr("왼쪽 큐시트 판 보이기·숨기기")).clicked() {
-            self.pro_toggle_side();
-        }
-        let r2 = r1.translate(Vec2::new(32.0, 0.0));
-        let tl_on = self.pro_timeline_visible();
-        if icb(ui, r2, Id::new("pro-timeline"), "panel-bottom", tl_on, &tr("아래 예배 시간표 보이기·숨기기")).clicked() {
-            self.pro_toggle_timeline();
+        // ---- 왼쪽: 사이드바 · 시간표 (아주 좁으면 빼고 보기 메뉴로)
+        if fit.toggles {
+            let r1 = Rect::from_center_size(Pos2::new(bar.left() + 12.0 + 15.0, cy), Vec2::new(30.0, 26.0));
+            let side_on = self.pro_side_visible();
+            if icb(ui, r1, Id::new("pro-side"), "panel-left", side_on, &tr("왼쪽 큐시트 판 보이기·숨기기")).clicked() {
+                self.pro_toggle_side();
+            }
+            let r2 = r1.translate(Vec2::new(32.0, 0.0));
+            let tl_on = self.pro_timeline_visible();
+            if icb(ui, r2, Id::new("pro-timeline"), "panel-bottom", tl_on, &tr("아래 예배 시간표 보이기·숨기기")).clicked() {
+                self.pro_toggle_timeline();
+            }
         }
 
         // ---- 가운데: [이전 | 송출 | 다음]
@@ -294,7 +394,8 @@ impl App {
         }
         x += 46.0;
         let rs = Rect::from_min_size(Pos2::new(x, cy - th / 2.0), Vec2::new(send_w, th));
-        let r = tp_button(ui, rs, Id::new("pro-send"), "play", &tr("송출"), &sk("sendPreview", "F9"), true, &tr("미리보기를 송출"));
+        let send_key = sk("sendPreview", "F9");
+        let r = tp_button(ui, rs, Id::new("pro-send"), "play", &tr("송출"), if fit.send_kbd { &send_key } else { "" }, true, &format!("{} ({})", tr("미리보기를 송출"), send_key));
         widgets::mark("pro-send", r.rect);
         if r.clicked() {
             acts.push(Act::SendPreview);
@@ -306,20 +407,26 @@ impl App {
         if r.clicked() {
             acts.push(Act::Step(1));
         }
-        x += 44.0 + 12.0;
+        x += 44.0 + gap;
         // ---- 상태 표시창
         let planned = self.core.lock().planned_times();
         let mut info = lcd_info(ui.ctx(), s, &planned);
         info.direct = !s.preview_mode;
         let lr = Rect::from_min_size(Pos2::new(x, cy - 21.0), Vec2::new(lcd_w, 42.0));
         let clock = clock_text(local_ms());
-        paint_lcd(ui, lr, &info, show_clock.then_some(clock.as_str()));
+        let cut = paint_lcd(ui, lr, &info, show_clock.then_some(clock.as_str()));
         let lresp = ui.interact(lr, Id::new("pro-lcd"), Sense::hover());
+        let mut tip: Vec<String> = vec![];
         if !show_clock {
-            lresp.on_hover_text(format!("{} {}", tr("예배 시각"), clock));
+            tip.push(format!("{} {}", tr("지금"), clock));
+        }
+        tip.extend(cut);
+        if !tip.is_empty() {
+            lresp.on_hover_text(tip.join("
+"));
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000 - (local_ms().rem_euclid(1000)) as u64 + 5));
-        x += lcd_w + 12.0;
+        x += lcd_w + gap;
         // ---- 도구: 글자 숨김 · 지우기 ▾ · 즉석 자막 · 예배당 화면
         let tr_ = |x: f32| Rect::from_min_size(Pos2::new(x, bar.top() + 6.0), Vec2::new(tool_w, bar.height() - 12.0));
         let hidden = s.live.as_ref().is_some_and(|l| !l.visible);
@@ -350,7 +457,7 @@ impl App {
         });
         x += tool_w;
         let qon = self.tb.quick;
-        let r = tool(ui, tr_(x), Id::new("pro-quick"), "text", &tr("즉석 자막"), qon.then_some(p.accent), narrow, &format!("{} ({})", tr("즉석 자막: 글을 써서 바로 송출"), sk("quickText", "Ctrl+T")));
+        let r = tool(ui, tr_(x), Id::new("pro-quick"), "text", &tr("즉석 자막"), qon.then_some(p.text), narrow, &format!("{} ({})", tr("즉석 자막: 글을 써서 바로 송출"), sk("quickText", "Ctrl+T")));
         widgets::mark("pro-quick", r.rect);
         if r.clicked() {
             self.tb.quick = !qon;
@@ -374,17 +481,19 @@ impl App {
 
         // ---- 오른쪽: 찾기칸 · 찾기 옵션 · 설정 · 인스펙터
         let mut rx = bar.right() - 12.0 - 30.0;
-        let ri = Rect::from_min_size(Pos2::new(rx, cy - 13.0), Vec2::new(30.0, 26.0));
-        let ins_on = self.pro_inspector_visible();
-        if icb(ui, ri, Id::new("pro-inspector"), "panel-right", ins_on, &tr("오른쪽 인스펙터 보이기·숨기기")).clicked() {
-            self.pro_toggle_inspector();
+        if fit.toggles {
+            let ri = Rect::from_min_size(Pos2::new(rx, cy - 13.0), Vec2::new(30.0, 26.0));
+            let ins_on = self.pro_inspector_visible();
+            if icb(ui, ri, Id::new("pro-inspector"), "panel-right", ins_on, &tr("오른쪽 인스펙터 보이기·숨기기")).clicked() {
+                self.pro_toggle_inspector();
+            }
+            rx -= 32.0;
+            let rg = Rect::from_min_size(Pos2::new(rx, cy - 13.0), Vec2::new(30.0, 26.0));
+            if icb(ui, rg, Id::new("pro-settings"), "settings", false, &tr("설정 (Ctrl+,)")).clicked() {
+                self.tc.settings.open = true;
+            }
+            rx -= 32.0;
         }
-        rx -= 32.0;
-        let rg = Rect::from_min_size(Pos2::new(rx, cy - 13.0), Vec2::new(30.0, 26.0));
-        if icb(ui, rg, Id::new("pro-settings"), "settings", false, &tr("설정 (Ctrl+,)")).clicked() {
-            self.tc.settings.open = true;
-        }
-        rx -= 32.0;
         let ro = Rect::from_min_size(Pos2::new(rx, cy - 13.0), Vec2::new(30.0, 26.0));
         let or = icb(ui, ro, Id::new("pro-search-opts"), "book-open", false, &tr("찾기 방식 · 성경 번역본 · 병행 번역"));
         widgets::mark("pro-search-opts", or.rect);
@@ -392,7 +501,8 @@ impl App {
         rx -= 6.0 + search_w;
         let rsr = Rect::from_min_size(Pos2::new(rx, cy - 13.0), Vec2::new(search_w, 26.0));
         ui.scope_builder(UiBuilder::new().max_rect(rsr).layout(Layout::left_to_right(Align::Center)), |ui| {
-            self.search_box(ui, s, acts, rsr.width(), 26.0, 12.5, &tr("요3:16 · 찬양 제목 (Ctrl+K)"));
+            let hint = if search_w < 170.0 { tr("찾기 (Ctrl+K)") } else { tr("요3:16 · 찬양 제목 (Ctrl+K)") };
+            self.search_box(ui, s, acts, rsr.width(), 26.0, 12.5, &hint);
         });
     }
 
@@ -590,5 +700,27 @@ impl App {
     pub(crate) fn pro_toggle_viewers(&mut self) {
         let on = self.pro_live_only();
         self.pro_set_live_only(!on);
+    }
+}
+
+#[cfg(test)]
+mod bar_fit_tests {
+    use super::BarFit;
+
+    #[test]
+    fn bar_never_overlaps_and_steps_in_order() {
+        // 1000×640 · 150% = 667 논리 px 까지는 겹치지 않는다
+        let mut last = 0;
+        for w in (665..=2600).rev().step_by(5) {
+            let f = BarFit::fit(w as f32);
+            assert!(f.total() <= w as f32 + 0.5, "{w}: {f:?} total {}", f.total());
+            assert!(f.step >= last, "좁아질수록 단계가 줄지 않는다 ({w})");
+            last = f.step;
+        }
+        assert_eq!(BarFit::fit(1920.0).step, 0);
+        assert!(BarFit::fit(1920.0).tool_label && BarFit::fit(1920.0).clock);
+        // 1366 · 125% (1093) 에서도 송출 단추와 표시창은 남는다
+        let f = BarFit::fit(1093.0);
+        assert!(f.lcd_w >= 280.0 && f.send_w >= 92.0);
     }
 }
