@@ -1,0 +1,10 @@
+[package]
+name = "wp-web-rfd"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "[웹판] rfd(파일 대화상자) 자리: 브라우저에는 기다렸다 답하는 파일 대화상자가 없다"
+
+[lib]
+name = "rfd"
+path = "src/lib.rs"

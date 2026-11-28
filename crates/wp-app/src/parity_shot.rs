@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use web_time::Instant;
 
 struct St {
     out: PathBuf,

@@ -4,7 +4,10 @@
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+#[cfg(target_arch = "wasm32")]
+use crate::web::vfs as fs; // [웹판] settings.json 은 브라우저 저장소(localStorage)에
 use std::path::{Path, PathBuf};
 
 pub static DEFAULTS: Lazy<Value> = Lazy::new(|| serde_json::from_str(include_str!("../data/defaults.json")).unwrap());
@@ -135,6 +138,9 @@ static BG: Lazy<parking_lot::Mutex<std::sync::mpsc::Sender<BgJob>>> = Lazy::new(
 });
 /// 맡겨 둔 저장이 모두 끝날 때까지 (최대 5초)
 fn bg_wait() -> Result<()> {
+    if cfg!(target_arch = "wasm32") {
+        return Ok(()); // [웹판] 저장 일꾼 스레드가 없다 (save_bg 가 바로 쓴다)
+    }
     if !BG_STARTED.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(());
     }

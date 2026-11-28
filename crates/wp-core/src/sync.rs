@@ -516,7 +516,7 @@ mod tests {
         // 파일 작업 중 중복 요청은 코어 잠금을 기다리지 않고 즉시 돌아온다.
         {
             let _work = FILE_WORK.lock();
-            let started = std::time::Instant::now();
+            let started = web_time::Instant::now();
             assert!(backup_files(&root.join("pc2")).is_err());
             assert!(restore_files(&root.join("pc2"), "2026-11-12").is_err());
             assert!(started.elapsed().as_millis() < 100);

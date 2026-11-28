@@ -220,7 +220,7 @@ pub fn read_answer_bytes(buf: &[u8]) -> Result<String, String> {
 /// AI API 호출 한 건의 진행 상태 (한 번에 하나만). 시험할 수 있게 시계를 밖에서 받는다.
 #[derive(Default, Debug)]
 pub struct AiJob {
-    pub started: Option<std::time::Instant>,
+    pub started: Option<web_time::Instant>,
     pub done: Option<Result<Value, String>>,
 }
 
@@ -230,7 +230,7 @@ impl AiJob {
         if self.started.is_some() {
             return false;
         }
-        self.started = Some(std::time::Instant::now());
+        self.started = Some(web_time::Instant::now());
         self.done = None;
         true
     }
@@ -344,6 +344,8 @@ fn open_with_shell(target: &str) -> Result<(), String> {
     let r = std::process::Command::new("open").arg(target).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
     let r = std::process::Command::new("xdg-open").arg(target).spawn();
+    #[cfg(target_arch = "wasm32")]
+    let r: std::io::Result<()> = { let _ = target; Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "웹판")) }; // [웹판]
     r.map(|_| ()).map_err(|e| e.to_string())
 }
 

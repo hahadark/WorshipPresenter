@@ -9,7 +9,13 @@
 
 use crate::core::{Core, Ev, Shared};
 use axum::body::Bytes;
-use axum::extract::{ConnectInfo, Query, State};
+use axum::extract::{Query, State};
+#[cfg(not(target_arch = "wasm32"))]
+use axum::extract::ConnectInfo;
+#[cfg(target_arch = "wasm32")]
+use crate::web::axum_shim::ConnectInfo; // [웹판]
+#[cfg(target_arch = "wasm32")]
+use crate::web::tokio_shim as tokio; // [웹판] fs · net 자리 메움
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -233,6 +239,9 @@ pub fn router(core: Shared) -> Router {
         .with_state(core)
 }
 
+#[cfg(target_arch = "wasm32")]
+async fn start(_core: Shared, _port: u16, _host: &str) {} // [웹판] 브라우저는 서버를 열 수 없다
+#[cfg(not(target_arch = "wasm32"))]
 async fn start(core: Shared, port: u16, host: &str) {
     match tokio::net::TcpListener::bind((host, port)).await {
         Ok(l) => {

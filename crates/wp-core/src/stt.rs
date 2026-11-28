@@ -244,7 +244,7 @@ impl Server {
             #[cfg(windows)]
             _job: job,
         };
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         loop {
             if let Ok(Some(st)) = s.child.try_wait() {
                 bail!("음성 인식 엔진이 바로 꺼졌습니다 ({st}).");
@@ -492,11 +492,11 @@ mod bench {
         let dir = PathBuf::from(dir);
         let data = PathBuf::from(std::env::var("WP_STT_DIR").unwrap());
         let model_id = std::env::var("WP_STT_MODEL").unwrap_or_else(|_| "small".into());
-        let t = std::time::Instant::now();
+        let t = web_time::Instant::now();
         let exe = engine_path(&data).map(Ok).unwrap_or_else(|| install_engine(&data, &|_, _| {}, &|| false)).unwrap();
         download(model(&model_id), &model_path(&data, &model_id), &|_, _| {}, &|| false).unwrap();
         println!("준비(받기·대조) {:.1}초", t.elapsed().as_secs_f32());
-        let t = std::time::Instant::now();
+        let t = web_time::Instant::now();
         let s = Server::start(&exe, &model_path(&data, &model_id), "ko", threads()).unwrap();
         println!("엔진 켜기 {:.1}초 · 스레드 {} · 논리 코어 {}", t.elapsed().as_secs_f32(), threads(), std::thread::available_parallelism().unwrap().get());
         // d·s = 고친 규칙을 맞춘 묶음, h·k = 처음 보는 묶음 (d·h 는 음성 합성이 수를 고유어로 읽음, s·k 는 '십오 장' 처럼 한자어로)
@@ -505,13 +505,13 @@ mod bench {
             let truth: Vec<String> = t.lines().filter(|l| !l.trim().is_empty()).map(|l| l.split('|').next().unwrap().to_string()).collect();
             let (mut ok, mut audio, mut took_sum, mut worst) = (0, 0.0f32, 0.0f32, 0.0f32);
             let cpu0 = cpu_secs(s.pid());
-            let wall = std::time::Instant::now();
+            let wall = web_time::Instant::now();
             for (k, want) in truth.iter().enumerate() {
                 let f = dir.join(format!("{prefix}{:02}.wav", k + 1));
                 let pcm = read_wav(&f);
                 let secs = pcm.len() as f32 / 16000.0;
                 // 실시간처럼: 말이 끝난 뒤에 인식을 시작 → 늦음 = 인식에 걸린 시간 (+ 쉼 0.5초)
-                let t0 = std::time::Instant::now();
+                let t0 = web_time::Instant::now();
                 let text = s.transcribe(&wav_bytes(&pcm, 16000), &bible_prompt()).unwrap_or_default();
                 let took = t0.elapsed().as_secs_f32();
                 let refs = crate::refscan::find_refs_spoken(&text);

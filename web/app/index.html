@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>워십프리젠터</title>
+<link rel="icon" href="icon.png">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #17181b; color: #c9cdd3; font: 14px/1.5 "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif; }
+  /* 조작 화면: 창 전체. 브라우저가 가로채는 손짓(당겨서 새로 고침 · 두 손가락 확대)을 끈다 */
+  #wp_canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #boot { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; background: #17181b; z-index: 10; }
+  #boot.done { display: none; }
+  #boot h1 { font-size: 18px; font-weight: 600; margin: 0 0 14px; color: #e7e9ec; letter-spacing: 0; }
+  #boot p { margin: 6px 0 0; color: #8b9099; min-height: 1.5em; }
+  #bar { width: 260px; height: 4px; background: #2a2c31; border-radius: 2px; overflow: hidden; margin: 0 auto; }
+  #bar > i { display: block; height: 100%; width: 0; background: #8b9099; transition: width .15s linear; }
+  #boot.error #bar { display: none; }
+  #boot.error p { color: #e0a060; max-width: 640px; white-space: pre-wrap; user-select: text; }
+</style>
+</head>
+<body>
+<canvas id="wp_canvas"></canvas>
+<div id="boot"><div>
+  <h1>워십프리젠터</h1>
+  <div id="bar"><i></i></div>
+  <p id="boot_msg">프로그램을 받는 중…</p>
+</div></div>
+<script type="module">
+// 받는 진행률을 보이며 wasm 을 받아 시작한다. 시간은 window.wpTimes 에 남긴다 (점검용).
+const t0 = performance.now();
+const T = window.wpTimes = { nav: t0 };
+const $ = (id) => document.getElementById(id);
+const fail = (msg) => { $('boot').classList.add('error'); $('boot_msg').textContent = msg; };
+// Rust 쪽(web/mod.rs)이 부른다
+window.wpBoot = (stage, detail) => {
+  if (stage === 'ready') { T.ready = performance.now(); requestAnimationFrame(() => requestAnimationFrame(() => { T.painted = performance.now(); $('boot').classList.add('done'); document.title = '워십프리젠터'; })); }
+  else if (stage === 'error') fail('조작 화면을 열지 못했습니다.\n' + detail);
+  else $('boot_msg').textContent = detail;
+};
+window.addEventListener('error', (e) => { if (!T.ready) fail('오류: ' + (e.message || e)); });
+// 단축키: 조작 화면이 쓰는 키의 브라우저 기본 동작(새로 고침 · 주소 표시줄 · 기록 · 뒤로 가기 …)을 막는다.
+// 조작 화면(egui)은 그대로 받는다 (eframe 는 defaultPrevented 를 보지 않음). 막을 수 없는 키(Ctrl+T · W · N · Tab)는 docs/web/egui-web.md
+const BLOCK = new Set(['F1', 'F3', 'F5', 'F6', 'F7', 'F10', 'C-r', 'C-k', 'C-b', 'C-h', 'C-l', 'C-m', 'C-f', 'C-g', 'C-j', 'C-d', 'C-e', 'C-u', 'C-S-f', 'C-S-e', 'C-S-l', 'C-S-y', 'A-ArrowLeft', 'A-ArrowRight', 'BrowserBack', 'BrowserForward']);
+window.addEventListener('keydown', (e) => {
+  const k = (e.ctrlKey ? 'C-' : '') + (e.altKey ? 'A-' : '') + (e.shiftKey ? 'S-' : '') + (e.key.length === 1 ? e.key.toLowerCase() : e.key);
+  if (BLOCK.has(k)) e.preventDefault();
+}, true);
+// 송출 중에 창을 닫거나 새로 고치려 하면 한 번 묻는다 (Ctrl+W 처럼 막을 수 없는 키 · 실수로 누른 닫기 단추)
+window.addEventListener('beforeunload', (e) => { if (window.wpIsLive && window.wpIsLive()) { e.preventDefault(); e.returnValue = ''; } });
+try {
+  if (!document.createElement('canvas').getContext('webgl2')) throw new Error('이 브라우저는 WebGL2 를 쓸 수 없습니다. Chrome 이나 Edge 최신판으로 열어 주세요.');
+  const res = await fetch('wp-app_bg.wasm');
+  if (!res.ok) throw new Error('프로그램 파일을 받지 못했습니다 (' + res.status + ')');
+  const total = +res.headers.get('x-wasm-size') || +res.headers.get('content-length') || 0;
+  let got = 0;
+  const counted = new Response(new ReadableStream({
+    async start(c) {
+      const r = res.body.getReader();
+      for (;;) {
+        const { done, value } = await r.read();
+        if (done) break;
+        got += value.length;
+        if (total) $('bar').firstElementChild.style.width = Math.min(100, got / total * 100) + '%';
+        c.enqueue(value);
+      }
+      c.close();
+      T.downloaded = performance.now(); T.bytes = got;
+      $('boot_msg').textContent = '여는 중…';
+    }
+  }), { headers: { 'content-type': 'application/wasm' } });
+  const { default: init } = await import('./wp-app.js');
+  await init({ module_or_path: counted });
+  T.started = performance.now();
+} catch (e) {
+  fail(String(e && e.message || e));
+}
+</script>
+</body>
+</html>

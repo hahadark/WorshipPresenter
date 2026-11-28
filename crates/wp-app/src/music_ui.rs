@@ -10,7 +10,7 @@ use rodio::{Decoder, MixerDeviceSink, Player};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 #[derive(Default)]
 pub struct Music {

@@ -98,7 +98,7 @@ pub fn image_uri_px(c: &Ctx, url: &str, need_px: f32) -> Option<String> {
 
 /// 주소 → 파일 경로. 파일이 있는지 확인은 2초 동안 기억한다 (슬라이드 수백 장 격자에서 프레임마다 디스크를 묻지 않게)
 fn image_path(c: &Ctx, url: &str) -> Option<String> {
-    type Memo = std::collections::HashMap<String, (Option<String>, std::time::Instant)>;
+    type Memo = std::collections::HashMap<String, (Option<String>, web_time::Instant)>;
     static MEMO: once_cell::sync::Lazy<parking_lot::Mutex<Memo>> = once_cell::sync::Lazy::new(Default::default);
     let key = format!("{}|{url}", c.data_dir.display());
     if let Some((v, at)) = MEMO.lock().get(&key) {
@@ -112,7 +112,7 @@ fn image_path(c: &Ctx, url: &str) -> Option<String> {
     if m.len() > 4000 {
         m.clear();
     }
-    m.insert(key, (v.clone(), std::time::Instant::now()));
+    m.insert(key, (v.clone(), web_time::Instant::now()));
     v
 }
 

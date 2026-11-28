@@ -8,7 +8,7 @@
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::panic::Location;
-use std::time::Instant;
+use web_time::Instant;
 
 thread_local! {
     /// 이 스레드가 쥐고 있는 잠금들 (잠금 주소, 잠근 자리)

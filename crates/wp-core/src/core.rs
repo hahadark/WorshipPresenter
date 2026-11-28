@@ -197,9 +197,13 @@ fn is_lyrics(passage: &Value, slide: Option<&Value>) -> bool {
 impl Core {
     pub fn open(data_dir: PathBuf, web_dir: PathBuf, seed_db: Option<&Path>) -> Result<Self> {
         crate::sync::apply_pending_restore(&data_dir); // [트랙 B] 예약된 백업 되돌리기 (DB 열기 전)
+        #[cfg(not(target_arch = "wasm32"))]
         let note = prepare_data_dir(&data_dir, seed_db)?;
+        #[cfg(target_arch = "wasm32")]
+        let note: Option<String> = { let _ = seed_db; None }; // [웹판] 폴더가 없다: DB 는 web 층이 메모리 VFS 에 미리 넣어 둔다
         crate::firstrun::mark("자료 폴더 준비");
         let media_dir = data_dir.join("media");
+        #[cfg(not(target_arch = "wasm32"))]
         std::fs::create_dir_all(&media_dir)?;
         // 손상으로 못 열면: 원본을 damaged/ 에 남기고 멀쩡한 최근 백업으로 (sync::recover_from_backup). 그 밖의 까닭은 예전처럼 오류
         let mut recovered = None;
@@ -622,7 +626,7 @@ impl Core {
     /// - 같은 것을 짧은 시간(pick::RAPID) 안에 또 넣으려 하면 무시 (두 번 누르기·연타)
     pub fn add_picked_item(&mut self, it: Value, at: Option<usize>, force: bool) -> crate::pick::Picked {
         use crate::pick::{content_key, lib_key, Picked};
-        let now = std::time::Instant::now();
+        let now = web_time::Instant::now();
         let ck = content_key(&it);
         if self.pick.rapid(&ck, now) {
             return Picked::Ignored;

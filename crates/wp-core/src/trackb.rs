@@ -23,7 +23,7 @@ pub struct TrackB {
     /// 영상 키를 만든 LIVE version (같은 슬라이드면 이어서)
     pub video_for: Option<(u64, usize)>,
     /// 편집칸 글 고치기 묶음 (실행 취소: 같은 순서를 이어서 치면 한 번에)
-    pub typing: Option<(String, std::time::Instant)>,
+    pub typing: Option<(String, web_time::Instant)>,
     /// 여러 PC 동기화 상태
     pub sync: crate::sync::SyncStatus,
     /// 화면에 그리기 · 강조
@@ -573,7 +573,7 @@ impl Core {
         if fresh {
             self.remember_items();
         }
-        self.b.typing = Some((item_id.to_string(), std::time::Instant::now()));
+        self.b.typing = Some((item_id.to_string(), web_time::Instant::now()));
     }
     /// 끌어서 순서 옮기기
     pub fn move_item_to(&mut self, from: usize, to: usize) {

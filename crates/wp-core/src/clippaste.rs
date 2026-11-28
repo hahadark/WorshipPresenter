@@ -485,7 +485,7 @@ mod real_clipboard_tests {
             println!("PowerPoint 복사: {r:?}");
             let (s, _, _) = clipboard_info();
             println!("슬라이드: slides={s}");
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let (file, how) = grab_slides(&dir, false).unwrap();
             println!("  → {} ({how}, {:.1}초)", file.display(), t0.elapsed().as_secs_f32());
             let meta = crate::hymns::build_meta(&dir, &file.to_string_lossy(), "direct").unwrap();

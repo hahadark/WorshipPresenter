@@ -21,7 +21,7 @@ struct Thumbs {
     failed: HashMap<PathBuf, PathBuf>,
     worker: bool,
     /// 조금 전에 확인한 결과 (원본 → 확인한 때, 썸네일 자리)
-    memo: HashMap<PathBuf, (std::time::Instant, Option<PathBuf>)>,
+    memo: HashMap<PathBuf, (web_time::Instant, Option<PathBuf>)>,
 }
 
 /// 같은 그림은 이 시간 동안 파일을 다시 확인하지 않는다.
@@ -40,7 +40,7 @@ pub fn get(ctx: &egui::Context, data_dir: &Path, src: &Path) -> Option<PathBuf> 
         }
     }
     let r = get_checked(&mut t, ctx, data_dir, src);
-    t.memo.insert(src.to_path_buf(), (std::time::Instant::now(), r.clone()));
+    t.memo.insert(src.to_path_buf(), (web_time::Instant::now(), r.clone()));
     r
 }
 

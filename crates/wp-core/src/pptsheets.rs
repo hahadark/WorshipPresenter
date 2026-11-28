@@ -150,7 +150,7 @@ mod real_tests {
         files.sort();
         let mut slides: Vec<(Option<std::path::PathBuf>, String, bool)> = files.into_iter().map(|p| (Some(p), String::new(), false)).collect();
         slides.push((None, "그림 없는 슬라이드\n글자만".into(), false));
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         let s = super::build(&slides).unwrap();
         println!("모아보기 {}장 {:.1}초, {}바이트", s.len(), t0.elapsed().as_secs_f32(), s[0].2.len());
         std::fs::write(&out, &s[0].2).unwrap();

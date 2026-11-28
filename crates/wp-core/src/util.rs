@@ -1,6 +1,6 @@
 //! 작은 도우미
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use web_time::{SystemTime, UNIX_EPOCH}; // [웹판] 브라우저에서 std 의 SystemTime::now() 는 panic (설치판에서는 std 그대로)
 
 pub fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)

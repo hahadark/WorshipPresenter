@@ -41,7 +41,7 @@ pub fn parse_name(file: &Path) -> (Option<i64>, String, String) {
 
 /// 폴더 목록 기억: (폴더 수정 시각, 읽은 때, 목록). 파일을 넣거나 지우거나 이름을 바꾸면 폴더 수정 시각이 바뀌므로
 /// 그때만 다시 읽는다. 검색칸에 글자를 칠 때마다 NAS · 큰 폴더를 다시 훑지 않게 (10분이 지나면 한 번은 다시 읽음).
-static LIST_CACHE: Lazy<Mutex<HashMap<PathBuf, (std::time::SystemTime, std::time::Instant, Vec<HymnFile>)>>> = Lazy::new(Default::default);
+static LIST_CACHE: Lazy<Mutex<HashMap<PathBuf, (std::time::SystemTime, web_time::Instant, Vec<HymnFile>)>>> = Lazy::new(Default::default);
 
 pub fn list_folder(dir: &Path, folder: &str) -> Vec<HymnFile> {
     let mtime = std::fs::metadata(dir).and_then(|m| m.modified()).ok();
@@ -72,7 +72,7 @@ pub fn list_folder(dir: &Path, folder: &str) -> Vec<HymnFile> {
         if c.len() > 200 {
             c.clear();
         }
-        c.insert(dir.to_path_buf(), (mt, std::time::Instant::now(), v.clone()));
+        c.insert(dir.to_path_buf(), (mt, web_time::Instant::now(), v.clone()));
     }
     v
 }
@@ -252,7 +252,7 @@ fn bump_gen() {
 }
 /// 방금 만들다 실패한 파일(파일·크기·시각 → 오류, 때). 화면이 다시 읽을 때마다 PowerPoint 를 또 띄워 같은 실패를 되풀이하지 않게
 /// 잠깐(FAIL_HOLD) 은 같은 오류를 바로 돌려준다. 그 뒤 다시 고르면 새로 만든다 (Electron 은 누를 때마다 다시 만든다).
-static FAILED: Lazy<Mutex<HashMap<String, (String, std::time::Instant)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static FAILED: Lazy<Mutex<HashMap<String, (String, web_time::Instant)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 const FAIL_HOLD: std::time::Duration = std::time::Duration::from_secs(8);
 fn recent_failure(stamp: &str) -> Option<String> {
     let mut g = FAILED.lock();
@@ -386,7 +386,7 @@ fn start_build(core: &Core, file: &str) {
         let r = build_meta(&data_dir, &file, &render);
         let stamp = format!("{}|{}", norm(&file), file_stamp(Path::new(&file)));
         if let Err(e) = &r {
-            FAILED.lock().insert(stamp.clone(), (e.clone(), std::time::Instant::now()));
+            FAILED.lock().insert(stamp.clone(), (e.clone(), web_time::Instant::now()));
         }
         PENDING.lock().remove(&key);
         bump_gen();
@@ -1394,7 +1394,7 @@ mod timing_tests {
         std::fs::copy(&src, &file).unwrap();
         for (mode, tag) in [("direct", "direct-1st"), ("direct", "direct-2nd"), ("slides", "powerpoint")] {
             let data = dir.join(tag);
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let r = super::build_meta(&data, &file.to_string_lossy(), mode);
             println!("{tag}: {:.2}s ok={} slides={}", t0.elapsed().as_secs_f32(), r.is_ok(), r.as_ref().ok().and_then(|m| m["slides"].as_array().map(|a| a.len())).unwrap_or(0));
             if let Err(e) = r { println!("  오류: {e}"); }
@@ -1416,7 +1416,7 @@ mod timing_list_tests {
         crate::pptx::build::warm_fonts();
         let (mut total, mut n) = (0.0f32, 0);
         for file in list.lines().map(|l| l.trim().trim_start_matches('\u{feff}')).filter(|l| !l.is_empty()) {
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let r = super::build_meta(&dir, file, &mode);
             let t = t0.elapsed().as_secs_f32();
             total += t;
@@ -1461,7 +1461,7 @@ mod ps_bg_tests {
         let dir = out.join("hymn-cache").join(m["key"].as_str().unwrap());
         let raw: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("layers.json")).unwrap()).unwrap();
         println!("hide: {}", raw["hide"]);
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         let n = super::powerpoint_bgs(&file.to_string_lossy(), &dir).unwrap();
         println!("PowerPoint 배경 {n}장 ({:.1}초) → {}", t0.elapsed().as_secs_f32(), dir.display());
         let raw: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("layers.json")).unwrap()).unwrap();

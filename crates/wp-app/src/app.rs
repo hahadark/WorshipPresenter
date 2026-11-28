@@ -5,7 +5,7 @@ use crate::outwin::OutWin;
 use crate::paint::{self, paint_slide};
 use eframe::egui::{self, Align, Color32, Key, KeyboardShortcut, Layout, Modifiers, RichText, Sense, Vec2};
 use serde_json::{json, Value};
-use std::time::Instant;
+use web_time::Instant;
 use wp_core::core::{new_item, Shared};
 use wp_core::db::{CueSummary, Version};
 use wp_core::presentation::{Deck, Live};

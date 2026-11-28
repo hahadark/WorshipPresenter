@@ -9,7 +9,7 @@
 //!  - 같은 것을 짧은 시간(RAPID) 안에 또 넣으려 하면(두 번 누르기·연타) 무시한다.
 //!  성경·공지·제목·빈 화면 같은 새로 쓰는 순서는 같은 내용이 여러 번 나오는 것이 자연스러워(같은 본문을 두 번 읽기 등) 중복 검사에서 뺀다.
 use serde_json::Value;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 /// 같은 것을 다시 넣으려 할 때 '연타' 로 보는 시간
 pub const RAPID: Duration = Duration::from_millis(1500);

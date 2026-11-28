@@ -89,6 +89,11 @@ impl OutWin {
     }
 
     pub fn refresh_monitors(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.monitors = crate::web::live::monitors(); // [웹판] 출력 창 = 같은 브라우저의 새 창
+            return;
+        }
         let out = no_window(Command::new(exe()).arg("--list")).output();
         self.monitors = match out {
             Ok(o) => String::from_utf8_lossy(&o.stdout)
@@ -115,6 +120,8 @@ impl OutWin {
     }
 
     pub fn running(&mut self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        return crate::web::live::window_open(); // [웹판]
         match &mut self.child {
             Some(c) => match c.try_wait() {
                 Ok(None) => true,
@@ -144,6 +151,12 @@ impl OutWin {
     }
 
     pub fn open(&mut self, port: u16, monitor: usize, windowed: bool) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = port; // [웹판] window.open('/outputs/main')
+            self.error = crate::web::live::open_window("main", monitor, windowed).err().unwrap_or_default();
+            return;
+        }
         self.close();
         let mut cmd = Command::new(exe());
         cmd.args(self.open_args(port, monitor, windowed));
@@ -211,6 +224,8 @@ impl OutWin {
 
     pub fn close(&mut self) {
         self.exited = None;
+        #[cfg(target_arch = "wasm32")]
+        crate::web::live::close_window(); // [웹판]
         if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();
@@ -274,7 +289,7 @@ mod exit_reason_tests {
             buf.lock().unwrap().push_str(&s);
         });
         o.child = Some(ch);
-        let t = std::time::Instant::now();
+        let t = web_time::Instant::now();
         while o.running() && t.elapsed().as_secs() < 10 {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }

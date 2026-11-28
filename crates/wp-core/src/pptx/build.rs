@@ -172,7 +172,7 @@ static FONTDB: Lazy<Arc<resvg::usvg::fontdb::Database>> = Lazy::new(|| {
 /// 시스템 글꼴 목록을 미리 읽어 둔다 (처음 그리기가 몇 초 늦어지지 않게, 시작할 때 백그라운드에서)
 pub fn warm_fonts() {
     std::thread::Builder::new().name("font-warm".into()).spawn(|| {
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         let db = &*FONTDB;
         // 맑은 고딕 파일도 한 번 열어 디스크 캐시에 올린다
         let _ = crate::measure::text_width("가", 10.0, false, 0.0);
@@ -521,7 +521,7 @@ mod tests {
         let f = std::env::var("WP_PPTX").unwrap();
         let out = std::path::PathBuf::from(std::env::var("WP_OUT").unwrap());
         std::fs::create_dir_all(&out).unwrap();
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         let r = super::build_into(&std::fs::read(&f).unwrap(), &out).unwrap();
         eprintln!("슬라이드 {}장 {:?} ({}x{}pt)", r.slides.len(), t0.elapsed(), r.w, r.h);
         for t in r.texts.iter().take(3) { eprintln!("글: {}", t.chars().take(80).collect::<String>()); }

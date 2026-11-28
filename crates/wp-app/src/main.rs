@@ -73,12 +73,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use wp_core::core::{Core, Ev};
 
+#[cfg(not(target_arch = "wasm32"))]
 fn arg(name: &str) -> Option<String> {
     let a: Vec<String> = std::env::args().collect();
     a.iter().position(|x| x == name).and_then(|i| a.get(i + 1).cloned())
 }
 
 /// 출력 화면 웹 파일: 실행 파일 옆 web\ (설치판) → 개발 중이면 저장소의 web\
+#[cfg(not(target_arch = "wasm32"))]
 fn web_dir() -> PathBuf {
     let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())).unwrap_or_default();
     // 맥 앱 묶음: Contents/MacOS/(실행 파일) 옆이 아니라 Contents/Resources/web
@@ -91,6 +93,7 @@ fn web_dir() -> PathBuf {
 }
 
 /// '..' 를 풀어 둔다 (그림 주소 file:// 에 쓰려고. canonicalize 는 \\?\ 를 붙여서 안 씀)
+#[cfg(not(target_arch = "wasm32"))]
 fn normalize(p: &std::path::Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
@@ -103,6 +106,7 @@ fn normalize(p: &std::path::Path) -> PathBuf {
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn seed_db() -> Option<PathBuf> {
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
     [exe_dir.join("bible.db"), exe_dir.join("..").join("Resources").join("bible.db"), PathBuf::from(r"F:\aside\WorshipCue\data\bible.db")].into_iter().find(|p| p.exists())
@@ -110,7 +114,7 @@ fn seed_db() -> Option<PathBuf> {
 
 /// 점검용(디버그 빌드만): WP_DEBUG_ALLOC=1 이면 8MB 넘는 할당이 어디서 나왔는지 로그에 남긴다.
 /// 출시 빌드는 기호가 없어 쓸모가 없으므로 넣지 않는다.
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 mod bigalloc {
     use std::alloc::{GlobalAlloc, Layout, System};
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -149,7 +153,7 @@ mod bigalloc {
         }
     }
 }
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 #[global_allocator]
 static ALLOC: bigalloc::Tracker = bigalloc::Tracker;
 
@@ -161,7 +165,7 @@ fn pick_backends() -> eframe::wgpu::Backends {
     if let Some(b) = wgpu::Backends::from_env() {
         return b;
     }
-    let t0 = std::time::Instant::now();
+    let t0 = web_time::Instant::now();
     let ok = std::panic::catch_unwind(|| {
         let inst = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::DX12,
@@ -180,11 +184,20 @@ fn pick_backends() -> eframe::wgpu::Backends {
     log::info!("그래픽: {} ({:.0}ms)", if ok { "DX12" } else { "DX12 그래픽 카드 없음 → 자동 고르기" }, t0.elapsed().as_secs_f64() * 1000.0);
     if ok { wgpu::Backends::DX12 } else { all }
 }
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_arch = "wasm32")))]
 fn pick_backends() -> eframe::wgpu::Backends {
     eframe::wgpu::Backends::from_env().unwrap_or(eframe::wgpu::Backends::PRIMARY | eframe::wgpu::Backends::GL)
 }
 
+// [웹판] 브라우저(wasm32)의 시작점은 web 모듈 (캔버스에 조작 화면을 띄운다). 아래 main 은 설치판
+#[cfg(target_arch = "wasm32")]
+mod web;
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    web::start();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> anyhow::Result<()> {
     // 설치 파일이 설치 직후 부른다: 아무것도 하지 않고 끝난다. 새 실행 파일을 처음 읽을 때 걸리는 백신 검사(이 파일 크기로 2초쯤)를
     // 사용자가 아이콘을 누르기 전에 미리 치러 두려는 것
@@ -206,12 +219,12 @@ fn main() -> anyhow::Result<()> {
         wp_core::firstrun::wait_for_pid(pid);
     }
     let (mut already, mut _instance) = wp_core::parity_a::single_instance(&data_dir);
-    let waiting = std::time::Instant::now();
+    let waiting = web_time::Instant::now();
     let (mut rounds, mut focus_ms, mut focused) = (0u32, 0u128, 0u32); // 기다린 까닭을 로그로 남기려고
     let mut splash_shown = false;
     while already {
         rounds += 1;
-        let t_focus = std::time::Instant::now();
+        let t_focus = web_time::Instant::now();
         let found = wp_core::firstrun::focus_instance(&data_dir);
         focus_ms += t_focus.elapsed().as_millis();
         focused += found as u32;
@@ -348,6 +361,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 /// 자료 열기 · 백그라운드 일 · 출력 웹 서버 (창 만드는 동안 다른 스레드에서)
+#[cfg(not(target_arch = "wasm32"))]
 fn prepare(data_dir: PathBuf, web: PathBuf) -> anyhow::Result<(wp_core::core::Shared, tokio::sync::broadcast::Receiver<Ev>)> {
     let core = Core::open(data_dir, web, seed_db().as_deref())?;
     wp_core::firstrun::mark("자료 열기");
@@ -384,6 +398,7 @@ fn prepare(data_dir: PathBuf, web: PathBuf) -> anyhow::Result<(wp_core::core::Sh
 /// 그래픽 장치를 미리 만든다: 윈도우에서는 DX12 만 살펴 본다.
 /// eframe 기본값은 Vulkan·DX12·OpenGL 을 모두 살펴 0.7~0.8초 걸렸다(측정). DX12 하나면 0.5초쯤이고 다른 준비와 동시에 할 수 있다.
 /// 쓸 만한 DX12 장치(하드웨어)가 없거나 WGPU_BACKEND 를 정해 두었으면 None → eframe 기본 방식 그대로.
+#[cfg(not(target_arch = "wasm32"))]
 fn prepare_gfx() -> Option<eframe::egui_wgpu::WgpuSetupExisting> {
     use eframe::wgpu;
     if !cfg!(windows) || std::env::var_os("WGPU_BACKEND").is_some() {
@@ -428,6 +443,7 @@ fn prepare_gfx() -> Option<eframe::egui_wgpu::WgpuSetupExisting> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn dirs_data() -> PathBuf {
     wp_core::core::user_data_root()
 }

@@ -6,6 +6,8 @@
 //! 주소·데이터 모양은 Electron 판과 같아서 OBS 설정을 바꿀 필요가 없다.
 
 use crate::core::{Ev, OutputClient, Shared};
+#[cfg(target_arch = "wasm32")]
+use crate::web::tokio_shim as tokio; // [웹판] fs · net 자리 메움
 use crate::util::now_ms;
 use axum::body::Body;
 use axum::extract::{Query, State};
@@ -232,7 +234,10 @@ async fn events(State(core): State<Shared>, Query(q): Query<HashMap<String, Stri
             }
         }
     });
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+    let sse = Sse::new(stream);
+    #[cfg(not(target_arch = "wasm32"))]
+    let sse = sse.keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15))); // [웹판] keep_alive 는 소켓 서버에만
+    sse
 }
 
 /// 아주 작은 async 스트림 도우미 (mpsc 로 이어 줌)
@@ -287,7 +292,7 @@ async fn command(State(core): State<Shared>, headers: HeaderMap, local: Option<a
         },
         // [점검 A] 외부 연동 명령 (Electron 판과 같은 이름·응답): 조작 서버에서만. 내부망 출력에서는 위의 영상 메타데이터·끝남 알림만 (Electron: req.lan → 403)
         Some(cmd) if local.is_some() => {
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let mut r = crate::extcmd::respond(&mut core.lock(), cmd, &b["args"]);
             if let Some(o) = r.as_object_mut() { o.insert("ms".into(), json!((t0.elapsed().as_secs_f64() * 10_000.0).round() / 10.0)); }
             Json(r).into_response()
@@ -346,6 +351,7 @@ pub fn router(core: Shared) -> Router {
 }
 
 /// 서버를 띄운다. 포트가 쓰이고 있으면 다음 포트로 (최대 10번)
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn serve(core: Shared) -> anyhow::Result<u16> {
     let want = core.lock().port;
     let mut last = None;

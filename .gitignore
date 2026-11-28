@@ -10,3 +10,7 @@
 
 # 릴리스 산출물 (tools\release.ps1)
 /dist/
+
+# [웹판] 빌드 산출물 (tools/web/build.sh)
+/dist-web/
+__pycache__/

@@ -299,7 +299,7 @@ pub fn set_aside(data_dir: &Path) -> std::io::Result<PathBuf> {
 
 /// SQLite 온라인 백업으로 DB 를 한 시점 그대로 복사 (다른 프로그램이 열어 써도 안전, WAL 내용 포함). 진행률은 PROGRESS
 pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
-    let t0 = std::time::Instant::now();
+    let t0 = web_time::Instant::now();
     let from = rusqlite::Connection::open_with_flags(src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let mut to = rusqlite::Connection::open(dst)?;
     // 받는 쪽은 임시 이름(bible.db.migrating)이고 다 된 뒤에야 bible.db 로 바꾸므로 쪽마다 디스크에 밀어 넣을 필요가 없다
@@ -522,7 +522,7 @@ pub fn start_keep_legacy_files(data_dir: &Path) {
         .name("keep-legacy".into())
         .spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(20));
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let (ok, failed, bytes) = keep_legacy_files(&data_dir, &old);
             if ok + failed > 0 {
                 log::info!("1.x 폴더에만 있던 파일 챙김: {ok}개 {}MB, 실패 {failed}개, {}ms ({} → {})", bytes / 1_048_576, t0.elapsed().as_millis(), old.display(), data_dir.display());

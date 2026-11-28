@@ -10,12 +10,18 @@
 use crate::core::{Ev, Shared};
 use axum::{
     body::Bytes,
-    extract::{ConnectInfo, Query, State},
+    extract::{Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use axum::extract::ConnectInfo;
+#[cfg(target_arch = "wasm32")]
+use crate::web::axum_shim::ConnectInfo; // [웹판]
+#[cfg(target_arch = "wasm32")]
+use crate::web::tokio_shim as tokio; // [웹판] fs · net 자리 메움
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
@@ -157,6 +163,7 @@ async fn cam_page(State(core): State<Shared>, Query(q): Query<HashMap<String, St
 #[derive(Clone, Copy, Debug)]
 pub struct PeerAddr(pub SocketAddr);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsListener>> for PeerAddr {
     fn connect_info(stream: axum::serve::IncomingStream<'_, TlsListener>) -> Self {
         PeerAddr(*stream.remote_addr())
@@ -289,6 +296,7 @@ pub fn viewer_routes() -> Router<Shared> {
 // ---------------- https (스스로 만든 인증서) ----------------
 
 /// 인증서: 처음 한 번 만들어 자료 폴더에 둔다 (바뀌지 않아야 휴대폰이 한 번 넘어간 안내를 기억한다)
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_or_make_cert(dir: &Path) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let (cf, kf) = (dir.join("phonecam-cert.der"), dir.join("phonecam-key.der"));
     if let (Ok(c), Ok(k)) = (std::fs::read(&cf), std::fs::read(&kf)) {
@@ -305,6 +313,7 @@ pub fn load_or_make_cert(dir: &Path) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     Ok((c, k))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn tls_config(cert: Vec<u8>, key: Vec<u8>) -> anyhow::Result<Arc<rustls::ServerConfig>> {
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
     let provider = Arc::new(rustls::crypto::ring::default_provider());
@@ -316,11 +325,13 @@ pub fn tls_config(cert: Vec<u8>, key: Vec<u8>) -> anyhow::Result<Arc<rustls::Ser
 }
 
 /// TLS 로 받는 axum 리스너 (악수는 5초 안에, 실패한 연결은 버리고 다음)
+#[cfg(not(target_arch = "wasm32"))]
 pub struct TlsListener {
     tcp: tokio::net::TcpListener,
     acc: tokio_rustls::TlsAcceptor,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl axum::serve::Listener for TlsListener {
     type Io = tokio_rustls::server::TlsStream<tokio::net::TcpStream>;
     type Addr = SocketAddr;
@@ -343,6 +354,9 @@ impl axum::serve::Listener for TlsListener {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+async fn start(_core: Shared, _port: u16) {} // [웹판] 브라우저는 서버를 열 수 없다
+#[cfg(not(target_arch = "wasm32"))]
 async fn start(core: Shared, port: u16) {
     let dir = core.lock().data_dir.clone();
     let cfg = load_or_make_cert(&dir).and_then(|(c, k)| tls_config(c, k));

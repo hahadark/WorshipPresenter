@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/wp-core", "crates/wp-app", "crates/wp-output"]
+members = ["crates/wp-core", "crates/wp-app", "crates/wp-output", "crates/wp-web-rfd"]
 
 [workspace.package]
 version = "2.1.1"

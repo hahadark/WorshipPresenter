@@ -160,7 +160,7 @@ fn headless_app(h: &Harness) -> super::App {
         edit: None,
         out: crate::outwin::OutWin::for_test(),
         monitor: 0,
-        last_flush: std::time::Instant::now(),
+        last_flush: web_time::Instant::now(),
         focus_search: false,
         editor_on: true,
         editor_reveal: false,

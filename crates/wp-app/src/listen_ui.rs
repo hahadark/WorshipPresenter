@@ -213,7 +213,7 @@ fn worker(data: &std::path::Path, exe: &std::path::Path, model: &str, stop: &Ato
         ST.lock().level = stt::rms(&buf);
         let Some(chunk) = chunker.push(&buf) else { continue };
         let secs = chunk.len() as f32 / 16000.0;
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         // 앞 조각 끝을 프롬프트로 (문맥) + 성경 이름
         let prompt = format!("{} {}", stt::bible_prompt(), prev.chars().rev().take(60).collect::<String>().chars().rev().collect::<String>());
         let text = match server.transcribe(&stt::wav_bytes(&chunk, 16000), &prompt) {

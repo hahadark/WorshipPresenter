@@ -38,7 +38,7 @@ struct St {
     custom_model: String,
     card: Option<Value>,
     draft_saved: (String, String),
-    draft_t: Option<std::time::Instant>,
+    draft_t: Option<web_time::Instant>,
 }
 
 static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
@@ -380,7 +380,7 @@ fn bulletin_ui(ui: &mut egui::Ui, core: &Shared) {
         if due {
             core.lock().set_quick_draft(&s.qname, &s.text);
             s.draft_saved = (s.qname.clone(), s.text.clone());
-            s.draft_t = Some(std::time::Instant::now());
+            s.draft_t = Some(web_time::Instant::now());
         } else {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(750));
         }

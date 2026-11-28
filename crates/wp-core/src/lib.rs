@@ -32,6 +32,8 @@ pub mod measure;
 pub mod parser;
 pub mod presentation;
 pub mod server;
+#[cfg(target_arch = "wasm32")]
+pub mod web; // [웹판] 브라우저에서만: 플랫폼 층 (docs/web/egui-web.md)
 pub mod settings;
 pub mod slides;
 pub mod textnorm;

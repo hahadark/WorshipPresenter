@@ -34,7 +34,7 @@ enum Entry {
     Pending,
     Ready(Arc<ColorImage>),
     /// 오류 글, 실패한 때 (조금 뒤 다시 읽어 본다 — 만드는 중이던 파일일 수 있다)
-    Failed(String, std::time::Instant),
+    Failed(String, web_time::Instant),
 }
 
 struct Job {
@@ -84,7 +84,7 @@ impl WpImgLoader {
                             st.insert(job.uri.clone(), Entry::Ready(Arc::new(img)));
                         }
                         Err(e) => {
-                            st.insert(job.uri.clone(), Entry::Failed(e, std::time::Instant::now()));
+                            st.insert(job.uri.clone(), Entry::Failed(e, web_time::Instant::now()));
                         }
                     }
                 }
@@ -135,7 +135,7 @@ impl ImageLoader for WpImgLoader {
                 st.insert(uri.to_string(), Entry::Pending);
                 drop(st);
                 if self.tx.lock().send(Job { ctx: ctx.clone(), uri: uri.to_string(), path: path.to_string(), max }).is_err() {
-                    self.state.lock().insert(uri.to_string(), Entry::Failed("그림 읽기 일꾼이 멈췄습니다".into(), std::time::Instant::now()));
+                    self.state.lock().insert(uri.to_string(), Entry::Failed("그림 읽기 일꾼이 멈췄습니다".into(), web_time::Instant::now()));
                 }
                 Ok(ImagePoll::Pending { size: None })
             }

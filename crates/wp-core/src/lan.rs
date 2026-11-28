@@ -5,6 +5,8 @@ use crate::core::{Core, Ev, Shared};
 use crate::trigger::safe_eq;
 use axum::body::Body;
 use axum::extract::State;
+#[cfg(target_arch = "wasm32")]
+use crate::web::tokio_shim as tokio; // [웹판] fs · net 자리 메움
 use axum::http::{header, HeaderValue, Method, Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -142,6 +144,7 @@ pub async fn sync(core: Shared) {
         if core.lock().settings.str(&["lanOutput", "key"]).is_empty() {
             new_key(&mut core.lock());
         }
+        #[cfg(not(target_arch = "wasm32"))]
         match tokio::net::TcpListener::bind((host.as_str(), want)).await {
             Ok(l) => {
                 let (tx, rx) = tokio::sync::oneshot::channel();

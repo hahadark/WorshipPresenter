@@ -115,7 +115,7 @@ mod sse_tests {
         core.lock().draw_stroke(&serde_json::json!({ "id": "s1", "pts": [[0.1, 0.1], [0.5, 0.5]], "color": "#ffd60a" })).unwrap();
         let mut buf = vec![0u8; 65536];
         let mut got = String::new();
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         while t0.elapsed().as_secs() < 5 && !got.contains("event: draw") {
             if let Ok(Ok(n)) = tokio::time::timeout(std::time::Duration::from_millis(500), s.read(&mut buf)).await {
                 got.push_str(&String::from_utf8_lossy(&buf[..n]));

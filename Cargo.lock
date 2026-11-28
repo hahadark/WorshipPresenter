@@ -1056,6 +1056,8 @@ dependencies = [
  "block2 0.6.2",
  "coreaudio-rs",
  "dasp_sample",
+ "futures-channel",
+ "futures-util",
  "jni 0.22.4",
  "js-sys",
  "libc",
@@ -1071,6 +1073,8 @@ dependencies = [
  "objc2-core-audio-types",
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
  "windows",
  "windows-core",
@@ -1426,6 +1430,7 @@ dependencies = [
  "egui-winit",
  "egui_glow",
  "egui_system_font_provider",
+ "glow",
  "glutin",
  "glutin-winit",
  "image",
@@ -5269,7 +5274,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cd504cecbfe7eef649988840f9a6cb768d11085efec138f8e99f160632d867"
 dependencies = [
  "cc",
+ "js-sys",
  "rsqlite-vfs",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -7265,6 +7272,7 @@ dependencies = [
  "eframe",
  "egui_extras",
  "image",
+ "js-sys",
  "log",
  "once_cell",
  "parking_lot 0.13.0",
@@ -7274,8 +7282,13 @@ dependencies = [
  "rodio",
  "serde_json",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
  "windows-sys 0.61.2",
  "wp-core",
+ "wp-web-rfd",
 ]
 
 [[package]]
@@ -7289,7 +7302,9 @@ dependencies = [
  "dirs",
  "encoding_rs",
  "futures-util",
+ "getrandom 0.4.3",
  "image",
+ "js-sys",
  "log",
  "miniz_oxide 0.9.1",
  "once_cell",
@@ -7304,6 +7319,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "sqlite-wasm-rs",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -7312,6 +7328,9 @@ dependencies = [
  "unicode-normalization",
  "ureq",
  "url",
+ "wasm-bindgen",
+ "web-sys",
+ "web-time",
  "webpki-roots",
  "windows-sys 0.61.2",
  "zip",
@@ -7325,6 +7344,10 @@ dependencies = [
  "tao",
  "wry",
 ]
+
+[[package]]
+name = "wp-web-rfd"
+version = "0.1.0"
 
 [[package]]
 name = "writeable"

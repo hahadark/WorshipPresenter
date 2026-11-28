@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 ab_glyph = "0.2.32"
 anyhow = "1.0.104"
-axum = "0.8.9"
 # [트랙 A] PPT 직접 읽기·그리기: cfb · image · resvg · roxmltree · zip
 cfb = "0.16.0"
 dirs = "7.0.0"
@@ -18,25 +17,42 @@ miniz_oxide = "0.9.1"
 once_cell = "1.21.4"
 parking_lot = "0.13.0"
 rand = "0.10.3"
-rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
 regex = "1.13.1"
 resvg = "0.50.0"
 roxmltree = "0.21.2"
 rusqlite = { version = "0.42.0", features = ["bundled", "backup"] }
-rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
-tokio = { version = "1.54.1", features = ["full"] }
-tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12", "logging"] }
-tokio-stream = { version = "0.1.19", features = ["sync"] }
 tungstenite = "0.30.0"
 unicode-normalization = "0.1.26"
+web-time = "1.1.0" # [웹판] 브라우저에서 std::time::Instant·SystemTime 은 panic → 같은 모양의 대체 (설치판에서는 std 그대로)
 # [트랙 A] PPT 나누기 AI (오픈라우터)
-ureq = { version = "3.5.1", features = ["json"] }
 url = "2.5.8" # [트랙 A] 한글 도메인(홈페이지 주보 주소)
 webpki-roots = "1.0.12" # 클라우드 연결(wss)의 인증서 뿌리 (ureq 가 이미 쓰는 것)
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
+
+# [웹판] 설치판에서만 쓰는 것: 로컬 서버(axum) · TLS · 소켓. 브라우저(wasm32)에는 없다 → docs/web/egui-web.md
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+axum = "0.8.9"
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio = { version = "1.54.1", features = ["full"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12", "logging"] }
+tokio-stream = { version = "0.1.19", features = ["sync"] }
+ureq = { version = "3.5.1", features = ["json"] }
+
+# [웹판] 브라우저(wasm32): 소켓 없는 tokio(sync 만) · TLS 없는 ureq(부르면 오류) · SQLite 는 sqlite-wasm-rs(메모리 VFS)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1.54.1", features = ["sync", "macros", "rt", "time"] }
+ureq = { version = "3.5.1", default-features = false, features = ["json"] }
+axum = { version = "0.8.9", default-features = false, features = ["json", "query", "form", "matched-path", "original-uri"] } # 타입만 (서버는 안 띄움)
+tokio-stream = { version = "0.1.19", features = ["sync"] }
+sqlite-wasm-rs = { version = "0.6.3", features = ["wasm-bindgen"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
+wasm-bindgen = "0.2.130"
+js-sys = "0.3.107"
+web-sys = { version = "0.3.107", features = ["Window", "Storage", "console", "Performance"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ttf-parser = "0.25.1" # 맥: Apple SD Gothic Neo(.ttc)에서 Regular·Bold 면 찾기

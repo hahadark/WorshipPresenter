@@ -9,7 +9,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 const WATCH: Duration = Duration::from_secs(20 * 60);
 
