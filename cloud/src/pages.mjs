@@ -16,9 +16,11 @@ const OWN = ['login', 'owner', 'denied', 'cameras'];
 /** <head> 바로 뒤에 설정과 어댑터를 넣는다. 설정 값이 글 밖으로 새지 않게 '<' 를 바꾼다 */
 export function inject(html, cfg) {
   const data = JSON.stringify(cfg).replace(/</g, '\\u003c');
+  // 2C: 로그인한 페이지는 교회가 올린 글꼴(@font-face)을 받는다 — 글꼴이 없는 PC 의 OBS · 브라우저에서도 템플릿 글꼴로 보이게
+  const fonts = cfg.authed ? '<link rel="stylesheet" href="/api/v1/assets/fonts.css">' : '';
   // 출력 · 무대 화면에는 4단계 B 미디어 부품(카메라 이름 맞추기 · 휴대폰 카메라 신호 · 탭끼리 영상 맞추기)도
   const media = cfg && (cfg.page === 'output' || cfg.page === 'stage') ? '<script src="/cloud/media/media.js"></script>' : '';
-  const tag = `<script>window.WP_CLOUD=${data}</script><script src="/cloud/adapter.js"></script>${media}`;
+  const tag = `<script>window.WP_CLOUD=${data}</script><script src="/cloud/adapter.js"></script>${fonts}${media}`;
   return /<head[^>]*>/i.test(html) ? html.replace(/<head([^>]*)>/i, `<head$1>${tag}`) : tag + html;
 }
 
