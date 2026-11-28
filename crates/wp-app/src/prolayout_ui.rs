@@ -309,6 +309,7 @@ impl App {
         let vh = if big { 0.0 } else { ((full.height() - 6.0) * ratio).clamp(180.0_f32.min(full.height() * 0.5), (full.height() - 160.0).max(180.0)) };
         if vh > 0.0 {
             let top = Rect::from_min_size(full.min, Vec2::new(full.width(), vh));
+            crate::widgets_win::note_viewers(ui.ctx(), top); // 진행용 창이 이 자리를 피해 뜬다 (craft-windows)
             ui.scope_builder(UiBuilder::new().max_rect(top).id_salt("pro-viewers"), |ui| {
                 ui.set_clip_rect(top.intersect(ui.clip_rect()));
                 let mut pick = None;
@@ -385,6 +386,7 @@ impl App {
         let direct = self.core.lock().direct_mode();
         let vw = live_only_width(full.width(), saved);
         let right = Rect::from_min_max(Pos2::new(full.right() - vw, full.top()), full.max);
+        crate::widgets_win::note_viewers(ui.ctx(), right);
         let div = Rect::from_min_max(Pos2::new(right.left() - 6.0, full.top()), Pos2::new(right.left(), full.bottom()));
         let left = Rect::from_min_max(full.min, Pos2::new(div.left(), full.bottom()));
         // ---- 오른쪽 칸: 머리 '보기' [둘 다 | 송출 중만] · 송출 뷰어 · (미리보기 모드) 노랑 '다음' 줄

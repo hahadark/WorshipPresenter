@@ -37,7 +37,48 @@ use eframe::egui::{self, Color32, Id, Pos2, Rect, Response, RichText, Sense, Str
 /// `key` 는 창마다 다른 고정 이름. id 는 `widgets::float_window` 와 같다(`("wp-float", key)`) — 자리 · 크기 기억이 이어진다.
 pub fn window<'a>(ctx: &egui::Context, key: &str, title: impl Into<String>, size: [f32; 2]) -> Win<'a> {
     let size = fit_size(ctx, size);
-    Win { inner: widgets::float_window(ctx, key, title, size).max_width((ctx.content_rect().width() - 24.0).max(320.0)).vscroll(true), id: Id::unique(("wp-float", key)), open: None, modal: true }
+    Win { inner: widgets::float_window(ctx, key, title, size).max_width((ctx.content_rect().width() - 24.0).max(320.0)).vscroll(true), id: Id::unique(("wp-float", key)), open: None, modal: true, size }
+}
+
+// ---- 뷰어를 가리지 않는 자리 (진행 중에 여는 창: 즉석 자막 · 무대 화면 · 이름 자막 · 회중 메시지 · 오버레이)
+
+fn viewers_key() -> Id {
+    Id::new("wp-win-viewers")
+}
+
+/// 주 화면이 이번 프레임에 뷰어(다음 · 송출 중)를 그린 자리를 적는다 (prolayout_ui). 진행용 창의 처음 자리를 정할 때 쓴다
+pub fn note_viewers(ctx: &egui::Context, rect: Rect) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(viewers_key(), (rect, pass)));
+}
+
+/// 지금 보이는 뷰어 자리 (최근 두 프레임 안에 그린 것만)
+pub fn viewers_rect(ctx: &egui::Context) -> Option<Rect> {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<(Rect, u64)>(viewers_key())).filter(|(_, at)| at + 2 >= pass).map(|(r, _)| r)
+}
+
+/// 뷰어를 가리지 않는 처음 자리 (왼쪽 위 모서리). 차례: 뷰어 바로 아래 → 뷰어 왼쪽 → 뷰어 오른쪽. 어디에도 넉넉히 안 들어가면 None (보통 자리)
+pub fn beside_viewers(scr: Rect, viewers: Rect, size: [f32; 2]) -> Option<Pos2> {
+    let (w, h) = (size[0], size[1]);
+    let min_h = h.min(220.0);
+    let gap = 8.0;
+    // 1) 뷰어 아래 (본문 판 위): 뷰어 왼쪽 끝에 맞추고, 화면 오른쪽을 넘으면 안으로
+    let top = viewers.bottom() + gap;
+    if scr.bottom() - top - gap >= min_h {
+        let x = (viewers.left() + gap).min(scr.right() - w - gap).max(scr.left() + gap);
+        return Some(Pos2::new(x, top));
+    }
+    let y = (viewers.top()).max(scr.top() + widgets::FLOAT_TOP);
+    // 2) 뷰어 왼쪽 ('송출 중만' 보기: 뷰어가 가운데 판 오른쪽 칸)
+    if viewers.left() - scr.left() - 2.0 * gap >= w {
+        return Some(Pos2::new(viewers.left() - gap - w, y));
+    }
+    // 3) 뷰어 오른쪽 (인스펙터 위)
+    if scr.right() - viewers.right() - 2.0 * gap >= w {
+        return Some(Pos2::new(viewers.right() + gap, y));
+    }
+    None
 }
 
 /// 처음 크기를 조작 화면 안에 맞춘다 (1000×640 창 · 배율 150% 에서도 창이 화면 밖으로 나가지 않게)
@@ -53,9 +94,29 @@ pub struct Win<'a> {
     id: Id,
     open: Option<&'a mut bool>,
     modal: bool,
+    size: [f32; 2],
 }
 
 impl<'a> Win<'a> {
+    /// 진행 중에 여는 창: 처음 뜨는 자리를 뷰어(다음 · 송출 중) 밖으로. 사용자가 옮긴 자리는 egui 가 기억한다.
+    /// 뷰어 아래에 놓으면 높이를 화면 아래 끝까지로 묶는다 (넘치면 창 안에서 스크롤)
+    pub fn live(mut self, ctx: &egui::Context) -> Self {
+        let scr = ctx.content_rect();
+        let layer = egui::LayerId::new(egui::Order::Middle, self.id);
+        let known = ctx.memory(|m| m.area_rect(self.id).is_some());
+        if !known {
+            if let Some(pos) = viewers_rect(ctx).and_then(|v| beside_viewers(scr, v, self.size)) {
+                ctx.memory_mut(|m| {
+                    m.areas_mut().set_state(layer, egui::AreaState { pivot_pos: Some(pos), pivot: egui::Align2::LEFT_TOP, size: None, interactable: true, last_became_visible_at: None })
+                });
+            }
+        }
+        let top = ctx.memory(|m| m.area_rect(self.id)).map(|r| r.top()).unwrap_or(scr.top() + widgets::FLOAT_TOP);
+        // 창 머리(약 36px)와 아래 여백을 뺀 내용 높이 한도
+        let max_h = (scr.bottom() - top - 48.0).max(200.0);
+        self.inner = self.inner.max_height(max_h);
+        self
+    }
     pub fn open(mut self, open: &'a mut bool) -> Self {
         self.open = Some(open);
         self
@@ -80,7 +141,7 @@ impl<'a> Win<'a> {
         self.id
     }
     pub fn show<R>(self, ctx: &egui::Context, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
-        let Win { inner, id, open, modal } = self;
+        let Win { inner, id, open, modal, .. } = self;
         match open {
             Some(o) => {
                 if *o {
