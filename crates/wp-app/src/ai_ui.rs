@@ -313,17 +313,27 @@ fn check_win(app: &mut App, ctx: &egui::Context) {
     let c = &mut st.check;
     let cue_name = app.core.lock().cue.as_ref().map(|q| q.name.clone()).unwrap_or_default();
     crate::widgets_win::window(ctx, "cue-check", tr("예배 전 큐시트 점검"), [560.0, 560.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(if cue_name.is_empty() { tr("열린 큐시트 없음") } else { cue_name.clone() }).strong());
+        // 머리: 어느 큐시트를 보는지(구획 머리) + 오른쪽 [다시 점검]
+        let title = if cue_name.is_empty() { tr("열린 큐시트 없음") } else { cue_name.clone() };
+        crate::widgets_win::section_with(ui, &title, |ui| {
             if ui.add(Btn::new(tr("다시 점검")).icon("refresh-cw").size(Size::Sm)).clicked() {
                 c.ai_found.clear();
                 run_rules(app, c);
             }
+        });
+        // 더 보기: 주보와 비교 · AI · 참고 숨기기 (한 줄, 좁으면 줄바꿈)
+        ui.horizontal_wrapped(|ui| {
             if ui.add(Btn::new(tr("주보와 비교")).icon("clipboard-paste").size(Size::Sm).selected(c.show_bulletin)).clicked() {
                 c.show_bulletin = !c.show_bulletin;
             }
-            ui.checkbox(&mut c.hide_info, tr("참고는 숨기기"));
+            if ai_button(ui, app, "AI 로 오타 · 줄 나눔 보기", c.busy) && ready(app, "cuecheck") {
+                run_ai = true;
+            }
+            crate::widgets::checkbox(ui, &mut c.hide_info, &tr("참고는 숨기기"));
         });
+        if !c.note.is_empty() {
+            crate::widgets_win::hint(ui, &tr_dyn_s(&c.note));
+        }
         if c.show_bulletin {
             ui.label(RichText::new(tr("주보의 예배 순서를 붙여 넣으면 큐시트와 다른 곳(빠진 순서 · 차례)을 찾습니다. 한 줄에 순서 하나씩.")).small().color(crate::theme::pal().muted));
             ui.add(egui::TextEdit::multiline(&mut c.bulletin).desired_rows(5).desired_width(f32::INFINITY).hint_text(tr("예) 예배로 부름\n찬송 8장\n성경봉독 요3:16")));
@@ -342,14 +352,6 @@ fn check_win(app: &mut App, ctx: &egui::Context) {
                 }
             });
         }
-        ui.horizontal_wrapped(|ui| {
-            if ai_button(ui, app, "AI 로 오타 · 줄 나눔 보기", c.busy) && ready(app, "cuecheck") {
-                run_ai = true;
-            }
-            if !c.note.is_empty() {
-                ui.label(RichText::new(tr_dyn_s(&c.note)).small().color(crate::theme::pal().muted));
-            }
-        });
         ui.separator();
         let all: Vec<&Finding> = c.found.iter().chain(c.ai_found.iter()).filter(|x| !(c.hide_info && x.level == "info")).collect();
         let (e, w) = (all.iter().filter(|x| x.level == "error").count(), all.iter().filter(|x| x.level == "warn").count());

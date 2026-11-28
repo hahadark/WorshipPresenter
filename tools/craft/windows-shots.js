@@ -69,6 +69,7 @@ for (const id of SIZED) {
   const a = WINS.find(w => w[0] === id)[1];
   add('sizes', id + '@1000', ['--win', '1000x640', ...base, ...a]);
   add('sizes', id + '@150', ['--win', W, ...base, ...a], { 'ui.scale': 150 });
+  add('sizes', id + '@1000s150', ['--win', '1000x640', ...base, ...a], { 'ui.scale': 150 });
 }
 for (const id of ['settings', 'tpl', 'cues', 'scene', 'slideedit', 'output', 'update', 'themes']) {
   const a = WINS.find(w => w[0] === id)[1];
