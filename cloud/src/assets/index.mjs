@@ -407,7 +407,7 @@ async function list(env, url, s) {
     return json({ ok: true, asset: r ? { ...assetJson(r) } : null });
   }
   const kind = q.get('kind') || '';
-  if (kind && !['image', 'video', 'audio', 'font', 'pdf'].includes(kind)) return fail(400, '없는 파일 묶음입니다 (image · video · audio · font · pdf).');
+  if (kind && !['image', 'video', 'audio', 'font', 'pdf', 'slides'].includes(kind)) return fail(400, '없는 파일 묶음입니다 (image · video · audio · font · pdf · slides).');
   const limit = Math.min(Math.max(Number(q.get('limit')) || ASSET_LIMITS.listDefault, 1), ASSET_LIMITS.listPage);
   const deleted = q.get('deleted') === '1';
   let cAt = Number.MAX_SAFE_INTEGER, cId = '~';

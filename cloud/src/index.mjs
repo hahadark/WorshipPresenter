@@ -8,6 +8,8 @@ import * as data from './data/index.mjs';
 import * as identity from './identity/index.mjs';
 import * as assets from './assets/index.mjs';
 import * as ai from './ai/index.mjs'; // 5단계 AI (docs/web/ai.md)
+import * as media from './media/index.mjs'; // 4단계 B 미디어 (docs/web/media.md)
+import { isPhonePath } from './media/routes.mjs';
 import * as tiers from './tiers/index.mjs'; // 7단계 일부: 등급(데모 · 무료 · 유료) · 등급별 저장소 (docs/web/tiers.md)
 import { limitsOf } from './tiers/limits.mjs';
 import * as demo from './tiers/demo.mjs';
@@ -72,6 +74,7 @@ async function handle(request, env) {
   if (path.startsWith('/api/v1/admin/')) return admin.handle(request, env, url);
   if (path.startsWith('/auth/google/')) { const x = await google.publicRoute(request, env, url); if (x) return x; }
   if (path.startsWith('/auth/')) { const x = await identity.publicRoute(request, env, url); if (x) return x; }
+  if (isPhonePath(path)) return media.publicRoute(request, env, url, toRoom); // 휴대폰 카메라: 로그인 대신 서명 링크
 
   // 설치판(2B)의 자료 동기화: 쿠키 대신 설치판 연결 열쇠 (data/index.mjs bearer)
   const dr = /^Bearer\s/i.test(request.headers.get('authorization') || '') ? route(method, path, url.searchParams) : null;
@@ -156,7 +159,7 @@ async function handle(request, env) {
   if (r.kind === 'events' && !sameOrigin(request, url)) return fail(403, '다른 곳에서 온 요청입니다.');
 
   // 등급: 자료 · 파일 · AI · 사람 길은 등급이 되는지 · 한도 안인지 보고 저장소를 고른다 (tiers/index.mjs prepare)
-  if (['data', 'assets', 'ai', 'identity'].includes(r.kind)) {
+  if (['data', 'assets', 'ai', 'identity', 'media-api'].includes(r.kind)) {
     const t = await tiers.prepare(request, env, url, s, r);
     if (t instanceof Response) return withCookies(t, fresh?.headers);
     s = { ...s, tier: t };
@@ -171,6 +174,7 @@ async function handle(request, env) {
   else if (r.kind === 'identity') res = await identity.handle(request, env, url, s, r);
   else if (r.kind === 'assets') res = await assets.handle(request, env, url, s, r);
   else if (r.kind === 'ai') res = await ai.handle(request, env, url, s, r);
+  else if (r.kind === 'media-api') res = await media.handle(request, env, url, s, r); // ('media' 는 1단계 설치판 파일 중계)
   else if (r.kind === 'tiers') res = await tiers.handle(request, env, url, s, r);
   else res = await toRoom(env, request, s);
   return withCookies(res, fresh?.headers);

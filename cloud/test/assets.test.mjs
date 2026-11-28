@@ -53,6 +53,19 @@ test('파일 종류: 받는 것만 · 확장자로 정하기 · 서로 다르면
   assert.equal(resolveType('video/mp4', 'x.mp4').max, 2048 * 1048576);
 });
 
+test('PowerPoint: pptx · ppsx · ppt · pps 를 받고, 내려받기만 (attachment)', () => {
+  const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  assert.deepEqual(resolveType(PPTX, '광고.pptx'), { type: PPTX, kind: 'slides', max: 500 * 1048576 });
+  assert.equal(resolveType('application/octet-stream', '찬양.PPSX').type, 'application/vnd.openxmlformats-officedocument.presentationml.slideshow');
+  assert.equal(resolveType('', '옛 슬라이드.ppt').type, 'application/vnd.ms-powerpoint');
+  assert.equal(resolveType('', '쇼.pps').type, 'application/vnd.ms-powerpoint');
+  assert.equal(resolveType('application/mspowerpoint', 'x.pps').kind, 'slides');
+  assert.equal(resolveType(PPTX, 'x.png').status, 415, '종류와 확장자가 다르면 거절');
+  assert.equal(resolveType('application/vnd.ms-powerpoint.presentation.macroEnabled.12', 'x.pptm').status, 415, '매크로가 든 것은 받지 않음');
+  assert.match(disposition('광고.pptx', 'slides'), /^attachment; /);
+  assert.match(disposition('a.pdf', 'pdf'), /^inline; /);
+});
+
 test('이름: 경로 · 사용자 이름을 떼고, R2 열쇠는 교회/sha256/안전한 이름', () => {
   assert.equal(displayName('C:\\Users\\김택근\\Pictures\\부활절 배경.png'), '부활절 배경.png');
   assert.equal(displayName('/Users/kim/Movies/a.mp4'), 'a.mp4');

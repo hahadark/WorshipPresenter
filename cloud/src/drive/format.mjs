@@ -48,7 +48,7 @@ export const KIND_FOLDERS = {
   scene: '화면 구성', source: '소스', settings: '설정', usage: '사용 기록',
 };
 /** 파일 묶음 → '파일/' 아래 폴더 이름 */
-export const FILE_FOLDERS = { image: '그림', video: '영상', audio: '소리', font: '글꼴', pdf: 'PDF' };
+export const FILE_FOLDERS = { image: '그림', video: '영상', audio: '소리', font: '글꼴', pdf: 'PDF', slides: 'PPT' };
 export const ROOT_FOLDER = '워십프리젠터';
 
 /** 드라이브 파일 이름에 넣을 수 없는(넣으면 헷갈리는) 글자를 뺀다 */

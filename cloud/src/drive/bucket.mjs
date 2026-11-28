@@ -9,7 +9,8 @@ import { DriveError, driveErrorOf } from './format.mjs';
 import { folderFor } from './folders.mjs';
 
 const MiB = 1024 * 1024;
-const kindOfType = t => (t.startsWith('image/') ? 'image' : t.startsWith('video/') ? 'video' : t.startsWith('audio/') ? 'audio' : t.startsWith('font/') ? 'font' : t === 'application/pdf' ? 'pdf' : 'image');
+const kindOfType = t => (t.startsWith('image/') ? 'image' : t.startsWith('video/') ? 'video' : t.startsWith('audio/') ? 'audio' : t.startsWith('font/') ? 'font' : t === 'application/pdf' ? 'pdf'
+  : /presentationml|ms-powerpoint/.test(t) ? 'slides' : 'image');
 
 const memo = new Map(); // `${church}/${key}` → { fileId, at }
 const MEMO_MS = 5 * 60_000;

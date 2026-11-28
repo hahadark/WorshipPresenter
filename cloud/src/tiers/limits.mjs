@@ -98,6 +98,8 @@ export function gate(tier, r, env = {}) {
     if (L.ai === 'own-key' && r.op === 'transcribe') return no('클라우드 음성 인식은 유료 등급에서만 씁니다. 설치판의 PC 안 음성 인식을 쓰세요.', 'ai');
   }
   if (r.kind === 'identity' && ['create'].includes(r.op) && L.members === 0) return no('둘러보기에서는 사람을 초대할 수 없습니다.', 'members');
+  // 4B 휴대폰 카메라 링크(밖에서 여는 서명 주소) — 둘러보기에서는 막음 (오래 쓰는 송출 주소와 같은 까닭)
+  if (r.kind === 'media-api' && tier === 'demo') return no('둘러보기에서는 휴대폰 카메라 링크를 만들 수 없습니다.', 'media');
   return null;
 }
 
