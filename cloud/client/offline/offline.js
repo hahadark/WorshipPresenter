@@ -7,8 +7,9 @@
 (function () {
   'use strict';
   var CFG = window.WP_CLOUD || {};
-  var S = { sw: 'none', update: false, version: '', online: navigator.onLine !== false, error: '', wake: 0 };
+  var S = { log: [], sw: 'none', update: false, version: '', online: navigator.onLine !== false, error: '', wake: 0 };
   var reg = null;
+  var retries = 0;
 
   // ---------- 보관함 (IndexedDB) ----------
   var dbp = null;
@@ -68,7 +69,14 @@
     mark();
     r.addEventListener('updatefound', function () {
       var w = r.installing;
-      if (w) w.addEventListener('statechange', mark);
+      S.log.push(Date.now() + ' found ' + (w && w.state));
+      if (w) w.addEventListener('statechange', function () {
+        S.log.push(Date.now() + ' ' + w.state);
+        if (S.log.length > 20) S.log.shift();
+        mark();
+        // 새 판 담기가 실패하면(인터넷 · 캐시 저장소) 지금 판은 그대로 — 조금 뒤 다시 받아 본다 (다섯 번까지)
+        if (w.state === 'redundant' && !r.waiting && retries < 5) { retries++; S.retries = retries; setTimeout(check, 15000); }
+      });
       mark();
     });
     if (r.active) ask(r.active);
@@ -97,6 +105,8 @@
   }
   if (SW_ON) {
     register();
+    // 브라우저가 저장 공간이 모자랄 때 이 사이트 자료(못 올린 고친 것)를 지우지 않게 부탁한다 (묻는 창은 없음 — 허락 여부는 브라우저가 정함)
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(function (ok) { S.persisted = !!ok; }); } catch (e) { /* 없음 */ }
     setInterval(check, 30 * 60 * 1000); // 30분마다 새 판이 있나 (바꾸지는 않는다)
   }
 
@@ -128,7 +138,7 @@
 
   window.wpOffline = {
     kv: kv,
-    state: function () { return JSON.stringify({ sw: S.sw, update: S.update, version: S.version, online: S.online, error: S.error, wake: S.wake, controlled: !!(navigator.serviceWorker && navigator.serviceWorker.controller) }); },
+    state: function () { return JSON.stringify({ sw: S.sw, update: S.update, version: S.version, online: S.online, error: S.error, wake: S.wake, persisted: !!S.persisted, installRetries: S.retries || 0, log: S.log, controlled: !!(navigator.serviceWorker && navigator.serviceWorker.controller) }); },
     applyUpdate: applyUpdate,
     check: check,
     prefetch: prefetch,

@@ -16,7 +16,7 @@
 | `src/media/` · `client/media/` | 4단계 B: 카메라 이름 맞추기 · 휴대폰 카메라 신호(중계실) · PDF(pdf.js 고정판) · 탭끼리 영상 맞추기 ([`docs/web/media.md`](../docs/web/media.md)) — 브라우저 시험 `scripts/media-browser-e2e.mjs` |
 | `src/tiers/` · `src/drive/` | 7단계 일부: 계정 등급(데모 · 무료 · 유료) · 한도표 · 둘러보기 · 옮기기 · 무료 = 구글 드라이브 저장소(OAuth · 문서 · 성경 · 파일) ([`docs/web/tiers.md`](../docs/web/tiers.md), 구글 준비 [`google-setup.md`](../docs/web/google-setup.md)). 시험용 가짜 구글 `test/fake-google/` |
 | `migrations/` | D1 (`0002_data.sql` = 2단계 A · `0003_ai.sql` = 5단계 AI · `0004_assets.sql` = 2단계 C 파일) |
-| `scripts/` | `assets`(web/ → public/) · `seed`(견본 교회) · `e2e` · `deploy` · `inventory`(대조표 빠짐 검사) · `desktop-e2e`(설치판과 함께) · `bible-import`(bible.db 사본 → D1) |
+| `scripts/` | `assets`(web/ → public/) · `seed`(견본 교회) · `e2e` · `deploy` · `inventory`(대조표 빠짐 검사) · `desktop-e2e`(설치판과 함께) · `bible-import`(bible.db 사본 → D1) · `offline-e2e`(6단계 끊김 시험, 실제 Edge) |
 
 ```sh
 npm ci
@@ -24,6 +24,7 @@ npm run seed        # 로컬 D1 에 견본 교회 'sample' + 열쇠 (.secrets/sa
 npm run dev         # http://127.0.0.1:8787  → /login 에 sample + .secrets 의 owner 열쇠
 npm test            # 단위
 npm run test:e2e    # 빈 포트에 wrangler dev 를 띄워 끝에서 끝
+node scripts/offline-e2e.mjs   # 6단계: 브라우저를 끊었다 잇기 (먼저 bash tools/web/build.sh) — docs/web/offline.md
 node scripts/assets-purge.mjs --usage   # 2C: R2 사용량 · 지운 파일 정리 (docs/web/assets-api.md)
 ```
 

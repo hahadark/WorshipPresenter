@@ -35,9 +35,22 @@ const only = opt('only', '');
 const out = resolve(opt('out', join(repo, 'tmp', 'offline-e2e')));
 const EXE = { edge: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', chrome: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' }[which];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+let stopAll = null;
+let redeploy = null;
+const missedShots = [];
 const results = [];
 let tierName = '';
+let lastStep = { at: Date.now(), name: '시작' };
+const step = name => { lastStep = { at: Date.now(), name: `[${tierName}] ${name}` }; };
+let onStall = null; // 멈췄을 때 남길 것 (브라우저 · 로그)
+setInterval(() => {
+  if (Date.now() - lastStep.at < 300000) return;
+  console.error(`멈춤: '${lastStep.name}' 뒤 5분 동안 진행 없음`);
+  results.push({ tier: tierName, name: '멈춤 감시', ok: false, detail: `'${lastStep.name}' 뒤 5분 진행 없음` });
+  Promise.resolve(onStall && onStall()).catch(() => {}).finally(() => { try { writeFileSync(join(out, 'result.json'), JSON.stringify({ results, stalledAfter: lastStep.name, at: new Date().toISOString() }, null, 1)); } catch { /* 무시 */ } process.exit(3); });
+}, 10000).unref();
 const check = (name, ok, detail) => {
+  step(name);
   results.push({ tier: tierName, name, ok: !!ok, detail });
   console.error(`${ok ? 'OK  ' : 'FAIL'} [${tierName}] ${name}${detail !== undefined ? ' → ' + JSON.stringify(detail).slice(0, 300) : ''}`);
 };
@@ -47,6 +60,7 @@ const until = async (f, ms = 15000, step = 250) => { const t0 = Date.now(); for 
 // ---------- 끊을 수 있는 중계 (브라우저 ↔ 클라우드) ----------
 function cutter(listenPort, targetPort) {
   const socks = new Set();
+  const retarget = p => { targetPort = p; for (const x of socks) x.destroy(); socks.clear(); };
   let server = null;
   const up = () => new Promise(res => {
     server = net.createServer(c => {
@@ -59,7 +73,7 @@ function cutter(listenPort, targetPort) {
     server.listen(listenPort, '127.0.0.1', res);
   });
   const down = () => new Promise(res => { for (const s of socks) s.destroy(); socks.clear(); if (!server) return res(); server.close(() => res()); server = null; });
-  return { up, down };
+  return { up, down, retarget };
 }
 
 // ---------- 브라우저 (CDP, 탭마다 세션) ----------
@@ -79,7 +93,27 @@ async function browser() {
     const h = handlers.get(m.sessionId || '');
     if (h) h(m);
   });
-  const send = (method, params = {}, sessionId) => new Promise((res, rej) => { const i = ++id; wait.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params, ...(sessionId ? { sessionId } : {}) })); });
+  const send = (method, params = {}, sessionId) => new Promise((res, rej) => {
+    const i = ++id;
+    const t = setTimeout(() => { if (wait.has(i)) { wait.delete(i); rej(new Error(`CDP ${method} 30초 답 없음`)); } }, 30000);
+    wait.set(i, { res: v => { clearTimeout(t); res(v); }, rej: e => { clearTimeout(t); rej(e); } });
+    ws.send(JSON.stringify({ id: i, method, params, ...(sessionId ? { sessionId } : {}) }));
+  });
+  // 서비스 워커의 콘솔 · 오류도 모은다 (점검용 — swlog)
+  const swlog = [];
+  handlers.set('', m => {
+    if (m.method === 'Target.attachedToTarget' && m.params.targetInfo.type === 'service_worker') {
+      const sid = m.params.sessionId;
+      handlers.set(sid, x => {
+        if (x.method === 'Runtime.consoleAPICalled') swlog.push(new Date().toISOString().slice(11, 23) + ' ' + x.params.args.map(a => a.value ?? a.description).join(' '));
+        else if (x.method === 'Runtime.exceptionThrown') swlog.push('[exception] ' + JSON.stringify(x.params.exceptionDetails).slice(0, 400));
+      });
+      send('Runtime.enable', {}, sid).catch(() => {});
+      send('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {});
+    }
+  });
+  // 서비스 워커에 붙어 로그를 받는 것은 --swlog 일 때만: 붙어 있는 동안 조작 화면 그림 찍기(captureScreenshot)가 답 없이 멈춘 적이 있다
+  if (args.includes('--swlog')) await send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true, filter: [{ type: 'service_worker', exclude: false }, { type: 'page', exclude: true }] }).catch(() => {});
   // 탭마다 따로 창 — 머리 없는 브라우저는 뒤에 숨은 탭의 그리기(requestAnimationFrame)를 멈춰 egui 가 그리지도 · 누름을 받지도 않는다
   async function tab(name) {
     const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true });
@@ -93,13 +127,17 @@ async function browser() {
     const s = (m, p) => send(m, p, sessionId);
     await s('Page.enable'); await s('Runtime.enable'); await s('Network.enable');
     await s('Emulation.setDeviceMetricsOverride', { width: 1600, height: 960, deviceScaleFactor: 1, mobile: false });
+    // 머리 없는 브라우저가 창을 '숨김' · '얼림' 으로 돌리지 않게 (숨긴 창은 그림 찍기가 끝나지 않고, 얼린 창은 저장소 일을 붙잡는 것을 봤다)
+    await s('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
+    await s('Page.setWebLifecycleState', { state: 'active' }).catch(() => {});
     const ev = async e => { const x = await s('Runtime.evaluate', { expression: e, awaitPromise: true, returnByValue: true }); return x.result.value; };
     return {
       name, logs, send: s, ev,
-      go: url => s('Page.navigate', { url }),
-      reload: () => s('Page.reload', { ignoreCache: false }),
+      go: async url => { const r = await s('Page.navigate', { url }); await s('Page.setWebLifecycleState', { state: 'active' }).catch(() => {}); return r; },
+      reload: async () => { const r = await s('Page.reload', { ignoreCache: false }); await s('Page.setWebLifecycleState', { state: 'active' }).catch(() => {}); return r; },
       front: () => s('Page.bringToFront'),
-      shot: async n => { const x = await s('Page.captureScreenshot', { format: 'png' }); const f = join(out, `${tierName}-${n}.png`); writeFileSync(f, Buffer.from(x.data, 'base64')); return f; },
+      // 그림은 증거용 — 머리 없는 브라우저가 가끔 창의 그림을 만들지 않아(답 없음) 10초만 기다리고 넘어간다 (시험을 멈추지 않게, 못 찍은 것은 shots-missed 에)
+      shot: async n => { const x = await Promise.race([s('Page.captureScreenshot', { format: 'png' }), sleep(10000).then(() => null)]).catch(() => null); if (!x) { missedShots.push(`${tierName}-${n}`); return null; } const f = join(out, `${tierName}-${n}.png`); writeFileSync(f, Buffer.from(x.data, 'base64')); return f; },
       click: async (x, y) => { for (const type of ['mousePressed', 'mouseReleased']) await s('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); },
       key: async (key, code, vk, modifiers = 0) => { await s('Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code, windowsVirtualKeyCode: vk, modifiers }); await s('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, modifiers }); },
       text: t => s('Input.insertText', { text: t }),
@@ -108,7 +146,7 @@ async function browser() {
     };
   }
   const close = () => { try { ws.close(); } catch { /* 이미 */ } try { execFileSync('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { stdio: 'ignore' }); } catch { /* 이미 */ } };
-  return { tab, close };
+  return { tab, close, swlog };
 }
 
 // ---------- 로컬 클라우드 ----------
@@ -163,22 +201,40 @@ async function main() {
   const port = await freePort(), insp = await freePort(), vport = await freePort();
   DIRECT = `http://127.0.0.1:${port}`;
   VIA = `http://127.0.0.1:${vport}`;
-  const dev = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(insp), '--local', '--persist-to', persist, '--show-interactive-dev-session=false',
-    '--var', `GOOGLE_FAKE:${fake.url}`, '--var', `GOOGLE_CLIENT_ID:${CLIENT_ID}`, '--var', `GOOGLE_CLIENT_SECRET:${CLIENT_SECRET}`, '--var', 'TIER_CACHE_MS:0',
-    '--var', 'SERVICE_OVERRIDES:{"freeSignupsPerDay":100000,"signupsPerIpPerHour":1000}'], { cwd: cloud, stdio: ['ignore', 'pipe', 'pipe'] });
   let devLog = '';
-  dev.stdout.on('data', d => { devLog += d; }); dev.stderr.on('data', d => { devLog += d; });
-  const ok = await until(async () => (await fetch(DIRECT + '/health')).ok, 90000, 300);
-  if (!ok) { console.error(devLog.slice(-3000)); throw new Error('wrangler dev 가 뜨지 않았습니다'); }
+  const startDev = async (p, i) => {
+    const d = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(p), '--inspector-port', String(i), '--local', '--persist-to', persist, '--show-interactive-dev-session=false',
+      '--var', `GOOGLE_FAKE:${fake.url}`, '--var', `GOOGLE_CLIENT_ID:${CLIENT_ID}`, '--var', `GOOGLE_CLIENT_SECRET:${CLIENT_SECRET}`, '--var', 'TIER_CACHE_MS:0',
+      '--var', 'SERVICE_OVERRIDES:{"freeSignupsPerDay":100000,"signupsPerIpPerHour":1000}'], { cwd: cloud, stdio: ['ignore', 'pipe', 'pipe'] });
+    d.stdout.on('data', x => { devLog += x; }); d.stderr.on('data', x => { devLog += x; });
+    const ok = await until(async () => (await fetch(`http://127.0.0.1:${p}/health`)).ok, 90000, 300);
+    if (!ok) { console.error(devLog.slice(-3000)); throw new Error('wrangler dev 가 뜨지 않았습니다'); }
+    return d;
+  };
+  let dev = await startDev(port, insp);
   const link = cutter(vport, port);
   await link.up();
+  // 로컬 wrangler dev 는 정적 파일을 바꿔도 처음의 ETag 를 그대로 주고 조건부 요청에 304 를 준다(tmp/etag-probe 로 확인) →
+  // 브라우저의 서비스 워커 업데이트 확인이 '그대로' 로 본다. 실제 배포는 새 ETag 이므로, 배포처럼 다시 띄워 흉내 낸다
+  redeploy = async () => {
+    try { execFileSync('taskkill', ['/pid', String(dev.pid), '/t', '/f'], { stdio: 'ignore' }); } catch { /* 이미 */ }
+    const p2 = await freePort(), i2 = await freePort();
+    dev = await startDev(p2, i2);
+    DIRECT = `http://127.0.0.1:${p2}`;
+    link.retarget(p2);
+  };
   console.error(`로컬 클라우드 ${DIRECT} · 브라우저는 중계 ${VIA} · 자리 ${persist}`);
   // 중계를 거쳐도 같은 곳(Origin)으로 보이나 — 쿠키 쓰기 보호
   const probe = await fetch(VIA + '/health').then(r => r.ok).catch(() => false);
   if (!probe) throw new Error('중계가 닿지 않습니다');
 
+  stopAll = async () => {
+    await link.down().catch(() => {});
+    try { execFileSync('taskkill', ['/pid', String(dev.pid), '/t', '/f'], { stdio: 'ignore' }); } catch { /* 이미 */ }
+    await fake.close().catch(() => {});
+  };
   const finish = async code => {
-    writeFileSync(join(out, 'result.json'), JSON.stringify({ results, at: new Date().toISOString() }, null, 1));
+    writeFileSync(join(out, 'result.json'), JSON.stringify({ results, missedShots, at: new Date().toISOString() }, null, 1));
     const fails = results.filter(x => !x.ok).length;
     console.log(`${results.length - fails}/${results.length} 통과 (그림 · 결과: ${out})`);
     await link.down();
@@ -230,7 +286,7 @@ const rowY = i => 203 + 30 * i;
 const SEND = [310, 60];
 async function pick(tab, i) { await tab.click(150, rowY(i)); await sleep(550); await tab.click(150, rowY(i)); await sleep(500); }
 async function diag(tab) {
-  return tab.ev(`JSON.stringify({ href: location.href, times: window.wpTimes || null, boot: (document.getElementById('boot') || {}).className, msg: (document.getElementById('boot_msg') || {}).textContent, ctl: !!(navigator.serviceWorker && navigator.serviceWorker.controller) })`).catch(e => String(e));
+  return tab.ev(`JSON.stringify({ href: location.href, times: window.wpTimes || null, boot: (document.getElementById('boot') || {}).className, msg: (document.getElementById('boot_msg') || {}).textContent, ctl: !!(navigator.serviceWorker && navigator.serviceWorker.controller), vis: document.visibilityState, focus: document.hasFocus() })`).catch(e => String(e));
 }
 
 async function scenario({ cookie, church, link, bible, update, fake, email }) {
@@ -243,6 +299,13 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
   const host = new URL(VIA).hostname;
   const b = await browser();
   const ctl = await b.tab('control');
+  let outTabRef = null;
+  onStall = async () => {
+    writeFileSync(join(out, `${tierName}-stall-logs.txt`), [...ctl.logs, '--- output ---', ...(outTabRef ? outTabRef.logs : []), '--- service worker ---', ...b.swlog].join('\n'));
+    await Promise.race([ctl.shot('stall'), sleep(5000)]).catch(() => {});
+    b.close();
+    if (stopAll) await stopAll();
+  };
   await ctl.setCookies(cookie, host);
   await ctl.go(VIA + '/control/?debug=1');
   let d = await until(async () => { const x = await ctl.dbg(); return x && x.store && x.store.ready && x.cue && x.cue.id === CUE ? x : null; }, 60000);
@@ -259,6 +322,7 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
   }
   // 출력 창 (같은 브라우저 — 서비스 워커가 맡음) · 클라우드 출력(다른 곳의 OBS 처럼, 클라우드에 바로)
   const outTab = await b.tab('output');
+  outTabRef = outTab;
   await outTab.go(VIA + '/outputs/main');
   await until(async () => (await outTab.ev('document.readyState')) === 'complete', 15000);
   const outCtl = await until(() => outTab.ev('!!(navigator.serviceWorker && navigator.serviceWorker.controller)'), 10000);
@@ -268,8 +332,10 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
   // 송출: 2번째 줄(찬양 '아침 빛') → 송출
   const song = cue.items[1];
   const line1 = (song.lyrics || '').split('\n').map(x => x.trim()).filter(x => x && !x.startsWith('['))[0] || '';
+  step('송출 준비: 2번째 줄 고르기');
   await pick(ctl, 1);
   await ctl.shot('1a-picked');
+  step('송출 단추');
   await ctl.click(...SEND); await sleep(800);
   let shown = await until(async () => (await outTab.ev('document.body.innerText')).includes(line1), 8000);
   check('송출 → 같은 브라우저 출력 창', shown, line1);
@@ -279,6 +345,7 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
 
   if (!args.includes('--update-only')) {
   // ===== 끊김 =====
+  step('끊음');
   await link.down();
   const mark = '끊긴 동안 고침 ' + Date.now().toString(36);
   // 7번째 줄(공지 '교회 소식') 내용 칸 끝에 글을 더한다
@@ -314,10 +381,11 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
   check('다른 곳에서 같은 큐시트를 고침 (판 오름)', r.status === 200, r.json && r.json.revision);
 
   // 끊긴 채 새로 고침
+  step('끊긴 채 새로 고침');
   await ctl.reload();
   d = await until(async () => { const t = JSON.parse(await ctl.ev('JSON.stringify(window.wpTimes||null)')); const x = await ctl.dbg(); return t && t.painted && x && x.store && x.store.ready ? x : null; }, 60000);
   check('끊긴 채 새로 고침 → 앱이 뜸 (서비스 워커)', d, d ? d.store : await diag(ctl));
-  if (!d) { await ctl.shot('3x-reload-failed'); writeFileSync(join(out, `${tierName}-logs.txt`), ctl.logs.join('\n')); }
+  if (!d) { await ctl.shot('3x-reload-failed'); writeFileSync(join(out, `${tierName}-logs.txt`), [...ctl.logs, '--- service worker ---', ...b.swlog].join('\n')); }
   const items = d && d.cue && JSON.stringify(d.cue.items);
   check('끊긴 채 새로 고침 → 고친 것이 남아 있음 (IndexedDB 올릴 줄)', items && items.includes(mark), mark);
   d = await until(async () => { const x = await ctl.dbg(); return x && x.offline.net === 'offline' && x.offline.pending >= 1 ? x : null; }, 20000);
@@ -341,6 +409,7 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
 
   // ===== 다시 이음 =====
   const tUp = Date.now();
+  step('다시 이음');
   await link.up();
   d = await until(async () => { const x = await ctl.dbg(); return x && x.offline.net === 'online' && x.offline.pending === 0 ? x : null; }, 60000, 500);
   check('다시 이으면 올릴 줄이 다 올라가고 상태 칸이 사라짐', d, d && d.offline);
@@ -381,11 +450,18 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
     const newVer = 'e2e' + Date.now().toString(36);
     writeFileSync(swFile, orig.replace(/const VERSION = "[^"]+"/, `const VERSION = "${newVer}"`));
     try {
+      await redeploy();
       const served = await until(async () => (await (await fetch(DIRECT + '/sw.js', { cache: 'no-store' })).text()).includes(newVer), 30000, 500);
       check('(시험 준비) 클라우드가 새 판 sw.js 를 내보냄', served);
+      const probe = [];
+      const look = async () => probe.push(await ctl.ev(`(async () => { const r = await navigator.serviceWorker.getRegistration('/'); const t = await fetch('/sw.js', { cache: 'no-store' }).then(x => x.text()).catch(e => 'ERR ' + e); return JSON.stringify({ t: Date.now(), sees: t.includes(${JSON.stringify(newVer)}), reg: !!r, installing: !!(r && r.installing), waiting: !!(r && r.waiting), active: r && r.active && r.active.state, hasReg: !!window.wpOffline, st: JSON.parse(window.wpOffline.state()).log }); })()`).catch(e => 'ERR ' + e));
+      await look();
+      const upd = await ctl.ev(`(async () => { const r = await navigator.serviceWorker.getRegistration('/'); try { await r.update(); return 'update ok ' + !!r.installing + ' ' + !!r.waiting; } catch (e) { return 'update error ' + e; } })()`).catch(e => 'ERR ' + e);
+      probe.push(upd);
       await ctl.ev('window.wpOffline.check(), 1');
       const tUpd = Date.now();
-      d = await until(async () => { const x = await ctl.dbg(); return x && x.offline.update === true ? x : null; }, 120000, 1000);
+      d = await until(async () => { if (probe.length < 30 && (Date.now() - tUpd) % 20000 < 1100) await look(); const x = await ctl.dbg(); return x && x.offline.update === true ? x : null; }, 200000, 1000);
+      writeFileSync(join(out, `${tierName}-update-probe.json`), JSON.stringify(probe, null, 1));
       console.error(`새 판 담기: ${Math.round((Date.now() - tUpd) / 1000)}초`);
       const regInfo = await ctl.ev(`navigator.serviceWorker.getRegistration('/').then(r => r ? r.update().then(() => 'ok', e => 'update-error: ' + e).then(async u => JSON.stringify({ u, installing: !!r.installing, waiting: !!r.waiting, active: r.active && r.active.state, state: window.wpOffline.state(), progress: await new Promise(res => { if (!r.installing) return res(null); const ch = new MessageChannel(); ch.port1.onmessage = e => res(e.data); r.installing.postMessage({ t: 'version' }, [ch.port2]); setTimeout(() => res('no-answer'), 3000); }) })) : 'no-reg')`).catch(e => String(e));
       check("새 판이 나오면 '새 버전 있음' 만 (지금 판 그대로)", d && d.offline.version === ver, d ? d.offline : regInfo);
@@ -403,7 +479,7 @@ async function scenario({ cookie, church, link, bible, update, fake, email }) {
       } else check("'바꾸기' 단추", false);
     } finally { writeFileSync(swFile, orig); }
   }
-  writeFileSync(join(out, `${tierName}-logs.txt`), [...ctl.logs, '--- output ---', ...outTab.logs].join('\n'));
+  writeFileSync(join(out, `${tierName}-logs.txt`), [...ctl.logs, '--- output ---', ...outTab.logs, '--- service worker ---', ...b.swlog].join('\n'));
   try { cv.s.close(); } catch { /* 이미 */ }
   b.close();
 }

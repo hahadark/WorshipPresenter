@@ -42,13 +42,14 @@ async function getOne(cache, p) {
       return;
     } catch (e) {
       PROGRESS.retries++;
+      console.warn('[sw] 담기 실패', p, n, String(e));
       if (n >= 3) throw e;
     } finally { clearTimeout(t); }
   }
 }
 
 // 담는 중 얼마나 했나 (점검 · 조작 화면이 물을 수 있게 — message {t:'version'} 답에 같이)
-const PROGRESS = { done: 0, total: PRECACHE.length, now: [], retries: 0 };
+const PROGRESS = { stage: 'script', done: 0, total: PRECACHE.length, now: [], retries: 0 };
 async function putAll(cache, list) {
   let i = 0;
   const worker = async () => {
@@ -75,9 +76,16 @@ function okPage(res) {
 }
 
 self.addEventListener('install', (e) => {
+  PROGRESS.stage = 'install';
+  PROGRESS.at = Date.now();
   e.waitUntil((async () => {
-    await putAll(await caches.open(SHELL), PRECACHE);
+    // 새 캐시 열기가 끝나지 않으면(저장소가 바쁨) 45초에 이 설치를 버린다 → 지금 판은 그대로 돌고, 페이지(offline.js)가 15초 뒤 다시 새 판을 받는다
+    const cache = await Promise.race([caches.open(SHELL), new Promise((_, rej) => setTimeout(() => { PROGRESS.stage = 'open-timeout'; rej(new Error('캐시 열기 45초 초과')); }, 45000))]);
+    PROGRESS.stage = 'files';
+    await putAll(cache, PRECACHE);
+    PROGRESS.stage = 'pages';
     for (const p of FIRST_PAGES) await cachePage(p);
+    PROGRESS.stage = 'done';
     // 처음 깔 때는 기다릴 것이 없다 (지금 쓰는 판이 없음). 새 판은 사람이 누를 때까지 기다린다
     if (!self.registration.active) await self.skipWaiting();
   })());
@@ -113,13 +121,23 @@ self.addEventListener('fetch', (e) => {
   }
 });
 
+// 담을 때는 본문을 먼저 끝까지 받아(Blob) 두 응답을 따로 만든다 — res.clone() 으로 갈라 담으면, 한쪽(페이지)이 읽기를 그만둘 때
+// 다른 쪽(cache.put)이 끝나지 않고 멈춰 이 사이트의 캐시 일 전체(새 판 담기의 caches.open 포함)가 막히는 것을 봤다 (2026-11-28, 끊김 시험)
+async function settle(res) {
+  const body = await res.blob();
+  const init = { status: res.status, statusText: res.statusText, headers: res.headers };
+  return [new Response(body, init), new Response(body, init)];
+}
+
 /** 페이지: 인터넷 먼저 (로그인이 끝났으면 서버의 302 를 그대로), 닿지 않으면 담아 둔 것 */
 async function page(e, path) {
   const cache = await caches.open(PAGES);
   const kept = await cache.match(path);
-  const net = fetch(e.request).then((res) => {
-    if (okPage(res)) { const c = res.clone(); e.waitUntil(cache.put(path, c)); }
-    return res;
+  const net = fetch(e.request).then(async (res) => {
+    if (!okPage(res)) return res;
+    const [give, keep] = await settle(res);
+    e.waitUntil(cache.put(path, keep).catch(() => {}));
+    return give;
   });
   net.catch(() => {}); // 늦게 실패해도 (이미 담아 둔 것을 줬으면) 조용히
   try {
@@ -138,8 +156,10 @@ async function shell(req, path) {
   const hit = await cache.match(path, { ignoreSearch: true });
   if (hit) return hit;
   const res = await fetch(req);
-  if (res.ok && res.type === 'basic') cache.put(path, res.clone()).catch(() => {});
-  return res;
+  if (!(res.ok && res.type === 'basic')) return res;
+  const [give, keep] = await settle(res);
+  cache.put(path, keep).catch(() => {});
+  return give;
 }
 
 /** fonts.css: 교회가 글꼴을 더하면 바뀐다 → 인터넷 먼저 */
@@ -147,8 +167,10 @@ async function fresh(req) {
   const cache = await caches.open(FILES);
   try {
     const res = await fetch(req);
-    if (res.ok) cache.put(req.url, res.clone()).catch(() => {});
-    return res;
+    if (!res.ok) return res;
+    const [give, keep] = await settle(res);
+    cache.put(req.url, keep).catch(() => {});
+    return give;
   } catch (err) {
     const hit = await cache.match(req.url);
     if (hit) return hit;
@@ -164,11 +186,11 @@ async function file(req) {
   const res = await fetch(req);
   const type = res.headers.get('content-type') || '';
   const len = +res.headers.get('content-length') || 0;
-  if (res.status === 200 && res.type === 'basic' && /^(image\/|font\/|application\/font|application\/x-font|text\/css)/.test(type) && len <= FILE_BYTES) {
-    const c = res.clone();
-    cache.put(req.url, c).then(() => trim(cache)).catch(() => {});
-  }
-  return res;
+  if (!(res.status === 200 && res.type === 'basic' && /^(image\/|font\/|application\/font|application\/x-font|text\/css)/.test(type) && len <= FILE_BYTES)) return res;
+  const [give, keep] = await settle(res);
+  // 길이를 미리 몰랐던 것(나눠 보냄)도 다 받은 뒤 크기를 본다
+  if ((await keep.clone().blob()).size <= FILE_BYTES) cache.put(req.url, keep).then(() => trim(cache)).catch(() => {});
+  return give;
 }
 
 async function trim(cache) {
