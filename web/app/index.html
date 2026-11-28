@@ -40,6 +40,8 @@ window.wpBoot = (stage, detail) => {
   else $('boot_msg').textContent = detail;
 };
 window.addEventListener('error', (e) => { if (!T.ready) fail('오류: ' + (e.message || e)); });
+// 점검(?debug): 0.5초 넘게 화면을 막은 일 (원인 찾기)
+if (/debug/.test(location.search)) { try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (e.duration > 500) console.warn('longtask ' + Math.round(e.duration) + 'ms'); }).observe({ type: 'longtask', buffered: true }); } catch (e) { /* 없음 */ } }
 // 브라우저 안 보관함 (IndexedDB 'wp-web' / kv): 교회 성경 번역본 등 큰 것 — localStorage(5MB)에 넣지 못하는 것
 window.wpIdb = (() => {
   let db = null;

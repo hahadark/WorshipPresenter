@@ -99,7 +99,7 @@ impl eframe::App for WebApp {
             let g = self.0.core.lock();
             (crate::camscan::choices(&g).iter().map(|c| json_pair(&c.device_id, &c.label)).collect::<Vec<_>>(), g.store.list_versions().iter().map(|v| v.id.clone()).collect::<Vec<_>>(), g.camera_probing())
         };
-        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "cloudButtons": cloud::debug_rects(), "aiWaiting": wp_core::web::ai::waiting(), "mediaBusy": media::busy(), "offline": offline::debug(), "store": store::debug(), "cameras": cams, "camProbing": probing, "versions": versions }).to_string();
+        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "cloudButtons": cloud::debug_rects(), "cloudTrace": cloud::trace_dump(), "pointer": ui.ctx().input(|i| serde_json::json!({ "down": i.pointer.any_down(), "pos": i.pointer.latest_pos().map(|p| [p.x, p.y]), "drag": i.pointer.is_decidedly_dragging(), "focused": i.focused })), "wantsPtr": ui.ctx().egui_wants_pointer_input(), "frame": ui.ctx().cumulative_frame_nr(), "aiWaiting": wp_core::web::ai::waiting(), "mediaBusy": media::busy(), "offline": offline::debug(), "store": store::debug(), "cameras": cams, "camProbing": probing, "versions": versions }).to_string();
         DEBUG.with(|d| *d.borrow_mut() = s);
     }
 }
@@ -184,6 +184,12 @@ pub fn start() {
             let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpAddItem"), ai.as_ref());
         }
         let aw = Closure::<dyn Fn() -> f64>::new(|| wp_core::web::ai::waiting() as f64);
+        // 프레임과 상관없이 지금 상태 (화면이 다시 그려지지 않아도 보임)
+        let ct = Closure::<dyn Fn() -> String>::new(|| serde_json::json!({ "state": format!("{:?}", cloud::state()), "trace": cloud::trace_dump() }).to_string());
+        if let Some(w) = web_sys::window() {
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpCloudNow"), ct.as_ref());
+        }
+        ct.forget();
         let oc = Closure::<dyn Fn(String)>::new(|id: String| SHARED_DBG.with(|s| if let Some(sh) = s.borrow().as_ref() { sh.lock().open_cue(&id) }));
         // wpSaveSource(json) → 인스펙터 소스 탭의 [더하기] 와 같은 길 (Core::save_source)
         let ss = Closure::<dyn Fn(String) -> String>::new(|v: String| SHARED_DBG.with(|s| s.borrow().as_ref().map(|sh| {
@@ -253,6 +259,7 @@ pub fn start() {
                     let shared = Arc::new(Mutex::new(core));
                     wp_core::hymns::install(&shared); // 백그라운드 일(run_bg)이 끝나면 코어를 다시 잡으려고 (웹은 다음 차례에 같은 스레드)
                     cloud::set_core(shared.clone());
+                    cloud::set_ctx(cc.egui_ctx.clone());
                     SHARED_DBG.with(|s| *s.borrow_mut() = Some(shared.clone()));
                     if authed {
                         store::cloud_start(shared.clone()); // 큐시트 · 찬양: /api/v1/documents · sync

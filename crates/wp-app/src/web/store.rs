@@ -139,16 +139,67 @@ fn storable(kind: &str, id: &str) -> bool {
     kind != "song" || ((4..=40).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
-/// export_docs 를 (종류, id) → 본문 으로
+thread_local! {
+    /// 문서 본문 기억: (종류, id) → (바뀐 표시, 본문). 고칠 때마다 큐시트 · 찬양 전부를 다시 꺼내지 않게
+    /// (찬양이 수백 곡이면 한 번에 수백 번 읽어 조작 화면이 굼떠졌다 — 2026-11-28 끝에서 끝 시험에서 드러남)
+    static EXC: std::cell::RefCell<HashMap<Key, (String, Value)>> = std::cell::RefCell::new(HashMap::new());
+}
+
+/// 지금 큐시트 · 찬양 문서들: (종류, id) → 본문. 열린 큐시트는 늘 새로, 나머지는 바뀐 표시(고친 때 · 순서 수 · 이름)가 같으면 기억한 것
 fn exported(core: &Shared) -> HashMap<Key, Value> {
-    let d = wp_core::web::seed::export_docs(&core.lock());
+    let t0 = js_sys::Date::now();
+    let c = core.lock();
+    let open = c.cue.as_ref().map(|q| q.id.clone());
     let mut m = HashMap::new();
-    for k in kinds() {
-        for x in d[k].as_array().into_iter().flatten() {
-            if let Some(id) = x["id"].as_str() {
-                m.insert((k.to_string(), id.to_string()), x.clone());
+    let mut seen: Vec<Key> = vec![];
+    EXC.with(|e| {
+        let mut e = e.borrow_mut();
+        for s in c.store.list_cues() {
+            if open.as_deref() == Some(s.id.as_str()) {
+                continue;
             }
+            let k: Key = ("cue".into(), s.id.clone());
+            let stamp = format!("{}|{}|{}|{}|{}|{}", s.updated_at, s.count, s.name, s.service_date, s.pinned, s.template);
+            let v = match e.get(&k) {
+                Some((st, v)) if *st == stamp => v.clone(),
+                _ => match c.store.get_cue(&s.id) {
+                    Some(q) => {
+                        let v = wp_core::web::seed::cue_doc(&q);
+                        e.insert(k.clone(), (stamp, v.clone()));
+                        v
+                    }
+                    None => continue,
+                },
+            };
+            seen.push(k.clone());
+            m.insert(k, v);
         }
+        if let Some(q) = &c.cue {
+            m.insert(("cue".into(), q.id.clone()), wp_core::web::seed::cue_doc(q));
+        }
+        for s in wp_core::songs::list_songs(&c.store.db, "") {
+            let Some(id) = s["id"].as_str() else { continue };
+            let k: Key = ("song".into(), id.to_string());
+            // 바뀐 표시: 목록 줄 전체 (고친 때 · 제목 · 첫 줄 · 저작 · 태그 · 조) — 같은 초 안에 두 번 고쳐도 대개 다르다
+            let stamp = s.to_string();
+            let v = match e.get(&k) {
+                Some((st, v)) if *st == stamp => v.clone(),
+                _ => match wp_core::songs::get_song(&c.store.db, id) {
+                    Some(v) => {
+                        e.insert(k.clone(), (stamp, v.clone()));
+                        v
+                    }
+                    None => continue,
+                },
+            };
+            seen.push(k.clone());
+            m.insert(k, v);
+        }
+        e.retain(|k, _| seen.contains(k));
+    });
+    let ms = js_sys::Date::now() - t0;
+    if ms > 100.0 {
+        log::warn!("교회 문서 꺼내기가 {ms:.0}ms 걸림 (큐시트 · 찬양 {}개)", m.len());
     }
     m
 }
@@ -783,6 +834,7 @@ async fn pull(core: Shared) {
             return;
         }
         let mut ops = vec![];
+        let mut imported: Vec<(Key, i64)> = vec![];
         for ch in v["changes"].as_array().into_iter().flatten() {
             if ch["superseded"].as_bool().unwrap_or(false) {
                 continue;
@@ -805,10 +857,19 @@ async fn pull(core: Shared) {
                 ops.push(Persist::PutDoc(k, rev, None));
             } else if ch["payload"].is_object() {
                 import_one(&core, kind, &ch["payload"]);
-                let text = exported(&core).get(&k).map(|v| v.to_string());
-                CL.with(|c| c.borrow_mut().book.accept(&k, rev, text));
-                ops.push(Persist::PutDoc(k, rev, Some(ch["payload"].clone())));
+                ops.push(Persist::PutDoc(k.clone(), rev, Some(ch["payload"].clone())));
+                imported.push((k, rev));
             }
+        }
+        // 들인 문서들의 '맞춘 본문' 은 다 들인 뒤 한 번만 꺼낸다 (바뀐 것마다 전부 꺼내면 화면이 오래 멈췄다 — web-scenes 8d761e2)
+        if !imported.is_empty() {
+            let after = exported(&core);
+            CL.with(|c| {
+                let mut c = c.borrow_mut();
+                for (k, rev) in &imported {
+                    c.book.accept(k, *rev, after.get(k).map(|v| v.to_string()));
+                }
+            });
         }
         let head = v["next"].as_i64().unwrap_or(after);
         CL.with(|c| c.borrow_mut().head = head);
