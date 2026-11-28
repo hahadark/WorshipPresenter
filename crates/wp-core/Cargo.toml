@@ -35,6 +35,7 @@ unicode-normalization = "0.1.26"
 # [트랙 A] PPT 나누기 AI (오픈라우터)
 ureq = { version = "3.5.1", features = ["json"] }
 url = "2.5.8" # [트랙 A] 한글 도메인(홈페이지 주보 주소)
+webpki-roots = "1.0.12" # 클라우드 연결(wss)의 인증서 뿌리 (ureq 가 이미 쓰는 것)
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

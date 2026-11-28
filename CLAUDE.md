@@ -189,3 +189,11 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - parity 46/48 (obs-pip-image · obs-pip-score 는 원래 차이), scenes e2e 6(2.0.8 비교 둘은 옛 exe 없어 빠짐) · outputs 9 · auto 20. 설치판 /S /TEST /D=<임시> 로 설치 · 실행(실제 설치본 2.1.0 그대로).
 - '새 버전' 창 릴리스 설명은 2.1.1 부터 마크다운 기호를 걷어 냄(`trackd_ui::plain_notes`). 2.1.0 사용자가 보는 2.1.1 설명은 기호를 적게 써서 씀.
 - 무대 타이머: 무대 화면 창 '몇 시까지' 칸에 실제 끝 시각, 시간표 범위 밖이어도 무대 줄에 보임(홍보 캡처 중 발견).
+
+## 2026-11-28 웹판 1단계 (web 가지, 릴리스 전)
+
+- 설계 · 계약: **docs/web/architecture.md** (마지막 절 '1단계 구현 상태'), 기능 대조표 docs/web/feature-matrix.md. Cloudflare 쪽은 `cloud/` (README).
+- 설치판 '클라우드 연결'(기본 꺼짐): `wp-core/src/cloud.rs` · `wp-app/src/cloud_ui.rs`. 창은 리모컨 · 웹 편집기 창의 단추와 `--tool cloud` (메뉴 줄은 아직 — 메뉴 표 시험).
+- 시험: `cd cloud; npm test; npm run test:e2e` · 설치판과 함께 `node scripts/desktop-e2e.mjs --exe ..\target\debug\wp-app.exe` (격리 자료 · 다른 포트, `--base <주소> --sample sample.remote.json` 이면 배포한 미리보기에).
+- 미리보기: https://worshippresenter-web.hahadark-media.workers.dev (견본 교회 sample 만, 열쇠는 cloud/.secrets/ — 커밋 금지).
+

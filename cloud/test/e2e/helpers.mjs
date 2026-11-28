@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const BASE = process.env.WP_BASE || 'http://127.0.0.1:8787';
+export const LOCAL = /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(BASE);
 const cloud = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const SAMPLE = JSON.parse(readFileSync(join(cloud, '.secrets', process.env.WP_SAMPLE || 'sample.json'), 'utf8'));
 export const CHURCH = SAMPLE.church;
@@ -19,7 +20,8 @@ export const newIp = () => `198.${18 + (ipSeq > 250 ? 1 : 0)}.${run}.${(ipSeq++ 
 export async function req(path, { method = 'GET', cookie, headers = {}, body, ip, redirect = 'manual' } = {}) {
   const h = { ...headers };
   if (cookie) h.cookie = cookie;
-  if (ip) h['cf-connecting-ip'] = ip;
+  // 로컬 Worker 만: 진짜 Cloudflare 는 손님이 보낸 cf-* 머리글을 403 으로 막는다 (주소는 Cloudflare 가 정함)
+  if (ip && LOCAL) h['cf-connecting-ip'] = ip;
   if (body !== undefined && typeof body !== 'string') { h['content-type'] = 'application/json'; body = JSON.stringify(body); }
   const r = await fetch(BASE + path, { method, headers: h, body, redirect });
   const text = await r.text();

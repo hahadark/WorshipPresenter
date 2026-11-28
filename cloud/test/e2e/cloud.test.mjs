@@ -231,6 +231,20 @@ test('주인: 기기 열쇠 만들기 · 지우면 그 열쇠로 붙은 화면�
   await bridge.close();
 });
 
+test('다른 역할 쿠키가 있는 브라우저에서도 PIN · 열쇠로 다시 로그인된다', async () => {
+  const bridge = await fakeBridge();
+  bridge.send({ t: 'remote', data: { live: { has: false } } });
+  await sleep(100);
+  const out = await login('output');
+  assert.equal((await req('/remote', { cookie: out })).status, 403, '열쇠 없이는 권한 없음');
+  const r = await req(`/r/state?pin=${cred('remote').secret}&c=${CHURCH}`, { cookie: out, ip: newIp() });
+  assert.equal(r.status, 200);
+  const rc = cookieOf(r.headers);
+  assert.equal((await req('/remote', { cookie: rc })).status, 200);
+  await bridge.close();
+});
+
+// ---- 잠금 시험은 맨 뒤 (교회 PIN 잠금이 걸리므로) ----
 test('여러 번 틀리면 잠시 막는다 (기기 주소별 5번)', async () => {
   const ip = newIp();
   for (let i = 0; i < 5; i++) assert.equal((await req('/auth/login', { method: 'POST', ip, headers: { 'x-worshipcue': '1' }, body: { church: CHURCH, secret: 'wrong-' + i } })).status, 401);

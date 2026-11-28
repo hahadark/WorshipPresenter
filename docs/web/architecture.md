@@ -196,3 +196,28 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 
 - GitHub Actions `.github/workflows/web-cloud.yml`: `web` · `web-*` 가지에 푸시하면 `npm ci` · 단위 시험 · 끝에서 끝 시험 · 배포 점검. 배포는 손으로(`workflow_dispatch`) 돌리고, 저장소 비밀값 `CLOUDFLARE_API_TOKEN` · `CLOUDFLARE_ACCOUNT_ID` · `WP_AUTH_SECRET` · `WP_D1_DATABASE_ID` 가 다 있을 때만 올린다(없으면 건너뜀). 비밀값을 출력하지 않는다.
 - 비밀값: `AUTH_SECRET`(32자 이상, 없으면 로그인 전체가 닫힘) · `ADMIN_TOKEN`(선택, 없으면 교회 만들기 길이 닫힘). Worker 비밀값으로만 둔다.
+
+## 11. 1단계 구현 상태 (2026-11-28)
+
+**된 것**
+- 클라우드: `/outputs/main · overlay · stage · out-…` · `/remote` · `/editor` · `/owner` · 로그인 · 기기 열쇠 · 실시간 중계 · 리모컨 · 편집기 되돌림 · 미디어 중계(이진 조각) · 열쇠 지우면 바로 끊기 · 틀린 횟수 잠금(PIN 만 교회 전체).
+- 설치판: `crates/wp-core/src/cloud.rs`(기본 꺼짐, 스레드 하나, wss · ws, 다시 잇기, 바뀐 것만 보내기, 타이머만 도는 것은 다시 보내지 않음) · `crates/wp-app/src/cloud_ui.rs`(클라우드 연결 창). 창은 **휴대폰 리모컨 · 웹 편집기 창의 '클라우드 연결…' 단추**와 점검 인자 `--tool cloud` 로 연다. 메뉴 막대 표는 승인된 안 A 로 시험이 묶여 있어 줄을 더하지 않았다 — 메뉴 정돈 뒤 '연결' 메뉴에 `d:cloud` 한 줄을 권한다.
+- 기존 파일에 더한 것: `wp-core/src/lib.rs`(모듈 한 줄) · `server.rs`(`cloud::init` 한 줄) · `Cargo.toml`(`webpki-roots`, 이미 ureq 가 쓰는 판) · `wp-app/src/main.rs`(모듈 한 줄) · `tools_ui.rs`(창 부르기 한 줄 · 단추 두 줄) · `data/en.json`(맨 앞에 38줄).
+
+**확인한 것** (증거는 `cloud/artifacts/`, Git 제외 — 다시 만들려면 아래 명령)
+- `npm test` 단위 9 · `npm run test:e2e` 끝에서 끝 11 (가짜 설치판: 여러 화면 동시 · 끊김/다시 이음 · 로그인 없이 · 권한 · 열쇠 지우기 · 잠금 · 다른 역할 쿠키에서 다시 로그인).
+- 같은 끝에서 끝 9개를 **배포한 미리보기(진짜 Cloudflare)** 에 대고도 통과 (잠금 시험 2개는 진짜 Cloudflare 에서 주소를 바꿀 수 없어 뺌).
+- `node scripts/desktop-e2e.mjs` — 실제 설치판(격리한 자료 · 다른 포트) + 로컬 클라우드 21/21, **+ 배포한 미리보기(wss) 21/21**: 클라우드 편집기로 큐시트 만들기 · 충돌 409 · 설치판 끄기(끊김 알림 · 리모컨 503) · 다시 켜기(다시 이음) · 클라우드 리모컨 PIN 으로 송출 · 다음 · 무대 메시지 → 클라우드 예배당 · OBS 자막 · 무대 화면과 로컬 예배당 화면이 같은 슬라이드(그림 1-*, 2-*), 리모컨 · 주인 화면 · 로그인 화면 · 설치판 창 그림.
+- `cargo test -p wp-core` 377 (새 cloud 5) · `cargo test -p wp-app` 264 통과. (wp-app `auditc_tests::quick_text_long_text…` 가 한 번 시험용 임시 DB 열기에서 실패, 혼자 · 다시 돌리면 통과 — 병렬 흔들림.)
+
+**확인 못 한 것 · 남은 것**
+- 실제 OBS 브라우저 소스가 쿠키를 오래 지키는지(못 지키면 `?key=` 주소가 매번 다시 로그인하므로 화면은 나옴). 큰 영상을 클라우드로 탐색 재생(Range 는 로컬 서버 그대로 중계, 단위로만 확인). 교회 인터넷 업로드 속도에서의 영상.
+- 영어 화면: 클라우드 페이지에 i18n 스크립트를 아직 안 끼움(설치판 `hello.lang` 은 옴).
+- 클라우드 화면 수: 브라우저를 닫아도 로컬 workerd 는 TCP 를 늦게 끊어 수가 잠시 남는다(진짜 Cloudflare 에서도 몇 초 남을 수 있음).
+- 같은 교회에 설치판 둘이 같은 열쇠로 붙으면 나중 것이 이기고 앞의 것은 1분마다 다시 시도한다 → 예배 PC 하나에만 넣을 것(주인 화면에 경고 글 필요).
+- parity(`tools\parity\run.ps1`)는 돌리지 않았다: 그리는 코드(`paint.rs` · `web/`)를 고치지 않았고 `tmp\data` 점검 자료가 필요하다. 릴리스 전에는 규칙대로 돌릴 것.
+
+**미리보기 배포** (견본 자료만, 로그인 뒤에서만)
+- 주소: https://worshippresenter-web.hahadark-media.workers.dev (Worker `worshippresenter-web` · D1 `worshippresenter-web` 새로 만듦, 다른 Worker · D1 은 건드리지 않음).
+- 들어가는 법: `/login` 에 교회 ID `sample` + 주인 열쇠. 열쇠 · 비밀값은 이 PC 의 `cloud/.secrets/sample.remote.json` · `auth.remote.json` 에만 있다(Git 제외). `ADMIN_TOKEN` 은 올리지 않아 교회 만들기 길은 닫혀 있다.
+- 지우려면: `npx wrangler delete worshippresenter-web` · `npx wrangler d1 delete worshippresenter-web`.
