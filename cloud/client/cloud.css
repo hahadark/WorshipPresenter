@@ -31,7 +31,8 @@ a.big.google { background: #fff; color: #1f1f1f; border: 1px solid #c6c9ce; marg
 a.big.google:hover { background: #f4f5f6; }
 .or { display: flex; align-items: center; gap: 10px; color: var(--muted); margin: 18px 0 10px; font-size: 13px; }
 .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--edge); }
-.check { display: flex; align-items: center; gap: 8px; margin: 12px 2px; color: var(--text); font-size: 14px; }
+.check { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 12px 2px; color: var(--text); font-size: 15px; }
+.check .muted { flex-basis: 100%; padding-left: 28px; }
 .check input { width: 20px; height: 20px; }
 .stack { display: grid; gap: 10px; }
 details.box { margin-top: 14px; }
