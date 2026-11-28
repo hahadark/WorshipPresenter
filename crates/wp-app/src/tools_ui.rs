@@ -100,6 +100,7 @@ fn changed(core: &Shared, f: impl FnOnce(&mut Value)) {
 
 /// 매 프레임: 열린 도구 창을 그린다
 pub fn show(ctx: &egui::Context, core: &Shared) {
+    crate::cloud_ui::show(ctx, core); // 클라우드 연결 창 (웹판)
     // 점검용: --tool remote|trigger|devices|lan
     static ARGS: std::sync::Once = std::sync::Once::new();
     ARGS.call_once(|| {
@@ -201,6 +202,8 @@ fn remote(ui: &mut egui::Ui, core: &Shared) {
     group_head(ui, &wp_core::i18n::tr("OBS 도킹"));
     ui.label(RichText::new(wp_core::i18n::tr("OBS 도킹 (이 PC 안에서 PIN 없이): OBS → 도킹 → 사용자 정의 브라우저 도킹에 넣기")).small().color(crate::theme::pal().muted));
     copy_row(ui, "", &format!("http://127.0.0.1:{port}/dock"));
+    ui.add_space(4.0);
+    crate::cloud_ui::entry_button(ui); // 교회 밖에서도 (웹판)
 }
 
 /// 웹 편집기 (webedit.rs): 켜기 · PIN · 주소. PIN 을 비우면 이 PC 의 브라우저에서만 (PIN 을 묻지 않음)
@@ -261,6 +264,8 @@ fn webedit(ui: &mut egui::Ui, core: &Shared) {
     } else if en {
         ui.label(RichText::new(tr("서버를 켜는 중…")).small());
     }
+    ui.add_space(4.0);
+    crate::cloud_ui::entry_button(ui); // 교회 밖에서도 (웹판)
 }
 
 fn trigger(ui: &mut egui::Ui, core: &Shared) {

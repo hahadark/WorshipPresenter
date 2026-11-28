@@ -82,7 +82,8 @@ async function handle(request, env) {
   }
 
   // 로그인 없이 온 요청에 열쇠가 같이 실려 있으면 (출력 주소의 ?key= · 리모컨 PIN · 편집기 X-PIN) 그 자리에서 로그인시킨다
-  let s = session, fresh = null;
+  // 지금 로그인이 이 길의 권한이 없으면(예: 출력 쿠키가 있는 브라우저에서 리모컨 PIN) 같이 온 열쇠로 다시 로그인할 수 있게 한다
+  let s = session && (!r.cap || can(session.role, r.cap)) ? session : null, fresh = null;
   if (!s) {
     const jar = auth.cookies(request);
     const hinted = url.searchParams.get('c') || jar[auth.CHURCH_COOKIE] || '';
@@ -109,6 +110,7 @@ async function handle(request, env) {
     }
   }
 
+  if (!s && session) s = session; // 열쇠 없이 권한 밖의 길 → 아래에서 '권한 없음'
   if (!s) {
     if (r.kind !== 'page') return fail(401, '로그인이 필요합니다.');
     // 리모컨 · 편집기는 교회만 알면 껍데기를 보여 준다 — 페이지 안의 PIN 칸이 곧 로그인 칸이다 (자료는 PIN 이 맞아야 나온다)
