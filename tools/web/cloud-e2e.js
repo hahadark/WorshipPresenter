@@ -59,8 +59,6 @@ function ws(p, headers) {
   // 1. 로그인 없이
   const anon = await fetch(BASE + '/control/', { redirect: 'manual' });
   check('로그인 없이 /control/ → 로그인 화면', anon.status === 302 && /\/login/.test(anon.headers.get('location') || ''), anon.headers.get('location'));
-  const demo = await fetch(BASE + '/demo/');
-  check('/demo/ 는 열림', demo.status === 200 && /WP_CLOUD/.test(await demo.text()));
   const wasm = await fetch(BASE + '/control/wp-app_bg.wasm', { method: 'HEAD' });
   check('/control/wp-app_bg.wasm 정적 파일', wasm.status === 200, { type: wasm.headers.get('content-type'), len: wasm.headers.get('content-length') });
 
@@ -74,7 +72,8 @@ function ws(p, headers) {
   const sock = new WebSocket(tab.webSocketDebuggerUrl);
   await new Promise((res) => sock.once('open', res));
   let id = 0; const wait = new Map(); const logs = [];
-  sock.on('message', (d) => { const m = JSON.parse(d.toString()); if (m.id && wait.has(m.id)) { const { res, rej } = wait.get(m.id); wait.delete(m.id); m.error ? rej(new Error(m.error.message)) : res(m.result); } else if (m.method === 'Runtime.consoleAPICalled') logs.push(m.params.args.map((a) => a.value ?? a.description).join(' ')); else if (m.method === 'Runtime.exceptionThrown') logs.push('[exception] ' + JSON.stringify(m.params.exceptionDetails).slice(0, 300)); });
+  let dialogs = [];
+  sock.on('message', (d) => { const m = JSON.parse(d.toString()); if (m.method === 'Page.javascriptDialogOpening') { dialogs.push(m.params.type); sock.send(JSON.stringify({ id: 99999 + dialogs.length, method: 'Page.handleJavaScriptDialog', params: { accept: true } })); } if (m.id && wait.has(m.id)) { const { res, rej } = wait.get(m.id); wait.delete(m.id); m.error ? rej(new Error(m.error.message)) : res(m.result); } else if (m.method === 'Runtime.consoleAPICalled') logs.push(m.params.args.map((a) => a.value ?? a.description).join(' ')); else if (m.method === 'Runtime.exceptionThrown') logs.push('[exception] ' + JSON.stringify(m.params.exceptionDetails).slice(0, 300)); });
   const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; wait.set(i, { res, rej }); sock.send(JSON.stringify({ id: i, method, params })); });
   const ev = async (e) => { const x = await send('Runtime.evaluate', { expression: e, awaitPromise: true, returnByValue: true }); return x.result.value; };
   const shot = async (n) => { const x = await send('Page.captureScreenshot', { format: 'png' }); const f = path.join(out, `${which}-${n}.png`); fs.writeFileSync(f, Buffer.from(x.data, 'base64')); return f; };
@@ -163,6 +162,42 @@ function ws(p, headers) {
   check('넘겨받은 뒤 웹 송출이 출력에 닿음 (sync)', wr);
   const room = await api(owner, 'GET', '/api/v1/room');
   check('방 상태: 주체 web · 넘겨받음', room.json && room.json.source === 'web' && room.json.claimed === true, room.json && { source: room.json.source, claimed: room.json.claimed });
+
+  // 5. 교회 관리(/owner): 사람 넣기 · 교회 AI 구획 (웹 조작 화면의 [교회 관리] 가 여는 화면)
+  await send('Page.navigate', { url: BASE + '/owner' });
+  await sleep(800);
+  check('송출 중에 떠나려 하면 한 번 묻는다 (beforeunload)', dialogs.includes('beforeunload'), dialogs);
+  let ownerOk = false;
+  for (let i = 0; i < 40; i++) { await sleep(250); ownerOk = await ev("!!document.querySelector('#pp-add') && !!document.querySelector('#ai-save')").catch(() => false); if (ownerOk) break; }
+  check('주인 화면에 사람 · AI 구획', ownerOk);
+  const mlogin = 'web-e2e-' + Date.now().toString(36);
+  await ev(`document.getElementById('pp-label').value='시험 편집자'; document.getElementById('pp-login').value='${mlogin}'; document.getElementById('pp-role').value='editor'; document.getElementById('pp-add').click(); 1`);
+  let listed = false;
+  for (let i = 0; i < 20; i++) { await sleep(250); listed = await ev(`[...document.querySelectorAll('#pp-list td')].some(td => td.textContent === '${mlogin}') && !!document.querySelector('#pp-made code')`); if (listed) break; }
+  check('사람 넣기 → 목록 · 처음 비밀번호 한 번', listed, mlogin);
+  await shot('owner');
+  // 그 사람(편집자)으로 로그인하면 조작 화면이 열리고 송출 주체로는 붙지 않는다 (편집자 · 송출은 주인만)
+  const pw = await ev("document.querySelector('#pp-made code:nth-of-type(2)')?.textContent || ''");
+  const ml = await fetch(BASE + '/auth/member', { method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.19.8.8' }, body: JSON.stringify({ church: SAMPLE.church, login: mlogin, password: pw }) });
+  check('넣은 사람이 비밀번호로 로그인', ml.status === 200, ml.status);
+  const mc = ml.headers.getSetCookie().map((c) => c.split(';')[0]);
+  const mcontrol = await fetch(BASE + '/control/', { headers: { cookie: mc.join('; ') }, redirect: 'manual' });
+  check('편집자도 /control/ 을 연다', mcontrol.status === 200, mcontrol.status);
+  const mbr = ws('/bridge', { cookie: mc.join('; '), origin: BASE });
+  const mres = await mbr.open.then(() => 'opened', (e) => e.message);
+  check('편집자는 송출 주체(/bridge)로 못 붙음', /거절 40[13]/.test(mres), mres);
+  // 6. 둘러보기 (DEMO_ENABLED=1): 데모 쿠키로 /control/ — 견본 교회 · 송출 주체(방문자마다 따로)
+  const dr0 = await fetch(BASE + '/demo', { redirect: 'manual', headers: { 'cf-connecting-ip': '198.19.7.' + (1 + Math.floor(Math.random() * 200)) } });
+  const dcook = dr0.headers.getSetCookie().map((c) => c.split(';')[0]);
+  if (dr0.status === 302 && dcook.length) {
+    await send('Network.clearBrowserCookies');
+    for (const c of dcook) { const [name, value] = c.split('='); await send('Network.setCookie', { name, value, domain: u.hostname, path: '/', httpOnly: true }); }
+    await send('Page.navigate', { url: BASE + '/control/?debug=1' });
+    let dd = null;
+    for (let i = 0; i < 80; i++) { await sleep(250); dd = await dbg(); if (dd && dd.cue && /Active/.test(dd.cloud)) break; }
+    check('둘러보기: /control/ 에 견본 큐시트 · 송출 주체', dd && dd.cue && /Active/.test(dd.cloud), dd && { cue: dd.cue && dd.cue.id, cloud: dd.cloud, versions: dd.versions });
+    await shot('demo-control');
+  } else check('둘러보기 들어가기', false, dr0.status);
 
   fs.writeFileSync(path.join(out, which + '-result.json'), JSON.stringify({ results, logs: logs.slice(-40) }, null, 1));
   console.error(logs.filter((l) => /error|오류|panic|exception/i.test(l)).slice(-10).join('\n'));

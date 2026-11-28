@@ -50,6 +50,9 @@ for (const f of readdirSync(join(cloud, 'client'))) {
     if (e.code !== 'ENOENT') throw e;
     console.log('dist-web/ 이 없어 웹 조작 화면(/control)은 넣지 않음 — bash tools/web/build.sh');
   }
+  // 주인 화면에 덧붙인 구획 (사람 · 교회 AI) → /cloud/control/*.js
+  mkdirSync(join(out, 'cloud', 'control'), { recursive: true });
+  for (const f of readdirSync(join(cloud, 'client', 'control'))) if (f.endsWith('.js')) copyFileSync(join(cloud, 'client', 'control', f), join(out, 'cloud', 'control', f));
 }
 // 4단계 B 미디어 부품 (client/media/*.js · *.mjs) + pdf.js 고정판 (package.json 의 pdfjs-dist, 예배 중 CDN 을 부르지 않게)
 mkdirSync(join(out, 'cloud', 'media'), { recursive: true });
