@@ -28,7 +28,7 @@ async function digest(text) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function bearer(request, env, url, r) {
+export async function bearer(request, env, url, r, next = handle) { // next: 2C 파일 길도 같은 열쇠 확인을 쓴다
   const header = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   const key = auth.splitKey(header);
   if (!key) return fail(401, '설치판 연결 열쇠가 필요합니다.');
@@ -47,5 +47,5 @@ export async function bearer(request, env, url, r) {
   }
   const s = { church: hit.church, role: 'bridge', cred: hit.cred, exp: 0 };
   if (r.cap && !can('bridge', r.cap)) return fail(403, '이 기기에는 그 권한이 없습니다.');
-  return handle(request, env, url, s, r);
+  return next(request, env, url, s, r);
 }

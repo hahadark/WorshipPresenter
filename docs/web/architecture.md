@@ -140,6 +140,7 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 - 길(예약): `GET/PUT/DELETE /api/v1/documents/{kind}/{id}`, `GET /api/v1/documents?kind=&cursor=`, `GET /api/v1/sync?after=seq` · `POST /api/v1/sync`(mutationId 로 두 번 안 들어가게), `GET /api/v1/bible/versions` · `/api/v1/bible/passage?version=&ref=`(로그인 뒤 · 교회 것만), `POST /api/v1/assets` · `GET /api/v1/assets/{id}`(Range).
 - 성경 본문은 교회가 허락을 가진 번역본만. D1 무료 DB 하나는 500 MB 까지 — 번역본을 다 넣지 않는다.
 - R2 열쇠: `churches/{교회}/assets/{sha256}/{안전한 파일 이름}`. 버킷은 공개하지 않고 Worker 가 로그인을 본 뒤 내보낸다. PC 경로 · 사용자 이름은 열쇠에 넣지 않는다. 출력 자료 안의 `/lib/file?p=C:\…` 주소는 2단계에서 `/api/v1/assets/{id}` 로 바꿔 보낸다(설치판 쪽에서 주소를 바꾸는 한 겹).
+- **2C 구현함** ([`assets-api.md`](assets-api.md)): 비공개 저장통 `worshippresenter-web-assets`(`env.FILES`) · 한 번에 올리기(90 MiB, R2 가 sha256 확인) · 나눠 올리기(32 MiB 조각) · Range 받기(출력 · PIN 기기도 id 로) · 지우기는 표시만 + 주인의 정리 명령 · `fonts.css`(이름 · 굵기를 따로 적음, 로그인한 페이지 머리에 저절로) · 무료 범위 80% 에서 올리기 507 `quota`. 설치판 중계와 고르는 규칙은 그 문서 5절.
 
 ## 7. 6단계(오프라인)가 이 계약을 쓰는 법
 
@@ -192,6 +193,8 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 | 끝에서 끝 시험 (빈 포트에 wrangler dev 를 띄워) | `npm run test:e2e` |
 | 설치판 + 로컬 클라우드 화면 그림 | `node scripts/desktop-e2e.mjs --exe ..\target\debug\wp-app.exe` (복사본 자료 · 다른 포트) |
 | 배포 점검(올리지 않음) | `npm run check` |
+| 지운 파일 정리 · R2 사용량 (2C) | `node scripts/assets-purge.mjs [--usage] [--days 30 --yes]` |
+| 실제 R2 확인 (Worker 는 로컬, 배포 없음, 견본 34 MB 를 올렸다 지움) | `node scripts/r2-remote-check.mjs` |
 | 배포 | `node scripts/deploy.mjs` (비밀값 · D1 id 가 있을 때만, 아래) |
 
 - GitHub Actions `.github/workflows/web-cloud.yml`: `web` · `web-*` 가지에 푸시하면 `npm ci` · 단위 시험 · 끝에서 끝 시험 · 배포 점검. 배포는 손으로(`workflow_dispatch`) 돌리고, 저장소 비밀값 `CLOUDFLARE_API_TOKEN` · `CLOUDFLARE_ACCOUNT_ID` · `WP_AUTH_SECRET` · `WP_D1_DATABASE_ID` 가 다 있을 때만 올린다(없으면 건너뜀). 비밀값을 출력하지 않는다.

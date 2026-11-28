@@ -6,6 +6,7 @@ import { PROTOCOL, SESSION_TTL, can, fail, homeOf, json, route, validChurch } fr
 import { page } from './pages.mjs';
 import * as data from './data/index.mjs';
 import * as identity from './identity/index.mjs';
+import * as assets from './assets/index.mjs';
 
 export { ChurchRoom } from './room.mjs';
 
@@ -65,6 +66,7 @@ async function handle(request, env) {
   // 설치판(2B)의 자료 동기화: 쿠키 대신 설치판 연결 열쇠 (data/index.mjs bearer)
   const dr = /^Bearer\s/i.test(request.headers.get('authorization') || '') ? route(method, path, url.searchParams) : null;
   if (dr?.kind === 'data') return data.bearer(request, env, url, dr);
+  if (dr?.kind === 'assets') return data.bearer(request, env, url, dr, assets.handle); // 2C 파일 (같은 열쇠 확인)
 
   const session = await auth.sessionOf(request, env);
   if (path === '/' && (method === 'GET' || method === 'HEAD')) {
@@ -145,6 +147,7 @@ async function handle(request, env) {
   else if (r.kind === 'api') res = await api(request, env, url, s);
   else if (r.kind === 'data') res = await data.handle(request, env, url, s, r);
   else if (r.kind === 'identity') res = await identity.handle(request, env, url, s, r);
+  else if (r.kind === 'assets') res = await assets.handle(request, env, url, s, r);
   else res = await toRoom(env, request, s);
   return withCookies(res, fresh?.headers);
 }

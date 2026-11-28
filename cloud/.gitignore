@@ -7,3 +7,4 @@ public/
 .secrets/
 artifacts/
 wrangler.preview.jsonc
+.wrangler-r2remote.jsonc

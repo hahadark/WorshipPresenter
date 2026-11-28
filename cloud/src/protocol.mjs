@@ -1,6 +1,7 @@
 // 워십프리젠터 웹판 계약 v1 — 길 · 역할 · 실시간 메시지 (docs/web/architecture.md 와 같이 고친다)
 // 이 파일은 Worker · 중계실(Durable Object) · 시험이 함께 쓴다. Cloudflare 전용 API 를 쓰지 않는다.
 import { dataRoute } from './data/routes.mjs'; // 2단계 A 길 (docs/web/data-api.md)
+import { assetRoute } from './assets/routes.mjs'; // 2단계 C 길 (docs/web/assets-api.md)
 
 export const PROTOCOL = 1;
 
@@ -78,7 +79,7 @@ export function route(method, path, query) {
   if (get && path === '/api/v1/room') return { kind: 'room', cap: 'manage' };
   if (path === '/api/v1/credentials' && (get || post)) return { kind: 'api', cap: 'manage' };
   if (method === 'DELETE' && /^\/api\/v1\/credentials\/[A-Za-z0-9]{6,24}$/.test(path)) return { kind: 'api', cap: 'manage' };
-  return dataRoute(method, path);
+  return dataRoute(method, path) || assetRoute(method, path);
 }
 
 /** 출력 화면이 /api/command 로 알릴 수 있는 것 (설치판 내부망 출력과 같은 경계). 그 밖의 명령은 클라우드에서 받지 않는다. */

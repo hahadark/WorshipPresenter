@@ -21,6 +21,7 @@ npm run seed        # 로컬 D1 에 견본 교회 'sample' + 열쇠 (.secrets/sa
 npm run dev         # http://127.0.0.1:8787  → /login 에 sample + .secrets 의 owner 열쇠
 npm test            # 단위
 npm run test:e2e    # 빈 포트에 wrangler dev 를 띄워 끝에서 끝
+node scripts/assets-purge.mjs --usage   # 2C: R2 사용량 · 지운 파일 정리 (docs/web/assets-api.md)
 ```
 
 실제 자료(큐시트 · 성경 · 미디어)를 개발 · 미리보기 클라우드에 올리지 않는다. 비밀값(`.dev.vars` · `.secrets/`)은 커밋하지 않는다.
