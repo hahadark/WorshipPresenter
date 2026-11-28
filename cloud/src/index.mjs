@@ -7,6 +7,8 @@ import { page } from './pages.mjs';
 import * as data from './data/index.mjs';
 import * as identity from './identity/index.mjs';
 import * as ai from './ai/index.mjs'; // 5단계 AI (docs/web/ai.md)
+import * as media from './media/index.mjs'; // 4단계 B 미디어 (docs/web/media.md)
+import { isPhonePath } from './media/routes.mjs';
 
 export { ChurchRoom } from './room.mjs';
 
@@ -62,6 +64,7 @@ async function handle(request, env) {
   }
   if (path === '/api/v1/admin/churches' && method === 'POST') return adminCreateChurch(request, env);
   if (path.startsWith('/auth/')) { const x = await identity.publicRoute(request, env, url); if (x) return x; }
+  if (isPhonePath(path)) return media.publicRoute(request, env, url, toRoom); // 휴대폰 카메라: 로그인 대신 서명 링크
 
   // 설치판(2B)의 자료 동기화: 쿠키 대신 설치판 연결 열쇠 (data/index.mjs bearer)
   const dr = /^Bearer\s/i.test(request.headers.get('authorization') || '') ? route(method, path, url.searchParams) : null;
@@ -147,6 +150,7 @@ async function handle(request, env) {
   else if (r.kind === 'data') res = await data.handle(request, env, url, s, r);
   else if (r.kind === 'identity') res = await identity.handle(request, env, url, s, r);
   else if (r.kind === 'ai') res = await ai.handle(request, env, url, s, r);
+  else if (r.kind === 'media-api') res = await media.handle(request, env, url, s, r); // ('media' 는 1단계 설치판 파일 중계)
   else res = await toRoom(env, request, s);
   return withCookies(res, fresh?.headers);
 }

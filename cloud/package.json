@@ -12,6 +12,7 @@
     "deploy": "npm run assets && wrangler deploy"
   },
   "devDependencies": {
+    "pdfjs-dist": "6.5.438",
     "wrangler": "4.169.0",
     "ws": "8.23.1"
   }
