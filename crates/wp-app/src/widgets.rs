@@ -7,7 +7,7 @@
 //! if ui.add(Btn::new("이전").icon("skip-back").kbd("F5").size(Size::Big)).clicked() { … }
 //! if ui.add(Btn::new("송출").icon("play").kbd("F9").kind(Kind::Send).size(Size::Big)).clicked() { … }
 //! ui.add(Btn::new("모두 지우기").kind(Kind::Danger).size(Size::Tall));      // 빨간 테두리
-//! ui.add(Btn::new("미리보기 끔 · 바로 송출").kind(Kind::Warn));             // 노랑
+//! ui.add(Btn::new("예배당 화면 꺼짐").kind(Kind::Warn));                  // 노랑
 //! ui.add(Btn::new("슬라이드 편집").kind(Kind::Primary));                    // 파랑(accent)
 //! ui.add(Btn::icon_only("settings").tooltip("설정"));                       // 34×34 아이콘 단추
 //! ui.add(Btn::new("그리기").icon("brush").selected(on));                    // button.on (accent 테두리)

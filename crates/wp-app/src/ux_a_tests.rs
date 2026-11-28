@@ -280,8 +280,10 @@ fn studio_split_button_picks_mode_and_returns() {
     assert!(preview_mode(&h), "이미 고른 쪽을 눌러도 그대로 (토글이 아님)");
     h.click("studio-direct", top);
     assert!(!preview_mode(&h), "'바로 송출'을 고르면 미리보기 끔");
+    assert!(h.toast().0.is_empty(), "바로 송출로 바꿔도 알림을 띄우지 않음");
     h.click("studio-direct", top);
     assert!(!preview_mode(&h));
+    assert!(h.toast().0.is_empty(), "이미 바로 송출인 쪽을 눌러도 알림 없음");
     h.click("studio-preview", top);
     assert!(preview_mode(&h), "'미리보기'를 고르면 돌아감 (바로 송출 띠는 없앰)");
 }
