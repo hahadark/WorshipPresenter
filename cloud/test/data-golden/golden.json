@@ -1,0 +1,2477 @@
+[
+  {
+    "input": "요3:16",
+    "looksLike": true,
+    "normalized": "요3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요 3:16",
+    "looksLike": true,
+    "normalized": "요 3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요 3 16",
+    "looksLike": true,
+    "normalized": "요 3 16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한복음 3장 16절",
+    "looksLike": true,
+    "normalized": "요한복음 3장 16절",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한복음3장16절",
+    "looksLike": true,
+    "normalized": "요한복음3장16절",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한복음 3:16-18",
+    "looksLike": true,
+    "normalized": "요한복음 3:16-18",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 18,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요3:16-18, 20",
+    "looksLike": true,
+    "normalized": "요3:16-18, 20",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 18,
+          "sc": 3,
+          "sv": 16
+        },
+        {
+          "ec": 3,
+          "ev": 20,
+          "sc": 3,
+          "sv": 20
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요3:16,18,20-22",
+    "looksLike": true,
+    "normalized": "요3:16,18,20-22",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        },
+        {
+          "ec": 3,
+          "ev": 18,
+          "sc": 3,
+          "sv": 18
+        },
+        {
+          "ec": 3,
+          "ev": 22,
+          "sc": 3,
+          "sv": 20
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "행5:27-32",
+    "looksLike": true,
+    "normalized": "행5:27-32",
+    "parsed": {
+      "book": 44,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 32,
+          "sc": 5,
+          "sv": 27
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "행 5 27-32",
+    "looksLike": true,
+    "normalized": "행 5 27-32",
+    "parsed": {
+      "book": 44,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 32,
+          "sc": 5,
+          "sv": 27
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "롬 8",
+    "looksLike": true,
+    "normalized": "롬 8",
+    "parsed": {
+      "book": 45,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 8,
+          "ev": null,
+          "sc": 8,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "롬8",
+    "looksLike": true,
+    "normalized": "롬8",
+    "parsed": {
+      "book": 45,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 8,
+          "ev": null,
+          "sc": 8,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "롬8:1,28",
+    "looksLike": true,
+    "normalized": "롬8:1,28",
+    "parsed": {
+      "book": 45,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 8,
+          "ev": 1,
+          "sc": 8,
+          "sv": 1
+        },
+        {
+          "ec": 8,
+          "ev": 28,
+          "sc": 8,
+          "sv": 28
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "롬 8:1, 28",
+    "looksLike": true,
+    "normalized": "롬 8:1, 28",
+    "parsed": {
+      "book": 45,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 8,
+          "ev": 1,
+          "sc": 8,
+          "sv": 1
+        },
+        {
+          "ec": 8,
+          "ev": 28,
+          "sc": 8,
+          "sv": 28
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "롬 8 28",
+    "looksLike": true,
+    "normalized": "롬 8 28",
+    "parsed": {
+      "book": 45,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 8,
+          "ev": 28,
+          "sc": 8,
+          "sv": 28
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "롬8:28-39",
+    "looksLike": true,
+    "normalized": "롬8:28-39",
+    "parsed": {
+      "book": 45,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 8,
+          "ev": 39,
+          "sc": 8,
+          "sv": 28
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창1:1-2:3",
+    "looksLike": true,
+    "normalized": "창1:1-2:3",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 3,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창 1 1-2 3",
+    "looksLike": true,
+    "normalized": "창 1 1-2 3",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 3,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창 1 1 2 3",
+    "looksLike": true,
+    "normalized": "창 1 1 2 3",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 3,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창1-3",
+    "looksLike": true,
+    "normalized": "창1-3",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": null,
+          "sc": 1,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창 1-3",
+    "looksLike": true,
+    "normalized": "창 1-3",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": null,
+          "sc": 1,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창1:1~5",
+    "looksLike": true,
+    "normalized": "창1:1-5",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 5,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창1:1～5",
+    "looksLike": true,
+    "normalized": "창1:1-5",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 5,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창1:1–5",
+    "looksLike": true,
+    "normalized": "창1:1-5",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 5,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창1.1",
+    "looksLike": true,
+    "normalized": "창1.1",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 1,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창 1.1-5",
+    "looksLike": true,
+    "normalized": "창 1.1-5",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 5,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "시23",
+    "looksLike": true,
+    "normalized": "시23",
+    "parsed": {
+      "book": 19,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 23,
+          "ev": null,
+          "sc": 23,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "시 23:1-6",
+    "looksLike": true,
+    "normalized": "시 23:1-6",
+    "parsed": {
+      "book": 19,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 23,
+          "ev": 6,
+          "sc": 23,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "시편 119:105",
+    "looksLike": true,
+    "normalized": "시편 119:105",
+    "parsed": {
+      "book": 19,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 119,
+          "ev": 105,
+          "sc": 119,
+          "sv": 105
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "시 119편 105절",
+    "looksLike": true,
+    "normalized": "시 119편 105절",
+    "parsed": {
+      "ambiguous": false,
+      "book": 19,
+      "candidates": [],
+      "error": "'119편 105절' 장절 형식을 인식할 수 없습니다. (예: 요3:16, 행5:27-32)",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "시23:1;24:1",
+    "looksLike": true,
+    "normalized": "시23:1;24:1",
+    "parsed": {
+      "book": 19,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 23,
+          "ev": 1,
+          "sc": 23,
+          "sv": 1
+        },
+        {
+          "ec": 24,
+          "ev": 1,
+          "sc": 24,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "마5:3-12, 6:9-13",
+    "looksLike": true,
+    "normalized": "마5:3-12, 6:9-13",
+    "parsed": {
+      "book": 40,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 12,
+          "sc": 5,
+          "sv": 3
+        },
+        {
+          "ec": 6,
+          "ev": 13,
+          "sc": 6,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "마 5:3-12,6:9-13",
+    "looksLike": true,
+    "normalized": "마 5:3-12,6:9-13",
+    "parsed": {
+      "book": 40,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 12,
+          "sc": 5,
+          "sv": 3
+        },
+        {
+          "ec": 6,
+          "ev": 13,
+          "sc": 6,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "마5장3절-12절",
+    "looksLike": true,
+    "normalized": "마5장3절-12절",
+    "parsed": {
+      "book": 40,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 12,
+          "sc": 5,
+          "sv": 3
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "막1:1",
+    "looksLike": true,
+    "normalized": "막1:1",
+    "parsed": {
+      "book": 41,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 1,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "눅2:1-20",
+    "looksLike": true,
+    "normalized": "눅2:1-20",
+    "parsed": {
+      "book": 42,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 20,
+          "sc": 2,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한1서 1:9",
+    "looksLike": true,
+    "normalized": "요한1서 1:9",
+    "parsed": {
+      "book": 62,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 9,
+          "sc": 1,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한 1서 1:9",
+    "looksLike": true,
+    "normalized": "요한 1서 1:9",
+    "parsed": {
+      "book": 62,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 9,
+          "sc": 1,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요일1:9",
+    "looksLike": true,
+    "normalized": "요일1:9",
+    "parsed": {
+      "book": 62,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 9,
+          "sc": 1,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한일서 1:9",
+    "looksLike": true,
+    "normalized": "요한일서 1:9",
+    "parsed": {
+      "book": 62,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 9,
+          "sc": 1,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한2서 1",
+    "looksLike": true,
+    "normalized": "요한2서 1",
+    "parsed": {
+      "book": 63,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 1,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한3서 1:2",
+    "looksLike": true,
+    "normalized": "요한3서 1:2",
+    "parsed": {
+      "book": 64,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 2,
+          "sc": 1,
+          "sv": 2
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요삼 2",
+    "looksLike": true,
+    "normalized": "요삼 2",
+    "parsed": {
+      "book": 64,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 2,
+          "sc": 1,
+          "sv": 2
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "유 3",
+    "looksLike": true,
+    "normalized": "유 3",
+    "parsed": {
+      "book": 65,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 3,
+          "sc": 1,
+          "sv": 3
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "유다서 1:3",
+    "looksLike": true,
+    "normalized": "유다서 1:3",
+    "parsed": {
+      "book": 65,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 3,
+          "sc": 1,
+          "sv": 3
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "몬 4-7",
+    "looksLike": true,
+    "normalized": "몬 4-7",
+    "parsed": {
+      "book": 57,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 7,
+          "sc": 1,
+          "sv": 4
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "빌레몬서 1",
+    "looksLike": true,
+    "normalized": "빌레몬서 1",
+    "parsed": {
+      "book": 57,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 1,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "옵 1",
+    "looksLike": true,
+    "normalized": "옵 1",
+    "parsed": {
+      "book": 31,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 1,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "1 John 1:9",
+    "looksLike": true,
+    "normalized": "1 John 1:9",
+    "parsed": {
+      "book": 62,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 9,
+          "sc": 1,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "1John 1:9",
+    "looksLike": true,
+    "normalized": "1John 1:9",
+    "parsed": {
+      "book": 62,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 9,
+          "sc": 1,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "John 3:16",
+    "looksLike": true,
+    "normalized": "John 3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "john3:16",
+    "looksLike": true,
+    "normalized": "john3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "Jn 3:16",
+    "looksLike": true,
+    "normalized": "Jn 3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "Gen 1:1",
+    "looksLike": true,
+    "normalized": "Gen 1:1",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 1,
+          "sc": 1,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "Ps 23",
+    "looksLike": true,
+    "normalized": "Ps 23",
+    "parsed": {
+      "book": 19,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 23,
+          "ev": null,
+          "sc": 23,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "Rom 8:28",
+    "looksLike": true,
+    "normalized": "Rom 8:28",
+    "parsed": {
+      "book": 45,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 8,
+          "ev": 28,
+          "sc": 8,
+          "sv": 28
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "Rev 22:21",
+    "looksLike": true,
+    "normalized": "Rev 22:21",
+    "parsed": {
+      "book": 66,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 22,
+          "ev": 21,
+          "sc": 22,
+          "sv": 21
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "계22:21",
+    "looksLike": true,
+    "normalized": "계22:21",
+    "parsed": {
+      "book": 66,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 22,
+          "ev": 21,
+          "sc": 22,
+          "sv": 21
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "삼상 17:45",
+    "looksLike": true,
+    "normalized": "삼상 17:45",
+    "parsed": {
+      "book": 9,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 17,
+          "ev": 45,
+          "sc": 17,
+          "sv": 45
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "삼하7",
+    "looksLike": true,
+    "normalized": "삼하7",
+    "parsed": {
+      "book": 10,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 7,
+          "ev": null,
+          "sc": 7,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "왕상18:21",
+    "looksLike": true,
+    "normalized": "왕상18:21",
+    "parsed": {
+      "book": 11,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 18,
+          "ev": 21,
+          "sc": 18,
+          "sv": 21
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "대하7:14",
+    "looksLike": true,
+    "normalized": "대하7:14",
+    "parsed": {
+      "book": 14,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 7,
+          "ev": 14,
+          "sc": 7,
+          "sv": 14
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "고전13",
+    "looksLike": true,
+    "normalized": "고전13",
+    "parsed": {
+      "book": 46,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 13,
+          "ev": null,
+          "sc": 13,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "고후5:17",
+    "looksLike": true,
+    "normalized": "고후5:17",
+    "parsed": {
+      "book": 47,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 17,
+          "sc": 5,
+          "sv": 17
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "살전5:16-18",
+    "looksLike": true,
+    "normalized": "살전5:16-18",
+    "parsed": {
+      "book": 52,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 18,
+          "sc": 5,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "딤후3:16",
+    "looksLike": true,
+    "normalized": "딤후3:16",
+    "parsed": {
+      "book": 55,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "히11:1",
+    "looksLike": true,
+    "normalized": "히11:1",
+    "parsed": {
+      "book": 58,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 11,
+          "ev": 1,
+          "sc": 11,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "약1:2",
+    "looksLike": true,
+    "normalized": "약1:2",
+    "parsed": {
+      "book": 59,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 2,
+          "sc": 1,
+          "sv": 2
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "벧전2:9",
+    "looksLike": true,
+    "normalized": "벧전2:9",
+    "parsed": {
+      "book": 60,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 9,
+          "sc": 2,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요",
+    "looksLike": false,
+    "normalized": "요",
+    "parsed": {
+      "ambiguous": false,
+      "book": 43,
+      "candidates": [],
+      "error": "요한복음: 장을 입력하세요. (예: 요1:1)",
+      "incomplete": true,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": 43,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한",
+    "looksLike": false,
+    "normalized": "요한",
+    "parsed": {
+      "ambiguous": true,
+      "book": null,
+      "candidates": [
+        43,
+        62,
+        63,
+        64,
+        66
+      ],
+      "error": "'요한'에 해당하는 책이 여러 권입니다. 후보에서 선택하세요.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": [
+        43,
+        62,
+        63,
+        64,
+        66
+      ]
+    }
+  },
+  {
+    "input": "사",
+    "looksLike": false,
+    "normalized": "사",
+    "parsed": {
+      "ambiguous": false,
+      "book": 23,
+      "candidates": [],
+      "error": "이사야: 장을 입력하세요. (예: 사1:1)",
+      "incomplete": true,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": 23,
+      "candidates": []
+    }
+  },
+  {
+    "input": "사랑",
+    "looksLike": false,
+    "normalized": "사랑",
+    "parsed": {
+      "ambiguous": false,
+      "book": null,
+      "candidates": [],
+      "error": "'사랑'은(는) 알 수 없는 성경 책 이름입니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "하나님 사랑",
+    "looksLike": false,
+    "normalized": "하나님 사랑",
+    "parsed": {
+      "ambiguous": false,
+      "book": null,
+      "candidates": [],
+      "error": "'하나님 사랑'은(는) 알 수 없는 성경 책 이름입니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요한복음",
+    "looksLike": false,
+    "normalized": "요한복음",
+    "parsed": {
+      "ambiguous": false,
+      "book": 43,
+      "candidates": [],
+      "error": "요한복음: 장을 입력하세요. (예: 요1:1)",
+      "incomplete": true,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": 43,
+      "candidates": []
+    }
+  },
+  {
+    "input": "롬",
+    "looksLike": false,
+    "normalized": "롬",
+    "parsed": {
+      "ambiguous": false,
+      "book": 45,
+      "candidates": [],
+      "error": "로마서: 장을 입력하세요. (예: 롬1:1)",
+      "incomplete": true,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": 45,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창0:1",
+    "looksLike": true,
+    "normalized": "창0:1",
+    "parsed": {
+      "ambiguous": false,
+      "book": 1,
+      "candidates": [],
+      "error": "장과 절 번호는 1 이상이어야 합니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창1:0",
+    "looksLike": true,
+    "normalized": "창1:0",
+    "parsed": {
+      "ambiguous": false,
+      "book": 1,
+      "candidates": [],
+      "error": "장과 절 번호는 1 이상이어야 합니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창3:5-2",
+    "looksLike": true,
+    "normalized": "창3:5-2",
+    "parsed": {
+      "ambiguous": false,
+      "book": 1,
+      "candidates": [],
+      "error": "구절 범위의 끝이 시작보다 앞에 있습니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창3-2",
+    "looksLike": true,
+    "normalized": "창3-2",
+    "parsed": {
+      "ambiguous": false,
+      "book": 1,
+      "candidates": [],
+      "error": "구절 범위의 끝이 시작보다 앞에 있습니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창 1 :",
+    "looksLike": true,
+    "normalized": "창 1 :",
+    "parsed": {
+      "ambiguous": false,
+      "book": 1,
+      "candidates": [],
+      "error": "'1 :' 장절 형식을 인식할 수 없습니다. (예: 요3:16, 행5:27-32)",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요3:",
+    "looksLike": true,
+    "normalized": "요3:",
+    "parsed": {
+      "ambiguous": false,
+      "book": 43,
+      "candidates": [],
+      "error": "'3:' 장절 형식을 인식할 수 없습니다. (예: 요3:16, 행5:27-32)",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요3:16:5",
+    "looksLike": true,
+    "normalized": "요3:16:5",
+    "parsed": {
+      "ambiguous": false,
+      "book": 43,
+      "candidates": [],
+      "error": "'3:16:5' 장절 형식을 인식할 수 없습니다. (예: 요3:16, 행5:27-32)",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "",
+    "looksLike": false,
+    "normalized": "",
+    "parsed": {
+      "ambiguous": false,
+      "book": null,
+      "candidates": [],
+      "error": "검색어를 입력하세요.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "   ",
+    "looksLike": false,
+    "normalized": "",
+    "parsed": {
+      "ambiguous": false,
+      "book": null,
+      "candidates": [],
+      "error": "검색어를 입력하세요.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "３:16",
+    "looksLike": false,
+    "normalized": "３:16",
+    "parsed": {
+      "ambiguous": false,
+      "book": null,
+      "candidates": [],
+      "error": "성경 책 이름을 인식할 수 없습니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요３:16",
+    "looksLike": true,
+    "normalized": "요３:16",
+    "parsed": {
+      "ambiguous": false,
+      "book": 43,
+      "candidates": [],
+      "error": "장과 절 번호는 1 이상이어야 합니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요3：16",
+    "looksLike": true,
+    "normalized": "요3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요 3:16",
+    "looksLike": true,
+    "normalized": "요 3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요　3:16",
+    "looksLike": true,
+    "normalized": "요 3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "  요3:16  ",
+    "looksLike": true,
+    "normalized": "요3:16",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 16,
+          "sc": 3,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "에베소서 2:8-9",
+    "looksLike": true,
+    "normalized": "에베소서 2:8-9",
+    "parsed": {
+      "book": 49,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 9,
+          "sc": 2,
+          "sv": 8
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "엡2:8~9",
+    "looksLike": true,
+    "normalized": "엡2:8-9",
+    "parsed": {
+      "book": 49,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 9,
+          "sc": 2,
+          "sv": 8
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "갈 5 22 23",
+    "looksLike": true,
+    "normalized": "갈 5 22 23",
+    "parsed": {
+      "book": 48,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 23,
+          "sc": 5,
+          "sv": 22
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "레위기 19장 18절",
+    "looksLike": true,
+    "normalized": "레위기 19장 18절",
+    "parsed": {
+      "book": 3,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 19,
+          "ev": 18,
+          "sc": 19,
+          "sv": 18
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "신6:4-9",
+    "looksLike": true,
+    "normalized": "신6:4-9",
+    "parsed": {
+      "book": 5,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 6,
+          "ev": 9,
+          "sc": 6,
+          "sv": 4
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "수1:9",
+    "looksLike": true,
+    "normalized": "수1:9",
+    "parsed": {
+      "book": 6,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 9,
+          "sc": 1,
+          "sv": 9
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "룻1:16",
+    "looksLike": true,
+    "normalized": "룻1:16",
+    "parsed": {
+      "book": 8,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 16,
+          "sc": 1,
+          "sv": 16
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "에4:14",
+    "looksLike": true,
+    "normalized": "에4:14",
+    "parsed": {
+      "book": 17,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 4,
+          "ev": 14,
+          "sc": 4,
+          "sv": 14
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "욥1:21",
+    "looksLike": true,
+    "normalized": "욥1:21",
+    "parsed": {
+      "book": 18,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": 21,
+          "sc": 1,
+          "sv": 21
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "잠3:5-6",
+    "looksLike": true,
+    "normalized": "잠3:5-6",
+    "parsed": {
+      "book": 20,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 6,
+          "sc": 3,
+          "sv": 5
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "전3:1",
+    "looksLike": true,
+    "normalized": "전3:1",
+    "parsed": {
+      "book": 21,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 1,
+          "sc": 3,
+          "sv": 1
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "아2:10",
+    "looksLike": true,
+    "normalized": "아2:10",
+    "parsed": {
+      "book": 22,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 10,
+          "sc": 2,
+          "sv": 10
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "애3:22-23",
+    "looksLike": true,
+    "normalized": "애3:22-23",
+    "parsed": {
+      "book": 25,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 23,
+          "sc": 3,
+          "sv": 22
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "겔37",
+    "looksLike": true,
+    "normalized": "겔37",
+    "parsed": {
+      "book": 26,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 37,
+          "ev": null,
+          "sc": 37,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "단3:17-18",
+    "looksLike": true,
+    "normalized": "단3:17-18",
+    "parsed": {
+      "book": 27,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 18,
+          "sc": 3,
+          "sv": 17
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "호6:3",
+    "looksLike": true,
+    "normalized": "호6:3",
+    "parsed": {
+      "book": 28,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 6,
+          "ev": 3,
+          "sc": 6,
+          "sv": 3
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "욜2:28",
+    "looksLike": true,
+    "normalized": "욜2:28",
+    "parsed": {
+      "book": 29,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 2,
+          "ev": 28,
+          "sc": 2,
+          "sv": 28
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "암5:24",
+    "looksLike": true,
+    "normalized": "암5:24",
+    "parsed": {
+      "book": 30,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 5,
+          "ev": 24,
+          "sc": 5,
+          "sv": 24
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "미6:8",
+    "looksLike": true,
+    "normalized": "미6:8",
+    "parsed": {
+      "book": 33,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 6,
+          "ev": 8,
+          "sc": 6,
+          "sv": 8
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "합3:17-18",
+    "looksLike": true,
+    "normalized": "합3:17-18",
+    "parsed": {
+      "book": 35,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 18,
+          "sc": 3,
+          "sv": 17
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "슥4:6",
+    "looksLike": true,
+    "normalized": "슥4:6",
+    "parsed": {
+      "book": 38,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 4,
+          "ev": 6,
+          "sc": 4,
+          "sv": 6
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "말3:10",
+    "looksLike": true,
+    "normalized": "말3:10",
+    "parsed": {
+      "book": 39,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": 10,
+          "sc": 3,
+          "sv": 10
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창세기 1",
+    "looksLike": true,
+    "normalized": "창세기 1",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 1,
+          "ev": null,
+          "sc": 1,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "창 99",
+    "looksLike": true,
+    "normalized": "창 99",
+    "parsed": {
+      "book": 1,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 99,
+          "ev": null,
+          "sc": 99,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "요3:99999999999999999999",
+    "looksLike": true,
+    "normalized": "요3:99999999999999999999",
+    "parsed": {
+      "book": 43,
+      "ok": true,
+      "ranges": [
+        {
+          "ec": 3,
+          "ev": null,
+          "sc": 3,
+          "sv": null
+        }
+      ]
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "x 3:16",
+    "looksLike": false,
+    "normalized": "x 3:16",
+    "parsed": {
+      "ambiguous": false,
+      "book": null,
+      "candidates": [],
+      "error": "'x'은(는) 알 수 없는 성경 책 이름입니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  },
+  {
+    "input": "ㅇ 3:16",
+    "looksLike": false,
+    "normalized": "ㅇ 3:16",
+    "parsed": {
+      "ambiguous": false,
+      "book": null,
+      "candidates": [],
+      "error": "'ㅇ'은(는) 알 수 없는 성경 책 이름입니다.",
+      "incomplete": false,
+      "ok": false,
+      "rest": ""
+    },
+    "resolveBook": {
+      "book": null,
+      "candidates": []
+    }
+  }
+]

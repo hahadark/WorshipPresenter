@@ -11,8 +11,9 @@
 | `src/pages.mjs` | `web/` 의 HTML 을 그대로 가져와 어댑터만 끼움 |
 | `client/adapter.js` | 클라우드에서 연 페이지의 SSE → WebSocket 바꾸기 |
 | `client/{login,owner,denied}.*` | 웹판이 새로 만든 화면 |
-| `migrations/` | D1 |
-| `scripts/` | `assets`(web/ → public/) · `seed`(견본 교회) · `e2e` · `deploy` · `inventory`(대조표 빠짐 검사) · `desktop-e2e`(설치판과 함께) |
+| `src/data/` · `src/identity/` | 2단계 A: 문서 · 동기화 · 성경 API · 장절 파서(설치판과 대조) · 사람 계정 ([`docs/web/data-api.md`](../docs/web/data-api.md)) |
+| `migrations/` | D1 (`0002_data.sql` = 2단계 A) |
+| `scripts/` | `assets`(web/ → public/) · `seed`(견본 교회) · `e2e` · `deploy` · `inventory`(대조표 빠짐 검사) · `desktop-e2e`(설치판과 함께) · `bible-import`(bible.db 사본 → D1) |
 
 ```sh
 npm ci

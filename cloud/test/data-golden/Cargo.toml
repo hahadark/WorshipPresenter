@@ -1,0 +1,17 @@
+# 장절 파서 대조 시험의 '정답' 만들기: 설치판 wp-core 의 parser.rs · books.rs 를 그대로 (#[path]) 가져와 돌린다.
+#   cargo run --manifest-path cloud/test/data-golden/Cargo.toml --target-dir <임시> -- cloud/test/data-golden/cases.json > cloud/test/data-golden/golden.json
+# crates/ 는 고치지 않는다. 설치판 파서가 바뀌면 다시 만들어 cloud/test/data-parser.test.mjs 로 대조한다.
+[package]
+name = "wp-parser-golden"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+once_cell = "=1.21.4"
+regex = "=1.13.1"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+unicode-normalization = "=0.1.26"

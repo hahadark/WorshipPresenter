@@ -15,7 +15,9 @@
   <form class="box" id="f">
     <label for="church">교회 ID</label>
     <input id="church" name="church" autocomplete="username" autocapitalize="off" spellcheck="false" required>
-    <label for="secret">열쇠 또는 PIN</label>
+    <label for="login">로그인 이름 <span class="muted">(사람 계정만 — 기기 열쇠면 비워 두세요)</span></label>
+    <input id="login" name="login" autocomplete="username" autocapitalize="off" spellcheck="false">
+    <label for="secret">열쇠 · PIN 또는 비밀번호</label>
     <input id="secret" name="secret" type="password" autocomplete="current-password" required>
     <p class="err" id="err"></p>
     <button class="primary" type="submit" id="go">들어가기</button>
