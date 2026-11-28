@@ -352,7 +352,7 @@ impl Core {
     pub fn stage_timer_until(&mut self, at: &str) -> Result<()> {
         let Some(hm) = crate::localtime::parse_hm(at) else { anyhow::bail!(crate::i18n::tr("시각을 '11:00' 처럼 적어 주세요.")) };
         let now = crate::util::now_ms() + crate::localtime::local_offset_ms();
-        let Some(ms) = crate::localtime::ms_until(hm, now) else { anyhow::bail!(crate::i18n::tr("이미 지난 시각입니다.")) };
+        let Some(ms) = crate::localtime::ms_until(hm, now) else { anyhow::bail!(crate::i18n::tr("이미 지난 시각입니다. 앞으로 12시간 안의 시각을 적어 주세요 (예: 11:00).")) };
         self.stage_timer("start", ms as f64 / 60000.0)
     }
     /// 즉석 자막이 지금 송출 중인가 (quick_send 가 만든 묶음: cueIndex -1 · 제목 '즉석 자막')
@@ -430,7 +430,7 @@ impl Core {
     /// music · musicVolume 은 조작 화면이 틀어 주도록 pending_audio 에 담는다 (순서의 배경 음악과 같은 길).
     pub fn run_macro_depth(&mut self, key: &str, depth: u8) -> Result<()> {
         let m = self.settings.get()["macros"].as_array().and_then(|l| l.iter().find(|x| x["id"] == key || x["name"] == key.trim()).cloned());
-        let Some(m) = m else { bail!("매크로를 찾을 수 없습니다: {key}") };
+        let Some(m) = m else { bail!(crate::i18n::tr_args("매크로 '{1}' 을(를) 찾을 수 없습니다. 송출 → 매크로 · 예약 실행에서 이름을 확인하세요.", &[&key])) };
         if depth > 1 {
             return Ok(());
         }

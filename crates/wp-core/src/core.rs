@@ -285,12 +285,15 @@ impl Core {
 
     pub fn notify(&mut self, msg: impl Into<String>, kind: &'static str) {
         let msg: String = msg.into();
-        // 오류·경고 알림은 8초 뒤 사라지고 다음 알림에 덮이므로 logs\ 에도 남긴다 (나중에 원인 찾기)
+        // 오류·경고 알림은 8초 뒤 사라지고 다음 알림에 덮이므로 logs\ 에도 남긴다 (나중에 원인 찾기 — 날것의 글 그대로)
         match kind {
             "error" => log::error!("알림: {msg}"),
             "warn" => log::warn!("알림: {msg}"),
             _ => {}
         }
+        // 화면에는 '(os error 2)' 같은 내부 번호 대신 무슨 일 + 어떻게 (errtext), 조사는 받침에 맞게 ('요한복음은(는)' → '요한복음은')
+        let msg = if matches!(kind, "error" | "warn") { crate::errtext::humanize(&msg) } else { msg };
+        let msg = if crate::i18n::is_en() { msg } else { crate::i18n::josa_fix(&msg) };
         self.toast = Some((msg, kind, now_ms()));
         self.toast_act = None;
         self.emit(Ev::Ui);
@@ -796,8 +799,33 @@ impl Core {
         crate::flow::step(self, d); // [트랙 C] 자동 숨김 뒤 넘김 · 처음/끝 숨김 · 다음 순서 · 연속 탐색
     }
 
+    /// 미리보기가 송출을 따라가는 중인가: 송출과 같은 덱이고, 송출과 같은 장이거나 그 다음 장 (송출한 뒤 미리보기를 따로 옮기지 않음)
+    pub(crate) fn preview_in_step_with_live(&self) -> bool {
+        match (&self.pres.preview, &self.pres.live) {
+            (Some(p), Some(l)) => (p.index == l.deck.index || p.index == l.deck.index + 1) && p.slides.len() == l.deck.slides.len() && p.passage == l.deck.passage,
+            _ => false,
+        }
+    }
+
+    /// 송출을 F5 · F6 · 번호 · 연속 탐색으로 옮긴 뒤: 미리보기가 송출을 따라가던 중이면 미리보기 = 송출의 다음 장
+    /// (마지막 장이면 그 장). 노랑 '다음' = F9 를 누르면 나갈 것 = 송출 다음 장.
+    /// 봉독을 F6 으로 3/6 까지 넘긴 뒤 F9 를 누르면 미리보기에 남은 1/6 이 나가 3:16 으로 되돌아가던 일 (2.1.1 감사 A1).
+    /// 미리보기를 일부러 다른 장(건너뛸 곳)이나 다른 순서로 옮겨 둔 경우는 그대로 둔다
+    pub(crate) fn follow_live(&mut self, was_following: bool) {
+        if !was_following {
+            return;
+        }
+        if let Some(l) = &self.pres.live {
+            let mut d = l.deck.clone();
+            d.index = (d.index + 1).min(d.slides.len().saturating_sub(1));
+            self.pres.preview = Some(d);
+        }
+    }
+
     pub fn goto_live(&mut self, i: usize) {
+        let same = self.preview_in_step_with_live();
         self.pres.goto(i);
+        self.follow_live(same);
         self.sync_video_state(); // [트랙 B]
         self.emit(Ev::Live);
         self.emit(Ev::Ui);
@@ -1224,7 +1252,7 @@ mod live_fix_tests {
 mod template_deck_tests {
     use super::*;
     fn core() -> Core {
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.test-data").join(short_id("template"));
+        let dir = std::env::temp_dir().join("wp-test-data").join(short_id("template")); // 저장소 안에 남지 않게 (Core 가 DB 를 쥐고 있어 지우기가 실패할 수 있음)
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("bible.db"), b"").unwrap();
         let mut c = Core::open(dir.clone(), dir, None).unwrap();

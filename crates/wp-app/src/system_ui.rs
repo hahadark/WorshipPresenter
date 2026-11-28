@@ -5,7 +5,6 @@ use crate::app::App;
 use crate::paint::{self, paint_slide};
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
 use wp_core::diagnose::Desktop;
 
@@ -33,7 +32,7 @@ pub struct SysState {
     inject_step: usize,
 }
 
-pub static ST: Lazy<Mutex<SysState>> = Lazy::new(|| Mutex::new(SysState { pen_width: 0.006, spot_r: 0.18, ..Default::default() }));
+pub static ST: crate::uistate::Global<SysState> = crate::uistate::Global::new(|| SysState { pen_width: 0.006, spot_r: 0.18, ..Default::default() });
 
 const COLORS: [(&str, &str); 6] = [("#ff3b30", "빨강"), ("#ffd60a", "노랑"), ("#34c759", "초록"), ("#0a84ff", "파랑"), ("#ffffff", "흰색"), ("#000000", "검정")];
 
@@ -178,7 +177,7 @@ impl App {
                     let dir = self.data_dir.clone();
                     let ctx2 = ui.ctx().clone();
                     note = format!("…{}", wp_core::i18n::tr("백업하는 중"));
-                    std::thread::spawn(move || {
+                    crate::uistate::spawn(move || {
                         let r = wp_core::sync::backup_files(&dir);
                         ST.lock().note = match r { Ok(b) => format!("✓ {}", wp_core::i18n::tr_args("백업했습니다: {1}", &[&b["day"].as_str().unwrap_or("")])), Err(e) => format!("✗ {}", wp_core::i18n::tr_args("백업하지 못했습니다: {1}", &[&e])) };
                         ctx2.request_repaint();
@@ -200,7 +199,7 @@ impl App {
                             let (dir, day, ctx2) = (self.data_dir.clone(), b["day"].as_str().unwrap_or("").to_string(), ui.ctx().clone());
                             ST.lock().restore_busy = true;
                             note = format!("…{}", wp_core::i18n::tr("되돌리기 예약하는 중"));
-                            std::thread::spawn(move || {
+                            crate::uistate::spawn(move || {
                                 let r = wp_core::sync::restore_files(&dir, &day);
                                 let mut state = ST.lock();
                                 state.note = match r { Ok(_) => format!("✓ {}", wp_core::i18n::tr_args("{1} 로 되돌리기를 예약했습니다. 프로그램을 다시 시작하세요.", &[&day])), Err(e) => format!("✗ {e}") };
@@ -225,7 +224,7 @@ impl App {
                         let (dir, ctx2) = (self.data_dir.clone(), ui.ctx().clone());
                         ST.lock().restore_busy = true;
                         note = wp_core::i18n::tr("옮기기 파일을 만드는 중…");
-                        std::thread::spawn(move || {
+                        crate::uistate::spawn(move || {
                             let r = wp_core::movedata::export_to(&dir, &f);
                             let mut state = ST.lock();
                             state.note = match r { Ok(v) => wp_core::i18n::tr_args("옮기기 파일을 만들었습니다 ({1}MB · 그림 {2}개): {3}", &[&format!("{:.1}", v["size"].as_f64().unwrap_or(0.0) / 1048576.0), &v["media"], &f.display()]), Err(e) => format!("{e:#}") };
@@ -242,7 +241,7 @@ impl App {
                         let (dir, ctx2) = (self.data_dir.clone(), ui.ctx().clone());
                         ST.lock().restore_busy = true;
                         note = wp_core::i18n::tr("옮기기 파일을 읽는 중…");
-                        std::thread::spawn(move || {
+                        crate::uistate::spawn(move || {
                             let r = wp_core::movedata::import_from(&dir, &f);
                             let mut state = ST.lock();
                             state.note = match r { Ok(v) => wp_core::i18n::tr_args("가져오기를 예약했습니다 (그림 {1}개 더함) — 프로그램을 다시 시작하면 적용됩니다.", &[&v["media"]]), Err(e) => format!("{e:#}") };

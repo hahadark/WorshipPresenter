@@ -643,7 +643,7 @@ impl App {
         crate::widgets_win::esc_first(ctx, typing);
         // Esc 는 열린 즉석 자막 칸을 먼저 닫고, 닫을 것이 없을 때만 보조 화면 끄기 (control.js BCQuick.close)
         if !typing && self.tb.quick && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { self.tb.quick = false }
-        if on("outputOff", "Escape") && self.out.running() { acts.push(Act::OutputToggle) }
+        if on("outputOff", "Escape") && self.out.running() && output_off_confirmed(ctx, &st, &self.core) { acts.push(Act::OutputToggle) }
         // [트랙 C] 미리보기 앞뒤 절 · 장 처음
         if on("previewPrevVerse", "Alt+ArrowLeft") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), -1) }
         if on("previewNextVerse", "Alt+ArrowRight") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), 1) }
@@ -1815,6 +1815,53 @@ fn set_editor_big(ctx: &egui::Context, on: bool) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new("editor-big"), on));
 }
 
+/// 예배당 화면 끄기가 Esc(기본)면 1.2초 안에 두 번 눌러야 끈다 — 창을 닫으려던 Esc 가 한 번 더 눌려 회중 화면이
+/// 꺼지던 일(2.1.1 감사 6번). 첫 번은 상태 줄에 안내만. 다른 키(조합)로 바꿨으면 한 번에 끈다
+static ESC_FIRST: crate::uistate::Global<Option<f64>> = crate::uistate::Global::new(|| None);
+pub(crate) const ESC_TWICE_SECS: f64 = 1.2;
+fn output_off_confirmed(ctx: &egui::Context, st: &Value, core: &Shared) -> bool {
+    if !crate::keys::label(st, "outputOff", "Escape").eq_ignore_ascii_case("Escape") {
+        return true;
+    }
+    let now = ctx.input(|i| i.time);
+    let mut first = ESC_FIRST.lock();
+    if first.is_some_and(|t| now - t <= ESC_TWICE_SECS) {
+        *first = None;
+        return true;
+    }
+    *first = Some(now);
+    drop(first);
+    core.lock().notify(wp_core::i18n::tr("Esc 를 한 번 더 누르면 예배당 화면을 끕니다."), "info");
+    false
+}
+
+#[cfg(test)]
+mod esc_off_tests {
+    use super::*;
+    fn press(ctx: &egui::Context, t: f64, st: &Value, core: &Shared) -> bool {
+        let mut r = false;
+        let mut out = ctx.run_pass(egui::RawInput { time: Some(t), ..Default::default() }, |ctx| r = output_off_confirmed(ctx, st, core));
+        out.textures_delta.clear();
+        r
+    }
+    #[test]
+    fn escape_turns_the_sanctuary_screen_off_only_when_pressed_twice_quickly() {
+        crate::uistate::new_scope();
+        let h = crate::app::auditc_tests::H::new(vec![]);
+        let core = h.app.core.clone();
+        let ctx = egui::Context::default();
+        let st = json!({ "shortcuts": {} });
+        assert!(!press(&ctx, 10.0, &st, &core), "한 번은 안내만");
+        assert!(core.lock().toast.as_ref().is_some_and(|t| format!("{t:?}").contains("한 번 더")), "상태 줄 안내");
+        assert!(press(&ctx, 10.8, &st, &core), "1.2초 안에 두 번 = 끔");
+        assert!(!press(&ctx, 12.0, &st, &core), "끈 뒤 다시 처음부터");
+        assert!(!press(&ctx, 13.5, &st, &core), "너무 늦은 두 번째는 새 첫 번");
+        // 다른 키로 바꿨으면 한 번에
+        let st = json!({ "shortcuts": { "outputOff": "Ctrl+Shift+Q" } });
+        assert!(press(&ctx, 20.0, &st, &core));
+    }
+}
+
 static SHOT_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn test_args() -> Option<(Instant, Option<String>, bool, Option<String>, u8)> {
@@ -1864,6 +1911,12 @@ impl App {
             }
             if let Some(i) = std::env::args().position(|x| x == "--item").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()) { self.sel = Some(i); acts.push(Act::PreviewItem(i)); }
             if send { acts.push(Act::SendPreview); }
+            // 점검용 --outwin-open: 예배당 창(wp-output)을 작은 창으로 띄워 둔다 (밖에서 그 프로세스를 끊어 자동 다시 열기 확인 — tools/solid/robust.ps1)
+            if std::env::args().any(|x| x == "--outwin-open") {
+                let port = self.core.lock().port;
+                self.out.open(port, self.monitor, true);
+                log::info!("점검: 예배당 창 띄움 (running={})", self.out.running());
+            }
             // 점검용 --outwin-esc-test: 예배당 창(wp-output)을 작은 창으로 실제로 띄우고, 창 안 페이지에서 Esc keydown 을 흉내 낸다 → 창이 꺼지고 상태가 '꺼짐' 으로
             if std::env::args().any(|x| x == "--outwin-esc-test") {
                 let port = self.core.lock().port;
@@ -1896,7 +1949,11 @@ impl App {
             if SHOT_DONE.load(std::sync::atomic::Ordering::SeqCst) { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             if shot.is_some() && el > 15.0_f32.max(std::env::var("WP_SHOT_AT").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0) + 10.0) { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
         }
-        ctx.request_repaint();
+        if stage < 2 || shot.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        } else {
+            self.test = None;
+        }
     }
 }
 
@@ -1950,7 +2007,7 @@ impl eframe::App for App {
             log::warn!("조작 화면 한 프레임이 {:.0}ms 걸림", us as f64 / 1000.0);
         }
         crate::imgcache::end_frame(ui.ctx()); // 그림 텍스처 상한 (오래 안 쓴 것 버리기)
-        {
+        if std::env::var_os("WP_DEBUG_MEM").is_some() {
             // 점검용 WP_DEBUG_MEM: 처음 몇 프레임과 그 뒤 10초마다 메모리
             static F: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             static LAST: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
@@ -1991,7 +2048,7 @@ impl App {
     fn ui_body(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         crate::dnd::frame(self, &ctx); // 끌어다 놓은 파일 · 붙여 넣은 파일 처리와 안내
-        // 점검용 --panic-test ui|relock : 60번째 프레임 뒤에 한 번, 일부러 오류를 낸다.
+        // 점검용 --panic-test ui|relock : 켠 지 8초 뒤(가만히 있으면 초당 한 번만 그리므로 프레임 수가 아닌 시간) 한 번, 일부러 오류를 낸다.
         // (logs\ 에 남는지 · 조작 화면이 계속 도는지 · 예배당 출력이 유지되는지 확인)
         {
             static KIND: once_cell::sync::Lazy<Option<String>> = once_cell::sync::Lazy::new(|| {
@@ -2000,7 +2057,7 @@ impl App {
             });
             static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
             if let Some(k) = KIND.as_deref() {
-                if ctx.cumulative_pass_nr() > 60 && !DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                if ctx.input(|i| i.time) > 8.0 && !DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
                     if k == "relock" {
                         let _a = self.core.lock();
                         let _b = self.core.lock(); // 재진입: 멈추지 않고 panic 이어야 한다
@@ -2147,6 +2204,7 @@ mod settings_theme_link_tests;
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)
     pub(crate) fn for_test(core: Shared, dir: std::path::PathBuf) -> Self {
+        crate::uistate::new_scope();
         let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
         Self { editor_on: true, editor_force: None, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir: dir.clone(), data_dir: dir, search: String::new(), result: Value::Null, versions: vec![], sel: None, edit: None, out: crate::outwin::OutWin::for_test(), monitor: 0, last_flush: Instant::now(), focus_search: false, test: None, tb: Default::default(), tc: Default::default(), viewer_direct_both: false }
     }

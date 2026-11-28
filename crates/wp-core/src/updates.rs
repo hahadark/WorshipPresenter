@@ -256,7 +256,7 @@ pub fn check(core: &Shared, manual: bool) {
     std::thread::spawn(move || {
         let _guard = guard;
         let result = get_json(&url).and_then(|r| {
-            let mut s = state_from_release(&r, VERSION, crate::util::now_ms())?;
+            let mut s = state_from_release(&r, &check_version(), crate::util::now_ms())?;
             if s["state"] == "available" {
                 match asset_from_release(&r, &repo) {
                     Ok(a) => *ASSET.lock() = Some(a),
@@ -458,6 +458,73 @@ pub fn download(core: &Shared) -> Result<(), String> {
     });
     Ok(())
 }
+/// 지금 판 (새 버전 비교용). 점검: WP_UPDATE_AS_VERSION=2.1.0 이면 그 판인 척 (받기 → 설치 흐름을 끝까지 시험)
+fn check_version() -> String {
+    std::env::var("WP_UPDATE_AS_VERSION").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| VERSION.to_string())
+}
+
+/// 설치 파일 인자. 설치 파일은 /D= 가 없으면 '등록된 설치 자리' 에 설치한다 — 점검용 임시 사본에서 설치를 누르면
+/// 주인 PC 의 실제 설치본이 바뀐다. 점검: WP_UPDATE_TEST_DIR=<임시 폴더> 면 /TEST /D=<그 폴더> 를 붙인다 (레지스트리 · 바로가기를 안 건드림).
+/// /D= 는 NSIS 규칙상 맨 끝 · 따옴표 없이
+fn install_args() -> Vec<String> {
+    let mut a: Vec<String> = ["/S", "--updated", "--force-run"].iter().map(|x| x.to_string()).collect();
+    if let Some(d) = std::env::var("WP_UPDATE_TEST_DIR").ok().filter(|d| !d.trim().is_empty()) {
+        // 설치 뒤 다시 켜기(--force-run)는 인자 없이 켜서 실제 자료 폴더를 연다 → 점검에서는 빼고, 점검 도구가 --data 로 켜 본다
+        a.retain(|x| x != "--force-run");
+        a.push("/TEST".into());
+        a.push(format!("/D={}", d.trim()));
+    }
+    a
+}
+
+/// 점검(WP_UPDATE_E2E=1): 켠 뒤 새 버전 확인 → 받기 · SHA-256 검증 → 설치 실행까지 차례로, 단계마다 로그.
+/// 조작 화면의 '새 버전' 창 단추와 같은 함수(check · download · install_now)를 부른다. 실제 설치본을 건드리지 않게
+/// WP_UPDATE_TEST_DIR 가 없으면 설치 단계는 하지 않는다
+pub fn e2e(core: Shared) {
+    std::thread::spawn(move || {
+        let wait = |want: &[&str], secs: u64| {
+            let t0 = std::time::Instant::now();
+            loop {
+                let st = UPDATE.lock()["state"].as_str().unwrap_or("").to_string();
+                if want.contains(&st.as_str()) || t0.elapsed().as_secs() > secs {
+                    return st;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            }
+        };
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        log::info!("업데이트 점검: 확인 (지금 판 {})", check_version());
+        check(&core, true);
+        let st = wait(&["available", "latest", "error"], 60);
+        log::info!("업데이트 점검: 확인 결과 {st} {}", UPDATE.lock());
+        if st != "available" {
+            return;
+        }
+        if let Err(e) = download(&core) {
+            log::warn!("업데이트 점검: 받기 실패 {e}");
+            return;
+        }
+        let st = wait(&["ready", "error", "cancelled"], 600);
+        log::info!("업데이트 점검: 받기 결과 {st} {}", UPDATE.lock());
+        if st != "ready" {
+            return;
+        }
+        if std::env::var_os("WP_UPDATE_TEST_DIR").is_none() {
+            log::warn!("업데이트 점검: WP_UPDATE_TEST_DIR 가 없어 설치는 하지 않음 (실제 설치본 보호)");
+            return;
+        }
+        match install_now(&core) {
+            Ok(()) => {
+                // '지금 설치 요청 (프로그램 종료)' 단추처럼 끈다 (설치 파일은 이 프로그램이 꺼질 때까지 기다림)
+                log::info!("업데이트 점검: 설치 실행 {:?} — 프로그램을 끕니다", install_args());
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                std::process::exit(0);
+            }
+            Err(e) => log::warn!("업데이트 점검: 설치 실패 {e}"),
+        }
+    });
+}
+
 pub fn cancel() {
     CANCEL.store(true, Ordering::SeqCst);
 }
@@ -501,7 +568,7 @@ pub fn install_now(core: &Shared) -> Result<(), String> {
     // 쉘 없이 인자 분리. 실제 릴리스 승인 전 gate가 이 경로 진입을 차단한다.
     #[cfg(windows)]
     std::process::Command::new(&p)
-        .args(["/S", "--updated", "--force-run"])
+        .args(install_args())
         .spawn()
         .map_err(|e| crate::i18n::tr_args("설치 실행 실패: {1}", &[&e]))?;
     UPDATE.lock()["state"] = json!("installing");
@@ -799,5 +866,21 @@ mod real_release_tests {
         if keep.is_none() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+#[cfg(test)]
+mod install_args_tests {
+    #[test]
+    fn test_dir_adds_test_flag_and_explicit_dir_last() {
+        // 환경 변수는 프로세스 전체라 이 시험 안에서만 켜고 끈다
+        unsafe { std::env::remove_var("WP_UPDATE_TEST_DIR") };
+        assert_eq!(super::install_args(), ["/S", "--updated", "--force-run"]);
+        unsafe { std::env::set_var("WP_UPDATE_TEST_DIR", r"C:\임시 폴더\wp") };
+        let a = super::install_args();
+        unsafe { std::env::remove_var("WP_UPDATE_TEST_DIR") };
+        assert!(!a.contains(&"--force-run".to_string()), "점검 설치 뒤 인자 없이 켜면 실제 자료를 연다");
+        assert_eq!(a[2], "/TEST");
+        assert_eq!(a.last().unwrap(), r"/D=C:\임시 폴더\wp", "/D= 는 맨 끝, 따옴표 없이 (NSIS)");
     }
 }

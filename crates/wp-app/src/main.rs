@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod uistate;
 mod sources_ui; // 인스펙터 '소스' 탭 (로드맵 1단계)
 mod scene_ui; // 화면 구성 편집 창 (로드맵 2단계)
 mod outputs_ui; // 출력 목록 · 추가 출력 창 (로드맵 3단계)
@@ -330,7 +331,7 @@ fn main() -> anyhow::Result<()> {
                     wp_core::firstrun::error_box(&format!("워십프리젠터를 켜지 못했습니다.\n\n{e:#}\n\n자료 폴더: {}", data_dir.display()));
                     return Err(format!("{e:#}").into());
                 }
-                Err(e) => return Err(format!("자료 준비가 중간에 끝났습니다: {e}").into()),
+                Err(e) => return Err(format!("{} ({e})", wp_core::i18n::tr("예전 자료를 옮기다 멈췄습니다. 원래 자료는 그대로 있습니다 — 프로그램을 다시 켜면 처음부터 다시 옮깁니다.")).into()),
             };
             wp_core::firstrun::mark("자료 기다림 끝");
             // 코어가 바뀌면 화면을 다시 그린다
@@ -361,7 +362,9 @@ fn prepare(data_dir: PathBuf, web: PathBuf) -> anyhow::Result<(wp_core::core::Sh
     wp_core::i18n::set_lang(shared.lock().settings.get()["uiLang"].as_str().unwrap_or("ko")); // [트랙 D] 영어 화면 (출력 웹도)
     wp_core::winkeys::start_global_shortcuts(shared.clone()); // [트랙 D] 전역 단축키
     wp_core::updates::start_telemetry(shared.clone()); // [트랙 D] 익명 사용 통계 (디버그 빌드는 안 보냄)
-    if shared.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true) {
+    if std::env::var_os("WP_UPDATE_E2E").is_some() {
+        wp_core::updates::e2e(shared.clone()); // 점검: 새 버전 확인 → 받기 → 설치까지 (tools/solid/update-e2e.ps1)
+    } else if shared.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true) {
         wp_core::updates::check(&shared, false); // [트랙 D] 새 버전 확인
     }
     wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림

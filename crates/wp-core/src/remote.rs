@@ -468,7 +468,13 @@ mod timer_until_tests {
         let mut c = crate::core::Core::open(dir.clone(), dir.clone(), None).unwrap();
         let e = super::act(&mut c, &serde_json::json!({ "action": "timer", "op": "until", "at": "몰라" })).unwrap_err();
         assert!(e.contains("11:00"), "{e}");
-        assert!(super::act(&mut c, &serde_json::json!({ "action": "timer", "op": "until", "at": "0:00" })).is_err());
+        // 방금 지난 시각(2분 전)은 오류 — '0:00' 은 낮 12시가 넘으면 12시간 안의 내일이라 맞는 시각이 된다 (자정 넘기기)
+        let now = crate::util::now_ms() + crate::localtime::local_offset_ms();
+        let m = (now.div_euclid(60_000) - 2).rem_euclid(1440);
+        let past = format!("{}:{:02}", m / 60, m % 60);
+        if now.div_euclid(60_000).rem_euclid(1440) >= 5 {
+            assert!(super::act(&mut c, &serde_json::json!({ "action": "timer", "op": "until", "at": past })).is_err(), "{past}");
+        }
         assert!(!c.b.stage.timer.running);
         drop(c);
         let _ = std::fs::remove_dir_all(dir);

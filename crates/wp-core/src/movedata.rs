@@ -182,6 +182,7 @@ mod tests {
     /// PC1 에서 내보내고 PC2 에서 가져오면: 다시 시작할 때 PC1 의 찬양 · 설정 · media 그림이 PC2 에
     #[test]
     fn export_then_import_on_another_pc() {
+        let _serial = crate::sync::FILE_TESTS.lock();
         let pc1 = tmpdir("pc1");
         let pc2 = tmpdir("pc2");
         {
@@ -228,6 +229,7 @@ mod tests {
 
     #[test]
     fn rejects_other_zip_and_bad_names() {
+        let _serial = crate::sync::FILE_TESTS.lock();
         let d = tmpdir("bad");
         let f = d.join("x.zip");
         {

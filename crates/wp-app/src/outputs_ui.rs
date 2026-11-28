@@ -17,7 +17,7 @@ use std::process::{Child, Command};
 use wp_core::i18n::{tr, tr_args};
 
 /// 예배당 창이 지난 프레임에 떠 있었나 ('예배당 화면과 함께 켜고 끄기', 로드맵 4단계)
-static MAIN_WAS: Lazy<Mutex<Option<bool>>> = Lazy::new(|| Mutex::new(None));
+static MAIN_WAS: crate::uistate::Global<Option<bool>> = crate::uistate::Global::new(|| None);
 
 /// 예배당 창이 켜지고 꺼질 때 따라갈 추가 출력: (id, 바꿀 window 값) — 모니터를 고른 것만
 pub(crate) fn follow_changes(extras: &[serde_json::Value], before: Option<bool>, now: bool) -> Vec<(String, bool)> {

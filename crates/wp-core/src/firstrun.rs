@@ -298,7 +298,14 @@ pub fn set_aside(data_dir: &Path) -> std::io::Result<PathBuf> {
 }
 
 /// SQLite 온라인 백업으로 DB 를 한 시점 그대로 복사 (다른 프로그램이 열어 써도 안전, WAL 내용 포함). 진행률은 PROGRESS
+/// (켜는 중 화면이 읽는 전역 값 — 프로그램에서는 한 번에 하나만 복사한다)
 pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
+    copy_db_with(src, dst, &|p| PROGRESS.store(p, Ordering::Relaxed))
+}
+
+/// copy_db 와 같되 진행률(1..=1000)을 받는 쪽을 따로 준다. 전역 PROGRESS 를 건드리지 않으므로
+/// 여러 복사가 동시에 돌아도(병렬 시험) 서로의 진행률을 덮지 않는다
+pub fn copy_db_with(src: &Path, dst: &Path, progress: &dyn Fn(u32)) -> rusqlite::Result<()> {
     let t0 = std::time::Instant::now();
     let from = rusqlite::Connection::open_with_flags(src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let mut to = rusqlite::Connection::open(dst)?;
@@ -312,7 +319,7 @@ pub fn copy_db(src: &Path, dst: &Path) -> rusqlite::Result<()> {
             let r = b.step(4096)?;
             let p = b.progress();
             if p.pagecount > 0 {
-                PROGRESS.store((((p.pagecount - p.remaining) as i64 * 1000) / p.pagecount as i64).clamp(1, 1000) as u32, Ordering::Relaxed);
+                progress((((p.pagecount - p.remaining) as i64 * 1000) / p.pagecount as i64).clamp(1, 1000) as u32);
             }
             match r {
                 rusqlite::backup::StepResult::Done => break,
@@ -1388,9 +1395,12 @@ mod tests {
         for _ in 0..200 {
             c.execute("INSERT INTO t VALUES(zeroblob(8000))", []).unwrap();
         }
-        PROGRESS.store(0, Ordering::Relaxed);
-        copy_db(&a.join("bible.db"), &b.join("x.db")).unwrap();
-        assert_eq!(PROGRESS.load(Ordering::Relaxed), 1000);
+        // 진행률은 이 복사만의 값으로 본다 (전역 PROGRESS 는 병렬로 도는 다른 시험의 복사도 쓰므로 여기서 보면 흔들린다)
+        let seen = std::sync::Mutex::new(Vec::<u32>::new());
+        copy_db_with(&a.join("bible.db"), &b.join("x.db"), &|p| seen.lock().unwrap().push(p)).unwrap();
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.last(), Some(&1000), "끝나면 100%");
+        assert!(seen.windows(2).all(|w| w[0] <= w[1]) && seen.iter().all(|p| (1..=1000).contains(p)), "진행률은 1..=1000 에서 줄지 않는다: {seen:?}");
         let n: i64 = rusqlite::Connection::open(b.join("x.db")).unwrap().query_row("SELECT count(*) FROM t", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 200);
         assert!(copy_db(&a.join("없음.db"), &b.join("y.db")).is_err());

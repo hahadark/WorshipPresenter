@@ -4,8 +4,6 @@
 use crate::app::App;
 use crate::widgets::{self, Btn, Kind, Size};
 use eframe::egui::{self, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
 use wp_core::i18n::{tr, tr_args};
 
@@ -19,7 +17,7 @@ struct St {
     note: String,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(Default::default);
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(Default::default);
 
 pub fn open() {
     let mut s = ST.lock();

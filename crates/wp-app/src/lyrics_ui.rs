@@ -23,7 +23,7 @@ pub struct LyricsState {
     note: String,
 }
 
-pub static ST: Lazy<Mutex<LyricsState>> = Lazy::new(|| Mutex::new(LyricsState { lines: 2, ..Default::default() }));
+pub static ST: crate::uistate::Global<LyricsState> = crate::uistate::Global::new(|| LyricsState { lines: 2, ..Default::default() });
 
 pub fn open() {
     ST.lock().open = true;
@@ -41,7 +41,7 @@ pub enum Pending {
     OnlinePpt(String),
 }
 
-static PENDING: Lazy<Mutex<Option<Pending>>> = Lazy::new(|| Mutex::new(None));
+static PENDING: crate::uistate::Global<Option<Pending>> = crate::uistate::Global::new(|| None);
 
 pub fn consented(core: &wp_core::core::Core) -> bool {
     core.settings.get()["webConsent"].as_bool() == Some(true)
@@ -63,7 +63,7 @@ fn run_search(ctx: egui::Context, q: String, dir: std::path::PathBuf) {
         s.errors.clear();
         s.failed.clear();
     }
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let r = wp_core::lyricsweb::search_cached(&q, Some(&dir));
         let mut s = ST.lock();
         s.results = r["results"].as_array().cloned().unwrap_or_default();
@@ -87,7 +87,7 @@ fn run_lyrics(ctx: egui::Context, item: Value, dir: std::path::PathBuf) {
         s.busy = format!("'{}' 가사 읽는 중…", item["title"].as_str().unwrap_or(""));
         s.picked = Some(item.clone());
     }
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let r = wp_core::lyricsweb::lyrics_cached(item["site"].as_str().unwrap_or(""), item["id"].as_str().unwrap_or(""), Some(&dir));
         let mut s = ST.lock();
         match r {

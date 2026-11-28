@@ -4,8 +4,6 @@
 use crate::app::{Act, App};
 use crate::widgets::{Btn, Kind, Size};
 use eframe::egui::{self, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::json;
 use wp_core::i18n::{tr, tr_args};
 use wp_core::lyricsclean::{self as lc, Cleaned};
@@ -21,7 +19,7 @@ struct St {
     usage: String,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St::default());
 
 pub fn handle_menu(id: &str) -> bool {
     if crate::ai_ui::dry() {

@@ -7,8 +7,6 @@
 //! - OBS 장면 목록: 연결 → OBS 원격 조작 창의 상태 캐시(`trackd_ui::obs_state`)에 장면이 있으면 콤보, 없으면 글 입력.
 
 use eframe::egui::{self, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
 use wp_core::core::Shared;
 use wp_core::i18n::tr;
@@ -20,7 +18,7 @@ struct St {
     macro_name: Option<String>,
     scroll_once: bool,
 }
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St::default());
 
 /// 점검(--edit-actions)용: 자동 동작 구역을 펼친다/접는다
 pub fn set_open(open: bool) {
@@ -136,7 +134,7 @@ fn pick_audio_url() -> Option<String> {
 
 /// 백그라운드에서 한 번 보내고 결과를 알림으로 (송출 화면이 멈추지 않게)
 fn spawn_notify(f: impl FnOnce() -> Result<String, String> + Send + 'static) {
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let r = f();
         if let Some(sh) = wp_core::hymns::shared() {
             match r {

@@ -22,7 +22,7 @@ struct St {
     auto: bool,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St::default());
 
 pub fn handle_menu(id: &str) -> bool {
     if crate::ai_ui::dry() {
@@ -177,7 +177,7 @@ fn drop_and_open(id: &str) {
     PENDING.lock().push(id);
 }
 
-static PENDING: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(vec![]));
+static PENDING: crate::uistate::Global<Vec<String>> = crate::uistate::Global::new(Vec::new);
 
 /// 메뉴 처리기로 넘길 창 열기 (track_c 의 메뉴 처리와 같은 id)
 pub fn take_pending() -> Vec<String> {

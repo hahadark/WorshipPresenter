@@ -76,7 +76,7 @@ function run(argv) {
 
 /// 같은 PDF 를 다시 넣으면 그림을 다시 만들지 않게: 이름 + 크기 + 바꾼 시각
 fn cache_dir(data_dir: &Path, pdf: &Path) -> Result<PathBuf> {
-    let meta = std::fs::metadata(pdf).context("PDF 파일을 읽지 못했습니다")?;
+    let meta = std::fs::metadata(pdf).context(crate::i18n::tr("PDF 파일을 읽지 못했습니다. 파일이 옮겨졌거나 다른 프로그램이 쓰는 중인지 확인하세요."))?;
     if meta.len() > MAX_BYTES {
         bail!("PDF 가 너무 큽니다 (300MB 까지).");
     }

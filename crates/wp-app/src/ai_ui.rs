@@ -6,8 +6,6 @@
 use crate::app::App;
 use crate::widgets::{Btn, Kind, Size};
 use eframe::egui::{self, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::Value;
 use wp_core::cuecheck::Finding;
 use wp_core::i18n::{tr, tr_args, tr_s};
@@ -46,7 +44,7 @@ struct St {
     granted: Option<String>,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St::default());
 
 thread_local! {
     /// 메뉴 시험: 창을 열지 않고 받는 곳이 있는지만 본다 (전역 창 상태가 같은 프로세스의 다른 화면 시험을 가리지 않게)

@@ -5,8 +5,6 @@
 
 use crate::app::{Act, App};
 use eframe::egui::{self, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
 use wp_core::core::Shared;
 use wp_core::presentation::Deck;
@@ -19,7 +17,7 @@ struct St {
     paste_as: String,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St::default());
 
 /// Ctrl+B · Ctrl+Shift+V (설정 단축키 openBooks 를 따른다)
 pub fn shortcuts(app: &mut App, ctx: &egui::Context) {

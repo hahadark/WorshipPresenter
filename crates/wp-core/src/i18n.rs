@@ -147,7 +147,7 @@ pub fn tr_dyn_deep(s: &str) -> String {
 /// 뚜렷한 문구(글 그대로면 4자 이상, 패턴이면 자리 밖 글이 12바이트 이상)만 옮긴다.
 fn dyn_inner(s: &str, deep: u8, nested: bool) -> String {
     if !is_en() || s.is_empty() {
-        return s.to_string();
+        return josa_fix(s);
     }
     static PATS: Lazy<Vec<(regex::Regex, Vec<usize>, String, usize)>> = Lazy::new(|| {
         let mut out = vec![];
@@ -225,7 +225,53 @@ fn dyn_inner(s: &str, deep: u8, nested: bool) -> String {
 
 /// 자리가 있는 문구: tr_args("{1}장 · {2}", &[&a, &b]) — 사전은 Electron 처럼 {1} {2} 자리로 찾고, 자리를 채운다
 pub fn tr_args(template: &str, args: &[&dyn std::fmt::Display]) -> String {
-    fill_args(&tr(template), args)
+    let out = fill_args(&tr(template), args);
+    if is_en() { out } else { josa_fix(&out) }
+}
+
+/// 받침을 보고 '은(는)' · '이(가)' · '을(를)' · '과(와)' · '(으)로' · '(이)라' 를 하나로 고른다 ('요한복음은(는)' → '요한복음은').
+/// 앞 낱말 끝이 한글 · 숫자일 때만 고르고, 영어 낱말처럼 모르는 것은 그대로 둔다. 사이의 따옴표 · 빈칸 · 닫는 괄호는 건너뛴다.
+/// 사전(en.json)은 '은(는)' 꼴 원문으로 찾으므로, 원문은 그대로 두고 한국어로 보일 때만 고친다 (tr_args · tr_dyn · 알림)
+pub fn josa_fix(s: &str) -> String {
+    const PAIRS: [(&str, &str, &str); 11] = [
+        ("은(는)", "은", "는"), ("는(은)", "은", "는"), ("이(가)", "이", "가"), ("가(이)", "이", "가"),
+        ("을(를)", "을", "를"), ("를(을)", "을", "를"), ("과(와)", "과", "와"), ("와(과)", "과", "와"),
+        ("(으)로", "으로", "로"), ("으로(로)", "으로", "로"), ("(이)라", "이라", "라"),
+    ];
+    if !s.contains('(') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    'outer: while i < s.len() {
+        let rest = &s[i..];
+        for (pat, with, without) in PAIRS {
+            if rest.starts_with(pat) {
+                if let Some(b) = final_consonant(&out) {
+                    let ro = pat.contains("로");
+                    // '(으)로' 는 ㄹ 받침도 '로' (서울로 · 길로)
+                    out.push_str(if b == 0 || (ro && b == 8) { without } else { with });
+                    i += pat.len();
+                    continue 'outer;
+                }
+            }
+        }
+        let ch = rest.chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// 글 끝 낱말의 받침 (0 = 없음, 8 = ㄹ, 그 밖 = 있음). 한글 · 숫자가 아니면 None
+fn final_consonant(s: &str) -> Option<u32> {
+    let c = s.chars().rev().find(|c| !matches!(c, ' ' | '\'' | '"' | '‘' | '’' | '“' | '”' | '」' | '』' | ')' | ']'))?;
+    match c {
+        '가'..='힣' => Some((c as u32 - 0xAC00) % 28),
+        // 영 일 이 삼 사 오 육 칠 팔 구
+        '0'..='9' => Some([16, 8, 0, 16, 0, 0, 1, 8, 8, 0][c as usize - '0' as usize]),
+        _ => None,
+    }
 }
 
 /// 원래 문구의 자리만 치환한다. 인수에 들어 있는 {2} 같은 사용자 글은 다시 치환하지 않는다.
@@ -307,5 +353,22 @@ mod tests {
         let h = String::from_utf8(with_lang(b"<html lang=\"ko\"><head></head>".to_vec())).unwrap();
         assert!(h.contains("data-lang=\"en\"") && h.contains("i18n-en.js"));
         set_lang("ko");
+    }
+}
+
+#[cfg(test)]
+mod josa_tests {
+    use super::josa_fix;
+    #[test]
+    fn picks_the_particle_by_the_final_consonant() {
+        assert_eq!(josa_fix("요한복음은(는) 21장까지 있습니다."), "요한복음은 21장까지 있습니다.");
+        assert_eq!(josa_fix("로마서은(는) 16장까지 있습니다."), "로마서는 16장까지 있습니다.");
+        assert_eq!(josa_fix("'주일 예배' 을(를) 휴지통으로"), "'주일 예배' 를 휴지통으로");
+        assert_eq!(josa_fix("'찬양' 을(를) 넣었습니다"), "'찬양' 을 넣었습니다");
+        assert_eq!(josa_fix("3장이(가) 없음 · 2장이(가) 없음"), "3장이 없음 · 2장이 없음");
+        assert_eq!(josa_fix("길(으)로 · 산(으)로 · 바다(으)로"), "길로 · 산으로 · 바다로");
+        assert_eq!(josa_fix("2이(가) 3이(가)"), "2가 3이");
+        assert_eq!(josa_fix("OBS을(를) 켭니다"), "OBS을(를) 켭니다", "영어 낱말은 모르니 그대로");
+        assert_eq!(josa_fix("(1/2) 괄호는 그대로 (예: 11:00)"), "(1/2) 괄호는 그대로 (예: 11:00)");
     }
 }
