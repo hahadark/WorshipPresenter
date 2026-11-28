@@ -20,6 +20,8 @@ pub mod cloud;
 pub mod fonts;
 pub mod live;
 pub mod menu;
+pub mod offline; // 6단계: 서비스 워커 · IndexedDB 보관함 · '연결 끊김 · 올릴 것 N개'
+pub mod outbox; // 6단계: 올릴 줄 (POST /api/v1/sync 20개씩)
 pub mod store;
 
 /// 브라우저 안에서 쓰는 가짜 경로 (실제 폴더가 아니라 저장소 열쇠의 앞머리)
@@ -68,6 +70,10 @@ impl eframe::App for WebApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.0.ui(ui, frame);
         cloud::ui(ui.ctx()); // 클라우드 상태 띠 (보기 전용 · 넘겨받기 · 교회 관리)
+        if cloud::authed() && !cloud::demo() {
+            let live = self.0.core.try_lock().is_some_and(|g| g.pres.live.as_ref().is_some_and(|l| l.visible));
+            offline::ui(ui.ctx(), live); // 6단계: 연결 끊김 · 올릴 것 N개 · 저장 멈춤 · 새 버전 있음
+        }
         if !DEBUG_ON.with(|d| *d) {
             return;
         }
@@ -77,7 +83,7 @@ impl eframe::App for WebApp {
             let live = serde_json::json!({ "version": l["version"], "hasLive": l["hasLive"], "visible": l["visible"], "title": l["passage"]["title"], "index": l["index"], "outputs": g.outputs.len() });
             (g.cue.as_ref().map(|c| serde_json::json!({ "id": c.id, "items": c.items })), ui.ctx().memory(|m| m.focused()).map(|i| format!("{i:?}")), live)
         };
-        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "cloudButtons": cloud::debug_rects(), "versions": self.0.core.lock().store.list_versions().iter().map(|v| v.id.clone()).collect::<Vec<_>>() }).to_string();
+        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "cloudButtons": cloud::debug_rects(), "offline": offline::debug(), "store": store::debug(), "versions": self.0.core.lock().store.list_versions().iter().map(|v| v.id.clone()).collect::<Vec<_>>() }).to_string();
         DEBUG.with(|d| *d.borrow_mut() = s);
     }
 }

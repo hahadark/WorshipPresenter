@@ -10,6 +10,7 @@ import deniedHtml from '../client/denied.html';
 import controlHtml from '../../web/app/index.html'; // 3단계 웹 조작 화면 (wasm 은 정적 파일 /control/*)
 import camerasHtml from '../client/media/cameras.html'; // 4단계 B: 카메라를 이름으로 맞추기
 import demoHtml from '../client/demo.html'; // 7단계 둘러보기
+import { offlineTag } from './offline.mjs'; // 6단계 오프라인
 
 const PAGES = { output: outputHtml, stage: stageHtml, remote: remoteHtml, editor: editorHtml, login: loginHtml, owner: ownerHtml, denied: deniedHtml, cameras: camerasHtml, demo: demoHtml, control: controlHtml };
 /** 웹판이 새로 만든 페이지 (어댑터가 필요 없고, 엄격한 보안 머리글을 붙인다) */
@@ -30,7 +31,7 @@ export function pageFor(name, cfg) {
   const html = PAGES[name];
   if (!html) throw new Error(`모르는 페이지: ${name}`);
   // 3단계: 조작 화면은 어댑터 없이 설정 · 기준 주소(/control/)만
-  if (name === 'control') return html.replace(/<head([^>]*)>/i, `<head$1><base href="/control/"><script>window.WP_CLOUD=${JSON.stringify(cfg).replace(/</g, '\\u003c')}</script>${cfg.authed ? '<link rel="stylesheet" href="/api/v1/assets/fonts.css">' : ''}`);
+  if (name === 'control') return html.replace(/<head([^>]*)>/i, `<head$1><base href="/control/"><script>window.WP_CLOUD=${JSON.stringify(cfg).replace(/</g, '\\u003c')}</script>${cfg.authed ? '<link rel="stylesheet" href="/api/v1/assets/fonts.css">' : ''}${offlineTag(cfg)}`);
   if (OWN.includes(name)) return html.replace('"__WP_CLOUD__"', JSON.stringify(cfg).replace(/</g, '\\u003c'));
   return inject(html, cfg);
 }

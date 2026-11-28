@@ -123,6 +123,8 @@ async function pullAll(store) {
 
 ### 6 오프라인 작업자에게
 
+> 구현함 — [`offline.md`](offline.md) 3 · 4절.
+
 - 위 `pullAll` 꼴 그대로 IndexedDB 에. 고치기는 '보낼 줄'에 `{mutationId, kind, id, op, baseRevision, payload}` 를 먼저 쓰고, 다시 이으면 20개씩 `POST`.
 - 다음 · 이전 같은 순간 조작은 여기로 보내지 않는다(문서가 아님).
 

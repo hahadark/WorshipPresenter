@@ -207,7 +207,7 @@ egui 는 막은 뒤에도 키를 그대로 받는다(eframe 0.37 `on_keydown` �
 
 - **4A(화면 구성)**: 조작 화면 코드가 설치판과 같다 → 구성 편집기 · 출력별 구성은 wp-app 에 넣으면 웹에도 들어간다. 웹에서 쓸 수 없는 것을 부르면 `wp_core::bg::spawn`(웹은 알림)으로, 새 메뉴 항목이 이 PC 자원을 쓰면 `web/menu.rs` 의 `HIDDEN` 에. 새 출력(out-…)은 `hello.outputs` · `live.rs clients()` 가 설정의 추가 출력을 그대로 따른다. 대기(보기 전용) 중에는 클라우드 출력에 아무것도 가지 않는다 — 구성 전환도 주체일 때만.
 - **4B(미디어)**: 웹 조작 화면에서 파일을 고르는 길(`<input type=file>` → `/cloud/media/assets-client.mjs` 올리기)이 아직 없다 — `wp-web-rfd` 는 None 을 돌려주므로 그 자리를 웹 파일 고르기로 바꾸는 것이 다음 일. 카메라 순서는 `settings.cameras[id].label` 을 함께(4B 안내).
-- **6(오프라인)**: 조작 화면은 이미 ① 같은 브라우저 출력에 `wp-live` 로 송출(인터넷 무관) ② 성경을 IndexedDB 에 보관 ③ 문서를 `store.rs` 의 받기/올리기 꼴(`mutationId` · `If-Match` · 사본)로 다룬다. 6단계가 할 것: 서비스 워커로 `/control/*` 를 버전별 저장, `store.rs` 의 '올릴 줄'을 IndexedDB 에 두고(지금은 메모리 — 새로 고치면 못 올린 것이 사라짐) 다시 이을 때 `POST /api/v1/sync` 로 20개씩. 다음 · 이전 같은 순간 조작은 쌓지 않는다(지금도 문서가 아님).
+- **6(오프라인)** — 구현함 ([`offline.md`](offline.md)): 서비스 워커 · `store.rs` 올릴 줄을 IndexedDB 로(`web/outbox.rs` · `web/offline.rs`) · 성경 번역본 목록도 보관. (처음 적은 것) 조작 화면은 이미 ① 같은 브라우저 출력에 `wp-live` 로 송출(인터넷 무관) ② 성경을 IndexedDB 에 보관 ③ 문서를 `store.rs` 의 받기/올리기 꼴(`mutationId` · `If-Match` · 사본)로 다룬다. 6단계가 할 것: 서비스 워커로 `/control/*` 를 버전별 저장, `store.rs` 의 '올릴 줄'을 IndexedDB 에 두고(지금은 메모리 — 새로 고치면 못 올린 것이 사라짐) 다시 이을 때 `POST /api/v1/sync` 로 20개씩. 다음 · 이전 같은 순간 조작은 쌓지 않는다(지금도 문서가 아님).
 - web 을 합칠 때: `crates/wp-core/src/lib.rs` 의 `cloud` · `cloudsync` 는 wasm 에서 빠져 있다. 합친 뒤 `python tools/web/retime.py; python tools/web/rethread.py` 를 돌리고 `cargo check -p wp-app --target wasm32-unknown-unknown`.
 
 ## 빌드 · 띄우기

@@ -58,6 +58,9 @@ mod cloud_ui; // 클라우드 연결 창 (웹판 1단계)
 #[cfg(target_arch = "wasm32")]
 #[path = "web/cloud_ui.rs"]
 mod cloud_ui; // [웹판] 브라우저 조작 화면은 그 자체가 클라우드 쪽 — 설치판의 연결 창 자리만
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "web/outbox.rs"]
+mod web_outbox_tests; // [웹판 6단계] 올릴 줄 계산 (브라우저와 무관해 설치판 시험으로 돌린다)
 #[cfg(not(target_arch = "wasm32"))]
 mod cloudsync_ui; // 클라우드 연결 창 안 '자료 동기화' 구획 (웹판 2단계 B)
 mod trackd_ui; // [트랙 D] // [트랙 D]

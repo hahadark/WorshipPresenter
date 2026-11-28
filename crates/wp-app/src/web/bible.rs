@@ -58,16 +58,25 @@ pub fn start(core: Shared) {
 }
 
 async fn load(core: &Shared) -> Result<(), String> {
+    let church = super::cloud::church();
     let (st, v) = super::cloud::api("GET", "/api/v1/bible/versions", None, &[]).await;
-    if st != 200 {
-        return Err(v["error"].as_str().unwrap_or("번역본 목록").to_string());
-    }
-    let versions = v["versions"].as_array().cloned().unwrap_or_default();
+    // 6단계: 인터넷이 끊겼으면 이 브라우저에 보관한 번역본 목록 · 본문으로 (받은 적이 있을 때)
+    let list_key = format!("bible:{church}:versions");
+    let versions = if st == 200 {
+        let list = v["versions"].as_array().cloned().unwrap_or_default();
+        let _ = idb("put", &list_key, Some(&Value::Array(list.clone()).to_string())).await;
+        list
+    } else {
+        match idb("get", &list_key, None).await.and_then(|s| serde_json::from_str::<Value>(&s).ok()).and_then(|v| v.as_array().cloned()) {
+            Some(list) if st == 0 || st >= 500 => list,
+            _ => return Err(v["error"].as_str().unwrap_or("번역본 목록").to_string()),
+        }
+    };
+    let offline = st != 200;
     if versions.is_empty() {
         core.lock().notify("교회 클라우드에 성경 번역본이 없습니다. 주인이 번역본을 넣어야 성경 검색이 됩니다 (cloud/scripts/bible-import.mjs).", "info");
         return Ok(());
     }
-    let church = super::cloud::church();
     for ver in versions {
         let id = ver["id"].as_str().unwrap_or("").to_string();
         if id.is_empty() {
@@ -78,6 +87,7 @@ async fn load(core: &Shared) -> Result<(), String> {
         let cached: Option<Value> = idb("get", &key, None).await.and_then(|s| serde_json::from_str(&s).ok());
         let books = match cached.filter(|c| c["stamp"].as_str() == Some(&stamp)) {
             Some(c) => c["books"].as_array().cloned().unwrap_or_default(),
+            None if offline => continue, // 끊긴 동안 보관하지 않은 번역본은 건너뜀
             None => {
                 core.lock().notify(format!("성경 '{}' 받는 중…", ver["name"].as_str().unwrap_or(&id)), "info");
                 let b = fetch_books(&id).await?;

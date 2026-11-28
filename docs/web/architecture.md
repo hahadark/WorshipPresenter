@@ -159,6 +159,8 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 
 ## 7. 6단계(오프라인)가 이 계약을 쓰는 법
 
+> **구현함 — 쓰는 법 · 저장 모양 · 시험: [`offline.md`](offline.md)** (서비스 워커 `/sw.js` 판별 저장 · IndexedDB `wp-offline` 올릴 줄 · `POST /api/v1/sync` 20개씩 · 충돌 사본 · '연결 끊김 · 올릴 것 N개' · '새 버전 있음'). 계약은 바꾸지 않았다 — 기존 길만 쓴다.
+
 - 설치판은 이미 오프라인에 강하다: 인터넷이 끊겨도 같은 PC 의 예배당 창 · OBS(127.0.0.1) · 내부망 출력은 그대로 돌고, `cloud.rs` 는 뒤에서 다시 잇기만 한다. 다시 이으면 **전체 상태부터** 보내므로 맞추기가 따로 필요 없다.
 - 웹 조작 화면: Service Worker 로 앱 껍데기를 버전별로 저장, IndexedDB 에 그 교회 문서 · 변경 줄 · 그림. 송출은 같은 PC 의 `BroadcastChannel('wp-live')` 로 계속. 다시 이으면 `GET /api/v1/sync?after=` 로 받고 `POST /api/v1/sync` 로 올림. 충돌은 사본을 만들고 사람이 고름.
 - 다음 · 이전 같은 **순간 조작은 쌓아 두었다 나중에 보내지 않는다**.
@@ -191,7 +193,7 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 | `web-scenes` (4A) | 화면 구성 편집 · 출력별 구성 · 전환 (웹) | 3단계 화면 안의 새 모듈 | 3 |
 | `web-media` (4B) | 카메라(이름으로) · 휴대폰 카메라 신호(DO) · PDF(pdf.js) · 영상 · 유튜브 — **구현함: `docs/web/media.md`** | `cloud/src/media/` · `cloud/client/media/` | 2C, TURN 은 켜지 않음(비용 승인) |
 | `web-ai` (5) | AI 길(서버 쪽 키 보관 · 동의) · 음성 인식 선택 — **클라우드 쪽 구현함: `docs/web/ai.md`**. 변환(HWP/PPTX)은 wasm 에서 그대로 돌아 따로 만들 것 없음 | `cloud/src/ai/` · `migrations/0003_ai.sql` | 2A · 2C, 유료 모델 자동 호출 금지 |
-| `web-offline` (6) | Service Worker · IndexedDB · 충돌 화면 · 끊김 시험 | `cloud/client/offline/` · `cloud/src/sync/` 의 받기 쪽 | 2A · 2B · 3 |
+| `web-offline` (6) | Service Worker · IndexedDB · 충돌 화면 · 끊김 시험 — **구현함: `docs/web/offline.md`** | `cloud/client/offline/` · `cloud/src/sync/` 의 받기 쪽 | 2A · 2B · 3 |
 | `web-tiers` (7 일부) | 계정 등급(데모 · 무료 · 유료) · 등급별 저장소(무료 = 교회의 구글 드라이브) · 둘러보기 · 옮기기 — **구현함: `docs/web/tiers.md`** (12절) | `cloud/src/tiers/` · `cloud/src/drive/` · `cloud/src/data/bibleimport.mjs` · `migrations/0005_tiers.sql` | 2A · 2C, 구글 준비(사관님) |
 
 - 순서: 2A → (2B · 2C · 3) 나란히 → (4A · 4B · 5) 나란히 → 6 이 마지막에 모두 합쳐 시험.
