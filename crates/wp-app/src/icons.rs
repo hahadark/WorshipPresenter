@@ -16,7 +16,10 @@ use std::collections::HashMap;
 
 static SRC: &str = include_str!("../../../web/shared/icons.js");
 static CRAFT: &str = include_str!("../../../assets/icons/craft.json");
-static LEGACY: once_cell::sync::Lazy<bool> = once_cell::sync::Lazy::new(|| std::env::var("WP_ICONS").is_ok_and(|v| v == "lucide"));
+/// 고유 아이콘 한 벌(assets/icons/craft.json, 16px 격자 · 선 1.25)을 쓸지. **예전 Lucide 로 되돌리려면 이 한 줄을 false 로.**
+/// 실행할 때만 잠깐 견주려면 환경변수 `WP_ICONS=lucide`. craft 에 없는 이름은 늘 Lucide(web/shared/icons.js)
+const USE_CRAFT_ICONS: bool = true;
+static LEGACY: once_cell::sync::Lazy<bool> = once_cell::sync::Lazy::new(|| !USE_CRAFT_ICONS || std::env::var("WP_ICONS").is_ok_and(|v| v == "lucide"));
 
 /// 이름 → SVG 문서 (흰 선, 24×24, stroke-width 2, fill none)
 static SVGS: once_cell::sync::Lazy<HashMap<&'static str, &'static [u8]>> = once_cell::sync::Lazy::new(|| {

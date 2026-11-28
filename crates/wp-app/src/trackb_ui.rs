@@ -1097,10 +1097,28 @@ impl App {
         if r.drag_started() || r.dragged() {
             r.dnd_set_drag_payload(i);
         }
+        if r.dragged() {
+            // 끌리는 줄: 제자리는 흐리게, 손 옆에 작은 이름표 (그림자 없이 1px 테두리)
+            let p = crate::theme::pal();
+            ui.painter().rect_filled(r.rect, 0.0, crate::theme::alpha(p.panel, 0.55));
+            if let Some(pos) = ui.ctx().pointer_interact_pos() {
+                let title = self.core.lock().cue.as_ref().and_then(|c| c.items.get(i)).map(|it| it["title"].as_str().unwrap_or("").to_string()).unwrap_or_default();
+                let text = format!("{}  {title}", i + 1);
+                let (g, _) = crate::widgets::elide(ui, &text, crate::theme::Type::Body.font(), p.text, 260.0);
+                let rect = egui::Rect::from_min_size(pos + egui::vec2(14.0, -(crate::theme::ROW_H / 2.0)), g.size() + egui::vec2(20.0, crate::theme::ROW_H - g.size().y));
+                let fg = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("cue-drag-ghost")));
+                fg.rect(rect, crate::theme::cr(crate::theme::Rad::Md), p.raised, egui::Stroke::new(crate::theme::LINE, p.line2), egui::StrokeKind::Inside);
+                fg.galley(egui::pos2(rect.left() + 10.0, rect.center().y - g.size().y / 2.0), g, p.text);
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            }
+        }
         if let Some(from) = r.dnd_hover_payload::<usize>() {
             if *from != i {
+                // 끼움 선: 밝은 무채색 2px + 왼쪽 끝 동그라미 (놓을 자리)
+                let p = crate::theme::pal();
                 let y = if *from < i { r.rect.bottom() } else { r.rect.top() };
-                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(2.5, crate::theme::type_ink("bible")));
+                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(crate::theme::LINE_EMPH, p.focus));
+                ui.painter().circle(egui::pos2(r.rect.left() + 5.0, y), 3.5, p.panel, egui::Stroke::new(crate::theme::LINE_EMPH, p.focus));
             }
         }
         if let Some(from) = r.dnd_release_payload::<usize>() {

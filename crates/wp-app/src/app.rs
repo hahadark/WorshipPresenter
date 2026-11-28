@@ -878,7 +878,7 @@ impl App {
                 let hot = resp.hovered() || resp.dragged();
                 if hot { ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical); }
                 let c = r.center();
-                ui.painter().line_segment([egui::pos2(c.x - 20.0, c.y), egui::pos2(c.x + 20.0, c.y)], egui::Stroke::new(3.0, if hot { p.accent } else { p.line2 }));
+                ui.painter().line_segment([egui::pos2(c.x - 20.0, c.y), egui::pos2(c.x + 20.0, c.y)], egui::Stroke::new(3.0, if hot { p.text2 } else { p.line2 }));
                 if resp.dragged() {
                     let nf = ((h + resp.drag_delta().y) / avail.max(1.0)).clamp(EDITOR_FRAC_MIN, EDITOR_FRAC_MAX);
                     ui.data_mut(|d| d.insert_temp(frac_id, nf));
@@ -1690,7 +1690,7 @@ fn thumb_chip(ui: &mut egui::Ui, text: &str, on: bool, is_live: bool) -> egui::R
     let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 16.0 + 2.0, g.size().y.max(16.0) + 6.0), Sense::click());
     let (bg, border) = match (on, is_live) {
         (true, true) => (p.live_bg, p.live),
-        (true, false) => (p.sel, p.accent),
+        (true, false) => (p.sel, crate::theme::pick()),
         _ if resp.hovered() => (p.hover, p.line2),
         _ => (p.panel2, p.line),
     };

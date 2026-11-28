@@ -289,7 +289,7 @@ impl App {
                     bar_text(ui, &pt, Pos2::new(r.left() + 6.0, r.top() + 20.0), Align2::LEFT_TOP, &detail, theme::Type::Micro.font(), sub_c, r.width() - 12.0);
                 }
             } else if room >= num_w {
-                crate::widgets::tnum(ui, Pos2::new(r.left() + 6.0, r.top() + 5.0), Align2::LEFT_TOP, &num, theme::Type::Small.font(), fg);
+                pt.text(Pos2::new(r.left() + 6.0, r.top() + 5.0), Align2::LEFT_TOP, &num, theme::Type::Small.font(), fg);
             }
             if hover_pos.is_some_and(|hp| r.contains(hp)) {
                 let sc = mark.map(|m| format!("\n{}: {m}", tr("화면 구성"))).unwrap_or_default();

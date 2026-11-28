@@ -148,7 +148,7 @@ fn tool(ui: &mut Ui, rect: Rect, id: Id, icon: &str, label: &str, on: Option<Col
         icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(18.0)), icon, ic);
     } else {
         icons::paint(ui, Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 17.0), Vec2::splat(17.0)), icon, ic);
-        let g = ui.painter().layout_no_wrap(label.to_string(), theme::font(10.5, Weight::Medium), on.unwrap_or(p.muted));
+        let g = ui.painter().layout_no_wrap(label.to_string(), theme::Type::Micro.font(), on.unwrap_or(p.muted));
         let gx = rect.center().x - g.size().x / 2.0;
         ui.painter().galley(Pos2::new(gx, rect.top() + 30.0), g, on.unwrap_or(p.muted));
     }
@@ -284,11 +284,13 @@ pub(crate) struct BarFit {
     pub gap: f32,
     pub lcd_w: f32,
     pub step: u8,
+    /// 도구 이름 가운데 가장 긴 것의 폭 (영어 등 이름이 길면 도구 칸을 넓힌다)
+    pub label_w: f32,
 }
 
 impl BarFit {
     pub(crate) fn tool_w(&self) -> f32 {
-        if self.tool_label { 56.0 } else { 36.0 }
+        if self.tool_label { (self.label_w + 12.0).max(56.0).ceil() } else { 36.0 }
     }
     fn left_w(&self) -> f32 {
         if self.toggles { 12.0 + 30.0 + 2.0 + 30.0 } else { 0.0 }
@@ -315,8 +317,8 @@ impl BarFit {
         self.fixed() + self.lcd_w
     }
 
-    pub(crate) fn fit(w: f32) -> BarFit {
-        let mut f = BarFit { toggles: true, tool_label: true, send_w: 150.0, send_kbd: true, clock: true, search_w: 260.0, gap: 12.0, lcd_w: 0.0, step: 0 };
+    pub(crate) fn fit(w: f32, label_w: f32) -> BarFit {
+        let mut f = BarFit { toggles: true, tool_label: true, send_w: 150.0, send_kbd: true, clock: true, search_w: 260.0, gap: 12.0, lcd_w: 0.0, step: 0, label_w };
         let ok = |f: &BarFit| f.fixed() + f.lcd_min() <= w;
         // 1 찾기칸을 줄여 맞출 수 있으면 거기까지만
         if !ok(&f) {
@@ -364,7 +366,12 @@ impl App {
         let w = bar.width();
         let cy = bar.center().y;
         // 폭에 따라 단계적으로 덜어 낸다 (BarFit::fit — 어떤 폭에서도 겹치지 않게)
-        let fit = BarFit::fit(w);
+        // 도구 이름 폭 (글자 숨김 · 화면 비우기 · 즉석 자막 · 예배당 켜짐/꺼짐 가운데 가장 긴 것)
+        let label_w = [tr("글자 숨김"), tr("글자 보이기"), tr("화면 비우기"), tr("즉석 자막"), tr("예배당 켜짐"), tr("예배당 꺼짐")]
+            .into_iter()
+            .map(|t| ui.painter().layout_no_wrap(t, theme::Type::Micro.font(), Color32::WHITE).size().x)
+            .fold(0.0, f32::max);
+        let fit = BarFit::fit(w, label_w);
         let narrow = !fit.tool_label;
         let tool_w = fit.tool_w();
         let send_w = fit.send_w;
@@ -725,15 +732,18 @@ mod bar_fit_tests {
         // 1000×640 · 150% = 667 논리 px 까지는 겹치지 않는다
         let mut last = 0;
         for w in (665..=2600).rev().step_by(5) {
-            let f = BarFit::fit(w as f32);
+            let f = BarFit::fit(w as f32, 44.0);
+            // 영어처럼 이름이 길어도 겹치지 않는다
+            let e = BarFit::fit(w as f32, 80.0);
+            assert!(e.total() <= w as f32 + 0.5, "en {w}: {e:?}");
             assert!(f.total() <= w as f32 + 0.5, "{w}: {f:?} total {}", f.total());
             assert!(f.step >= last, "좁아질수록 단계가 줄지 않는다 ({w})");
             last = f.step;
         }
-        assert_eq!(BarFit::fit(1920.0).step, 0);
-        assert!(BarFit::fit(1920.0).tool_label && BarFit::fit(1920.0).clock);
+        assert_eq!(BarFit::fit(1920.0, 44.0).step, 0);
+        assert!(BarFit::fit(1920.0, 44.0).tool_label && BarFit::fit(1920.0, 44.0).clock);
         // 1366 · 125% (1093) 에서도 송출 단추와 표시창은 남는다
-        let f = BarFit::fit(1093.0);
+        let f = BarFit::fit(1093.0, 44.0);
         assert!(f.lcd_w >= 280.0 && f.send_w >= 92.0);
     }
 }
