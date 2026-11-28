@@ -124,6 +124,8 @@
 
 ## 6. 2단계 자료 계약 (2A 구현함 — 쓰는 법 · 예시 · 덧붙인 칸은 [`data-api.md`](data-api.md), 자산 길은 2C)
 
+> 2B 설치판 동기화(구현함): [`sync.md`](sync.md) — 설치판 문서 모양 · 충돌 사본 규칙 · 파일 주소 바꾸기(`/api/v1/assets/{id}?e=` · `wp-local:` · 출력 `?fallback=`).
+
 D1 (교회 단위, 모든 질의 `church_id = ?1`):
 
 ```sql

@@ -2,9 +2,10 @@
 //   node test/sync-e2e/run.mjs            견본 자료 (지어낸 큐시트 · 찬양 · 그림)
 //   node test/sync-e2e/run.mjs --real     이 PC 설치판 자료의 복사본 (%APPDATA%\WorshipPresenter-rs\data 를 SQLite backup 으로 임시 폴더에)
 //   --keep                                 끝나도 임시 폴더를 지우지 않음 (원인 찾기)
+//   --fake-assets                          그림·영상 길을 2C 대신 이 스크립트의 가짜(메모리)로 (2C 가 없는 가지에서)
 // - 로컬 D1 · DO 는 이 실행만의 임시 폴더(--persist-to)에 둔다 → 다른 작업자의 wrangler dev · 앞 실행 자료와 섞이지 않고, 끝나면 지운다.
-// - 그림·영상 길(/api/v1/assets*)은 2C 가 아직 없어 이 스크립트의 가짜 중계가 계약(docs/web/sync.md 4절)대로 메모리에서 받는다.
-//   나머지 길은 모두 wrangler dev 로 그대로 넘긴다. 아무것도 인터넷 너머로 보내지 않는다 (127.0.0.1 만).
+// - 그림·영상 길(/api/v1/assets*)은 기본으로 2C 의 실제 길(로컬 R2, 같은 --persist-to). --fake-assets 면 가짜 중계가 계약대로 메모리에서 받고
+//   나머지 길은 wrangler dev 로 넘긴다. 아무것도 인터넷 너머로 보내지 않는다 (127.0.0.1 만).
 // - 원본 자료는 읽기만 한다. 복사본 · 로컬 D1 · 가짜 저장소는 끝나면 지운다.
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, createHmac, randomBytes, randomInt } from 'node:crypto';
@@ -22,6 +23,7 @@ const wrangler = join(cloud, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const args = process.argv.slice(2);
 const REAL = args.includes('--real');
 const KEEP = args.includes('--keep');
+const FAKE = args.includes('--fake-assets');
 process.env.WRANGLER_SEND_METRICS = 'false';
 
 const freePort = () => new Promise(res => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
@@ -178,12 +180,20 @@ async function main() {
     const key = seedChurch(authSecret());
     const c = await startCloud();
     dev = c.dev;
-    proxy = await startProxy(c.base, key);
-    console.log(`로컬 클라우드 ${c.base} (자료 ${persist}) · 그림·영상 길 가짜 중계 ${proxy.url}`);
-    const env = { ...process.env, WP_SYNC_E2E_URL: proxy.url, WP_SYNC_E2E_KEY: key, WP_SYNC_E2E_DATA: data, WP_LEGACY_DATA: join(work, 'no-legacy') };
+    if (FAKE) proxy = await startProxy(c.base, key);
+    const url = proxy ? proxy.url : c.base;
+    console.log(`로컬 클라우드 ${c.base} (D1 · R2 ${persist})${proxy ? ` · 그림·영상 길 가짜 중계 ${proxy.url}` : ' · 그림·영상 길 = 2C (로컬 R2)'}`);
+    const env = { ...process.env, WP_SYNC_E2E_URL: url, WP_SYNC_E2E_KEY: key, WP_SYNC_E2E_DATA: data, WP_LEGACY_DATA: join(work, 'no-legacy') };
     const t = spawn('cargo', ['test', '-p', 'wp-core', '--lib', 'cloudsync::tests::e2e_local_cloud', '--', '--ignored', '--nocapture', '--exact'], { cwd: repo, stdio: 'inherit', env });
     code = await new Promise(r => t.on('exit', r));
-    console.log(`그림·영상 길: 새로 올림 ${proxy.stats.uploads} (${proxy.stats.bytes} 바이트) · 이미 있음 ${proxy.stats.existed} · 읽기 ${proxy.stats.reads}`);
+    if (proxy) console.log(`그림·영상 길(가짜): 새로 올림 ${proxy.stats.uploads} (${proxy.stats.bytes} 바이트) · 이미 있음 ${proxy.stats.existed} · 읽기 ${proxy.stats.reads}`);
+    else {
+      const r = await fetch(`${c.base}/api/v1/assets?limit=200`, { headers: { authorization: `Bearer ${key}` } }).then(r => r.json());
+      const list = r.assets || [];
+      const leak = list.filter(a => /[\/:]/.test(a.name || '') || (process.env.USERNAME && JSON.stringify(a).includes(process.env.USERNAME)));
+      console.log(`그림·영상 길(2C): 저장된 파일 ${list.length}개 · ${list.reduce((n, a) => n + (a.size || 0), 0)} 바이트 · 이름에 경로/사용자 이름 ${leak.length}개`);
+      if (leak.length) code = code || 3;
+    }
     console.log(code === 0 ? '동기화 끝에서 끝: 통과' : `동기화 끝에서 끝: 실패 (${code})`);
   } finally {
     proxy?.server.close();
