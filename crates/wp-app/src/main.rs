@@ -325,7 +325,7 @@ fn main() -> anyhow::Result<()> {
                     wp_core::firstrun::error_box(&format!("워십프리젠터를 켜지 못했습니다.\n\n{e:#}\n\n자료 폴더: {}", data_dir.display()));
                     return Err(format!("{e:#}").into());
                 }
-                Err(e) => return Err(format!("자료 준비가 중간에 끝났습니다: {e}").into()),
+                Err(e) => return Err(format!("{} ({e})", wp_core::i18n::tr("예전 자료를 옮기다 멈췄습니다. 원래 자료는 그대로 있습니다 — 프로그램을 다시 켜면 처음부터 다시 옮깁니다.")).into()),
             };
             wp_core::firstrun::mark("자료 기다림 끝");
             // 코어가 바뀌면 화면을 다시 그린다

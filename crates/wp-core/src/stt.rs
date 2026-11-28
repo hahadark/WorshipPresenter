@@ -247,13 +247,13 @@ impl Server {
         let t0 = std::time::Instant::now();
         loop {
             if let Ok(Some(st)) = s.child.try_wait() {
-                bail!("음성 인식 엔진이 바로 꺼졌습니다 ({st}).");
+                { log::warn!("음성 인식 엔진 종료: {st}"); bail!(crate::i18n::tr("음성 인식 엔진이 바로 꺼졌습니다. 백신 프로그램이 막지 않았는지 확인하고, AI 설정에서 모델을 다시 받아 보세요.")); }
             }
             if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
                 break;
             }
             if t0.elapsed().as_secs() > 60 {
-                bail!("음성 인식 엔진이 60초 안에 준비되지 않았습니다.");
+                bail!(crate::i18n::tr("음성 인식 엔진이 60초 안에 준비되지 않았습니다. 다른 큰 프로그램을 닫고 다시 켜 보세요."));
             }
             std::thread::sleep(std::time::Duration::from_millis(200));
         }

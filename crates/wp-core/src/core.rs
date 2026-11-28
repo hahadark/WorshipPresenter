@@ -285,13 +285,15 @@ impl Core {
 
     pub fn notify(&mut self, msg: impl Into<String>, kind: &'static str) {
         let msg: String = msg.into();
-        let msg = if crate::i18n::is_en() { msg } else { crate::i18n::josa_fix(&msg) }; // '요한복음은(는)' → '요한복음은
-        // 오류·경고 알림은 8초 뒤 사라지고 다음 알림에 덮이므로 logs\ 에도 남긴다 (나중에 원인 찾기)
+        // 오류·경고 알림은 8초 뒤 사라지고 다음 알림에 덮이므로 logs\ 에도 남긴다 (나중에 원인 찾기 — 날것의 글 그대로)
         match kind {
             "error" => log::error!("알림: {msg}"),
             "warn" => log::warn!("알림: {msg}"),
             _ => {}
         }
+        // 화면에는 '(os error 2)' 같은 내부 번호 대신 무슨 일 + 어떻게 (errtext), 조사는 받침에 맞게 ('요한복음은(는)' → '요한복음은')
+        let msg = if matches!(kind, "error" | "warn") { crate::errtext::humanize(&msg) } else { msg };
+        let msg = if crate::i18n::is_en() { msg } else { crate::i18n::josa_fix(&msg) };
         self.toast = Some((msg, kind, now_ms()));
         self.toast_act = None;
         self.emit(Ev::Ui);

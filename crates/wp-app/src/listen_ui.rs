@@ -164,7 +164,7 @@ fn open_mic(tx: std::sync::mpsc::Sender<Vec<f32>>) -> anyhow::Result<(rodio::cpa
     let stream = match fmt {
         rodio::cpal::SampleFormat::F32 => dev.build_input_stream::<f32, _, _>(cfg.config(), move |d: &[f32], _| push(d.chunks(ch).map(|f| f.iter().sum::<f32>() / ch as f32).collect()), err, None)?,
         rodio::cpal::SampleFormat::I16 => dev.build_input_stream::<i16, _, _>(cfg.config(), move |d: &[i16], _| push(d.chunks(ch).map(|f| f.iter().map(|x| *x as f32 / 32768.0).sum::<f32>() / ch as f32).collect()), err, None)?,
-        other => anyhow::bail!("지원하지 않는 마이크 형식입니다 ({other:?})."),
+        other => { log::warn!("마이크 형식 {other:?}"); anyhow::bail!(wp_core::i18n::tr("지원하지 않는 마이크 형식입니다. Windows 소리 설정 → 녹음 → 마이크 속성 → 고급에서 16비트 형식을 골라 보세요.")) },
     };
     stream.play()?;
     Ok((stream, name))

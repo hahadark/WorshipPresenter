@@ -413,7 +413,7 @@ impl Core {
     /// music · musicVolume 은 조작 화면이 틀어 주도록 pending_audio 에 담는다 (순서의 배경 음악과 같은 길).
     pub fn run_macro_depth(&mut self, key: &str, depth: u8) -> Result<()> {
         let m = self.settings.get()["macros"].as_array().and_then(|l| l.iter().find(|x| x["id"] == key || x["name"] == key.trim()).cloned());
-        let Some(m) = m else { bail!("매크로를 찾을 수 없습니다: {key}") };
+        let Some(m) = m else { bail!(crate::i18n::tr_args("매크로 '{1}' 을(를) 찾을 수 없습니다. 송출 → 매크로 · 예약 실행에서 이름을 확인하세요.", &[&key])) };
         if depth > 1 {
             return Ok(());
         }
