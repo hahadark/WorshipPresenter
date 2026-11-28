@@ -413,6 +413,14 @@ pub fn status(ui: &mut Ui, tone: Tone, text: &str) {
         return;
     }
     let (icon, col) = tone_look(tone);
+    // 오류 글은 사람 말로 ('(os error 5)' 대신 '권한이 없습니다 — …', F4 errtext). 원래 글은 로그에
+    let human;
+    let text = if tone == Tone::Error {
+        human = wp_core::errtext::humanize(text);
+        human.as_str()
+    } else {
+        text
+    };
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 5.0;
         if tone == Tone::Busy {
