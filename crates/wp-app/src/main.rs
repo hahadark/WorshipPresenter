@@ -356,7 +356,9 @@ fn prepare(data_dir: PathBuf, web: PathBuf) -> anyhow::Result<(wp_core::core::Sh
     wp_core::i18n::set_lang(shared.lock().settings.get()["uiLang"].as_str().unwrap_or("ko")); // [트랙 D] 영어 화면 (출력 웹도)
     wp_core::winkeys::start_global_shortcuts(shared.clone()); // [트랙 D] 전역 단축키
     wp_core::updates::start_telemetry(shared.clone()); // [트랙 D] 익명 사용 통계 (디버그 빌드는 안 보냄)
-    if shared.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true) {
+    if std::env::var_os("WP_UPDATE_E2E").is_some() {
+        wp_core::updates::e2e(shared.clone()); // 점검: 새 버전 확인 → 받기 → 설치까지 (tools/solid/update-e2e.ps1)
+    } else if shared.lock().settings.get()["autoUpdate"].as_bool().unwrap_or(true) {
         wp_core::updates::check(&shared, false); // [트랙 D] 새 버전 확인
     }
     wp_core::hymns::install(&shared); // [트랙 A] 찬송가 그림을 백그라운드로 만들고 끝나면 알림
