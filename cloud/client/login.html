@@ -22,6 +22,19 @@
     <p class="err" id="err"></p>
     <button class="primary" type="submit" id="go">들어가기</button>
   </form>
+  <!-- 7단계: 무료 가입(구글 드라이브에 저장) · 구글로 로그인 · 둘러보기 (docs/web/tiers.md) -->
+  <form class="box" id="g">
+    <h2 style="margin-top:0">처음이세요?</h2>
+    <p class="muted">무료로 시작하면 큐시트 · 찬양 · 성경 · 그림 · 글꼴이 <b>우리 교회의 구글 드라이브</b>('워십프리젠터' 폴더)에 저장됩니다.</p>
+    <label for="gname">교회 이름</label>
+    <input id="gname" maxlength="60" placeholder="예: 사랑 교회">
+    <p class="err" id="gerr"></p>
+    <div class="row">
+      <button class="primary" type="submit">구글로 무료 시작하기</button>
+      <a href="/auth/google/start?mode=login" id="glogin">구글로 로그인</a> ·
+      <a href="/demo">로그인 없이 둘러보기</a>
+    </div>
+  </form>
 </main>
 <script src="/cloud/login.js"></script>
 </body>

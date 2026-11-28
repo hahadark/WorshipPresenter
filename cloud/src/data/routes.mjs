@@ -48,6 +48,13 @@ export function dataRoute(method, path) {
   }
   if (path === '/api/v1/bible/versions' && get) return { kind: 'data', cap: 'read', op: 'versions' };
   if (path === '/api/v1/bible/passage' && get) return { kind: 'data', cap: 'read', op: 'passage' };
+  // 7단계: 성경 넣기 (주인, 등급과 상관없이 같은 길 — data/bibleimport.mjs)
+  if (/^\/api\/v1\/bible\/versions\/[A-Za-z0-9_.%-]{1,120}$/.test(path)) {
+    if (method === 'PUT') return { kind: 'data', cap: 'manage', op: 'importVersion' };
+    if (method === 'DELETE') return { kind: 'data', cap: 'manage', op: 'deleteVersion' };
+    return null;
+  }
+  if (/^\/api\/v1\/bible\/versions\/[A-Za-z0-9_.%-]{1,120}\/books\/\d{1,2}$/.test(path)) return method === 'PUT' ? { kind: 'data', cap: 'manage', op: 'importBook' } : null;
   // 사람 계정 (identity/)
   if (path === '/api/v1/members' && get) return { kind: 'identity', cap: 'manage', op: 'list' };
   if (path === '/api/v1/members' && method === 'POST') return { kind: 'identity', cap: 'manage', op: 'create' };

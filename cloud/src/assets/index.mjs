@@ -12,6 +12,10 @@ import {
 } from './routes.mjs';
 import { fontInfo } from './fonts.mjs';
 import { addA, countB, guard, quotaResponse, usage } from './usage.mjs';
+import { driveBucket } from '../drive/bucket.mjs'; // 7단계 무료 등급: 바이트는 그 교회의 구글 드라이브 (목록 · 이름 · Range 는 이 파일 그대로)
+import { DriveError } from '../drive/format.mjs';
+import { driveFail } from '../drive/docs.mjs';
+import { limitsOf } from '../tiers/limits.mjs';
 
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 const rid = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => ALPHA[b % ALPHA.length]).join('');
@@ -42,13 +46,23 @@ const rowBySha = (env, church, sha) => env.DB.prepare(
   `SELECT ${COLS} ${FROM} WHERE a.church_id = ?1 AND a.sha256 = ?2 AND a.purged_at IS NULL ORDER BY (a.deleted_at IS NOT NULL), a.created_at LIMIT 1`,
 ).bind(church, sha).first();
 
-function bucketOf(env) {
+function bucketOf(env, s) {
+  if (s?.tier?.store === 'drive') return driveBucket(env, s.church);
   return env.FILES || null;
 }
 const noBucket = () => fail(503, '파일 저장통(R2)이 연결되어 있지 않습니다.');
 
 export async function handle(request, env, url, s, r) {
-  if (!bucketOf(env) && !['list', 'usage', 'fonts'].includes(r.op)) return noBucket();
+  if (!bucketOf(env, s) && !['list', 'usage', 'fonts'].includes(r.op)) return noBucket();
+  try {
+    return await route(request, env, url, s, r);
+  } catch (e) {
+    if (e instanceof DriveError) return driveFail(e);
+    throw e;
+  }
+}
+
+async function route(request, env, url, s, r) {
   switch (r.op) {
     case 'list': return list(env, url, s);
     case 'usage': return usage(env, s, can(s.role, 'manage'), json);
@@ -134,7 +148,7 @@ function insertStatements(env, s, { id, sha, name, t, size, key, verified, font,
 
 // ---------- POST /api/v1/assets (한 번에, 90 MiB 까지) ----------
 async function upload(request, env, s) {
-  const bucket = bucketOf(env);
+  const bucket = bucketOf(env, s);
   const u = uploadHeaders(request.headers);
   if (u instanceof Response) return u;
   const { sha, name, t } = u;
@@ -144,11 +158,14 @@ async function upload(request, env, s) {
   if (!Number.isSafeInteger(size) || size <= 0) return fail(400, '빈 파일입니다.');
   if (size > t.max) return fail(413, `이 종류는 ${Math.floor(t.max / 1048576)} MiB 까지 받습니다.`);
   if (size > ASSET_LIMITS.single) return fail(413, `한 번에는 ${ASSET_LIMITS.single / 1048576} MiB 까지입니다. 나눠 올리기(/api/v1/assets/uploads)를 써 주세요.`, { multipart: true });
+  const tl = limitsOf(s.tier?.tier, env); // 7단계: 등급의 파일 하나 한도 (무료 = 나눠 올리기 없음)
+  if (tl.fileMax && size > tl.fileMax) return fail(413, `이 등급은 파일 하나 ${Math.floor(tl.fileMax / 1048576)} MiB 까지입니다.`, { code: 'tier_limit', limit: 'fileMax', tier: s.tier?.tier, multipart: false });
 
   const have = await rowBySha(env, s.church, sha);
   if (have) return existedReply(env, s, have);
 
-  const q = await guard(env, s.church, size, 1);
+  // 무료(드라이브)는 우리 R2 무료 범위를 쓰지 않으므로 안전장치를 보지 않는다 (드라이브가 가득 차면 drive_quota 507)
+  const q = bucketOf(env, s).drive ? { ok: true } : await guard(env, s.church, size, 1);
   if (!q.ok) return quotaResponse(json, q);
 
   let body = request.body, info = null;
@@ -163,8 +180,9 @@ async function upload(request, env, s) {
   const now = Date.now();
   try {
     // sha256 을 주면 R2 가 받은 바이트로 다시 계산해 다르면 거절한다 (Worker CPU 를 쓰지 않음)
-    await bucket.put(key, body, { sha256: sha, httpMetadata: { contentType: t.type } });
+    await bucket.put(key, body, { sha256: sha, httpMetadata: { contentType: t.type }, ...(bucket.drive ? { size } : {}) });
   } catch (e) {
+    if (e instanceof DriveError) throw e;
     await addA(env, s.church, 1, now).run().catch(() => {});
     const m = String(e?.message || e);
     if (/digest|sha-?256|checksum/i.test(m)) return fail(400, '받은 내용의 sha256 이 X-Asset-Sha256 과 다릅니다. 다시 올려 주세요.', { reason: 'sha256' });
@@ -213,7 +231,7 @@ async function start(request, env, s) {
   if (!q.ok) return quotaResponse(json, q);
 
   const key = r2Key(s.church, sha, name);
-  const mp = await bucketOf(env).createMultipartUpload(key, { httpMetadata: { contentType: t.type } });
+  const mp = await bucketOf(env, s).createMultipartUpload(key, { httpMetadata: { contentType: t.type } });
   const id = rid(20), now = Date.now();
   await env.DB.batch([
     env.DB.prepare(
@@ -244,7 +262,7 @@ async function part(request, env, url, s) {
   if (len !== expected(u, n)) return fail(400, `${n}번 조각은 ${expected(u, n)} 바이트여야 합니다.`, { expected: expected(u, n) });
   let p;
   try {
-    p = await bucketOf(env).resumeMultipartUpload(u.r2Key, u.r2Upload).uploadPart(n, request.body);
+    p = await bucketOf(env, s).resumeMultipartUpload(u.r2Key, u.r2Upload).uploadPart(n, request.body);
   } catch (e) {
     console.error('R2 조각 올리기 실패', e?.message || e);
     return fail(502, '조각을 저장하지 못했습니다. 같은 조각을 다시 올려 주세요.');
@@ -269,7 +287,7 @@ async function complete(env, url, s) {
   for (let n = 1; n <= u.parts && missing.length < 50; n++) if (!have.has(n)) missing.push(n);
   if (missing.length) return fail(409, '아직 올리지 않은 조각이 있습니다.', { missing });
   const t = { type: u.type, kind: u.kind };
-  const mp = bucketOf(env).resumeMultipartUpload(u.r2Key, u.r2Upload);
+  const mp = bucketOf(env, s).resumeMultipartUpload(u.r2Key, u.r2Upload);
   // 그 사이 같은 내용이 (다른 기기에서) 다 올라왔으면 이 조각들은 버린다
   const blob = await env.DB.prepare('SELECT size, r2_key AS r2Key FROM asset_blobs WHERE church_id = ?1 AND sha256 = ?2 AND purged_at IS NULL').bind(s.church, u.sha256).first();
   const now = Date.now();
@@ -287,7 +305,7 @@ async function complete(env, url, s) {
       return fail(502, '조각을 합치지 못했습니다. 잠시 뒤 다시 끝내기를 눌러 주세요.');
     }
     if (obj && obj.size !== u.size) {
-      await bucketOf(env).delete(u.r2Key).catch(() => {});
+      await bucketOf(env, s).delete(u.r2Key).catch(() => {});
       await env.DB.batch(dropUpload(env, s.church, id));
       return fail(400, '합친 크기가 알린 크기와 다릅니다. 처음부터 다시 올려 주세요.');
     }
@@ -305,7 +323,7 @@ async function abort(env, url, s) {
   const [id] = pathParts(url.pathname).slice(1);
   const u = await uploadRow(env, s.church, id);
   if (!u) return fail(404, '그런 나눠 올리기가 없습니다 (끝났거나 그만뒀습니다).');
-  await bucketOf(env).resumeMultipartUpload(u.r2Key, u.r2Upload).abort().catch(e => console.error('R2 그만두기 실패', e?.message || e));
+  await bucketOf(env, s).resumeMultipartUpload(u.r2Key, u.r2Upload).abort().catch(e => console.error('R2 그만두기 실패', e?.message || e));
   await env.DB.batch(dropUpload(env, s.church, id));
   return json({ ok: true, aborted: true });
 }
@@ -362,7 +380,7 @@ async function getAsset(request, env, url, s) {
   }
   let obj;
   try {
-    obj = await bucketOf(env).get(row.r2Key, range ? { range } : undefined);
+    obj = await bucketOf(env, s).get(row.r2Key, range ? { range } : undefined);
   } catch (e) {
     console.error('R2 받기 실패', e?.message || e);
     return fallbackOf(url) || fail(502, '파일 저장통에서 읽지 못했습니다.');
@@ -470,7 +488,7 @@ async function purge(request, env, s) {
     abortedUploads: stale.map(u => ({ uploadId: u.id, name: u.name, size: u.size })),
   };
   if (dry) return json(report);
-  const bucket = bucketOf(env);
+  const bucket = bucketOf(env, s);
   // R2 지우기 · 나눠 올리기 그만두기는 무료 작업이다
   if (blobs.length) await bucket.delete(blobs.map(b => b.r2Key));
   for (const u of stale) await bucket.resumeMultipartUpload(u.r2Key, u.r2Upload).abort().catch(() => {});

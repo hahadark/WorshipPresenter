@@ -5,8 +5,21 @@ import { can, fail } from '../protocol.mjs';
 import { getDocument, listDocuments, writeDocument } from './documents.mjs';
 import { pull, push } from './sync.mjs';
 import { passage, versions } from './bible.mjs';
+import { handleImport } from './bibleimport.mjs'; // 7단계 성경 넣기 (등급마다 저장소)
+import { tierOf } from '../tiers/index.mjs';
+import * as drive from '../drive/docs.mjs'; // 무료 등급: 본문은 구글 드라이브
+import * as driveBible from '../drive/bible.mjs';
+import { DriveError } from '../drive/format.mjs';
 
 export async function handle(request, env, url, s, r) {
+  const t = s.tier || (await tierOf(env, s.church));
+  try {
+    if (['importVersion', 'importBook', 'deleteVersion'].includes(r.op)) return await handleImport(request, env, url, s, r, t);
+    if (t.store === 'drive') return await driveHandle(request, env, url, s, r);
+  } catch (e) {
+    if (e instanceof DriveError) return drive.driveFail(e);
+    throw e;
+  }
   switch (r.op) {
     case 'list': return listDocuments(request, env, url, s);
     case 'get': return getDocument(request, env, url, s);
@@ -16,6 +29,21 @@ export async function handle(request, env, url, s, r) {
     case 'push': return push(request, env, url, s);
     case 'versions': return versions(request, env, url, s);
     case 'passage': return passage(request, env, url, s);
+    default: return fail(404, '없는 주소입니다.');
+  }
+}
+
+/** 무료 등급 (구글 드라이브) — 같은 길, 같은 답 모양 */
+async function driveHandle(request, env, url, s, r) {
+  switch (r.op) {
+    case 'list': return drive.listDocuments(request, env, url, s);
+    case 'get': return drive.getDocument(request, env, url, s);
+    case 'put': return drive.writeDocument(request, env, url, s, 'put');
+    case 'delete': return drive.writeDocument(request, env, url, s, 'delete');
+    case 'pull': return drive.pull(request, env, url, s);
+    case 'push': return drive.push(request, env, url, s);
+    case 'versions': return driveBible.versions(request, env, url, s);
+    case 'passage': return driveBible.passage(request, env, url, s);
     default: return fail(404, '없는 주소입니다.');
   }
 }

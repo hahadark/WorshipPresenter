@@ -9,6 +9,22 @@
   let church = frag.get('church') || q.get('c') || '';
   try { church = church || decodeURIComponent((document.cookie.match(/(?:^|; )wp_church=([^;]*)/) || [])[1] || ''); } catch (e) { /* 무시 */ }
   $('church').value = church;
+  // 7단계: 구글로 시작하기 · 돌아온 까닭 (oauth.mjs back)
+  const WHY = {
+    name: '교회 이름을 2~60자로 적어 주세요.', 'church-id': '교회 ID 가 올바르지 않거나 쓸 수 없는 이름입니다.', 'church-taken': '이미 있는 교회 ID 입니다.',
+    state: '로그인 시간이 지났습니다. 다시 해 주세요.', denied: '구글에서 허락하지 않았습니다.', token: '구글이 로그인을 확인해 주지 않았습니다. 다시 해 주세요.',
+    scope: "구글 동의 화면에서 '드라이브 파일' 칸을 켜야 합니다. 다시 해 주세요.", refresh: '구글이 오래 쓸 열쇠를 주지 않았습니다. 다시 해 주세요.',
+    'no-account': '이 구글 계정으로 만든 교회가 없습니다. 아래에서 무료로 시작하세요.', 'other-account': '처음 연결한 구글 계정으로 다시 연결해 주세요.',
+    'too-many': '이 곳에서 너무 여러 번 가입했습니다. 한 시간 뒤 다시 해 주세요.', full: '오늘 무료 가입이 가득 찼습니다. 내일 다시 해 주세요.',
+    owner: '주인으로 로그인한 뒤 다시 연결해 주세요.', google: '구글 연결에 실패했습니다.', exists: '',
+  };
+  if (q.get('google') && WHY[q.get('google')] !== undefined) $('gerr').textContent = WHY[q.get('google')] || '';
+  $('g').addEventListener('submit', ev => {
+    ev.preventDefault();
+    const n = $('gname').value.trim();
+    if (n.length < 2) { $('gerr').textContent = WHY.name; return; }
+    location.assign('/auth/google/start?mode=signup&name=' + encodeURIComponent(n));
+  });
   if (church) $('secret').focus(); else $('church').focus();
   /** 돌아갈 곳: 같은 사이트 안의 길만 */
   function next(home) {

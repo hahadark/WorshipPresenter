@@ -3,11 +3,12 @@
 import { dataRoute } from './data/routes.mjs'; // 2단계 A 길 (docs/web/data-api.md)
 import { assetRoute } from './assets/routes.mjs'; // 2단계 C 길 (docs/web/assets-api.md)
 import { aiRoute } from './ai/routes.mjs'; // 5단계 AI 길 (docs/web/ai.md)
+import { tierRoute } from './tiers/index.mjs'; // 7단계 등급 길 (docs/web/tiers.md)
 
 export const PROTOCOL = 1;
 
 /** 역할: owner 주인 · bridge 설치판 연결 · output 출력 화면(OBS 포함) · remote 리모컨 · editor 웹 편집기 */
-export const ROLES = ['owner', 'bridge', 'output', 'remote', 'editor', 'member-editor', 'member-viewer']; // 뒤의 둘: 2단계 사람 계정 (identity/)
+export const ROLES = ['owner', 'bridge', 'output', 'remote', 'editor', 'member-editor', 'member-viewer', 'demo']; // member-*: 2단계 사람 계정 (identity/) · demo: 7단계 둘러보기 (tiers/demo.mjs)
 
 /** 할 수 있는 일: view 출력 보기 · remote 리모컨 조작 · editor 큐시트 고치기 · manage 기기 열쇠 관리 · source 송출 주체로 붙기 */
 // 2단계: read 교회 자료 읽기 · write 고치기 (/api/v1/documents · sync · bible)
@@ -19,6 +20,8 @@ const CAPS = {
   output: ['view'],
   remote: ['remote'],
   editor: ['editor'],
+  // 둘러보기: 견본 교회를 보고 고쳐 보기 + 자기만의 중계실에 송출(source). 열쇠 · 사람 관리(manage) · AI 는 없음
+  demo: ['view', 'remote', 'editor', 'source', 'read', 'write'],
 };
 export function can(role, cap) {
   return !!CAPS[role] && CAPS[role].includes(cap);
@@ -26,10 +29,10 @@ export function can(role, cap) {
 
 /** 로그인 유지 시간(초). 출력 화면은 OBS 에 넣어 두므로 길게, 사람 손에 있는 기기는 짧게. 열쇠를 지우면 그 즉시 끊긴다. */
 /** 역할마다 첫 화면 ('/' · 로그인 답의 home). 사람 계정(2단계)도 같은 표를 쓴다 */
-export const HOME = { owner: '/owner', remote: '/remote', editor: '/editor', output: '/outputs/main', 'member-editor': '/editor', 'member-viewer': '/outputs/main' };
+export const HOME = { owner: '/owner', remote: '/remote', editor: '/editor', output: '/outputs/main', 'member-editor': '/editor', 'member-viewer': '/outputs/main', demo: '/demo' };
 export const homeOf = role => HOME[role] || '/outputs/main';
 
-export const SESSION_TTL = { owner: 30 * 86400, output: 400 * 86400, remote: 12 * 3600, editor: 12 * 3600, 'member-editor': 30 * 86400, 'member-viewer': 30 * 86400 };
+export const SESSION_TTL = { owner: 30 * 86400, output: 400 * 86400, remote: 12 * 3600, editor: 12 * 3600, 'member-editor': 30 * 86400, 'member-viewer': 30 * 86400, demo: 2 * 3600 };
 
 /** 교회 ID: 영문 소문자 · 숫자 · '-' (2~40자). 주소 · 쿠키 · 열쇠 앞머리에 그대로 쓴다. */
 const CHURCH_RE = /^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/;
@@ -80,7 +83,7 @@ export function route(method, path, query) {
   if (get && path === '/api/v1/room') return { kind: 'room', cap: 'manage' };
   if (path === '/api/v1/credentials' && (get || post)) return { kind: 'api', cap: 'manage' };
   if (method === 'DELETE' && /^\/api\/v1\/credentials\/[A-Za-z0-9]{6,24}$/.test(path)) return { kind: 'api', cap: 'manage' };
-  return dataRoute(method, path) || assetRoute(method, path) || aiRoute(method, path);
+  return dataRoute(method, path) || assetRoute(method, path) || aiRoute(method, path) || tierRoute(method, path);
 }
 
 /** 출력 화면이 /api/command 로 알릴 수 있는 것 (설치판 내부망 출력과 같은 경계). 그 밖의 명령은 클라우드에서 받지 않는다. */

@@ -7,10 +7,11 @@ import editorHtml from '../../web/editor/index.html';
 import loginHtml from '../client/login.html';
 import ownerHtml from '../client/owner.html';
 import deniedHtml from '../client/denied.html';
+import demoHtml from '../client/demo.html'; // 7단계 둘러보기
 
-const PAGES = { output: outputHtml, stage: stageHtml, remote: remoteHtml, editor: editorHtml, login: loginHtml, owner: ownerHtml, denied: deniedHtml };
+const PAGES = { output: outputHtml, stage: stageHtml, remote: remoteHtml, editor: editorHtml, login: loginHtml, owner: ownerHtml, denied: deniedHtml, demo: demoHtml };
 /** 웹판이 새로 만든 페이지 (어댑터가 필요 없고, 엄격한 보안 머리글을 붙인다) */
-const OWN = ['login', 'owner', 'denied'];
+const OWN = ['login', 'owner', 'denied', 'demo'];
 
 /** <head> 바로 뒤에 설정과 어댑터를 넣는다. 설정 값이 글 밖으로 새지 않게 '<' 를 바꾼다 */
 export function inject(html, cfg) {

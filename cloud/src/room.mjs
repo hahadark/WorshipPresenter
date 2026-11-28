@@ -66,6 +66,11 @@ export class ChurchRoom extends DurableObject {
     const name = clientName(url.searchParams.get('client') || 'main');
     if (!name) return fail(400, '모르는 화면 이름입니다.');
     if (this.viewers().length >= LIMITS.viewers) return fail(429, '이 교회에 붙은 화면이 너무 많습니다.');
+    // 7단계 등급 한도 (Worker 가 x-wp-max-* 로 알림 — tiers/limits.mjs outputs · remotes)
+    const cap = (h, n) => { const v = request.headers.get(h); return v !== null && v !== '' && Number.isFinite(Number(v)) && n >= Number(v); };
+    if (name === 'remote' ? cap('x-wp-max-remotes', this.viewers('remote').length) : cap('x-wp-max-outputs', this.viewers().length - this.viewers('remote').length)) {
+      return fail(429, name === 'remote' ? '이 등급에서 동시에 붙는 리모컨 수를 넘었습니다.' : '이 등급에서 동시에 붙는 화면 수를 넘었습니다.', { code: 'tier_limit', limit: name === 'remote' ? 'remotes' : 'outputs' });
+    }
     const ua = (request.headers.get('user-agent') || '').toLowerCase();
     const kind = url.searchParams.has('window') ? 'window' : ua.includes('obs') ? 'obs' : 'browser';
     const id = 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 2_000_000_000);
