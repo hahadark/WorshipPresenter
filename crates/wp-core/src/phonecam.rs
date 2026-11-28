@@ -142,15 +142,35 @@ fn key_ok(core: &Shared, k: &str) -> bool {
     !want.is_empty() && k == want
 }
 
+/// 열쇠가 틀린 주소로 열었을 때의 안내 (다른 파일을 부르지 않는 한 장짜리, 조작 화면과 같은 어두운 판)
+const BAD_KEY_PAGE: &str = "<!doctype html><html lang=\"ko\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\"><meta name=\"theme-color\" content=\"#1f1f21\"><title>워십프리젠터 휴대폰 카메라</title><body style=\"margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1f1f21;color:#e6e6e8;font:16px/1.6 system-ui,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;word-break:keep-all\"><div style=\"max-width:340px;padding:24px\"><b style=\"display:block;font-size:19px;margin-bottom:8px\">주소의 열쇠가 맞지 않습니다</b><p style=\"margin:0 0 14px;color:#c4c4c8\">조작 PC 에서 열쇠를 새로 만들었거나 주소가 잘렸습니다. 워십프리젠터의 연결 → 휴대폰 카메라 창에 보이는 QR 을 휴대폰 기본 카메라로 다시 찍어 주세요.</p><p style=\"margin:0;color:#9d9da3;font-size:14px\">The key in this address is not valid. Scan the QR code again from Connect → Phone camera in Worship Presenter.</p></div></body></html>";
+
 async fn cam_page(State(core): State<Shared>, Query(q): Query<HashMap<String, String>>) -> Response {
     if !key_ok(&core, q.get("k").map(String::as_str).unwrap_or("")) {
-        return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], "<meta name=viewport content='width=device-width'><p style='font:18px sans-serif;padding:20px'>주소의 열쇠가 맞지 않습니다. 워십프리젠터 화면의 QR 을 다시 찍어 주세요.</p>").into_response();
+        return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], BAD_KEY_PAGE).into_response();
     }
-    let web = core.lock().web_dir.clone();
+    let (web, en) = { let c = core.lock(); (c.web_dir.clone(), c.settings.str(&["uiLang"]) == "en") };
     match tokio::fs::read(web.join("phone").join("cam.html")).await {
-        Ok(b) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], b).into_response(),
+        Ok(b) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], crate::remote::with_app_lang(&b, en)).into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// 카메라 화면의 모양 · 코드 (열쇠 없이 — 비밀이 없는 파일)
+async fn cam_file(State(core): State<Shared>, uri: axum::http::Uri) -> Response {
+    let web = core.lock().web_dir.clone();
+    let (rel, ty) = if uri.path() == "/cam.css" { ("cam.css", "text/css; charset=utf-8") } else { ("cam.js", "text/javascript; charset=utf-8") };
+    match tokio::fs::read(web.join("phone").join(rel)).await {
+        Ok(b) => ([(header::CONTENT_TYPE, ty), (header::CACHE_CONTROL, "no-cache")], b).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// 이 휴대폰 영상이 지금 어느 출력에 나가고 있는가 (main · overlay). 조작 화면 '소스' 목록과 같은 계산.
+/// 미리보기 · 카메라 목록의 작은 그림처럼 '받고는 있지만 나가지는 않는' 것과 구별해 휴대폰에 빨강(송출 중)을 켜 주려는 것.
+pub fn on_air(core: &crate::core::Core, phone_id: &str) -> Vec<&'static str> {
+    let want = format!("camera:phone:{phone_id}");
+    core.sources_status().into_iter().find(|r| r.id == want).map(|r| r.on_air).unwrap_or_default()
 }
 
 /// TLS 리스너로 들어온 상대 주소 (axum 의 ConnectInfo 는 TcpListener 에만 있어서)
@@ -187,7 +207,9 @@ async fn cam_poll(State(core): State<Shared>, ConnectInfo(PeerAddr(addr)): Conne
     if fresh {
         core.lock().emit(Ev::Ui); // 카메라 목록에 새로 보이게
     }
-    js(StatusCode::OK, json!({ "ok": true, "msgs": msgs }))
+    // 덧붙인 필드(새 카메라 화면용, 예전 화면은 지나침): onAir = 이 영상이 지금 나가고 있는 출력
+    let air = on_air(&core.lock(), &id);
+    js(StatusCode::OK, json!({ "ok": true, "msgs": msgs, "onAir": air }))
 }
 
 /// 휴대폰의 답 { k, id, viewer, sdp }
@@ -213,6 +235,9 @@ pub fn phone_router(core: Shared) -> Router {
     Router::new()
         .route("/", get(|| async { (StatusCode::OK, [(header::CONTENT_TYPE, "text/plain; charset=utf-8")], "WorshipPresenter phone camera") }))
         .route("/cam", get(cam_page))
+        .route("/cam.js", get(cam_file))
+        .route("/cam.css", get(cam_file))
+        .route("/wpui/{name}", get(crate::remote::ui_route))
         .route("/cam/poll", post(cam_poll))
         .route("/cam/answer", post(cam_answer))
         .with_state(core)

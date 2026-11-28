@@ -155,9 +155,19 @@ pub fn create(core: &mut Core, name: &str) -> Result<Value, String> {
 
 // ---------- 서버 ----------
 async fn index(State(core): State<Shared>) -> Response {
-    let w = core.lock().web_dir.clone();
+    let (w, en) = { let c = core.lock(); (c.web_dir.clone(), c.settings.str(&["uiLang"]) == "en") };
     match tokio::fs::read(w.join("editor/index.html")).await {
-        Ok(b) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], b).into_response(),
+        Ok(b) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], crate::remote::with_app_lang(&b, en)).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// 편집기 화면의 모양 · 코드 (PIN 없이 — 비밀이 없는 파일)
+async fn asset(State(core): State<Shared>, uri: axum::http::Uri) -> Response {
+    let w = core.lock().web_dir.clone();
+    let (rel, ty) = if uri.path() == "/editor.css" { ("editor/editor.css", "text/css; charset=utf-8") } else { ("editor/editor.js", "text/javascript; charset=utf-8") };
+    match tokio::fs::read(w.join(rel)).await {
+        Ok(b) => ([(header::CONTENT_TYPE, ty), (header::CACHE_CONTROL, "no-cache")], b).into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -224,6 +234,9 @@ pub fn router(core: Shared) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/index.html", get(index))
+        .route("/editor.js", get(asset))
+        .route("/editor.css", get(asset))
+        .route("/wpui/{name}", get(crate::remote::ui_route))
         .route("/e/state", get(api_get))
         .route("/e/cue", get(api_get))
         .route("/e/songs", get(api_get))
