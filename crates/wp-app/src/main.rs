@@ -58,6 +58,8 @@ mod actions_ui; // 순서 편집칸: 배경 음악 · ⚡ 송출할 때 자동�
 mod theme; // 디자인 기반: control.css 색·글꼴
 mod icons; // 디자인 기반: Lucide 아이콘
 mod widgets; // 디자인 기반: 공용 위젯
+mod kit; // 상태별 공용 조절 칸 (widgets 에서 다시 내보냄)
+mod specimen; // 자료를 열지 않는 디자인 체계 점검 화면
 mod probar_ui; // (나) 전문가용 위 컨트롤 막대 · 상태 줄
 mod prolayout_ui; // (나) 고정 배치: 큐시트 판 · 뷰어 둘 · 인스펙터 (예전 독 작업공간 대신)
 mod timeline_ui; // (나) 아래 예배 시간표 (보기 전용)
@@ -185,6 +187,9 @@ fn pick_backends() -> eframe::wgpu::Backends {
 }
 
 fn main() -> anyhow::Result<()> {
+    if std::env::args().any(|a| a == "--specimen") {
+        return specimen::run();
+    }
     // 설치 파일이 설치 직후 부른다: 아무것도 하지 않고 끝난다. 새 실행 파일을 처음 읽을 때 걸리는 백신 검사(이 파일 크기로 2초쯤)를
     // 사용자가 아이콘을 누르기 전에 미리 치러 두려는 것
     if std::env::args().any(|a| a == "--warmup") {

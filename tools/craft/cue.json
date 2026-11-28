@@ -1,0 +1,24 @@
+{
+ "format": "worshipcue-cues",
+ "version": 1,
+ "cues": [
+  {
+   "name": "주일 예배 (○○교회)",
+   "startTime": "11:00",
+   "items": [
+    { "id": "c-open", "type": "title", "title": "예배로 부름", "subtitle": "○○교회 주일 예배", "duration": 3 },
+    { "id": "c-song1", "type": "song", "title": "경배 찬양 — 새 아침 밝아 오네", "lyrics": "[1절]\n새 아침 밝아 오네\n주님을 찬양해\n\n[후렴]\n온 땅이 노래하네\n할렐루야 할렐루야\n\n[2절]\n어둔 밤 지나가고\n새 빛이 비치네\n\n[후렴]\n온 땅이 노래하네\n할렐루야 할렐루야", "duration": 8 },
+    { "id": "c-read", "type": "text", "title": "교독문", "body": "인도자: 여호와는 나의 목자시니\n회중: 내게 부족함이 없으리로다\n---\n인도자: 그가 나를 푸른 풀밭에 누이시며\n회중: 쉴 만한 물 가로 인도하시는도다\n---\n다같이: 내 평생에 선하심과 인자하심이 반드시 나를 따르리니", "duration": 4 },
+    { "id": "c-pray", "type": "title", "title": "대표 기도", "subtitle": "홍길동 집사", "duration": 4 },
+    { "id": "c-bible", "type": "bible", "title": "성경봉독", "ref": "요3:16-21", "duration": 5 },
+    { "id": "c-choir", "type": "song", "title": "찬양대 — 주의 사랑 노래해", "lyrics": "[1절]\n주의 사랑 노래해\n영원토록 변함없는\n\n[후렴]\n그 사랑 내게 임하네", "duration": 5 },
+    { "id": "c-sermon", "type": "title", "title": "설교", "subtitle": "이처럼 사랑하사 · 홍길동 목사", "duration": 30, "note": "설교 후 바로 응답 찬양" },
+    { "id": "c-text", "type": "bible", "title": "설교 본문", "ref": "롬8:28-30", "duration": 3 },
+    { "id": "c-song2", "type": "song", "title": "응답 찬양 — 은혜 아니면", "lyrics": "[1절]\n은혜 아니면 설 수 없네\n주의 손 붙드네\n\n[후렴]\n오직 은혜로 사네", "duration": 5 },
+    { "id": "c-notice", "type": "text", "title": "광고", "body": "다음 주 홍길동 집사 생일 축하\n---\n○○교회 성가대 연습은 오후 2시\n---\n주차는 뒤편 주차장을 이용해 주세요", "duration": 5 },
+    { "id": "c-bless", "type": "title", "title": "축도", "subtitle": "", "duration": 2 },
+    { "id": "c-end", "type": "blank", "title": "예배 후 화면", "mode": "background", "duration": 5 }
+   ]
+  }
+ ]
+}

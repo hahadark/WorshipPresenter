@@ -107,6 +107,7 @@ pub fn shortcut_conflicts(s: &Value) -> Vec<(String, String)> {
 pub fn apply_ui_prefs(ctx: &egui::Context, s: &Value) {
     // control.css 테마 5개 (dark·light·contrast·warm·navy) → crate::theme (같은 테마면 아무것도 안 함)
     crate::theme::apply(ctx, crate::theme::ThemeId::from_setting(s["ui"]["theme"].as_str().unwrap_or("pro")));
+    crate::theme::set_reduce_motion(ctx, s["ui"]["reduceMotion"].as_bool().unwrap_or(false));
     let scale = s["ui"]["scale"].as_f64().unwrap_or(100.0).clamp(70.0, 200.0) as f32 / 100.0;
     if (ctx.zoom_factor() - scale).abs() > 0.001 {
         ctx.set_zoom_factor(scale);

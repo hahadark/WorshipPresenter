@@ -24,6 +24,7 @@ use crate::icons;
 use crate::theme::{self, Weight, alpha, mix, pal};
 use eframe::egui::{self, Align2, Color32, CornerRadius, FontId, Galley, Margin, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget};
 use std::sync::Arc;
+pub use crate::kit::*;
 
 /// 단추 종류 (css 클래스)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -62,6 +63,14 @@ pub enum Size {
 impl Size {
     /// (높이, 글자 크기, 좌우 여백, 아이콘 크기, kbd 글자 크기, kbd 앞 간격)
     fn metrics(self) -> (f32, f32, f32, f32, f32, f32) {
+        if pal().bevel {
+            use theme::{Ctl, Type, sp};
+            return match self {
+                Size::Sm => (theme::ctl(Ctl::Sm), Type::Small.size(), sp::X8, 16.0, Type::Micro.size(), sp::X4),
+                Size::Md => (theme::ctl(Ctl::Md), Type::Body.size(), sp::X12, 16.0, Type::Micro.size(), sp::X4),
+                Size::Tall | Size::Big => (theme::ctl(Ctl::Lg), Type::Body.size(), sp::X12, 16.0, Type::Micro.size(), sp::X4),
+            };
+        }
         match self {
             Size::Sm => (24.0, 13.0, 7.0, 14.0, 10.0, 4.0),
             Size::Md => if theme::pal().bevel { (theme::ctl_h(), 13.0, 10.0, 15.0, 10.5, 4.0) } else { (theme::CTL_H, 14.0, 12.0, 16.0, 11.0, 4.0) },
@@ -194,7 +203,7 @@ fn colors(kind: Kind, hovered: bool, selected: bool) -> (Color32, Color32, Color
             Kind::Primary => (if hovered { mix(p.text2, 85.0, Color32::WHITE) } else { mix(p.text2, 88.0, p.raised) }, Color32::TRANSPARENT, Color32::WHITE),
             Kind::Send => (if hovered { if p.dark { Color32::WHITE } else { mix(p.send_bg, 85.0, Color32::WHITE) } } else { p.send_bg }, Color32::TRANSPARENT, p.send_fg),
             // 지우기·삭제는 빨강 없이 보통 단추 (빨강은 송출 중에만) — 묻기·되돌리기로 막는다
-            Kind::Danger => (if hovered { theme::lift(p.raised) } else { p.raised }, Color32::TRANSPARENT, p.text),
+            Kind::Danger => (if hovered { p.hover } else { Color32::TRANSPARENT }, p.line2, p.text2),
             Kind::Warn => (p.warn_bg, p.warn, p.text),
             Kind::Pv => (p.next_bg, p.next, p.next),
             Kind::Ghost => (if selected { p.sel } else { bg }, if selected { p.text2 } else { Color32::TRANSPARENT }, fg),
@@ -273,7 +282,13 @@ impl Widget for Btn {
         let (rect, mut resp) = ui.allocate_exact_size(size, sense);
         if ui.is_rect_visible(rect) {
             let hovered = self.enabled && resp.hovered();
-            let (mut bg, mut border, mut fg) = colors(self.kind, hovered, self.selected);
+            let vis = Vis::of(ui, &resp, self.enabled, self.selected);
+            let (base, base_border, base_fg) = colors(self.kind, false, self.selected);
+            let (hot, hot_border, hot_fg) = colors(self.kind, true, self.selected);
+            let mut bg = theme::lerp(base, hot, vis.hover);
+            let mut border = theme::lerp(base_border, hot_border, vis.hover);
+            let mut fg = theme::lerp(base_fg, hot_fg, vis.hover);
+            if vis.press > 0.0 { bg = theme::lerp(bg, theme::press(base), vis.press); }
             if let Some(c) = self.text_color {
                 fg = c;
             }
@@ -292,7 +307,7 @@ impl Widget for Btn {
             }
             if resp.has_focus() {
                 // :focus-visible { outline: 2px solid accent; outline-offset: 1px }
-                pt.rect_stroke(r.expand(3.0), crate::theme::cr_n(crate::theme::radius(crate::theme::Rad::Md) + 3), Stroke::new(2.0, p.accent), StrokeKind::Inside);
+                focus_ring(ui, r, theme::radius(theme::Rad::Md));
             }
             let mut x = if self.square { r.center().x - ic / 2.0 } else { r.left() + pad_l + ((r.width() - pad_l - pad_r) - w).max(0.0) / 2.0 };
             let cy = r.center().y;
@@ -329,7 +344,7 @@ impl Widget for Btn {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         if let Some(t) = self.tooltip {
-            resp = resp.on_hover_text(t);
+            resp = tip_auto(resp, &t);
         }
         resp
     }
@@ -453,6 +468,7 @@ pub fn segmented_cells<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         let on = *current == *val;
+        let hover_t = theme::anim_bool(ui.ctx(), cr.id.with("hover"), cr.hovered(), theme::T_FAST);
         let rr = st.radius;
         let corner = match (i == 0, i + 1 == n) {
             (true, true) => CornerRadius::same(rr),
@@ -468,8 +484,8 @@ pub fn segmented_cells<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items
             let inner = r.shrink(1.0);
             if on {
                 ui.painter().rect_filled(inner, theme::cr(theme::Rad::Sm), p.sel);
-            } else if cr.hovered() {
-                ui.painter().rect_filled(inner, theme::cr(theme::Rad::Sm), p.hover);
+            } else if hover_t > 0.01 {
+                ui.painter().rect_filled(inner, theme::cr(theme::Rad::Sm), alpha(p.hover, hover_t));
             }
         } else {
         let (bg, border) = if on { (p.sel, p.line2) } else if cr.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
@@ -488,6 +504,7 @@ pub fn segmented_cells<T: PartialEq + Clone>(ui: &mut Ui, current: &mut T, items
         }
         let pt = ui.painter();
         pt.galley(r.center() - g.size() / 2.0, g, if p.bevel && !on { p.muted } else { p.text });
+        if cr.has_focus() { focus_ring(ui, r.shrink(2.0), theme::radius(theme::Rad::Sm)); }
     }
     // 고른 칸 테두리가 옆 칸 위로 오게 (z-index: 1)
     if let Some((r, c)) = sel_rect {
