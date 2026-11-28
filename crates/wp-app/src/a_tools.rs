@@ -3,8 +3,6 @@
 
 use crate::app::{Act, App};
 use eframe::egui::{self, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
 use wp_core::{homefeed, hymns, preservice, sermonpoints as sp};
 
@@ -60,7 +58,7 @@ struct St {
     home: Home,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St { points: Points { numbering: "word".into(), theme: true, application: true, ..Default::default() }, ..Default::default() }));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St { points: Points { numbering: "word".into(), theme: true, application: true, ..Default::default() }, ..Default::default() });
 
 /// 메뉴 'a:…' → 창 열기 (모르는 id 면 false)
 pub fn handle_menu(id: &str) -> bool {

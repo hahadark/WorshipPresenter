@@ -2,8 +2,6 @@
 //! 확인은 다른 스레드에서 (PowerShell 1~3초), 열기는 관리자 승인 창을 띄운다.
 
 use eframe::egui::{self, Color32, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::Value;
 use wp_core::i18n::tr;
 
@@ -14,7 +12,7 @@ struct St {
     note: String,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(Default::default);
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(Default::default);
 
 fn exe() -> std::path::PathBuf {
     std::env::current_exe().unwrap_or_default()
@@ -30,7 +28,7 @@ pub fn check(ctx: &egui::Context) {
         s.busy = true;
     }
     let ctx = ctx.clone();
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let r = wp_core::firewall::status(&exe());
         let mut s = ST.lock();
         s.result = Some(r);
@@ -49,7 +47,7 @@ fn open(ctx: &egui::Context) {
         s.note = tr("관리자 승인 창에서 [예]를 누르세요…");
     }
     let ctx = ctx.clone();
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let r = wp_core::firewall::open(&exe());
         let st = wp_core::firewall::status(&exe());
         let mut s = ST.lock();

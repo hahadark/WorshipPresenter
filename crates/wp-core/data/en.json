@@ -5161,5 +5161,11 @@
  "QR 주소의 열쇠를 바꿉니다. 이미 연결한 휴대폰은 새 QR 을 다시 찍어야 합니다.": "Changes the key in the QR address. Phones already connected must scan the new QR code.",
  "휴대폰 카메라": "Phone camera",
  "막대": "Bar",
- "글자만": "Text only"
+ "글자만": "Text only",
+ "예배당 화면 프로그램이 없습니다. 설치 파일로 다시 설치해 주세요. 자료는 그대로 유지됩니다.": "The Sanctuary screen program is missing. Reinstall using the installer. Your data will be kept.",
+ "예배당 화면을 열지 못했습니다. 도움말에서 로그를 확인하고, 설치 파일로 다시 설치해 주세요.": "The Sanctuary screen could not open. Check the logs under Help and reinstall using the installer.",
+ "예배당 화면이 예기치 않게 닫혀 다시 열었습니다. 반복되면 도움말에서 로그를 확인해 주세요.": "The Sanctuary screen closed unexpectedly and has reopened. If this happens again, check the logs under Help.",
+ "예배당 화면 창이 닫혔습니다. '예배당 화면 켜기'를 눌러 다시 열어 주세요.": "The Sanctuary screen closed. Click 'Open Sanctuary screen' to reopen it.",
+ "예배당 화면을 유지하지 못했습니다. '예배당 화면 켜기'를 누르고, 반복되면 도움말에서 로그를 확인해 주세요.": "The Sanctuary screen could not stay open. Click 'Open Sanctuary screen'; if this happens again, check the logs under Help.",
+ "프로그램 연결 포트를 열지 못했습니다. 다른 워십프리젠터를 닫거나 설정 파일의 port 값을 바꾼 뒤 다시 켜세요.": "The app could not open its connection port. Close other WorshipPresenter instances or change port in the settings file, then restart."
 }

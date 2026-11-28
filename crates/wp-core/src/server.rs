@@ -348,24 +348,50 @@ pub fn router(core: Shared) -> Router {
 /// 서버를 띄운다. 포트가 쓰이고 있으면 다음 포트로 (최대 10번)
 pub async fn serve(core: Shared) -> anyhow::Result<u16> {
     let want = core.lock().port;
+    let l = bind_local(want).await?;
+    let port = l.local_addr()?.port();
+    core.lock().port = port;
+    let app = router(core.clone());
+    crate::remote::init(core.clone());
+    tokio::spawn(async move {
+        if let Err(e) = axum::serve(l, app).await {
+            log::error!("서버 오류: {e}");
+        }
+    });
+    Ok(port)
+}
+
+/// 요청한 포트부터 최대 열 개를 시도한다. 65535 근처에서도 넘치지 않고, 0은 OS가 고른 포트로 쓴다.
+async fn bind_local(want: u16) -> anyhow::Result<tokio::net::TcpListener> {
     let mut last = None;
-    for p in want..want + 10 {
+    for p in want..=want.saturating_add(9) {
         match tokio::net::TcpListener::bind(("127.0.0.1", p)).await {
-            Ok(l) => {
-                core.lock().port = p;
-                let app = router(core.clone());
-                crate::remote::init(core.clone()); // [트랙 D] 리모컨·내부망 서버를 설정에 맞춰 켜고 끔
-                tokio::spawn(async move {
-                    if let Err(e) = axum::serve(l, app).await {
-                        log::error!("서버 오류: {e}");
-                    }
-                });
-                return Ok(p);
-            }
+            Ok(l) => return Ok(l),
             Err(e) => last = Some(e),
         }
     }
-    Err(anyhow::anyhow!("포트를 열 수 없습니다: {:?}", last))
+    log::error!("로컬 서버 포트 {want}..={} 사용 불가: {last:?}", want.saturating_add(9));
+    Err(anyhow::anyhow!(crate::i18n::tr("프로그램 연결 포트를 열지 못했습니다. 다른 워십프리젠터를 닫거나 설정 파일의 port 값을 바꾼 뒤 다시 켜세요.")))
+}
+
+#[cfg(test)]
+mod port_tests {
+    #[tokio::test]
+    async fn occupied_port_uses_another_and_zero_returns_a_real_port() {
+        let first = super::bind_local(0).await.unwrap();
+        let port = first.local_addr().unwrap().port();
+        assert_ne!(port, 0);
+        // OS가 골라 준 포트는 대개 65535 아래지만 경계에서도 panic 하지 않는다.
+        match super::bind_local(port).await {
+            Ok(next) => assert_ne!(next.local_addr().unwrap().port(), port),
+            Err(e) => assert!(e.to_string().contains("port"), "모두 쓰이는 경우에도 복구 방법 안내: {e}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn highest_port_does_not_overflow() {
+        let _ = super::bind_local(u16::MAX).await;
+    }
 }
 
 

@@ -10,7 +10,6 @@ use crate::app::App;
 use crate::widgets::{Btn, Kind, Size};
 use eframe::egui::{self, RichText};
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -38,7 +37,7 @@ pub struct St {
     last_en: String,
 }
 
-pub static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
+pub static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St::default());
 static STOP: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static CANCEL_DL: AtomicBool = AtomicBool::new(false);
 
@@ -72,7 +71,7 @@ fn ready(data: &std::path::Path, model: &str) -> (bool, bool) {
 
 fn start_download(data: std::path::PathBuf, model: String, ctx: egui::Context) {
     CANCEL_DL.store(false, Ordering::SeqCst);
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let prog = |name: &str| {
             let n = name.to_string();
             let c = ctx.clone();
@@ -180,7 +179,7 @@ fn worker(data: &std::path::Path, exe: &std::path::Path, model: &str, stop: &Ato
             let b = std::fs::read(&p)?;
             let i = b.windows(4).position(|w| w == b"data").map(|i| i + 8).unwrap_or(44);
             let pcm: Vec<f32> = b[i..].chunks(2).filter(|c| c.len() == 2).map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect();
-            std::thread::spawn(move || {
+            crate::uistate::spawn(move || {
                 for c in pcm.chunks(1600) {
                     if tx.send(c.to_vec()).is_err() {
                         break;
@@ -286,7 +285,7 @@ fn on_text(text: &str) {
     }
     if can_translate {
         let ko = text.to_string();
-        std::thread::spawn(move || {
+        crate::uistate::spawn(move || {
             match wp_core::aihelp::chat(&cfg, &wp_core::voicefollow::translate_system(), &ko, false, 200) {
                 Ok((en, _)) => {
                     let en = en.lines().next().unwrap_or("").trim().to_string();

@@ -1784,7 +1784,11 @@ impl App {
             if SHOT_DONE.load(std::sync::atomic::Ordering::SeqCst) { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             if shot.is_some() && el > 15.0_f32.max(std::env::var("WP_SHOT_AT").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0) + 10.0) { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
         }
-        ctx.request_repaint();
+        if stage < 2 || shot.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        } else {
+            self.test = None;
+        }
     }
 }
 
@@ -1838,7 +1842,7 @@ impl eframe::App for App {
             log::warn!("조작 화면 한 프레임이 {:.0}ms 걸림", us as f64 / 1000.0);
         }
         crate::imgcache::end_frame(ui.ctx()); // 그림 텍스처 상한 (오래 안 쓴 것 버리기)
-        {
+        if std::env::var_os("WP_DEBUG_MEM").is_some() {
             // 점검용 WP_DEBUG_MEM: 처음 몇 프레임과 그 뒤 10초마다 메모리
             static F: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             static LAST: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
@@ -2035,6 +2039,7 @@ mod settings_theme_link_tests;
 impl App {
     /// 시험용 App (출력 창·점검 인자 없이)
     pub(crate) fn for_test(core: Shared, dir: std::path::PathBuf) -> Self {
+        crate::uistate::new_scope();
         let workspace = crate::workspace_ui::WorkspaceUi::new(core.lock().settings.get());
         Self { editor_on: true, editor_reveal: false, views: MonitorViews::default(), workspace, core, web_dir: dir.clone(), data_dir: dir, search: String::new(), result: Value::Null, versions: vec![], sel: None, edit: None, out: crate::outwin::OutWin::for_test(), monitor: 0, last_flush: Instant::now(), focus_search: false, test: None, tb: Default::default(), tc: Default::default(), viewer_direct_both: false }
     }

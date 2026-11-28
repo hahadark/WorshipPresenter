@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod uistate;
 mod sources_ui; // 인스펙터 '소스' 탭 (로드맵 1단계)
 mod scene_ui; // 화면 구성 편집 창 (로드맵 2단계)
 mod outputs_ui; // 출력 목록 · 추가 출력 창 (로드맵 3단계)

@@ -23,6 +23,8 @@ pub struct OutWin {
     stderr: Arc<Mutex<String>>,
     /// 스스로 끝났을 때 오류 출력의 마지막 줄 (take_exit_reason 으로 한 번 가져간다)
     exit_reason: String,
+    launch: Option<(u16, usize, bool)>,
+    restarts: std::collections::VecDeque<std::time::Instant>,
 }
 
 /// 조작 화면이 띄운 창(예배당·무대·카메라 도우미)을 조작 화면 프로세스와 묶는다.
@@ -80,10 +82,10 @@ pub(crate) fn no_window(c: &mut Command) -> &mut Command {
 impl OutWin {
     #[cfg(test)]
     pub(crate) fn for_test() -> Self {
-        Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![], stderr: Default::default(), exit_reason: String::new() }
+        Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![], stderr: Default::default(), exit_reason: String::new(), launch: None, restarts: Default::default() }
     }
     pub fn new() -> Self {
-        let mut o = Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![], stderr: Default::default(), exit_reason: String::new() };
+        let mut o = Self { child: None, monitors: vec![], error: String::new(), exited: None, extra_args: vec![], stderr: Default::default(), exit_reason: String::new(), launch: None, restarts: Default::default() };
         o.refresh_monitors();
         o
     }
@@ -103,7 +105,8 @@ impl OutWin {
                 })
                 .collect(),
             Err(e) => {
-                self.error = format!("예배당 화면 프로그램을 찾지 못했습니다: {e}");
+                log::error!("예배당 화면 프로그램 확인 실패: {e}");
+                self.error = wp_core::i18n::tr("예배당 화면 프로그램이 없습니다. 설치 파일로 다시 설치해 주세요. 자료는 그대로 유지됩니다.");
                 vec![]
             }
         };
@@ -145,6 +148,11 @@ impl OutWin {
 
     pub fn open(&mut self, port: u16, monitor: usize, windowed: bool) {
         self.close();
+        self.launch = Some((port, monitor, windowed));
+        self.spawn(port, monitor, windowed);
+    }
+
+    fn spawn(&mut self, port: u16, monitor: usize, windowed: bool) {
         let mut cmd = Command::new(exe());
         cmd.args(self.open_args(port, monitor, windowed));
         cmd.stderr(Stdio::piped());
@@ -175,8 +183,31 @@ impl OutWin {
                 self.child = Some(c);
                 self.error.clear();
             }
-            Err(e) => self.error = format!("예배당 화면을 열지 못했습니다: {e}"),
+            Err(e) => {
+                log::error!("예배당 화면 실행 실패: {e}");
+                self.error = wp_core::i18n::tr("예배당 화면을 열지 못했습니다. 도움말에서 로그를 확인하고, 설치 파일로 다시 설치해 주세요.");
+            }
         }
+    }
+
+    /// 의도해서 닫은 창은 그대로 두고, 비정상 종료는 1분에 세 번까지 자동 복구한다.
+    pub fn recover(&mut self, code: Option<i32>) -> bool {
+        if code == Some(0) || code == Some(EXIT_ESC) || self.launch.is_none() || !self.restart_budget(std::time::Instant::now()) {
+            return false;
+        }
+        let (port, monitor, windowed) = self.launch.unwrap();
+        log::warn!("예배당 화면 비정상 종료 {code:?}: 자동 다시 열기 {}/3", self.restarts.len());
+        self.spawn(port, monitor, windowed);
+        self.child.is_some()
+    }
+
+    fn restart_budget(&mut self, now: std::time::Instant) -> bool {
+        self.restarts.retain(|at| now.duration_since(*at).as_secs() < 60);
+        if self.restarts.len() >= 3 {
+            return false;
+        }
+        self.restarts.push_back(now);
+        true
     }
 
     /// 예배당 창(wp-output) 인자
@@ -211,6 +242,8 @@ impl OutWin {
 
     pub fn close(&mut self) {
         self.exited = None;
+        self.launch = None;
+        self.restarts.clear();
         if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();
@@ -245,6 +278,20 @@ impl Drop for OutWin {
 #[cfg(test)]
 mod exit_reason_tests {
     use super::*;
+
+    #[test]
+    fn restart_is_bounded_and_never_reopens_an_intentional_close() {
+        let mut out = OutWin::for_test();
+        let now = std::time::Instant::now();
+        for _ in 0..3 { assert!(out.restart_budget(now)); }
+        assert!(!out.restart_budget(now));
+        assert!(out.restart_budget(now + std::time::Duration::from_secs(60)));
+        out.launch = Some((37528, 0, true));
+        assert!(!out.recover(Some(EXIT_ESC)));
+        assert!(!out.recover(Some(0)));
+        out.close();
+        assert!(!out.recover(None), "조작 화면에서 끄면 다시 켜지지 않는다");
+    }
 
     #[test]
     fn 오류_출력의_마지막_줄을_이유로() {

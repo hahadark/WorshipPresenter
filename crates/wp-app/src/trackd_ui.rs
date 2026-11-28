@@ -41,8 +41,8 @@ struct St {
     draft_t: Option<std::time::Instant>,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
-static BG: Lazy<Mutex<Option<(String, Value)>>> = Lazy::new(|| Mutex::new(None));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St::default());
+static BG: crate::uistate::Global<Option<(String, Value)>> = crate::uistate::Global::new(|| None);
 
 pub fn open(w: Win) {
     let mut s = ST.lock();
@@ -187,6 +187,11 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
 pub(crate) fn output_exit(app: &mut App, ctx: &egui::Context) {
     use wp_core::i18n::tr;
     let Some(code) = app.out.take_exit() else { return };
+    if app.out.recover(code) {
+        app.core.lock().notify(tr("예배당 화면이 예기치 않게 닫혀 다시 열었습니다. 반복되면 도움말에서 로그를 확인해 주세요."), "warn");
+        ctx.request_repaint();
+        return;
+    }
     toggled(&app.core, true, false);
     let mut c = app.core.lock();
     if code == Some(crate::outwin::EXIT_ESC) {
@@ -197,10 +202,10 @@ pub(crate) fn output_exit(app: &mut App, ctx: &egui::Context) {
         let reason = app.out.take_exit_reason();
         log::warn!("예배당 화면 창이 닫혔습니다 (종료 코드 {code:?}) {reason}");
         let msg = if reason.is_empty() {
-            tr("예배당 화면 창이 닫혔습니다.").to_string()
+            tr("예배당 화면 창이 닫혔습니다. '예배당 화면 켜기'를 눌러 다시 열어 주세요.").to_string()
         } else {
             let hint = crate::outwin::explain_exit(&reason).map(|h| format!(" {}", tr(h))).unwrap_or_default();
-            format!("{} ({reason}){hint}", tr("예배당 화면 창이 바로 닫혔습니다."))
+            format!("{}{hint}", tr("예배당 화면을 유지하지 못했습니다. '예배당 화면 켜기'를 누르고, 반복되면 도움말에서 로그를 확인해 주세요."))
         };
         c.notify_act(msg, "warn", "output-on");
     }
@@ -675,7 +680,7 @@ pub(crate) fn obs_urls(ui: &mut egui::Ui, port: u16) {
 /// OBS 창의 동작·연결 확인을 백그라운드에서 (코어 잠금 없이). 상태는 `obs::status` 가 캐시에 남기고, 동작 오류만 BG 로 돌려준다
 fn obs_bg(conf: wp_core::obs::Conf, then_act: Option<Value>) {
     ST.lock().obs_busy = true;
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let mut err = String::new();
         if let Some(a) = then_act {
             if let Err(e) = wp_core::obs::action(&conf, &a) {
@@ -783,7 +788,7 @@ fn obs_ui(ui: &mut egui::Ui, core: &Shared) {
 /// 한글 입력 자동 전환 (설정 imeAuto, 윈도우): 글 입력칸에 새로 들어가면 입력기를 한글로.
 /// egui 는 칸의 종류를 알 수 없어서, 장절·낱말 찾기 칸(search-box)만 빼고 모든 글 입력칸에 적용한다.
 fn ime_on_focus(app: &App, ctx: &egui::Context) {
-    static LAST: Lazy<Mutex<Option<egui::Id>>> = Lazy::new(|| Mutex::new(None));
+    static LAST: crate::uistate::Global<Option<egui::Id>> = crate::uistate::Global::new(|| None);
     let focused = ctx.memory(|m| m.focused());
     let mut last = LAST.lock();
     if focused == *last {

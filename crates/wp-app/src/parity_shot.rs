@@ -93,6 +93,25 @@ fn resolve(app: &App, cases: &[Value]) -> Vec<Value> {
     out
 }
 
+/// 본 그림의 맞춘 크기를 먼저 읽고(read) 그 뒤에 덧그림(pip)을 그린다 — 차례를 한곳에 못 박아 둔다
+fn fit_before_pip(read: impl FnOnce() -> f32, pip: impl FnOnce()) -> f32 {
+    let fit = read();
+    pip();
+    fit
+}
+
+#[cfg(test)]
+mod tests {
+    /// 덧그림(pip)이 '바로 앞 크기' 를 덮어써도 본 그림의 크기가 남아야 한다
+    #[test]
+    fn fit_is_read_before_the_pip_overwrites_it() {
+        let last = std::cell::Cell::new(56.0f32);
+        let fit = super::fit_before_pip(|| last.replace(0.0), || last.set(72.0));
+        assert_eq!(fit, 56.0);
+        assert_eq!(last.get(), 72.0, "pip 이 남긴 값은 부르는 쪽이 버린다");
+    }
+}
+
 /// 점검 모드면 슬라이드 하나를 창 전체에 그리고 true (그 프레임은 다른 화면을 그리지 않는다)
 pub fn run(app: &App, ui: &mut egui::Ui) -> bool {
     if !active() {
@@ -135,13 +154,18 @@ pub fn run(app: &App, ui: &mut egui::Ui) -> bool {
     } else {
         crate::paint::paint_slide(ui, &c, rect, slide, &case["template"], case["versionName"].as_str().unwrap_or(""), true, case["logo"].as_bool().unwrap_or(false), case["hideBg"].as_bool().unwrap_or(false));
     }
-    if case["pipTemplate"].is_object() {
-        let mut sl = case["slide"].clone();
-        sl["caption"] = json!("");
-        crate::paint::paint_pip(ui, &c, rect, &sl, &case["pipTemplate"]);
-    }
+    // 맞춘 글자 크기는 본 그림(자막)의 것 — 웹 쪽 parityRender 도 본 그림의 fit 크기를 돌려준다.
+    // 그림 우상단(pip)을 그린 뒤에 읽으면 pip 안의 글(예: 제목 슬라이드 72)이 덮어써서 '72/56' 처럼 다르게 보였다
+    // (2.0.3~2.1.1 의 obs-pip-score · obs-pip-image '차이'. 그림은 같았고 재는 자리만 틀렸다)
+    let fit = fit_before_pip(|| crate::paint::last_fit(), || {
+        if case["pipTemplate"].is_object() {
+            let mut sl = case["slide"].clone();
+            sl["caption"] = json!("");
+            crate::paint::paint_pip(ui, &c, rect, &sl, &case["pipTemplate"]);
+        }
+    });
     let _ = crate::paint::take_hits();
-    let fit = crate::paint::last_fit();
+    let _ = crate::paint::last_fit(); // pip 이 남긴 값은 버린다 (다음 경우로 새지 않게)
     if !st.asked && st.shown_at.elapsed().as_secs_f32() > 1.5 {
         st.asked = true;
         let path = st.out.join(format!("rust-{}.png", case["name"].as_str().unwrap_or("case")));

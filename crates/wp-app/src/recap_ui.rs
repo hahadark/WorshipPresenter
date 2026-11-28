@@ -5,8 +5,6 @@
 use crate::app::App;
 use crate::widgets::{Btn, Kind, Size};
 use eframe::egui::{self, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use wp_core::i18n::{tr, tr_args};
 use wp_core::recap;
@@ -26,7 +24,7 @@ struct St {
     sum_busy: bool,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St::default()));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St::default());
 static CANCEL: AtomicBool = AtomicBool::new(false);
 
 pub fn handle_menu(id: &str) -> bool {
@@ -111,7 +109,7 @@ fn transcribe_file(app: &App, path: std::path::PathBuf, ctx: egui::Context) {
     };
     CANCEL.store(false, Ordering::SeqCst);
     ST.lock().rec_busy = Some(0.0);
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let r = (|| -> anyhow::Result<String> {
             let pcm = decode(&path)?;
             let srv = wp_core::stt::Server::start(&exe, &wp_core::stt::model_path(&data, &model), "ko", wp_core::stt::threads())?;

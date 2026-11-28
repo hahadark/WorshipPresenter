@@ -5,16 +5,14 @@
 
 use crate::app::{Act, App};
 use eframe::egui::{self, RichText};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 const REPO: &str = "https://github.com/hahadark/WorshipPresenter";
 
-static KEYS_OPEN: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
-static RENAME: Lazy<Mutex<(Option<usize>, String)>> = Lazy::new(|| Mutex::new((None, String::new())));
+static KEYS_OPEN: crate::uistate::Global<bool> = crate::uistate::Global::new(|| false);
+static RENAME: crate::uistate::Global<(Option<usize>, String)> = crate::uistate::Global::new(|| (None, String::new()));
 /// 메뉴 안 메모 칸 (순서 번호, 글)
-static NOTE: Lazy<Mutex<(Option<usize>, String)>> = Lazy::new(|| Mutex::new((None, String::new())));
+static NOTE: crate::uistate::Global<(Option<usize>, String)> = crate::uistate::Global::new(|| (None, String::new()));
 /// 슬라이드 편집기를 열 수 있는 순서 종류 (ctxmenu.js EDITABLE)
 const EDITABLE: [&str; 10] = ["song", "text", "title", "bible", "hymn", "image", "video", "slideshow", "camera", "blank"];
 

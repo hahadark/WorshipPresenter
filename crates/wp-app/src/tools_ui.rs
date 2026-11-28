@@ -31,9 +31,9 @@ struct St {
     comp_loc: String,
 }
 
-static ST: Lazy<Mutex<St>> = Lazy::new(|| Mutex::new(St { dv_kind: "x32".into(), dv_proto: "sony".into(), ..Default::default() }));
+static ST: crate::uistate::Global<St> = crate::uistate::Global::new(|| St { dv_kind: "x32".into(), dv_proto: "sony".into(), ..Default::default() });
 /// 다른 스레드(네트워크)에서 끝난 결과 글
-static RESULT: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+static RESULT: crate::uistate::Global<Option<String>> = crate::uistate::Global::new(|| None);
 
 pub fn open(t: Tool) {
     let mut s = ST.lock();
@@ -289,7 +289,7 @@ fn trigger(ui: &mut egui::Ui, core: &Shared) {
 
 fn run_bg(f: impl FnOnce() -> Result<Value, String> + Send + 'static) {
     ST.lock().msg = wp_core::i18n::tr("보내는 중…").into();
-    std::thread::spawn(move || {
+    crate::uistate::spawn(move || {
         let r = f();
         *RESULT.lock() = Some(match r {
             Ok(v) => format!("보냈습니다 {v}"),

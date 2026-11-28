@@ -2,6 +2,83 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// 같은 폴더에 완성·동기화한 뒤 교체한다. 쓰기 실패/중단 중에는 이전 파일을 그대로 둔다.
+pub fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = path.with_file_name(format!(".{}.{}.{:016x}.tmp", path.file_name().unwrap_or_default().to_string_lossy(), std::process::id(), rand::random::<u64>()));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        replace_file(&tmp, path)?;
+        #[cfg(unix)]
+        std::fs::File::open(path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| std::path::Path::new(".")))?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+#[cfg(not(windows))]
+fn replace_file(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::rename(from, to)
+}
+
+#[cfg(windows)]
+fn replace_file(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+    let from: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod atomic_write_tests {
+    use super::*;
+
+    #[test]
+    fn replaces_complete_file_and_leaves_old_file_when_replacement_is_blocked() {
+        let dir = std::env::temp_dir().join(format!("wp-atomic-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        atomic_write(&path, br#"{"generation":1}"#).unwrap();
+        atomic_write(&path, br#"{"generation":2}"#).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), br#"{"generation":2}"#);
+        // 교체할 수 없는 대상을 만들고, 쓰다 만 임시 파일도 남지 않는지 확인한다.
+        let blocked = dir.join("blocked.json");
+        std::fs::create_dir(&blocked).unwrap();
+        std::fs::write(blocked.join("keep"), b"old").unwrap();
+        assert!(atomic_write(&blocked, b"new").is_err());
+        assert_eq!(std::fs::read(blocked.join("keep")).unwrap(), b"old");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn locked_settings_keep_the_previous_complete_contents() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = std::env::temp_dir().join(format!("wp-atomic-lock-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        atomic_write(&path, b"old complete contents").unwrap();
+        let lock = std::fs::OpenOptions::new().read(true).share_mode(0).open(&path).unwrap();
+        assert!(atomic_write(&path, b"new contents").is_err());
+        drop(lock);
+        assert_eq!(std::fs::read(&path).unwrap(), b"old complete contents");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
 pub fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }

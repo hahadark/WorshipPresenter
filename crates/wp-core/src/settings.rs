@@ -92,13 +92,11 @@ static BG: Lazy<parking_lot::Mutex<std::sync::mpsc::Sender<BgJob>>> = Lazy::new(
         for job in rx {
             match job {
                 BgJob::Write(file, txt, st) => {
-                    let tmp = file.with_extension("json.tmp");
                     let r = (|| -> std::io::Result<()> {
                         if let Some(d) = file.parent() {
                             fs::create_dir_all(d)?;
                         }
-                        fs::write(&tmp, txt)?;
-                        fs::rename(&tmp, &file)
+                        crate::util::atomic_write(&file, txt.as_bytes())
                     })();
                     let mut last = st.err.lock();
                     if let Err(e) = r {
@@ -306,9 +304,7 @@ impl Settings {
         if let Some(d) = self.file.parent() {
             fs::create_dir_all(d)?;
         }
-        let tmp = self.file.with_extension("json.tmp");
-        fs::write(&tmp, serde_json::to_string_pretty(&self.data)?)?;
-        fs::rename(&tmp, &self.file)?;
+        crate::util::atomic_write(&self.file, serde_json::to_string_pretty(&self.data)?.as_bytes())?;
         self.dirty = false;
         self.bg.failed.store(false, std::sync::atomic::Ordering::Relaxed);
         *self.bg.err.lock() = (None, None);
