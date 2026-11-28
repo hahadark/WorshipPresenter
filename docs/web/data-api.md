@@ -192,6 +192,6 @@ node scripts/bible-import.mjs --db <bible.db> --version KRV --church <교회> --
 
 ## 8. 2C · 3 작업자에게
 
-- **2C (R2)**: `assets` 표(`church_id, id, sha256, name, type, size, r2_key, created_at, deleted_at`, 색인 `(church_id, sha256)`)만 만들어 두었다. 길 `POST /api/v1/assets` · `GET /api/v1/assets/{id}` 는 `cloud/src/assets/` 에서, 권한은 `can(role, 'write')` · `'read'` 를 그대로 쓰면 된다(`protocol.mjs` route 에 한 줄 + `index.mjs` 에 kind 하나). 문서 payload 안의 파일 주소 바꾸기는 2B.
+- **2C (R2)** — 구현함, 계약은 [`assets-api.md`](assets-api.md). (처음 적은 것) `assets` 표(`church_id, id, sha256, name, type, size, r2_key, created_at, deleted_at`, 색인 `(church_id, sha256)`)만 만들어 두었다. 길 `POST /api/v1/assets` · `GET /api/v1/assets/{id}` 는 `cloud/src/assets/` 에서, 권한은 `can(role, 'write')` · `'read'` 를 그대로 쓰면 된다(`protocol.mjs` route 에 한 줄 + `index.mjs` 에 kind 하나). 문서 payload 안의 파일 주소 바꾸기는 2B.
 - 첫 화면: `/` 와 로그인 답의 `home` 은 같은 표(`protocol.mjs HOME`) — member-editor → `/editor`, member-viewer → `/outputs/main`.
 - **3 (웹 조작 화면)**: `Transport` 의 '문서 읽기 · 쓰기 · 구독' 을 위 2 · 3절로. 성경은 4절 `passage` (설치판과 같은 모양이라 슬라이드 나누기를 그대로 쓸 수 있음). 구독은 지금 `sync?after=` 묻기 — 실시간 알림(중계실 `{t:'doc'}` 같은 것)이 필요하면 덧붙이는 메시지로 정할 것.
