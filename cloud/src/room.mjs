@@ -270,7 +270,8 @@ export class ChurchRoom extends DurableObject {
   revoke(cred) {
     let n = 0;
     for (const ws of this.ctx.getWebSockets()) {
-      if (cred && this.att(ws).cred === cred) { n++; try { ws.close(CLOSE.revoked, 'revoked'); } catch { /* 이미 닫힘 */ } }
+      const c = String(this.att(ws).cred || '');
+      if (cred && (c === cred || (cred.startsWith('m:') && c.startsWith(`${cred}:`)))) { n++; try { ws.close(CLOSE.revoked, 'revoked'); } catch { /* 이미 닫힘 */ } }
     }
     return json({ ok: true, closed: n });
   }
