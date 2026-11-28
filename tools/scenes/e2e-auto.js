@@ -187,10 +187,17 @@ const trig = async (base, q) => (await (await fetch(`${base}/api/trigger/${q}${q
     ok(!!(sc && sc.outputs && sc.outputs.length >= 2 && sc.list.length === 4), '리모컨 상태에 구성 단추: ' + (sc ? sc.outputs.map(o => o.name + '=' + o.now).join(' · ') : JSON.stringify(rs).slice(0, 200)));
     // 리모컨 페이지 모양 (도킹 화면)
     const rp = await browser.open(`${base}/dock/`, 420, 1100);
-    await rp.waitFor(`!document.getElementById('scenesCard').hidden`, 10000).catch(() => {});
+    // craft-web(F3) 리모컨: '구성' 탭 안에서 출력 분절 [예배당 | OBS] → 그 출력의 구성 단추만
+    await rp.waitFor(`!document.querySelector('[data-tab="layout"]').hidden`, 10000).catch(() => {});
+    await rp.eval(`document.querySelector('[data-tab="layout"]').click(), true`);
     await sleep(800);
     await rp.shot(path.join(out, '7-remote-dock.png'));
-    ok(await rp.eval(`document.querySelectorAll('#scenes [data-sc]').length >= 10`), '리모컨 화면에 구성 단추 (출력마다)');
+    const outs = await rp.eval(`document.querySelectorAll('#scenes [data-osel]').length`);
+    const first = await rp.eval(`document.querySelectorAll('#scenes [data-sc]').length`);
+    await rp.eval(`(document.querySelectorAll('#scenes [data-osel]')[1] || {click(){}}).click(), true`);
+    await sleep(600);
+    const second = await rp.eval(`[...document.querySelectorAll('#scenes [data-sc]')].map(b => b.dataset.out)[0] || ''`);
+    ok(outs >= 2 && first >= 5 && second && second !== 'main', '리모컨 화면에 구성 단추 (출력마다: 출력 ' + outs + '개, 단추 ' + first + '개, 둘째 출력 ' + second + ')');
   } finally {
     for (const k of Object.keys(browser.pages || {})) try { browser.pages[k].close(); } catch {}
     app.proc.kill();
