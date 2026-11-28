@@ -199,5 +199,5 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 - 휴대폰 리모컨 · 휴대폰 카메라 · 웹 편집기를 전문가 테마 한 벌로. 공통 `web/shared/ui/wpweb.{css,js}` (서버 `/wpui/<이름>`, 정한 세 이름만). 세부 · 예전 자리 → 새 자리 · 실기 확인 목록: **docs/web-craft.md**.
 - 색: 빨강 = 송출 중만, 노랑 = '다음'에 올린 것만(리모컨 '다음' 글 · [송출] 전 고른 순서), 고름 · 켜짐은 회색. 리모컨 '모두 끄기' 는 길게 누르기, 순서 목록은 누르면 '다음' → [송출].
 - 웹 화면 문구는 HTML 의 `data-en` (화면 언어 = 앱 `uiLang` → `<html data-app-lang>`). en.json 이 아니라 화면 파일에 영어를 둔다.
-- 시험: `node tools/webui/e2e.js`(가짜 서버 43) · 같은 것을 진짜 앱으로 `--remote … --edit … --cam …`(36) · 캡처 `tools/webui/shots.js`(가짜) · `real-shots.js`(진짜). 점검 앱은 `tmp/craft/run-app.sh` 처럼 격리 자료 + 다른 포트.
+- 시험: `node tools/webui/e2e.js`(가짜 서버 44) · 같은 것을 진짜 앱으로 `--remote … --edit … --cam …`(37) · 캡처 `tools/webui/shots.js`(가짜) · `real-shots.js`(진짜). 점검 앱은 `tmp/craft/run-app.sh` 처럼 격리 자료 + 다른 포트.
 - 두 번 눌러 확대를 touchend 로 막으면 빠르게 누른 '다음 다음' 의 두 번째가 사라진다 — CSS `touch-action: manipulation` 만 쓸 것.

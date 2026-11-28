@@ -90,6 +90,9 @@ async function editFlow(b, url, pin, m) {
   ok(await wait(p, `document.querySelector('#list button[data-id="${id}"]').classList.contains('on') && document.querySelector('.item input[data-f=title]')`), '큐시트를 열면 순서 표');
   await p.eval(`(() => { const i = document.querySelector('.item input[data-f=title]'); i.focus(); i.value += ' (웹)'; i.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`);
   ok(await p.eval(`document.getElementById('state').classList.contains('dirty') && !document.getElementById('save').disabled && document.querySelector('.item').classList.contains('changed')`), '고치면 고친 것 있음 · 저장 단추 켜짐 · 바뀐 줄 표시');
+  await p.eval(`document.querySelector('#list button[data-id="${id}"]').click(); 1`);
+  await sleep(1200);
+  ok(await p.eval(`document.querySelector('.item input[data-f=title]').value.endsWith(' (웹)') && document.getElementById('state').classList.contains('dirty')`), '고치는 중에 같은 큐시트를 목록에서 다시 눌러도 고친 것이 남는다');
   await p.key('s', 'KeyS', 2); // Ctrl+S
   ok(await wait(p, `document.getElementById('msg').textContent.includes('저장') || document.getElementById('msg').textContent.includes('Saved')`), 'Ctrl+S → 저장됨');
   const after = (await (await fetch(url + 'e/cue?id=' + id, { headers: H })).json()).cue;

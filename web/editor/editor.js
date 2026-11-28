@@ -120,7 +120,13 @@
     }).join('');
     $('list').innerHTML = h || '<div class="none">' + t('큐시트가 없습니다. 위 [새 큐시트] 로 만드세요.', 'No cue sheets yet. Make one with New.') + '</div>';
   }
-  $('list').onclick = function (e) { var b = e.target.closest('button[data-id]'); if (b) openCue(b.dataset.id); };
+  $('list').onclick = function (e) {
+    var b = e.target.closest('button[data-id]');
+    if (!b) return;
+    // 이미 열린 큐시트: 다시 불러오지 않는다 (그 사이 고친 것을 덮지 않게). 휴대폰은 표 화면으로만.
+    if (cur && cur.id === b.dataset.id) { $('app').classList.add('editing'); return; }
+    openCue(b.dataset.id);
+  };
   $('newBtn').onclick = function () { $('newRow').hidden = !$('newRow').hidden; if (!$('newRow').hidden) $('newname').focus(); };
   $('newRow').onsubmit = function (e) {
     e.preventDefault();
@@ -152,8 +158,11 @@
       $('list').querySelectorAll('button[data-id]').forEach(function (b) { b.classList.toggle('on', b.dataset.id === id); });
     }
     var my = ++openCue.seq; // 늦게 온 옛 답이 나중에 누른 것을 덮지 않게
+    var editsBefore = cur && cur.id === id ? sig(cur) : null;
     return api('/e/cue?id=' + encodeURIComponent(id)).then(function (j) {
       if (j.auth || my !== openCue.seq) return;
+      // 불러오는 사이 같은 큐시트를 고쳤으면 늦게 온 답으로 덮지 않는다 (다시 불러오기는 고친 것을 버린다고 물은 뒤에만)
+      if (editsBefore !== null && cur && cur.id === id && sig(cur) !== editsBefore) { touch(); return; }
       if (!j.ok) { $('placeholder').querySelector('b').textContent = t('큐시트를 고르세요', 'Choose a cue sheet'); setState('err', t('불러오지 못함', 'Not loaded')); W.toast(t('큐시트를 불러오지 못했습니다', 'Could not load the cue sheet'), j.network ? t('PC 에 닿지 않습니다. 잠시 뒤 다시 누르세요.', 'Cannot reach the PC. Try again shortly.') : j.error, { err: true }); return; }
       var keep = keepView && cur && cur.id === j.cue.id;
       cur = j.cue;
