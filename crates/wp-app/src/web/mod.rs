@@ -19,6 +19,7 @@ pub mod bible;
 pub mod cloud;
 pub mod fonts;
 pub mod live;
+pub mod media;
 pub mod menu;
 pub mod offline; // 6단계: 서비스 워커 · IndexedDB 보관함 · '연결 끊김 · 올릴 것 N개'
 pub mod outbox; // 6단계: 올릴 줄 (POST /api/v1/sync 20개씩)
@@ -58,6 +59,9 @@ thread_local! {
     static DEBUG: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
     /// 주소에 ?debug 가 있을 때만 점검 상태를 만든다 (프레임마다 드는 일을 평소에는 하지 않게)
     static DEBUG_ON: bool = web_sys::window().and_then(|w| w.location().search().ok()).is_some_and(|s| s.contains("debug"));
+    /// 점검용 (?debug): wpMenu(id) 로 넣은 메뉴 항목 — 다음 프레임에 설치판 메뉴 처리기로
+    static MENU_Q: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    static SHARED_DBG: std::cell::RefCell<Option<wp_core::core::Shared>> = const { std::cell::RefCell::new(None) };
 }
 
 /// 설치판 App 을 그대로 감싸고, 프레임마다 점검용 상태(검색 칸 글 · 큐시트 순서 글)를 남긴다
@@ -65,11 +69,19 @@ struct WebApp(app::App);
 
 impl eframe::App for WebApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // 끌어다 놓은 파일: 브라우저는 경로 없이 바이트만 준다 → 교회 저장소에 올려 순서로 (설치판 dnd 는 경로를 쓰므로 여기서 가져간다)
+        if !raw.dropped_files.is_empty() {
+            media::dropped(self.0.core.clone(), std::mem::take(&mut raw.dropped_files));
+        }
         self.0.raw_input_hook(ctx, raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        for id in MENU_Q.with(|q| std::mem::take(&mut *q.borrow_mut())) {
+            crate::track_c::handle_menu(&mut self.0, &id);
+        }
         self.0.ui(ui, frame);
         cloud::ui(ui.ctx()); // 클라우드 상태 띠 (보기 전용 · 넘겨받기 · 교회 관리)
+        media::ui(ui.ctx(), &self.0.core); // 휴대폰 카메라 창
         if cloud::authed() && !cloud::demo() {
             let live = self.0.core.try_lock().is_some_and(|g| g.pres.live.as_ref().is_some_and(|l| l.visible));
             offline::ui(ui.ctx(), live); // 6단계: 연결 끊김 · 올릴 것 N개 · 저장 멈춤 · 새 버전 있음
@@ -83,9 +95,17 @@ impl eframe::App for WebApp {
             let live = serde_json::json!({ "version": l["version"], "hasLive": l["hasLive"], "visible": l["visible"], "title": l["passage"]["title"], "index": l["index"], "outputs": g.outputs.len() });
             (g.cue.as_ref().map(|c| serde_json::json!({ "id": c.id, "items": c.items })), ui.ctx().memory(|m| m.focused()).map(|i| format!("{i:?}")), live)
         };
-        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "cloudButtons": cloud::debug_rects(), "offline": offline::debug(), "store": store::debug(), "versions": self.0.core.lock().store.list_versions().iter().map(|v| v.id.clone()).collect::<Vec<_>>() }).to_string();
+        let (cams, versions, probing) = {
+            let g = self.0.core.lock();
+            (crate::camscan::choices(&g).iter().map(|c| json_pair(&c.device_id, &c.label)).collect::<Vec<_>>(), g.store.list_versions().iter().map(|v| v.id.clone()).collect::<Vec<_>>(), g.camera_probing())
+        };
+        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "cloudButtons": cloud::debug_rects(), "aiWaiting": wp_core::web::ai::waiting(), "mediaBusy": media::busy(), "offline": offline::debug(), "store": store::debug(), "cameras": cams, "camProbing": probing, "versions": versions }).to_string();
         DEBUG.with(|d| *d.borrow_mut() = s);
     }
+}
+
+fn json_pair(a: &str, b: &str) -> serde_json::Value {
+    serde_json::json!([a, b])
 }
 
 pub fn start() {
@@ -130,6 +150,62 @@ pub fn start() {
             let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpAiTest"), f.as_ref());
         }
         f.forget();
+        // wpMenu('c:scenes') · wpSceneMake('split') → 구성 id · wpScene('main', id, hold) → 송출 구성 바꾸기 (설치판 trigger_scene 과 같은 길)
+        let m = Closure::<dyn Fn(String)>::new(|id: String| MENU_Q.with(|q| q.borrow_mut().push(id)));
+        let mk = Closure::<dyn Fn(String) -> String>::new(|kind: String| {
+            SHARED_DBG.with(|s| s.borrow().as_ref().map(|sh| {
+                let n = wp_core::scenes::new_scene(&kind, "", None);
+                sh.lock().save_scene(&n).map(|v| v["id"].as_str().unwrap_or("").to_string()).unwrap_or_else(|e| format!("오류: {e}"))
+            })).unwrap_or_default()
+        });
+        let sc = Closure::<dyn Fn(String, String, bool) -> String>::new(|out: String, id: String, hold: bool| {
+            SHARED_DBG.with(|s| s.borrow().as_ref().map(|sh| sh.lock().trigger_scene(&out, &id, hold).unwrap_or_else(|e| format!("오류: {e}")))).unwrap_or_default()
+        });
+        if let Some(w) = web_sys::window() {
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpMenu"), m.as_ref());
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpSceneMake"), mk.as_ref());
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpScene"), sc.as_ref());
+        }
+        m.forget();
+        mk.forget();
+        sc.forget();
+        // wpProbeCameras() · wpPutFiles([손잡이…]) · wpAddItem(json) — 카메라 찾기 · 파일 넣기 · 순서 넣기 (화면 단추와 같은 길)
+        let pc = Closure::<dyn Fn()>::new(|| SHARED_DBG.with(|s| if let Some(sh) = s.borrow().as_ref() { crate::camscan::probe(sh) }));
+        let pf = Closure::<dyn Fn(String)>::new(|hs: String| {
+            let hs: Vec<f64> = serde_json::from_str(&hs).unwrap_or_default();
+            SHARED_DBG.with(|s| if let Some(sh) = s.borrow().as_ref() { media::put_handles(sh.clone(), hs) });
+        });
+        let ai = Closure::<dyn Fn(String)>::new(|it: String| {
+            SHARED_DBG.with(|s| if let Some(sh) = s.borrow().as_ref() { if let Ok(v) = serde_json::from_str(&it) { let mut c = sh.lock(); c.add_item(v, None); c.emit(Ev::Ui); } });
+        });
+        if let Some(w) = web_sys::window() {
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpProbeCameras"), pc.as_ref());
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpPutFiles"), pf.as_ref());
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpAddItem"), ai.as_ref());
+        }
+        let aw = Closure::<dyn Fn() -> f64>::new(|| wp_core::web::ai::waiting() as f64);
+        let oc = Closure::<dyn Fn(String)>::new(|id: String| SHARED_DBG.with(|s| if let Some(sh) = s.borrow().as_ref() { sh.lock().open_cue(&id) }));
+        // wpSaveSource(json) → 인스펙터 소스 탭의 [더하기] 와 같은 길 (Core::save_source)
+        let ss = Closure::<dyn Fn(String) -> String>::new(|v: String| SHARED_DBG.with(|s| s.borrow().as_ref().map(|sh| {
+            let v: serde_json::Value = serde_json::from_str(&v).unwrap_or_default();
+            let mut c = sh.lock();
+            let r = c.save_source(&v).map(|x| x["id"].as_str().unwrap_or("").to_string()).unwrap_or_else(|e| format!("오류: {e}"));
+            c.emit(Ev::Live);
+            r
+        })).unwrap_or_default());
+        if let Some(w) = web_sys::window() {
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpSaveSource"), ss.as_ref());
+        }
+        ss.forget();
+        if let Some(w) = web_sys::window() {
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpAiWaiting"), aw.as_ref());
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpOpenCue"), oc.as_ref());
+        }
+        aw.forget();
+        oc.forget();
+        pc.forget();
+        pf.forget();
+        ai.forget();
     }
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
     let t0 = now_ms();
@@ -176,6 +252,8 @@ pub fn start() {
                     }
                     let shared = Arc::new(Mutex::new(core));
                     wp_core::hymns::install(&shared); // 백그라운드 일(run_bg)이 끝나면 코어를 다시 잡으려고 (웹은 다음 차례에 같은 스레드)
+                    cloud::set_core(shared.clone());
+                    SHARED_DBG.with(|s| *s.borrow_mut() = Some(shared.clone()));
                     if authed {
                         store::cloud_start(shared.clone()); // 큐시트 · 찬양: /api/v1/documents · sync
                         bible::start(shared.clone()); // 성경: 교회 번역본 (IndexedDB 에 보관)

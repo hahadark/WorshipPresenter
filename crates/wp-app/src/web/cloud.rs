@@ -32,6 +32,8 @@ fn read_cfg() -> Option<Cfg> {
 }
 
 thread_local! {
+    /// 코어 (띠의 단추가 쓴다 — 송출 주체가 아닌 편집자도)
+    static CORE: RefCell<Option<Shared>> = const { RefCell::new(None) };
     static CFG: Option<Cfg> = read_cfg();
     static BR: RefCell<Option<Bridge>> = const { RefCell::new(None) };
     static UI: RefCell<UiState> = RefCell::new(UiState::default());
@@ -182,6 +184,10 @@ pub fn release() {
 }
 
 /// 주인으로 로그인했으면 송출 주체로 붙는다 (편집자 · 보기만은 붙지 않는다 — source 권한 없음)
+pub fn set_core(core: Shared) {
+    CORE.with(|c| *c.borrow_mut() = Some(core));
+}
+
 pub fn start_bridge(core: Shared) {
     if !authed() || !can("source") {
         return;
@@ -400,6 +406,28 @@ pub fn ui(ctx: &egui::Context) {
                         }
                     }
                     _ => {}
+                }
+                if wp_core::web::ai::waiting() > 0 {
+                    ui.label(egui::RichText::new("AI 답 기다리는 중…").size(12.0)); // 기다리는 동안에도 다른 조작이 된다
+                }
+                // 4단계: 파일 넣기 (그림 · 영상 · 소리 · PDF · 글꼴 · PPT → 교회 저장소 → 큐시트 순서) · 휴대폰 카메라
+                if can("write") && super::media::available() && !demo() {
+                    let n = super::media::busy();
+                    if n > 0 {
+                        ui.label(egui::RichText::new(format!("올리는 중… {n}")).size(12.0));
+                    }
+                    let b = ui.small_button("파일 넣기…").on_hover_text("그림 · 영상 · 소리 · PDF · 글꼴 · PowerPoint 를 교회 저장소에 올려 큐시트 끝에 넣습니다. 화면에 끌어다 놓아도 됩니다.");
+                    note_rect("files", &b);
+                    if b.clicked() {
+                        if let Some(core) = CORE.with(|c| c.borrow().clone()) {
+                            super::media::pick_and_put(core);
+                        }
+                    }
+                    let b = ui.small_button("휴대폰 카메라…");
+                    note_rect("phone", &b);
+                    if b.clicked() {
+                        super::media::open_phone();
+                    }
                 }
                 if can("manage") && ui.small_button("교회 관리").on_hover_text("사람 · 기기 열쇠(리모컨 · 편집기 PIN) · AI 설정 — 새 탭").clicked() {
                     open_tab("/owner");

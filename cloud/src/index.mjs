@@ -5,6 +5,7 @@ import * as auth from './auth.mjs';
 import { PROTOCOL, SESSION_TTL, can, fail, homeOf, json, route, validChurch } from './protocol.mjs';
 import { page } from './pages.mjs';
 import * as data from './data/index.mjs';
+import * as easyLogin from './identity/login.mjs'; // 쉬운 로그인 (docs/web/login.md)
 import * as identity from './identity/index.mjs';
 import * as assets from './assets/index.mjs';
 import * as ai from './ai/index.mjs'; // 5단계 AI (docs/web/ai.md)
@@ -69,6 +70,7 @@ async function handle(request, env) {
   if (path === '/auth/login' && method === 'POST') return login(request, env, url);
   if (path === '/auth/logout' && method === 'POST') {
     if (!sameOrigin(request, url)) return fail(403, '다른 곳에서 온 요청입니다.');
+    await easyLogin.logout(request, env); // 쉬운 로그인: 이 기기 세션 줄도 끊는다
     return json({ ok: true }, 200, { 'set-cookie': auth.setCookie(auth.COOKIE, '', request, 0) });
   }
   if (path === '/api/v1/admin/churches' && method === 'POST') return adminCreateChurch(request, env);
@@ -83,6 +85,7 @@ async function handle(request, env) {
   if (dr?.kind === 'assets') return data.bearer(request, env, url, dr, tiered(assets.handle)); // 2C 파일 (같은 열쇠 확인)
 
   const session = await auth.sessionOf(request, env);
+  const renewed = session ? await easyLogin.maybeRenew(env, request, session).catch(() => null) : null; // 이 기기 기억: 하루 넘게 쓰면 90일로
   // 둘러보기 (로그인 없이 — 데모 쿠키를 준다)
   if (path === '/demo' && method === 'GET') return demo.enter(request, env, url, session, (name, cfg) => page(name, { v: PROTOCOL, ...cfg, authed: true }));
   if (session?.role === 'demo') { const x = demo.demoRate(request, env); if (x) return x; }
@@ -179,7 +182,7 @@ async function handle(request, env) {
   else if (r.kind === 'media-api') res = await media.handle(request, env, url, s, r); // ('media' 는 1단계 설치판 파일 중계)
   else if (r.kind === 'tiers') res = await tiers.handle(request, env, url, s, r);
   else res = await toRoom(env, request, s);
-  return withCookies(res, fresh?.headers);
+  return withCookies(res, [...(fresh?.headers || []), ...(renewed || [])]);
 }
 
 // ---------- 로그인 ----------

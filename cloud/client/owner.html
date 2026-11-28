@@ -53,10 +53,30 @@
   <!-- 3단계 (web-egui): 사람 · 교회 AI — cloud/client/control/owner-extra.js -->
   <h2>사람 (편집자 · 보기만)</h2>
   <div class="box" id="wp-people"><span class="muted">불러오는 중…</span></div>
+  <!-- 쉬운 로그인: 초대 · 로그인한 기기 — cloud/client/owner-login.js (docs/web/login.md) -->
+  <h2>사람 초대</h2>
+  <div class="box">
+    <div class="row">
+      <input id="iv-email" type="email" placeholder="구글 이메일 (예: name@gmail.com)" style="flex:1;width:auto" maxlength="254">
+      <select id="iv-role" style="width:auto"><option value="editor">편집자</option><option value="viewer">보기만</option><option value="owner">주인</option></select>
+      <button class="primary" type="button" id="iv-send">초대</button>
+      <button type="button" id="iv-link">초대 링크 만들기</button>
+    </div>
+    <p class="muted">이메일로 초대하면 그 사람이 그 구글 계정으로 로그인할 때 바로 이 역할로 들어옵니다. 링크는 받은 사람이 구글로 로그인해 받습니다.</p>
+    <div id="iv-out"></div>
+    <p class="err" id="iv-err"></p>
+    <table><thead><tr><th>이메일</th><th>역할</th><th>상태</th><th></th></tr></thead><tbody id="iv-list"></tbody></table>
+  </div>
+  <h2>로그인한 기기</h2>
+  <div class="box">
+    <p class="err" id="ss-err"></p>
+    <table><thead><tr><th>사람</th><th>기기</th><th>마지막 사용</th><th></th></tr></thead><tbody id="ss-list"></tbody></table>
+  </div>
   <h2>교회 AI</h2>
   <div class="box" id="wp-ai"><span class="muted">불러오는 중…</span></div>
 </main>
 <script src="/cloud/owner.js"></script>
 <script src="/cloud/control/owner-extra.js"></script>
+<script src="/cloud/owner-login.js"></script>
 </body>
 </html>

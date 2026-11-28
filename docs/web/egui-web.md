@@ -194,6 +194,48 @@ egui 는 막은 뒤에도 키를 그대로 받는다(eframe 0.37 `on_keydown` �
 
 ![둘러보기의 웹 조작 화면](images/egui-web-demo-control.png)
 
+## 4단계 — 미디어 붙이기 · 화면 구성 확인 · AI 안 멈춤 (2026-11-28 저녁, 가지 `web-scenes`)
+
+### 미디어 (4B 부품을 웹 조작 화면에)
+
+- 브라우저 도우미 `web/app/media-glue.js`(`window.wpMedia`) + Rust `crates/wp-app/src/web/media.rs`. 4B 의 `/cloud/media/assets-client.mjs` · `pdf.mjs` 를 그대로 `import` 한다(클라우드에서 열었을 때만 — 내 PC 시험에서는 '로그인했을 때 됩니다' 알림).
+- **카메라**: 설치판의 '카메라 찾기'(`camscan::probe`)는 숨은 도우미 창을 띄우는데, 웹은 이 페이지가 `enumerateDevices` 로 찾아(이름을 보려고 잠깐 켰다 끔) **같은 길**(`Core::start_camera_probe` → `receive_camera_devices`, 일회용 토큰)로 넣는다 → 카메라 설정 창 · 라이브러리 카메라 탭 · 큐시트 카메라 편집칸이 그대로 돈다. 교회 중계실에 붙은 휴대폰(`/rtc/phones`)도 `phone:<id>` · '휴대폰 · 이름' 으로 함께. 미리보기 단추는 4B 의 `/cameras`(이 PC 카메라 맞추기) 새 탭. `camscan.rs` 의 `probe · watch · preview` 첫 줄에 cfg.
+- **파일 넣기**: 띠의 [파일 넣기…] 또는 화면에 끌어다 놓기 → 2C 에 올려(같은 sha256 이면 묻기만) 큐시트 끝에 — 그림 `{type:'image'}` · 영상 `{type:'video', endAction:'hold'}` · 소리(빈 화면 순서 + 배경 음악 `music`) · PDF(pdf.js 쪽 그림 → 슬라이드쇼, 설치판 `pdf.rs` 와 같은 모양) · 글꼴(교회 글꼴로 올리기만 — 출력은 `fonts.css`) · PowerPoint(올리기만 — 웹에서 그림으로 만드는 것은 아직, 설치판이 만든 뒤 쓴다). 끌어다 놓은 파일은 설치판 `dnd.rs`(경로를 씀)보다 먼저 가져간다(`WebApp::raw_input_hook`).
+- **휴대폰 카메라**: 띠의 [휴대폰 카메라…] 창 — 링크 · QR(POST `/api/v1/media/phone-link`), 붙은 휴대폰 목록 → [순서로 넣기](이름을 설정 `cameras[id].label` 에 남김). 설치판 메뉴 `d:phonecam`(이 PC 서버)은 웹에서 숨김.
+- 메뉴: 카메라 설정(`b:cameras`) · 라이브러리(`b:lib`)를 웹에서 다시 보이게 했다(카메라 찾기가 되므로). 라이브러리의 폴더 목록은 이 PC 폴더라 비어 있다.
+
+### 화면 구성 (4A) — 확인
+
+- 설치판의 구성 편집기(`scene_ui.rs`) · 소스 탭 · 출력마다 다른 구성 · 전환 · '지금 한 번' 은 **같은 egui 코드라 웹에서 그대로** 열리고 돈다. 클라우드 출력은 1단계부터 출력 자료(`scene` · `sources` · `sceneTransition`)를 그대로 그린다.
+- 확인함: 좌우 나눔 구성 만들기 → '지금 한 번' → 클라우드 출력 자료의 `scene` · 전환(move 0.4초) → 출력 탭 `body[data-scene]` 이 그 구성, 오른쪽 칸에 송출 중인 카메라(가짜 장치) / 웹 페이지 소스 → 출력 탭에 iframe.
+- 웹에서 안 되는 소스: 실시간 자막(`caption`, 음성 인식이 웹에 없음 — 설치판에 맡기기), 화면 캡처(설치판도 그리지 않음 — 같음), 카메라 동시 열기 시험(`d:camtest`, 도우미 창 — 숨김). 새로 만들 것은 없었다.
+- **고친 것**: 소스 더하기가 웹에서 조작 화면 전체를 멈추게 했다 — `sources::rand_id` 의 `std::process::id()`(웹에서 panic). PPT 모아보기의 `std::env::temp_dir()` 도 같은 문제라 함께 고침 (cfg 몇 줄).
+
+### AI 가 답을 기다리는 동안 안 멈춤
+
+- 웹의 `hymns::run_bg` 를 '받아 적고 다시 돌리기'(`wp_core::web::ai::run_replay`)로: 일을 한 번 돌리면 `aihelp::chat` 이 기다리지 않고 요청만 적어 두고 빠져나온다 → 요청을 비동기(fetch)로 보내는 동안 화면은 계속 돈다 → 답이 오면 같은 일을 다시 돌리고 이번에는 받아 둔 답을 쓴다. 설치판 AI 일(`cuecheck::ask_ai` 등)은 고치지 않았다 — 웹의 `run_bg` 가 `FnOnce` 대신 `Fn` 을 받아서, 값을 옮기던 두 곳(`say_ui` · `a_tools`)에 `.clone()` 하나씩.
+- 띠에 'AI 답 기다리는 중…'. 확인: 답이 1.5초 늦게 오게(네트워크 지연 흉내) 해도 그동안 화면을 97번 그림(멈추면 0번).
+- 예배 후 정리(`recap_ui`)는 스레드를 쓰는 화면이라 웹에서는 아직 '설치판에서 해 주세요'.
+
+### 증거
+
+| 시험 | 결과 |
+|---|---|
+| `tools/web/media-e2e.js` (Edge 헤드리스 · 가짜 카메라 · 로컬 wrangler dev) | **20/20**, 연달아 세 번: 띠 단추 · 파일 넣기 4종(그림 · 영상 · 소리 · PDF 2쪽) → 2C 주소 · PDF 쪽 그림 받기 · 영상 송출 → 출력 탭 재생 · PDF 쪽 그림 · 카메라 찾기 → 출력 탭에서 같은 이름으로 열림 · 휴대폰 링크 · 구성 만들기 · 구성 바꾸기 → 출력 자료 · 출력 탭 구성 · 웹 페이지 소스 iframe · AI 기다리는 동안 안 멈춤 |
+| `tools/web/cloud-e2e.js` (3단계) | 29/29 (같은 서버에서 다시) |
+
+![구성 편집기 (웹)](images/egui-web-4-scene-editor.png)
+![클라우드 출력: 좌우 나눔 + 카메라 칸](images/egui-web-4-out-scene-camera.png)
+![카메라 설정 (웹에서 찾기)](images/egui-web-4-cameras.png)
+![파일 넣기 뒤 큐시트](images/egui-web-4-files-added.png)
+![PDF 쪽 그림 (클라우드 출력)](images/egui-web-4-out-pdf.png)
+
+### 확인 못 한 것 (4단계)
+
+- 실제 카메라(UVC) · 실제 휴대폰 카메라 · 두 프로그램이 같은 카메라를 함께 여는 것 (이 PC 의 영상 장치는 화면을 내보낼 수 있어 쓰지 않음).
+- 휴대폰 카메라 창의 [링크 · QR 만들기] 단추는 화면에서 눌러 보지 않았다(같은 API 는 시험함).
+- 90 MiB 넘는 영상(나눠 올리기) · 웹에서 PowerPoint 를 슬라이드 그림으로 만들기 · 소리 순서의 실제 재생(출력의 음악) · OBS 브라우저 소스.
+
 ## 계약에 바라는 것 → 반영함 (2026-11-28 오후, `architecture.md`)
 
 1. IME 문구 삭제 — 반영.

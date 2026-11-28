@@ -469,7 +469,24 @@ pub fn shared() -> Option<crate::core::Shared> {
     SHARED.get().and_then(|w| w.upgrade())
 }
 
+/// [웹판] 같은 일을 같은 스레드에서 — AI 답을 기다리는 동안 화면이 멈추지 않게 '다시 돌리기'(web::ai::run_replay) 로.
+/// 일이 두 번 돌 수 있어 FnOnce 대신 Fn 을 받는다 (부르는 쪽 클로저는 거의 다 빌려 쓰기만 한다)
+#[cfg(target_arch = "wasm32")]
+pub fn run_bg<T: 'static>(work: impl Fn() -> T + 'static, done: impl FnOnce(&mut Core, T) + 'static) {
+    crate::web::ai::run_replay(
+        Box::new(work),
+        Box::new(move |r| {
+            if let Some(sh) = shared() {
+                let mut c = sh.lock();
+                done(&mut c, r);
+                c.emit(crate::core::Ev::Ui);
+            }
+        }),
+    );
+}
+
 /// 백그라운드로 일을 돌리고, 끝나면 코어를 잡아 done 을 부른다 (화면이 멈추지 않게)
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run_bg<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static, done: impl FnOnce(&mut Core, T) + Send + 'static) {
     spawn_big(move || {
         let r = work();

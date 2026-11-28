@@ -128,7 +128,7 @@ pub fn show(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
         let (text, cfg, cx) = (s.text.clone(), app.core.lock().ai_cfg(), app.core.lock().say_ctx());
         s.busy = true;
         wp_core::hymns::run_bg(
-            move || saycmd::ask_ai(&cfg, &text, &cx).map(|(v, _)| (v, cx)),
+            move || saycmd::ask_ai(&cfg, &text, &cx).map(|(v, _)| (v, cx.clone())), // [웹판] 일을 다시 돌릴 수 있게 (run_bg 가 웹에서 Fn)
             |core, r| {
                 let mut s = ST.lock();
                 s.busy = false;

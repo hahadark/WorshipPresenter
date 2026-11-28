@@ -77,7 +77,8 @@ function ws(p, headers) {
   const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; wait.set(i, { res, rej }); sock.send(JSON.stringify({ id: i, method, params })); });
   const ev = async (e) => { const x = await send('Runtime.evaluate', { expression: e, awaitPromise: true, returnByValue: true }); return x.result.value; };
   const shot = async (n) => { const x = await send('Page.captureScreenshot', { format: 'png' }); const f = path.join(out, `${which}-${n}.png`); fs.writeFileSync(f, Buffer.from(x.data, 'base64')); return f; };
-  const click = async (x, y) => { for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); };
+  // 실제 마우스처럼 옮긴 뒤 누른다 (egui 는 누르기 전 포인터 자리를 본다)
+  const click = async (x, y) => { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(60); for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); };
   const dbg = async () => { try { return JSON.parse(await ev('window.wpDebug ? window.wpDebug() : "null"')); } catch { return null; } };
   await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 960, deviceScaleFactor: 1, mobile: false });
@@ -89,7 +90,8 @@ function ws(p, headers) {
   check('조작 화면이 뜸 (/control/)', times && times.painted, times);
   // 문서 · 성경 · 송출 주체
   let d = null;
-  for (let i = 0; i < 60; i++) { d = await dbg(); if (d && d.cue && d.cue.id === 'cloud-cue-1' && (d.versions || []).includes('krv') && /Active/.test(d.cloud)) break; await sleep(300); }
+  // 같은 로컬 D1 에 다른 시험(media-e2e)의 큐시트가 있을 수 있다 → 이 시험의 큐시트를 연다 (큐시트 고르기와 같은 길)
+  for (let i = 0; i < 60; i++) { try { await ev("window.wpOpenCue && window.wpOpenCue('cloud-cue-1'); 1"); } catch {} d = await dbg(); if (d && d.cue && d.cue.id === 'cloud-cue-1' && (d.versions || []).includes('krv') && /Active/.test(d.cloud)) break; await sleep(300); }
   check('교회 큐시트를 받아 엶', d && d.cue && d.cue.id === 'cloud-cue-1', d && d.cue && d.cue.id);
   check('교회 성경 번역본을 받음', d && (d.versions || []).includes('krv'), d && d.versions);
   check('송출 주체로 붙음 (설치판 없음)', d && /Active/.test(d.cloud), d && d.cloud);

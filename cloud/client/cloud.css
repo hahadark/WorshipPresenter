@@ -24,3 +24,18 @@ code { font-family: Consolas, monospace; font-size: 13px; word-break: break-all;
 .dot.on { background: var(--ok); }
 .secret { margin-top: 12px; padding: 12px; border: 1px dashed var(--accent); border-radius: 4px; }
 a { color: inherit; }
+/* 쉬운 로그인 (휴대폰에서 한 화면 · 큰 단추) */
+main.login { max-width: 440px; }
+.big { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 52px; font-size: 17px; font-weight: 600; border-radius: 8px; text-decoration: none; }
+a.big.google { background: #fff; color: #1f1f1f; border: 1px solid #c6c9ce; margin-top: 16px; }
+a.big.google:hover { background: #f4f5f6; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); margin: 18px 0 10px; font-size: 13px; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--edge); }
+.check { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 12px 2px; color: var(--text); font-size: 15px; }
+.check .muted { flex-basis: 100%; padding-left: 28px; }
+.check input { width: 20px; height: 20px; }
+.stack { display: grid; gap: 10px; }
+details.box { margin-top: 14px; }
+details.box summary { cursor: pointer; color: var(--muted); }
+.center { text-align: center; }
+main.login input { font-size: 16px; padding: 12px; } /* 16px: 아이폰이 글자 칸을 누를 때 확대하지 않게 */

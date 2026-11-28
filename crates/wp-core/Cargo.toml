@@ -52,7 +52,8 @@ sqlite-wasm-rs = { version = "0.6.3", features = ["wasm-bindgen"] }
 getrandom = { version = "0.4", features = ["wasm_js"] }
 wasm-bindgen = "0.2.130"
 js-sys = "0.3.107"
-web-sys = { version = "0.3.107", features = ["Window", "Storage", "console", "Performance", "XmlHttpRequest"] }
+wasm-bindgen-futures = "0.4.80"
+web-sys = { version = "0.3.107", features = ["Window", "Storage", "console", "Performance", "XmlHttpRequest", "Request", "RequestInit", "Response", "Headers", "RequestCredentials"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ttf-parser = "0.25.1" # 맥: Apple SD Gothic Neo(.ttc)에서 Regular·Bold 면 찾기

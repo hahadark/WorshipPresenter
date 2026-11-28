@@ -62,7 +62,10 @@ pub fn build(slides: &[(Option<PathBuf>, String, bool)]) -> Result<Vec<(usize, u
     let tw = if n > 160 { 300.0 } else { 384.0 };
     let th = (tw * 9.0 / 16.0_f64).round();
     let mut pngs: Vec<(usize, usize, image::RgbaImage)> = vec![];
+    #[cfg(not(target_arch = "wasm32"))]
     let tmp = std::env::temp_dir();
+    #[cfg(target_arch = "wasm32")]
+    let tmp = PathBuf::from("/wp/tmp"); // [웹판] std::env::temp_dir 는 panic
     for s in (0..n).step_by(per) {
         let cells: Vec<(usize, Option<PathBuf>, String, bool)> = (s..(s + per).min(n)).map(|k| (k + 1, slides[k].0.clone(), slides[k].1.clone(), slides[k].2)).collect();
         let svg = sheet_svg(&cells, cols, tw, th);
