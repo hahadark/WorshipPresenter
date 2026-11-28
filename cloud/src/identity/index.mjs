@@ -4,7 +4,7 @@
 //   GET/POST /api/v1/members · PATCH/DELETE /api/v1/members/{id}   → 주인(manage)만
 //   POST /api/v1/me/password {current, next}           → 사람 계정 본인 비밀번호 바꾸기
 import * as auth from '../auth.mjs';
-import { PROTOCOL, SESSION_TTL, fail, json, validChurch } from '../protocol.mjs';
+import { HOME, PROTOCOL, SESSION_TTL, fail, json, validChurch } from '../protocol.mjs';
 import { readBody } from '../data/documents.mjs';
 import { accessConfigured, verifyAccessJwt } from './access.mjs';
 import { checkPassword, hashPassword, newPassword, weakPassword } from './password.mjs';
@@ -14,7 +14,6 @@ import {
 
 const ipOf = request => request.headers.get('cf-connecting-ip') || 'local';
 const sameOrigin = (request, url) => { const o = request.headers.get('origin'); return !o || o === url.origin; };
-const HOME = { owner: '/owner', 'member-editor': '/editor', 'member-viewer': '/outputs/main' };
 const BAD = '교회 이름이나 로그인 이름 · 비밀번호가 맞지 않습니다.';
 
 // ---------- 틀린 횟수 (1단계 auth_failures 표를 같이 쓴다, scope 앞머리로 나눔) ----------

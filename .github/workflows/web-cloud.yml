@@ -5,7 +5,7 @@ name: Web cloud
 on:
   push:
     branches: [web, 'web-*']
-    paths: ['cloud/**', 'web/**', 'docs/web/**', 'crates/wp-app/src/menubar.rs', 'crates/wp-app/src/settings_items.rs', '.github/workflows/web-cloud.yml']
+    paths: ['cloud/**', 'web/**', 'docs/web/**', 'crates/wp-app/src/menubar.rs', 'crates/wp-app/src/settings_items.rs', 'crates/wp-core/src/parser.rs', 'crates/wp-core/src/books.rs', 'crates/wp-core/data/books.json', '.github/workflows/web-cloud.yml']
   workflow_dispatch:
     inputs:
       deploy:

@@ -421,6 +421,24 @@ test('사람 계정: 주인이 만들기 · 비밀번호 로그인 · 역할별 
   assert.equal((await req(`/auth/access?church=${CHURCH}`)).status, 404);
 });
 
+test("'/' 는 역할마다 로그인 답의 home 과 같은 첫 화면으로 (사람 계정 · 기기 열쇠)", async () => {
+  const first = async cookie => new URL((await req('/', { cookie })).headers.get('location')).pathname;
+  assert.equal(await first(''), '/login');
+  assert.equal(await first(ownerA), '/owner');
+  assert.equal(await first(await login('output')), '/outputs/main');
+  assert.equal(await first(await login('remote')), '/remote');
+  assert.equal(await first(await login('editor')), '/editor');
+  for (const role of ['editor', 'viewer', 'owner']) {
+    const name = `home${role}${run}`;
+    const mk = await req('/api/v1/members', { method: 'POST', cookie: ownerA, headers: W, body: { login: name, role } });
+    assert.equal(mk.status, 201, mk.text);
+    const r = await req('/auth/member', { method: 'POST', headers: W, ip: newIp(), body: { church: CHURCH, login: name, password: mk.json.password } });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(await first(cookieOf(r.headers)), r.json.home, role);
+    assert.equal(r.json.home, { editor: '/editor', viewer: '/outputs/main', owner: '/owner' }[role]);
+  }
+});
+
 test('기기 열쇠 · PIN 로그인 · 실시간 중계는 그대로 (1단계와 함께 돈다)', async () => {
   const bridge = await fakeBridge();
   const out = await login('output');
