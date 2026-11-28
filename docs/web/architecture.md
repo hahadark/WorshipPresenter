@@ -201,7 +201,7 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 
 **된 것**
 - 클라우드: `/outputs/main · overlay · stage · out-…` · `/remote` · `/editor` · `/owner` · 로그인 · 기기 열쇠 · 실시간 중계 · 리모컨 · 편집기 되돌림 · 미디어 중계(이진 조각) · 열쇠 지우면 바로 끊기 · 틀린 횟수 잠금(PIN 만 교회 전체).
-- 설치판: `crates/wp-core/src/cloud.rs`(기본 꺼짐, 스레드 하나, wss · ws, 다시 잇기, 바뀐 것만 보내기, 타이머만 도는 것은 다시 보내지 않음) · `crates/wp-app/src/cloud_ui.rs`(클라우드 연결 창). 창은 **휴대폰 리모컨 · 웹 편집기 창의 '클라우드 연결…' 단추**와 점검 인자 `--tool cloud` 로 연다. 메뉴 막대 표는 승인된 안 A 로 시험이 묶여 있어 줄을 더하지 않았다 — 메뉴 정돈 뒤 '연결' 메뉴에 `d:cloud` 한 줄을 권한다.
+- 설치판: `crates/wp-core/src/cloud.rs`(기본 꺼짐, 스레드 하나, wss · ws, 다시 잇기, 바뀐 것만 보내기, 타이머만 도는 것은 다시 보내지 않음) · `crates/wp-app/src/cloud_ui.rs`(클라우드 연결 창). 창은 **메뉴 연결 → 클라우드 연결**(`d:cloud`, 안 A 표 `docs/menu-2026-11/plan-a.json` 과 메뉴 시험의 기대 목록에 한 줄 더함), 휴대폰 리모컨 · 웹 편집기 창의 '클라우드 연결…' 단추, 점검 인자 `--tool cloud` 로 연다.
 - 기존 파일에 더한 것: `wp-core/src/lib.rs`(모듈 한 줄) · `server.rs`(`cloud::init` 한 줄) · `Cargo.toml`(`webpki-roots`, 이미 ureq 가 쓰는 판) · `wp-app/src/main.rs`(모듈 한 줄) · `tools_ui.rs`(창 부르기 한 줄 · 단추 두 줄) · `data/en.json`(맨 앞에 38줄).
 
 **확인한 것** (증거는 `cloud/artifacts/`, Git 제외 — 다시 만들려면 아래 명령)

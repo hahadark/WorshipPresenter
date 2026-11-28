@@ -73,6 +73,7 @@ pub fn handle_menu(app: &mut App, id: &str) {
         "d:lan" => crate::tools_ui::open(crate::tools_ui::Tool::Lan),
         "d:phonecam" => crate::tools_ui::open(crate::tools_ui::Tool::PhoneCam),
         "d:webedit" => crate::tools_ui::open(crate::tools_ui::Tool::WebEdit),
+        "d:cloud" => crate::cloud_ui::open(), // 웹판 1단계
         d if d.starts_with("d:") && crate::trackd_ui::handle_menu(d) => {} // [트랙 D] 주보 · 출력 · OBS
         a if a.starts_with("ai:") && crate::ai_ui::handle_menu(a) => {} // AI 도우미
         a if a.starts_with("a:") && crate::a_tools::handle_menu(a) => {} // [트랙 A] 설교 포인트 · 예배 전 화면 · 홈페이지 주보
