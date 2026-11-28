@@ -82,7 +82,7 @@ function wsock(p, headers) {
 
   const port = 9300 + Math.floor(Math.random() * 300);
   const prof = path.join(out, 'profile-edge-' + Date.now());
-  const proc = spawn(exe, [`--remote-debugging-port=${port}`, `--user-data-dir=${prof}`, '--headless=new', '--no-first-run', '--force-device-scale-factor=1', '--window-size=1600,960',
+  const proc = spawn(exe, [`--remote-debugging-port=${port}`, `--user-data-dir=${prof}`, '--headless=new', '--no-first-run', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--force-device-scale-factor=1', '--window-size=1600,960',
     '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: 'ignore' });
   const cdpBase = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 100; i++) { try { if ((await fetch(cdpBase + '/json/version')).ok) break; } catch {} await sleep(150); }

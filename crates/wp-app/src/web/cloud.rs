@@ -34,6 +34,8 @@ fn read_cfg() -> Option<Cfg> {
 thread_local! {
     /// 코어 (띠의 단추가 쓴다 — 송출 주체가 아닌 편집자도)
     static CORE: RefCell<Option<Shared>> = const { RefCell::new(None) };
+    /// 상태가 바뀌면 화면(띠)을 다시 그리게
+    static CTX: RefCell<Option<egui::Context>> = const { RefCell::new(None) };
     static CFG: Option<Cfg> = read_cfg();
     static BR: RefCell<Option<Bridge>> = const { RefCell::new(None) };
     static UI: RefCell<UiState> = RefCell::new(UiState::default());
@@ -188,6 +190,18 @@ pub fn set_core(core: Shared) {
     CORE.with(|c| *c.borrow_mut() = Some(core));
 }
 
+pub fn set_ctx(ctx: egui::Context) {
+    CTX.with(|c| *c.borrow_mut() = Some(ctx));
+}
+
+fn repaint() {
+    CTX.with(|c| {
+        if let Some(ctx) = c.borrow().as_ref() {
+            ctx.request_repaint();
+        }
+    });
+}
+
 pub fn start_bridge(core: Shared) {
     if !authed() || !can("source") {
         return;
@@ -213,7 +227,10 @@ fn connect() {
                 return;
             }
             if let Ok(m) = serde_json::from_str::<Value>(&s) {
+                let t = m["t"].as_str().unwrap_or("").to_string();
                 on_message(m);
+                trace(&format!("{t}→{:?}", state()));
+                repaint(); // 띠 · 연결된 출력 수가 바로 보이게 (전에는 다른 일이 다시 그릴 때까지 옛 상태가 남았다)
             }
         }
     });
@@ -221,6 +238,8 @@ fn connect() {
     onmsg.forget();
     let onclose = Closure::<dyn FnMut(web_sys::CloseEvent)>::new(|e: web_sys::CloseEvent| {
         let code = e.code();
+        trace(&format!("close {code}"));
+        repaint();
         if code == 4003 {
             UI.with(|u| u.borrow_mut().logged_out = true);
             with(|b| b.state = State::Off);
@@ -264,6 +283,23 @@ fn hello() {
     .unwrap_or_default();
     send_raw(&json!({ "t": "hello", "v": 1, "app": format!("워십프리젠터 웹 {}", env!("CARGO_PKG_VERSION")), "lang": lang, "outputs": outputs,
         "caps": { "remote": false, "editor": false, "media": false }, "source": "web" }));
+}
+
+thread_local! {
+    /// 점검용: 받은 메시지 · 상태 변화 마지막 20개 (wpDebug 의 cloudTrace)
+    static TRACE: RefCell<std::collections::VecDeque<String>> = RefCell::new(Default::default());
+}
+fn trace(s: &str) {
+    TRACE.with(|t| {
+        let mut t = t.borrow_mut();
+        t.push_back(format!("{:.0} {s}", js_sys::Date::now() % 1_000_000.0));
+        while t.len() > 20 {
+            t.pop_front();
+        }
+    });
+}
+pub fn trace_dump() -> Vec<String> {
+    TRACE.with(|t| t.borrow().iter().cloned().collect())
 }
 
 fn on_message(m: Value) {

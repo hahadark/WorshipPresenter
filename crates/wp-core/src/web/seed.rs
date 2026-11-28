@@ -53,7 +53,7 @@ pub fn apply(core: &mut Core, seed: &Value) -> anyhow::Result<(usize, usize, usi
 // 모양은 계약 docs/web/architecture.md 6절의 documents(kind, id, payload) — payload 는 설치판 JSON 그대로.
 // 지금은 브라우저 안(localStorage)에, 2단계에서는 같은 문서를 /api/v1/documents 로 (wp-app web::store)
 
-fn cue_doc(c: &Cue) -> Value {
+pub fn cue_doc(c: &Cue) -> Value {
     serde_json::json!({ "id": c.id, "name": c.name, "serviceDate": c.service_date, "startTime": c.start_time, "items": c.items, "memo": c.memo, "pinned": c.pinned, "template": c.template })
 }
 

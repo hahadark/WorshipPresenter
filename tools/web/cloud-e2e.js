@@ -65,7 +65,7 @@ function ws(p, headers) {
   // 브라우저
   const port = 9300 + Math.floor(Math.random() * 300);
   const prof = path.join(out, 'profile-' + which + '-' + Date.now());
-  const proc = spawn(exe, [`--remote-debugging-port=${port}`, `--user-data-dir=${prof}`, '--headless=new', '--no-first-run', '--force-device-scale-factor=1', '--window-size=1600,960', 'about:blank'], { stdio: 'ignore' });
+  const proc = spawn(exe, [`--remote-debugging-port=${port}`, `--user-data-dir=${prof}`, '--headless=new', '--no-first-run', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--force-device-scale-factor=1', '--window-size=1600,960', 'about:blank'], { stdio: 'ignore' });
   const cdpBase = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 100; i++) { try { if ((await fetch(cdpBase + '/json/version')).ok) break; } catch {} await sleep(150); }
   const tab = (await (await fetch(cdpBase + '/json/list')).json()).find((t) => t.type === 'page');
@@ -78,8 +78,11 @@ function ws(p, headers) {
   const ev = async (e) => { const x = await send('Runtime.evaluate', { expression: e, awaitPromise: true, returnByValue: true }); return x.result.value; };
   const shot = async (n) => { const x = await send('Page.captureScreenshot', { format: 'png' }); const f = path.join(out, `${which}-${n}.png`); fs.writeFileSync(f, Buffer.from(x.data, 'base64')); return f; };
   // 실제 마우스처럼 옮긴 뒤 누른다 (egui 는 누르기 전 포인터 자리를 본다)
-  const click = async (x, y) => { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(60); for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); };
-  const dbg = async () => { try { return JSON.parse(await ev('window.wpDebug ? window.wpDebug() : "null"')); } catch { return null; } };
+  const click = async (x, y) => { await send('Page.bringToFront'); await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(60); for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); };
+  // 진단: 페이지의 requestAnimationFrame 이 도는지 (헤드리스에서 가끔 멈춤)
+  const rafAlive = async () => ev("Promise.race([new Promise(r => requestAnimationFrame(() => r('raf'))), new Promise(r => setTimeout(() => r('멈춤 ' + document.visibilityState + ' focus=' + document.hasFocus()), 1000))])").catch((e) => 'err ' + e.message);
+  // 헤드리스 Edge 는 가끔 페이지를 hidden 으로 둔다 → rAF 가 멈춰 egui 가 안 그림 (진단으로 확인, 앞으로 가져오면 다시 돎)
+  const dbg = async () => { try { if ((await ev('document.visibilityState')) !== 'visible') await send('Page.bringToFront'); return JSON.parse(await ev('window.wpDebug ? window.wpDebug() : "null"')); } catch { return null; } };
   await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 960, deviceScaleFactor: 1, mobile: false });
   const u = new URL(BASE);
@@ -130,6 +133,8 @@ function ws(p, headers) {
   check('설치판이 붙으면 설치판이 주체 (웹이 넘겨받지 않았으므로)', ready && ready.standby === false, ready);
   for (let i = 0; i < 30; i++) { d = await dbg(); if (/Standby/.test(d.cloud)) break; await sleep(200); }
   check('웹은 대기(보기 전용)로', /Standby/.test(d.cloud), d.cloud);
+  if (!/Standby/.test(d.cloud)) { const r1 = await rafAlive(); await send('Page.bringToFront'); const r2 = await rafAlive(); const x = await send('Page.captureScreenshot', { format: 'png' }).then(() => 'shot').catch((e) => e.message); const r3 = await rafAlive(); console.error('[진단] rAF=' + r1 + ' → bringToFront ' + r2 + ' → ' + x + ' ' + r3 + ' · frame ' + (await dbg()).frame); }
+  if (!/Standby/.test(d.cloud)) console.error('[진단] 지금=' + (await ev('window.wpCloudNow()')) + ' · 프레임=' + d.frame + '→' + (await sleep(800), (await dbg()).frame) + ' · trace=' + JSON.stringify(d.cloudTrace) + ' · room=' + JSON.stringify((await api(owner, 'GET', '/api/v1/room')).json).slice(0, 600));
   await shot('control-standby');
   desk.send({ t: 'render', client: 'main', data: { version: 9001, tag: 'desk' } });
   const dr = await viewer.wait((m) => m.t === 'render' && m.data && m.data.tag === 'desk');
@@ -147,8 +152,13 @@ function ws(p, headers) {
   const cb = (await dbg()).cloudButtons || {};
   check('띠에 [넘겨받기…] 단추', cb.claim, cb);
   if (cb.claim) {
-    await click(cb.claim[0], cb.claim[1]); await sleep(500);
-    const cf = (await dbg()).cloudButtons || {};
+    await shot('control-before-claim');
+    let cf = {};
+    for (let k = 0; k < 3 && !cf.confirm; k++) {
+      await click(cb.claim[0], cb.claim[1]); await sleep(500);
+      cf = (await dbg()).cloudButtons || {};
+      if (!cf.confirm) { const dd = await dbg(); console.error('[진단] 넘겨받기 누름 ' + (k + 1) + '번째: 확인 창 없음 · rAF=' + (await rafAlive()) + ' · pointer=' + JSON.stringify(dd.pointer) + ' · wantsPtr=' + dd.wantsPtr + ' · frame=' + dd.frame + ' · focus=' + dd.focus + ' · room=' + JSON.stringify((await api(owner, 'GET', '/api/v1/room')).json).slice(0, 400)); await shot('control-noconfirm-' + k); }
+    }
     await shot('control-confirm');
     check('넘겨받기 확인 창', cf.confirm, cf);
     if (cf.confirm) { await click(cf.confirm[0], cf.confirm[1]); }
@@ -184,6 +194,9 @@ function ws(p, headers) {
   let ownerOk = false;
   for (let i = 0; i < 40; i++) { await sleep(250); ownerOk = await ev("!!document.querySelector('#pp-add') && !!document.querySelector('#ai-save')").catch(() => false); if (ownerOk) break; }
   check('주인 화면에 사람 · AI 구획', ownerOk);
+  // 이 시험이 전에 넣고 못 지운 사람은 먼저 뺀다 (교회 사람 계정은 50개까지 — 같은 로컬 D1 로 여러 번 돌리면 다 참)
+  const old = await api(owner, 'GET', '/api/v1/members');
+  for (const m of (old.json && old.json.members) || []) if (/^web-e2e-/.test(m.login || '')) await api(owner, 'DELETE', '/api/v1/members/' + encodeURIComponent(m.id));
   const mlogin = 'web-e2e-' + Date.now().toString(36);
   await ev(`document.getElementById('pp-label').value='시험 편집자'; document.getElementById('pp-login').value='${mlogin}'; document.getElementById('pp-role').value='editor'; document.getElementById('pp-add').click(); 1`);
   let listed = false;
@@ -200,6 +213,11 @@ function ws(p, headers) {
   const mbr = ws('/bridge', { cookie: mc.join('; '), origin: BASE });
   const mres = await mbr.open.then(() => 'opened', (e) => e.message);
   check('편집자는 송출 주체(/bridge)로 못 붙음', /거절 40[13]/.test(mres), mres);
+  { // 넣은 사람은 시험 끝에 뺀다
+    const all = await api(owner, 'GET', '/api/v1/members');
+    const me = ((all.json && all.json.members) || []).find((m) => m.login === mlogin);
+    if (me) await api(owner, 'DELETE', '/api/v1/members/' + encodeURIComponent(me.id));
+  }
   // 6. 둘러보기 (DEMO_ENABLED=1): 데모 쿠키로 /control/ — 견본 교회 · 송출 주체(방문자마다 따로)
   const dr0 = await fetch(BASE + '/demo', { redirect: 'manual', headers: { 'cf-connecting-ip': '198.19.7.' + (1 + Math.floor(Math.random() * 200)) } });
   const dcook = dr0.headers.getSetCookie().map((c) => c.split(';')[0]);
