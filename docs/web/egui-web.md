@@ -9,7 +9,7 @@
 '브라우저에서 오류(panic)가 나면 조작 화면 전체가 멈춘다'는 점이며, 아래 '남은 위험'에 적었다.
 
 - 앞선 Codex 작업자의 '안 된다' 판정(그대로 빌드하면 mio 에서 막힘)은 출발점이었고, 플랫폼 층으로 넘었다.
-- 시작점: `a311ce8` (origin/rust 2.1.1 기록). 가지 `web-egui`.
+- 시작점: `a311ce8` (origin/rust 2.1.1 기록)에서 시험한 뒤 `origin/web` 위로 옮기고(9e0707e 위에 다시 쌓음) a5d46fa 를 합쳤다. 가지 `web-egui`.
 
 ![조작 화면 (Edge, 견본 자료로 송출 중)](images/egui-web-control-edge.png)
 
@@ -167,4 +167,14 @@ node tools/web/probe.js --browser edge --headful --app --steps tools/web/steps/i
 
 ## 최종 검증 기록
 
-(아래에 채움)
+| 시험 | 기준 | 결과 |
+|---|---|---|
+| 설치판 단위 시험 | a311ce8 위 | wp-app 256 · wp-core 372 통과 (2.1.1 과 같은 수) |
+| 〃 | origin/web 9e0707e 위로 옮긴 뒤 | wp-app 264 · wp-core 377 통과 |
+| 〃 | origin/web a5d46fa 합친 뒤 | wp-app 264 · wp-core 377 통과, wasm 빌드 성공 (wasm 31,184,403 → brotli 7,793,534) |
+| wasm32 빌드 | 위 세 기준 모두 | `cargo check -p wp-app --target wasm32-unknown-unknown` 오류 없음, `tools/web/build.sh` 성공 |
+| parity (`tools/parity`) | 9e0707e 위 debug exe, 사관님 자료 읽기 전용 사본(SQLite backup · settings.json, 네트워크 설정 끔) | 48개 중 글자 크기 46개 같음. 다른 둘 obs-pip-image 72/46 · obs-pip-score 72/56 은 2.0.7 · 2.1.x 부터 있던 차이(CLAUDE.md). 최대 화소 차 3.8% |
+| 브라우저 회귀 (옮긴 뒤) | 9e0707e 위 wasm | 송출(Chrome) · 실제 IME 15/15(Edge) 다시 통과 |
+| 브라우저 · 저장 | a311ce8 위 wasm | 큐시트 글 고친 뒤 새로 고침 → 그대로 남음 |
+
+자료 다루기: 사관님 자료(`%APPDATA%\WorshipPresenter-rs\data`)는 읽기만 했다. 견본(개역한글 6장)은 사본에서 뽑았고, parity 는 작업 폴더 `tmp\data`(Git 제외) 사본으로 했다. 실행 중인 다른 프로세스는 끄지 않았다(시험용 브라우저 · 앱만, 프로필 폴더로 골라 정리).

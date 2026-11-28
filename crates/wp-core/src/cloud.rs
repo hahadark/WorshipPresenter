@@ -18,7 +18,7 @@ use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
 
 /// 계약 버전 (cloud/src/protocol.mjs PROTOCOL 과 같게)

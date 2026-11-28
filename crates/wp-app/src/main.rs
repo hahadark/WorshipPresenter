@@ -53,7 +53,11 @@ mod tpl_controls; // 템플릿 편집 속성 칸 부품
 mod tpl_inspect; // 템플릿 편집 속성 칸
 mod track_c; // [트랙 C]
 mod tools_ui;
+#[cfg(not(target_arch = "wasm32"))]
 mod cloud_ui; // 클라우드 연결 창 (웹판 1단계)
+#[cfg(target_arch = "wasm32")]
+#[path = "web/cloud_ui.rs"]
+mod cloud_ui; // [웹판] 브라우저 조작 화면은 그 자체가 클라우드 쪽 — 설치판의 연결 창 자리만
 mod trackd_ui; // [트랙 D] // [트랙 D]
 mod actions_ui; // 순서 편집칸: 배경 음악 · ⚡ 송출할 때 자동으로
 mod theme; // 디자인 기반: control.css 색·글꼴
