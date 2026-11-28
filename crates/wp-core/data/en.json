@@ -1,4 +1,5 @@
 {
+ "교회 밖에서도 열기": "open from outside the church",
  "클라우드 주소가 올바르지 않습니다 (예: https://….workers.dev).": "The cloud address is not valid (e.g. https://….workers.dev).",
  "클라우드 주소는 https:// 로 시작해야 합니다 (연결 열쇠가 그대로 보이지 않게).": "The cloud address must start with https:// (so the connection key is not sent in the clear).",
  "클라우드 주소와 연결 열쇠를 넣어 주세요.": "Enter the cloud address and the connection key.",

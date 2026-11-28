@@ -23,6 +23,10 @@ export function can(role, cap) {
 }
 
 /** 로그인 유지 시간(초). 출력 화면은 OBS 에 넣어 두므로 길게, 사람 손에 있는 기기는 짧게. 열쇠를 지우면 그 즉시 끊긴다. */
+/** 역할마다 첫 화면 ('/' · 로그인 답의 home). 사람 계정(2단계)도 같은 표를 쓴다 */
+export const HOME = { owner: '/owner', remote: '/remote', editor: '/editor', output: '/outputs/main', 'member-editor': '/editor', 'member-viewer': '/outputs/main' };
+export const homeOf = role => HOME[role] || '/outputs/main';
+
 export const SESSION_TTL = { owner: 30 * 86400, output: 400 * 86400, remote: 12 * 3600, editor: 12 * 3600, 'member-editor': 30 * 86400, 'member-viewer': 30 * 86400 };
 
 /** 교회 ID: 영문 소문자 · 숫자 · '-' (2~40자). 주소 · 쿠키 · 열쇠 앞머리에 그대로 쓴다. */

@@ -115,6 +115,7 @@ pub fn menus() -> Vec<Menu> {
             it("d:remote", "휴대폰 리모컨", ""),
             itd("d:phonecam", "휴대폰 카메라", "QR 로 연결", ""),
             itd("d:webedit", "웹 편집기", "다른 컴퓨터에서 큐시트 고치기", ""),
+            itd("d:cloud", "클라우드 연결", "교회 밖에서도 열기", ""), // 웹판 1단계 (wp_core::cloud)
             line(),
             it("d:trigger", "스트림덱 · 외부 단추", ""),
             itd("d:devices", "Companion · 장비", "X32 · PTZ", ""),
@@ -256,6 +257,7 @@ pub fn icon_of(id: &str) -> Option<&'static str> {
         "b:names" => "tag",
         "d:phonecam" => "camera",
         "d:webedit" => "pencil",
+        "d:cloud" => "globe",
         "b:undo" => "undo-2",
         "b:redo" => "redo-2",
         "b:print" => "file-text",
@@ -668,9 +670,9 @@ mod layout_tests {
         assert!(missing.is_empty(), "새 메뉴에서 빠진 동작: {missing:?}");
         let dup: Vec<(&&str, &usize)> = count.iter().filter(|(_, n)| **n != 1).collect();
         assert!(dup.is_empty(), "두 자리에 있는 동작: {dup:?}");
-        // 새로 생긴 것은 하위 메뉴 자리 하나뿐 (동작 없음)
+        // 새로 생긴 것: 하위 메뉴 자리 하나(동작 없음) + 클라우드 연결 (웹판 1단계, 2.1.1 뒤에 더함)
         let added: Vec<&&str> = count.keys().filter(|id| !old.contains(**id)).collect();
-        assert_eq!(added, [&"v:lang"], "새로 생긴 항목");
+        assert_eq!(added, [&"d:cloud", &"v:lang"], "새로 생긴 항목");
     }
 
     #[test]
@@ -688,7 +690,7 @@ mod layout_tests {
     fn shape_matches_the_proposal() {
         let list = menus();
         // 시안의 '줄 · 묶음(구분선 + 1)' (a.png 의 메뉴 이름 옆 숫자)
-        let want = [("파일", 8, 4), ("편집", 3, 2), ("보기", 4, 3), ("큐시트", 6, 3), ("화면", 9, 4), ("연결", 10, 4), ("송출", 9, 4), ("AI", 8, 4), ("도움말", 11, 4)];
+        let want = [("파일", 8, 4), ("편집", 3, 2), ("보기", 4, 3), ("큐시트", 6, 3), ("화면", 9, 4), ("연결", 11, 4), ("송출", 9, 4), ("AI", 8, 4), ("도움말", 11, 4)];
         for (m, (name, rows, groups)) in list.iter().zip(want) {
             assert_eq!(m.label, name);
             let seps = m.items.iter().filter(|i| i.id == "-").count();
@@ -698,7 +700,7 @@ mod layout_tests {
             assert!(m.items.first().unwrap().id != "-" && m.items.last().unwrap().id != "-", "{name} 구분선 자리");
             assert!(!m.items.windows(2).any(|w| w[0].id == "-" && w[1].id == "-"), "{name} 구분선 둘");
         }
-        assert_eq!(list.iter().map(|m| m.items.iter().filter(|i| i.id != "-").count()).sum::<usize>(), 68, "메뉴 줄 합계");
+        assert_eq!(list.iter().map(|m| m.items.iter().filter(|i| i.id != "-").count()).sum::<usize>(), 69, "메뉴 줄 합계 (안 A 68 + 클라우드 연결)");
         // 하위 메뉴: 지금 있던 3개 + 언어, 모두 한 단계
         let subs: Vec<&Item> = list.iter().flat_map(|m| &m.items).filter(|i| !matches!(i.sub, Sub::No)).collect();
         assert_eq!(subs.iter().map(|i| i.id).collect::<Vec<_>>(), ["v:lang", "x:tpl-main", "x:tpl-overlay", "x:obs-url"]);

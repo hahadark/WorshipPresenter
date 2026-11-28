@@ -2,7 +2,7 @@
 // 정적 파일(/shared · /outputs/*.js · /cloud/* …)은 Cloudflare 가 Worker 를 거치지 않고 바로 보낸다 (공개된 GPL 코드, 요청 수에 안 들어감).
 // 여기로 오는 것은 페이지(HTML) · 실시간 · API · 설치판 파일뿐이고, 모두 로그인을 본다.
 import * as auth from './auth.mjs';
-import { PROTOCOL, SESSION_TTL, can, fail, json, route, validChurch } from './protocol.mjs';
+import { PROTOCOL, SESSION_TTL, can, fail, homeOf, json, route, validChurch } from './protocol.mjs';
 import { page } from './pages.mjs';
 import * as data from './data/index.mjs';
 import * as identity from './identity/index.mjs';
@@ -68,7 +68,7 @@ async function handle(request, env) {
 
   const session = await auth.sessionOf(request, env);
   if (path === '/' && (method === 'GET' || method === 'HEAD')) {
-    const to = !session ? '/login' : session.role === 'owner' ? '/owner' : session.role === 'remote' ? '/remote' : session.role === 'editor' ? '/editor' : '/outputs/main';
+    const to = !session ? '/login' : homeOf(session.role);
     return Response.redirect(url.origin + to, 302);
   }
 
@@ -160,7 +160,7 @@ async function login(request, env, url) {
   const v = await auth.verify(env, church, String(a.secret || '').trim(), ['owner', 'output', 'remote', 'editor'], ipOf(request));
   if (!v.ok) return fail(v.status, v.error);
   const c = await loginCookies(env, request, church, v);
-  const home = v.role === 'owner' ? '/owner' : v.role === 'remote' ? '/remote' : v.role === 'editor' ? '/editor' : '/outputs/main';
+  const home = homeOf(v.role);
   const res = json({ ok: true, protocol: PROTOCOL, role: v.role, home });
   for (const h of c.headers) res.headers.append('set-cookie', h);
   return res;
