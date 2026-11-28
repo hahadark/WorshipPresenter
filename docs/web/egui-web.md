@@ -190,7 +190,7 @@ egui 는 막은 뒤에도 키를 그대로 받는다(eframe 0.37 `on_keydown` �
 | cloud 전체 | 단위 169/169 · 끝에서 끝 61/61 |
 | 실제 IME (마무리 빌드) | Edge 15/15 · Chrome 15/15 |
 | 둘째 모니터 (이 PC, 두 화면) | '창 배치' 권한을 주면(CDP 로 허락) 출력 창이 둘째 화면 자리 · 크기로 열림 (`tools/web/steps/monitor.js`). 전체 화면은 출력 창에서 두 번 누르기 · F11 |
-| 설치판 시험 | wp-app 264 · wp-core 389 |
+| 설치판 시험 | wp-app 264 · wp-core 389 · parity 46/48 (obs-pip-image · obs-pip-score 는 원래 차이, 최대 화소 차 3.8%) |
 
 ![둘러보기의 웹 조작 화면](images/egui-web-demo-control.png)
 
