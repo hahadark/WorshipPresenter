@@ -18,7 +18,7 @@
 | 무엇 | 결과 |
 |---|---|
 | 빌드 | `bash tools/web/build.sh` → `dist-web/` (wasm-bindgen 0.2.130 · wasm-opt -O2) |
-| 파일 크기 | `wp-app_bg.wasm` 30,978,006 바이트 → brotli 7,759,399 (7.4 MiB) · `wp-app.js` 100KB → 13KB |
+| 파일 크기 | 관문 때 `wp-app_bg.wasm` 30,978,006 바이트 → brotli 7,759,399 (7.4 MiB). **3단계 마무리 뒤 글꼴을 빼서 18.9 MB → brotli 4.42 MB + 글꼴 보통 · 굵게 1.8 MB** · `wp-app.js` 105KB → 13KB |
 | 첫 열기 (캐시 없음) | 내 PC(127.0.0.1): 첫 그림까지 1.2~2.1초. 50Mbps · 지연 20ms 흉내: Edge 3.4초 · Chrome 3.8~4.1초 (받기 1.8~2.7초 + 시작 0.2초 + 첫 프레임 0.4초). PC 가 바쁠 때 한 번 8.6초 |
 | 첫 프레임 | 280~560ms (글꼴 아틀라스 만들기, 설치판도 같은 경고) |
 | 움직임 | 마우스로 큐시트 · 검색 결과 위를 3초 움직이며 잼: 두 브라우저 모두 평균 16.67ms · 95% 16.8ms · 최대 19ms (60fps, 끊김 없음) |
@@ -128,32 +128,87 @@ egui 는 막은 뒤에도 키를 그대로 받는다(eframe 0.37 `on_keydown` �
 
 ## PC 글꼴
 
-- **기본: 올려 둔 글꼴.** 조작 화면 글꼴(Pretendard 4굵기, OFL)은 지금 wasm 안에 들어 있다(12.5MB 중 대부분이 압축 크기의 큰 몫). 다음: 별도 파일(`.woff2` 아님 — egui 는 TTF/OTF 바이트)로 빼서 Regular · Bold 만 먼저, 나머지는 뒤에.
-- 출력 화면(web/output)은 브라우저 글꼴을 쓴다 — Windows 에는 맑은 고딕이 있어 설치판과 같다. 맥 · 다른 PC 를 위해 슬라이드 글꼴도 '교회 글꼴 올려 두기'(2C · R2)로.
-- **Local Font Access(`queryLocalFonts`)는 선택 기능으로만**: Chrome · Edge 에만 있고 권한을 묻는다. 템플릿 글꼴 목록을 채우는 데는 쓰되, 출력 PC 에 그 글꼴이 없으면 소용없으므로 기본 길로 삼지 않는다.
-- `measure.rs`(글이 화면에 들어가는지)는 지금 웹에서 시스템 글꼴 파일을 못 읽는다 → 슬라이드 나눔이 설치판과 조금 다를 수 있다. 출력과 같은 글꼴 바이트를 측정기에도 넣어야 한다(parity 시험 필요).
+- **기본: 올려 둔 글꼴.** 조작 화면 글꼴(Pretendard 4굵기, OFL)은 **wasm 에서 뺐다**(3단계 마무리): `dist-web/fonts/*.ttf` 를 따로 받는다(`web/fonts.rs`). 시작 전에 보통 · 굵게 둘(brotli 0.84 + 0.98 MB), 화면이 뜬 뒤 중간 · 조금 굵게. 받은 바이트는 `wp_core::web::register_font` → `measure::font_file(경로)` 같은 길로 꺼낸다 (theme.rs 는 cfg 한 줄).
+- 출력 화면(web/output)은 브라우저 글꼴을 쓴다 — Windows 에는 맑은 고딕이 있어 설치판과 같다. 교회 글꼴은 2C 의 `/api/v1/assets/fonts.css` (로그인한 `/control/` 페이지 머리에도 붙인다).
+- **Local Font Access(`queryLocalFonts`)는 선택 기능으로만**: Chrome · Edge 에만 있고 권한을 묻는다. 허락받은 맑은 고딕 바이트를 `register_font("C:\\Windows\\Fonts\\malgun.ttf", …)` 로 맡기면 조작 화면 미리보기 · `measure.rs` 가 설치판과 같은 글꼴을 쓰게 된다 — 길은 열어 두었고 단추는 아직 없다.
+- `measure.rs`(글이 화면에 들어가는지)는 웹에서 맑은 고딕을 못 읽으면 Pretendard 로 잰다 → 슬라이드 나눔이 설치판과 조금 다를 수 있다 (parity 는 설치판 쪽만 시험함).
 
 ## 남은 위험 · 확인 못 한 것
 
-- **오류(panic) = 조작 화면 전체 멈춤.** 설치판은 그 프레임만 버리지만(catch_unwind) wasm 은 되돌릴 수 없다. 지금은 화면에 까닭과 새로 고침 안내를 띄우고, 출력 창은 마지막 화면을 유지한다. 새로 고침해도 고친 큐시트는 남는다(저장 층). 웹에서 부르면 panic 하는 표준 기능(`std::thread::spawn` 65곳 등)을 쓰는 메뉴가 아직 있다 — 메뉴별로 막거나 바꿔야 한다(4~5단계).
-- 크기: 압축 7.4MiB. 글꼴 분리 · `opt-level="z"` · 쓰지 않는 기능(PPT 그리기 resvg 등) 지연 로딩으로 줄일 여지. 두 번째부터는 브라우저 캐시.
-- 시험하지 않은 것: 실제 두 모니터로 출력 창 옮기기 · 소리 재생 · 영상 · 카메라 · 그림 파일(미디어는 2C · 4B) · 메뉴 대부분 · 고배율(150%) 화면 · 맥.
-- 시험 PC 의 방화벽 알림 창(위)은 그대로 떠 있다.
+- **오류(panic) = 조작 화면 전체 멈춤.** 설치판은 그 프레임만 버리지만(catch_unwind) wasm 은 되돌릴 수 없다. 화면에 까닭과 새로 고침 안내를 띄우고, 출력 창은 마지막 화면을 유지한다. 새로 고침해도 고친 큐시트는 남는다(저장 층 · 클라우드 문서). 3단계 마무리에서 줄인 것은 아래 '웹에서 뺀 메뉴 · 스레드'.
+- AI 는 동기 요청(답이 올 때까지 조작 화면이 멈춤 — 보통 몇 초). 예배 중 쓰는 기능이 아니라 이렇게 두었고, 비동기로 바꾸는 것은 다음 일.
+- 시험하지 않은 것: 소리 재생 · 영상 · 카메라 · 그림 파일(미디어는 2C · 4B 부품을 조작 화면에 붙이는 다음 일) · 웹에서 남긴 메뉴 하나하나 · 고배율(150%) 화면 그대로 · 맥.
+- 시험 PC 의 방화벽 알림 창(10:00, PickerHost)은 그대로 떠 있다 (조율자가 사관님께 전함).
 
-## 계약에 바라는 것
+## 3단계 마무리 (2026-11-28 오후)
 
-1. 계약 5절 '브라우저에서 쓰지 못하는 것' 에서 **IME 를 빼 주세요** — 실제 Windows 한국어 입력기로 15개 시험이 Edge · Chrome 에서 통과했다.
-2. `wp-live` 채널에 출력 탭 → 조작 화면 메시지를 더해 주세요(덧붙이기라 v1 그대로): `{t:'out', id, client, kind, ack?}`(2초마다 살아 있음 · 수신 확인), `{t:'bye', id}`, `{t:'cmd', cmd:'videoMeta'|'videoEnded', args}`. 클라우드 어댑터도 같은 채널로 보내면 같은 PC 에서 '연결된 출력' 수와 영상 끝남(자동 넘김)이 인터넷 없이 맞는다. 지금 구현: `web/app/local-live.js`.
-3. 웹 조작 화면을 클라우드에서 열 길: `/control`(owner) 에 `dist-web` 을 정적 파일로, wasm 은 `Content-Type: application/wasm` + brotli. 파일 하나 25MiB 한도 안(원본 31MB 는 넘음 — 압축본을 올리거나 글꼴을 빼서 줄여야 함, 확인 필요).
-4. 송출 주체 겹침(`hello.source` · `claim`): 웹 조작 화면은 `source:'web'` 으로 붙고, 설치판이 이미 있으면 **보기 전용**으로 열리게(넘겨받기 단추를 눌러야 송출) 해 주세요.
-5. 성경 본문 `/api/v1/bible/passage` 는 설치판 `resolve_reference` 모양 그대로면 웹 조작 화면이 코어 코드로 그대로 그린다 — 장 단위로 받아 메모리 DB 에 넣는 길(`/api/v1/bible/chapter?version=&book=&chapter=`)도 있으면 좋다(검색 · 앞뒤 절 이동이 코어 그대로 돈다).
+### 클라우드 송출 주체 · 넘겨받기
+
+- `crates/wp-app/src/web/cloud.rs`: 주인 쿠키로 `/bridge` 에 붙어 `hello{source:'web', caps 모두 false}` · `render` · `draw` (같은 브라우저 `wp-live` 로 보내는 것과 같은 자료, `live.rs` 가 둘 다 보냄). 끊기면 1 → 15초 간격으로 다시 이음, 4003 이면 '다시 로그인'.
+- 중계실 규칙(`cloud/src/room.mjs`, 계약 4절 '송출 주체 겹침'): 설치판이 기본 주체 · 웹은 대기로 붙음(보낸 것은 버려짐) · 주인이 [넘겨받기] → 설치판 4001 · 넘겨받은 동안 다시 붙는 설치판은 대기 · [설치판에 돌려주기] 또는 웹이 떠나면 설치판이 주체. 대기 중인 웹은 저절로 주체가 되지 않는다.
+- 화면: 위쪽 가운데 띠 — 클라우드 송출 / 보기 전용(누가 송출 중) / 잇는 중 · [넘겨받기…](확인 창) · [설치판에 돌려주기] · [교회 관리].
+
+![보기 전용 띠](images/egui-web-standby-band.png)
+![넘겨받은 뒤 띠](images/egui-web-claimed-band.png)
+![넘겨받기 확인 창](images/egui-web-claim-confirm.png)
+
+### 자료 (2단계 길)
+
+- `web/store.rs`: 로그인하면 큐시트 · 찬양을 `/api/v1/documents?kind=…&include=payload` 로 받아 메모리 DB 에 넣고, 고친 문서만 `PUT` + `If-Match` + `X-Mutation-Id`(1.5초 모아서), 지운 것은 `DELETE` + `If-Match`. 20초마다(보이는 동안) `/api/v1/sync?after=` 로 받기(`more` 끝까지, 내가 올린 `mutationId` 는 건너뜀, 이 화면에서 고치다 만 문서는 들이지 않음).
+- 충돌(409 + `conflict`/`current`): 덮어쓰지 않는다 — 최신 것을 들이고, 이 화면의 것은 `id~시각` · `이름 (내 사본)` 새 문서로 남기고 알림. 등급 오류 코드(`drive_disconnected` · `drive_quota` · `drive_rate` · `tier_moving` · `tier_blocked` · `tier_limit`)는 알맞은 글로 알리고 다음 고침 때 다시 해 본다. 보기만 권한은 '저장되지 않습니다' 한 번 알림.
+- 성경(`web/bible.rs`): `/api/v1/bible/versions` → 책마다 `/api/v1/control/bible/book`(새 길, `cloud/src/control/`) → IndexedDB(`wp-web`/kv)에 번역본째 보관 → 메모리 SQLite(설치판 `importer::replace_version`) → 장절 · 낱말 검색이 설치판 코어 그대로. 번역본의 `importedAt` · 절 수가 바뀔 때만 다시 받는다(D1 행 읽기). 화면은 먼저 뜨고 성경은 뒤에서.
+- 로그인 없이 내 PC 에서 띄우면(`tools/web/serve.js`) localStorage + 견본 — 시험 · 데모용으로 남김. 클라우드의 둘러보기는 tiers 의 `/demo`(demo 역할) → `/control/` 이 같은 클라우드 길을 쓴다.
+
+### 열기 · 로그인 · 크기
+
+- `/control/`: Worker 가 페이지(`web/app/index.html` + `<base href="/control/">` + `WP_CLOUD` + 교회 글꼴 CSS, CSP `wasm-unsafe-eval` · `frame-ancestors 'none'`)를 보내고, wasm · js · 글꼴은 정적 파일 `public/control/*`(`cloud/scripts/assets.mjs` 가 `dist-web/` 에서 가져오며 25 MiB 넘는 파일이 있으면 멈춤). 권한 `read`(주인 · 편집자 · 보기만 · 둘러보기). 로그인 없으면 `/login?next=/control/`.
+- 크기: wasm **18.9 MB**(< 25 MiB) · brotli **4.42 MB**. 첫 열기 = wasm + 글꼴 둘 ≈ **6.3 MB** (전에는 7.8 MB 한 덩어리). 로컬(127.0.0.1) 첫 그림 1.4초.
+- 둘러보기 페이지(`cloud/client/demo.html`)에 '웹 조작 화면' 링크 한 줄.
+
+### 사람 · 기기 PIN · AI 키 (주인 화면)
+
+- `cloud/client/control/owner-extra.js` + `owner.html` 에 구획 둘(덧붙임): **사람** — 편집자 · 보기만 · 주인 넣기(로그인 이름이면 처음 비밀번호를 한 번 보여 줌, 전자우편이면 Access 계정), 권한 바꾸기 · 비밀번호 새로 · 빼기 (`/api/v1/members`). **교회 AI** — 어디로(공급자 · 직접 https) · 모델 · 키(봉인, 끝 4자리만) · 하루 한도 · 기능별 동의(동의 글을 보이고 확인) (`/api/v1/ai/settings` · `consent`).
+- 기기 열쇠(리모컨 · 편집기 PIN · 출력 주소)는 원래 있던 주인 화면 구획. 웹 조작 화면의 [교회 관리] 가 이 화면을 새 탭으로 연다.
+
+### AI
+
+- wasm 에서 `aihelp::chat` → `/api/v1/ai/chat` (`wp_core::web::ai`, 본문 = 설치판 `request_body` + `feature`, `X-WP-Action: user`). 기능은 시스템 글로 알아본다(설치판 코드를 고치지 않으려고). 403 `needConsent` · 409 `needKey` 는 '주인 화면 → AI' 안내.
+- 웹에서 AI 를 부르는 길은 `hymns::run_bg` 로 시작하는 일(단추를 눌러 시작)뿐이다: `spawn_big` 이 웹에서는 다음 차례(setTimeout 40ms — '하는 중…' 을 한 번 그린 뒤)에 같은 스레드에서 돈다. 요청은 동기 XHR (`wp_core::web::net`).
+- 음성 인식: 웹에서는 하지 않는다(설치판에 맡기기 1순위, Workers AI 꺼 둠).
+
+### 웹에서 뺀 메뉴 · 스레드
+
+- 메뉴(`web/menu.rs`, `menubar::menus()` 첫머리 cfg): 성경 번역본 가져오기 · 찬양 콘티 · 1.x 자료 · PPT 내보내기 · 여러 PC 동기화 · 주석 · 주보 · OBS 원격 · OBS 주소 · 내부망 · 휴대폰 리모컨/카메라 · 웹 편집기 · 클라우드 연결 · 스트림덱 · Companion · 카메라 설정/시험 · 라이브러리 · 새 버전 · 연결 점검 · 로그 묶음/폴더. 도움말 링크는 새 탭.
+- `std::thread::spawn(move ||` 문장 32곳 → `wp_core::bg::spawn` (설치판은 그대로 스레드, 웹은 돌리지 않고 '설치판에서 해 주세요' 알림). 다른 가지를 합친 뒤 `python tools/web/rethread.py` · `retime.py`. 결과를 join 하는 곳(lyricsweb) · 설치판 전용 시작 코드는 그대로.
+
+### 증거 (3단계 마무리)
+
+| 시험 | 결과 |
+|---|---|
+| `tools/web/cloud-e2e.js` (Edge, 로컬 wrangler dev) | **29/29**: 로그인 없이 → 로그인 화면 · 정적 wasm · /control/ 열림 · 교회 큐시트 · 성경 받음 · 송출 주체 · 웹 송출이 클라우드 출력에 · 고친 큐시트가 문서로(판 오름) · 설치판이 붙으면 웹 대기 · 대기 중 송출 새지 않음 · 설치판 안 끊김 · 띠 단추 · 확인 창 · 넘겨받기 → 설치판 4001 · 넘겨받은 뒤 송출 · 방 상태 · AI(동의 · 안내) · 송출 중 떠나기 물음 · 주인 화면 사람 넣기 · 그 사람 로그인 · 편집자는 /bridge 못 붙음 · 둘러보기 |
+| `cloud/test/e2e/claim.test.mjs` | 3/3 (몰래 밀어내지 않기 · 다시 붙는 설치판 대기 · 돌려주기 · 웹이 떠나면 설치판 · 주인 아니면 못 붙음) |
+| cloud 전체 | 단위 169/169 · 끝에서 끝 61/61 |
+| 실제 IME (마무리 빌드) | Edge 15/15 · Chrome 15/15 |
+| 둘째 모니터 (이 PC, 두 화면) | '창 배치' 권한을 주면(CDP 로 허락) 출력 창이 둘째 화면 자리 · 크기로 열림 (`tools/web/steps/monitor.js`). 전체 화면은 출력 창에서 두 번 누르기 · F11 |
+| 설치판 시험 | wp-app 264 · wp-core 389 |
+
+![둘러보기의 웹 조작 화면](images/egui-web-demo-control.png)
+
+## 계약에 바라는 것 → 반영함 (2026-11-28 오후, `architecture.md`)
+
+1. IME 문구 삭제 — 반영.
+2. `wp-live` 에 `out` · `bye` · `cmd` — 계약 5절에 적고 클라우드 어댑터에도 넣음(`cloud: true` 는 클라우드 연결 중에는 세지 않음).
+3. `/control/` 정적 배포 · 25 MiB — 반영(3절 표 · 5절). wasm 18.9 MB.
+4. `source:'web'` · 대기(보기 전용) · `claim` · `release` — 4절에 정하고 구현.
+5. 성경 한 권 받기 — 3단계 길 `/api/v1/control/bible/book` 으로 직접 만듦(2A 의 `passage` 는 그대로).
+- 남은 바람: 2A 의 `bible-import.mjs --only 43:1-21` 처럼 장이 많으면 `SQLITE_TOOBIG` 로 실패했다 (로컬 D1, 2026-11-28 오후) — 문장을 나눠 넣게 고쳐 주면 좋겠다. 시험은 몇 장만 넣어 했다.
 
 ## 4~6단계에 미치는 것
 
-- 4A(화면 구성) · 4B(미디어) · 5(AI): **조작 화면 코드가 설치판과 같다** → 새 기능은 wp-app 에 한 번 넣으면 웹에도 들어간다. 웹에서 막아야 할 것은 `std::thread` · 프로세스 · 파일 경로를 쓰는 곳(메뉴별 cfg 또는 플랫폼 함수).
-- AI: wasm 에서 `aihelp::chat` 길을 `/api/v1/ai/chat`(origin/web-ai) 로 바꾸고, 동의 · 키 화면. 음성 인식은 '설치판에 맡기기'.
-- web 을 합칠 때: wp-app 의 `cloud_ui` 를 wasm 에서 빼야 한다(cloud.rs 는 이미 cfg).
-- 6(오프라인): 조작 화면은 서비스 워커로 `dist-web` 을 버전별로 저장하면 인터넷 없이 열리고, 송출은 이미 BroadcastChannel 이라 끊김과 무관. 문서는 `store.rs` 의 DocStore 를 IndexedDB · sync 로 갈아 끼운다.
+- **4A(화면 구성)**: 조작 화면 코드가 설치판과 같다 → 구성 편집기 · 출력별 구성은 wp-app 에 넣으면 웹에도 들어간다. 웹에서 쓸 수 없는 것을 부르면 `wp_core::bg::spawn`(웹은 알림)으로, 새 메뉴 항목이 이 PC 자원을 쓰면 `web/menu.rs` 의 `HIDDEN` 에. 새 출력(out-…)은 `hello.outputs` · `live.rs clients()` 가 설정의 추가 출력을 그대로 따른다. 대기(보기 전용) 중에는 클라우드 출력에 아무것도 가지 않는다 — 구성 전환도 주체일 때만.
+- **4B(미디어)**: 웹 조작 화면에서 파일을 고르는 길(`<input type=file>` → `/cloud/media/assets-client.mjs` 올리기)이 아직 없다 — `wp-web-rfd` 는 None 을 돌려주므로 그 자리를 웹 파일 고르기로 바꾸는 것이 다음 일. 카메라 순서는 `settings.cameras[id].label` 을 함께(4B 안내).
+- **6(오프라인)**: 조작 화면은 이미 ① 같은 브라우저 출력에 `wp-live` 로 송출(인터넷 무관) ② 성경을 IndexedDB 에 보관 ③ 문서를 `store.rs` 의 받기/올리기 꼴(`mutationId` · `If-Match` · 사본)로 다룬다. 6단계가 할 것: 서비스 워커로 `/control/*` 를 버전별 저장, `store.rs` 의 '올릴 줄'을 IndexedDB 에 두고(지금은 메모리 — 새로 고치면 못 올린 것이 사라짐) 다시 이을 때 `POST /api/v1/sync` 로 20개씩. 다음 · 이전 같은 순간 조작은 쌓지 않는다(지금도 문서가 아님).
+- web 을 합칠 때: `crates/wp-core/src/lib.rs` 의 `cloud` · `cloudsync` 는 wasm 에서 빠져 있다. 합친 뒤 `python tools/web/retime.py; python tools/web/rethread.py` 를 돌리고 `cargo check -p wp-app --target wasm32-unknown-unknown`.
 
 ## 빌드 · 띄우기
 
@@ -163,6 +218,10 @@ rustup target add wasm32-unknown-unknown
 bash tools/web/build.sh          # → dist-web/
 node tools/web/serve.js dist-web 37610   # http://127.0.0.1:37610/
 node tools/web/probe.js --browser edge --headful --app --steps tools/web/steps/ime-full.js --out tmp/web-ime
+# 클라우드에 붙여 보기 (로컬 wrangler dev): cloud/ 에서 npm ci · npm run seed · node scripts/assets.mjs (dist-web → public/control)
+#   견본 성경 몇 장: node scripts/bible-import.mjs --db <bible.db 사본> --version krv --church sample --only 43:3,19:23,1:1 --local
+#   DEMO_ENABLED=1 을 .dev.vars 에 (둘러보기 시험) · wrangler dev --port 8791
+node tools/web/cloud-e2e.js --base http://127.0.0.1:8791        # 29개
 ```
 
 ## 최종 검증 기록

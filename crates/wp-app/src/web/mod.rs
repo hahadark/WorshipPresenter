@@ -102,6 +102,29 @@ pub fn start() {
         }
         f.forget();
     }
+    if DEBUG_ON.with(|d| *d) {
+        // 점검용 (?debug): wpAiTest('cuecheck') → 설치판과 같은 aihelp::chat 길(run_bg → 웹은 /api/v1/ai/chat)로 한 번 부르고, 답을 wpAiResult 에
+        let f = Closure::<dyn Fn(String)>::new(|feature: String| {
+            let system = match feature.as_str() {
+                "lyrics" => wp_core::lyricsclean::ai_system(),
+                "recap" => wp_core::recap::summary_system(),
+                _ => wp_core::cuecheck::ai_system(),
+            };
+            wp_core::hymns::run_bg(
+                move || wp_core::aihelp::chat(&wp_core::aihelp::AiCfg::default(), &system, "점검: 요 3:16 · 찬양 두 곡", true, 200),
+                |_core, r| {
+                    let v = match r { Ok((t, u)) => serde_json::json!({ "ok": true, "text": t, "usage": u }), Err(e) => serde_json::json!({ "ok": false, "error": e }) };
+                    if let Some(w) = web_sys::window() {
+                        let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpAiResult"), &JsValue::from_str(&v.to_string()));
+                    }
+                },
+            );
+        });
+        if let Some(w) = web_sys::window() {
+            let _ = js_sys::Reflect::set(&w, &JsValue::from_str("wpAiTest"), f.as_ref());
+        }
+        f.forget();
+    }
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
     let t0 = now_ms();
     // 어디서 열었나: 로그인한 클라우드(/control/) · 둘러보기(/demo/) · 내 PC 시험(tools/web/serve.js)

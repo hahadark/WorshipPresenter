@@ -163,6 +163,18 @@ function ws(p, headers) {
   const room = await api(owner, 'GET', '/api/v1/room');
   check('방 상태: 주체 web · 넘겨받음', room.json && room.json.source === 'web' && room.json.claimed === true, room.json && { source: room.json.source, claimed: room.json.claimed });
 
+  // 4-1. AI: 웹 조작 화면의 aihelp::chat → /api/v1/ai/chat (교회 키 · 기능별 동의). 로컬은 가짜 공급자(mock://, AI_MOCK=1)
+  const aiSet = await api(owner, 'PUT', '/api/v1/ai/settings', { endpoint: 'mock://e2e', model: 'mock-model', key: 'sk-e2e-test' });
+  await api(owner, 'POST', '/api/v1/ai/consent', { feature: 'cuecheck', agree: true });
+  await api(owner, 'POST', '/api/v1/ai/consent', { feature: 'lyrics', agree: false });
+  const aiRun = async (f) => { await ev(`window.wpAiResult = null; window.wpAiTest('${f}'); 1`); for (let i = 0; i < 40; i++) { await sleep(250); const v = await ev('window.wpAiResult'); if (v) return JSON.parse(v); } return null; };
+  if (aiSet.status === 200) {
+    const a1 = await aiRun('cuecheck');
+    check('AI (동의한 기능): 웹 → /api/v1/ai/chat → 답', a1 && a1.ok && /mock/.test(a1.text), a1);
+    const a2 = await aiRun('lyrics');
+    check('AI (동의 안 한 기능): 주인 동의 안내', a2 && !a2.ok && /동의/.test(a2.error), a2 && a2.error);
+  } else check('AI 설정 (주인)', false, aiSet);
+
   // 5. 교회 관리(/owner): 사람 넣기 · 교회 AI 구획 (웹 조작 화면의 [교회 관리] 가 여는 화면)
   await send('Page.navigate', { url: BASE + '/owner' });
   await sleep(800);
