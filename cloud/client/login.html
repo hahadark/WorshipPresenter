@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>워십프리젠터 웹 — 로그인</title>
+<link rel="stylesheet" href="/cloud/cloud.css">
+<script type="application/json" id="wp-cfg">"__WP_CLOUD__"</script>
+</head>
+<body>
+<main style="max-width:420px">
+  <h1>워십프리젠터 웹</h1>
+  <p class="muted">교회 ID 와 받은 열쇠(또는 PIN)를 넣으세요. 열쇠는 주인 화면에서 기기마다 만듭니다.</p>
+  <form class="box" id="f">
+    <label for="church">교회 ID</label>
+    <input id="church" name="church" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+    <label for="secret">열쇠 또는 PIN</label>
+    <input id="secret" name="secret" type="password" autocomplete="current-password" required>
+    <p class="err" id="err"></p>
+    <button class="primary" type="submit" id="go">들어가기</button>
+  </form>
+</main>
+<script src="/cloud/login.js"></script>
+</body>
+</html>

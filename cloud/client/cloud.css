@@ -1,0 +1,26 @@
+/* 웹판이 새로 만든 페이지(로그인 · 주인 · 권한 없음) 공용. 설치판 전문가 테마와 비슷한 어두운 색 */
+:root { --bg: #15171a; --panel: #1e2125; --edge: #30343a; --text: #e8e9eb; --muted: #9aa0a8; --accent: #e9c46a; --live: #d64545; --ok: #8fbf8f; --err: #f0a35e; }
+@media (prefers-color-scheme: light) { :root { --bg: #f3f4f6; --panel: #fff; --edge: #d5d8dd; --text: #1d2024; --muted: #5d636b; --ok: #3d7a3d; --err: #b5541a; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 "Pretendard Variable", "Malgun Gothic", system-ui, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 24px 0 8px; color: var(--muted); font-weight: 600; }
+.box { background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; padding: 16px; }
+label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 13px; }
+input, select, button { font: inherit; }
+input, select { width: 100%; padding: 8px 10px; border: 1px solid var(--edge); border-radius: 4px; background: var(--bg); color: var(--text); }
+button { padding: 8px 14px; border: 1px solid var(--edge); border-radius: 4px; background: var(--panel); color: var(--text); cursor: pointer; }
+button.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.muted { color: var(--muted); font-size: 13px; }
+.err { color: var(--err); min-height: 1.5em; }
+.ok { color: var(--ok); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--edge); vertical-align: top; }
+code { font-family: Consolas, monospace; font-size: 13px; word-break: break-all; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+.dot.on { background: var(--ok); }
+.secret { margin-top: 12px; padding: 12px; border: 1px dashed var(--accent); border-radius: 4px; }
+a { color: inherit; }

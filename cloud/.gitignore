@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.build/
+public/
+.dev.vars
+.dev.vars.*
+.secrets/
+artifacts/
+wrangler.preview.jsonc

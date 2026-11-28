@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>워십프리젠터 웹 — 주인</title>
+<link rel="stylesheet" href="/cloud/cloud.css">
+<script type="application/json" id="wp-cfg">"__WP_CLOUD__"</script>
+</head>
+<body>
+<main>
+  <div class="row" style="justify-content:space-between">
+    <div><h1>워십프리젠터 웹</h1><div class="muted" id="church"></div></div>
+    <button type="button" id="logout">나가기</button>
+  </div>
+
+  <h2>설치판 연결</h2>
+  <div class="box" id="room"><span class="muted">불러오는 중…</span></div>
+
+  <h2>화면 열기</h2>
+  <div class="box">
+    <div class="row">
+      <a href="/outputs/main" target="_blank" rel="noopener">예배당 화면</a> ·
+      <a href="/outputs/overlay" target="_blank" rel="noopener">OBS 투명 자막</a> ·
+      <a href="/outputs/stage" target="_blank" rel="noopener">무대 화면</a> ·
+      <a href="/remote" target="_blank" rel="noopener">리모컨</a> ·
+      <a href="/editor" target="_blank" rel="noopener">웹 편집기</a>
+    </div>
+    <p class="muted">이 브라우저는 주인으로 로그인되어 있어 모든 화면이 열립니다. OBS · 다른 PC · 휴대폰에는 아래에서 기기 열쇠를 만들어 주세요 (주인 열쇠를 나눠 주지 마세요).</p>
+  </div>
+
+  <h2>기기 열쇠</h2>
+  <div class="box">
+    <div class="row">
+      <select id="role" style="width:auto">
+        <option value="output">출력 화면 · OBS (긴 열쇠)</option>
+        <option value="remote">휴대폰 리모컨 (PIN 6자리)</option>
+        <option value="editor">웹 편집기 (PIN 6자리)</option>
+        <option value="bridge">설치판 연결 (긴 열쇠)</option>
+        <option value="owner">주인 (긴 열쇠)</option>
+      </select>
+      <input id="label" placeholder="이름 (예: 방송실 OBS)" style="width:auto;flex:1" maxlength="60">
+      <button class="primary" type="button" id="make">만들기</button>
+    </div>
+    <div id="made"></div>
+    <p class="err" id="err"></p>
+    <table><thead><tr><th>이름</th><th>종류</th><th>만든 날</th><th>마지막 사용</th><th></th></tr></thead><tbody id="creds"></tbody></table>
+  </div>
+</main>
+<script src="/cloud/owner.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+# cloud/ — 워십프리젠터 웹판 (Cloudflare)
+
+설계 · 계약: [`docs/web/architecture.md`](../docs/web/architecture.md) · 기능 대조표: [`docs/web/feature-matrix.md`](../docs/web/feature-matrix.md)
+
+| 파일 | 하는 일 |
+|---|---|
+| `src/index.mjs` | Worker: 로그인 · 길 나누기 · 페이지 · 주인 API |
+| `src/room.mjs` | `ChurchRoom` Durable Object: 교회마다 하나, 설치판 ↔ 화면 중계 |
+| `src/auth.mjs` | 기기 열쇠(HMAC 해시) · 쿠키 · 틀린 횟수 |
+| `src/protocol.mjs` | 계약: 길 · 역할 · 메시지 · 한도 |
+| `src/pages.mjs` | `web/` 의 HTML 을 그대로 가져와 어댑터만 끼움 |
+| `client/adapter.js` | 클라우드에서 연 페이지의 SSE → WebSocket 바꾸기 |
+| `client/{login,owner,denied}.*` | 웹판이 새로 만든 화면 |
+| `migrations/` | D1 |
+| `scripts/` | `assets`(web/ → public/) · `seed`(견본 교회) · `e2e` · `deploy` · `inventory`(대조표 빠짐 검사) · `desktop-e2e`(설치판과 함께) |
+
+```sh
+npm ci
+npm run seed        # 로컬 D1 에 견본 교회 'sample' + 열쇠 (.secrets/sample.json, Git 제외)
+npm run dev         # http://127.0.0.1:8787  → /login 에 sample + .secrets 의 owner 열쇠
+npm test            # 단위
+npm run test:e2e    # 빈 포트에 wrangler dev 를 띄워 끝에서 끝
+```
+
+실제 자료(큐시트 · 성경 · 미디어)를 개발 · 미리보기 클라우드에 올리지 않는다. 비밀값(`.dev.vars` · `.secrets/`)은 커밋하지 않는다.
