@@ -430,9 +430,10 @@ impl SceneUi {
                 ui.painter().rect_stroke(rr.expand2(Vec2::new(4.0, 1.0)), theme::cr(theme::Rad::Xs), Stroke::new(1.0, p.line), StrokeKind::Outside);
                 x = rr.left() - 12.0;
             }
-            let clip = Rect::from_min_max(r.min, Pos2::new(x.max(r.left() + 40.0), r.bottom())).intersect(ui.clip_rect());
-            let pt = ui.painter().with_clip_rect(clip);
-            pt.text(Pos2::new(r.left() + 10.0, r.top() + 14.0), Align2::LEFT_CENTER, name, theme::font(13.0, Weight::SemiBold), p.text);
+            // 이름은 말줄임(…)으로 자르고, 잘렸으면 마우스를 올리면 전체 (전에는 글자 가운데서 잘렸다)
+            let room = (x - (r.left() + 10.0)).max(40.0);
+            let cut = widgets::text_elided(ui, Pos2::new(r.left() + 10.0, r.top() + 14.0), Align2::LEFT_CENTER, name, theme::font(13.0, Weight::SemiBold), p.text, room);
+            let resp = if cut { resp.on_hover_text(name) } else { resp };
             let pt2 = ui.painter().with_clip_rect(Rect::from_min_max(r.min, Pos2::new(r.right() - 6.0, r.bottom())).intersect(ui.clip_rect()));
             pt2.text(Pos2::new(r.left() + 10.0, r.top() + 32.0), Align2::LEFT_CENTER, sub, theme::font(11.0, Weight::Regular), p.muted);
             resp

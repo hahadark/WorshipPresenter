@@ -849,7 +849,8 @@ pub(crate) fn update_ui(ui: &mut egui::Ui, core: &Shared) {
         "downloading" | "verifying" => {
             win::busy(ui, &tr(if state == "verifying" { "SHA-256 검증 중…" } else { "다운로드 중…" }));
             ui.add(egui::ProgressBar::new(st["percent"].as_f64().unwrap_or(0.0) as f32 / 100.0).show_percentage());
-            win::hint(ui, &tr_args("{1} / {2} 바이트", &[&st["received"], &st["total"]]));
+            let mb = |v: &Value| format!("{:.1}", v.as_f64().unwrap_or(0.0) / 1_048_576.0);
+            win::hint(ui, &tr_args("{1} / {2} MB", &[&mb(&st["received"]), &mb(&st["total"])]));
             if ui.add(win::small(tr("다운로드 취소"))).clicked() { wp_core::updates::cancel(); }
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }

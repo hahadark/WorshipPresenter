@@ -57,7 +57,7 @@ const WINS = [
   // 점검 인자 --open-x 로만 열리는 것 (craft-windows 에서 더함)
   // (찬송가 · PPT 넣기 · 큰 PPT 나누기 · 첫 실행 자료 옮김 · 인터넷 자료 안내는 점검 인자가 없어 코드로만 봄 — docs/ui-craft-windows.md)
   ['x-lyrics', ['--open', 'lyrics']], ['x-aiconsent', ['--open-x', 'aiconsent']],
-  ['x-update-new', ['--open-x', 'update-new']], ['x-update-err', ['--open-x', 'update-err']], ['x-update-dl', ['--open-x', 'update-dl']],
+  ['x-update-new', ['--open-menu', 'd:update', '--open-x', 'update-new']], ['x-update-err', ['--open-menu', 'd:update', '--open-x', 'update-err']], ['x-update-dl', ['--open-menu', 'd:update', '--open-x', 'update-dl']],
 ];
 for (const [id, a] of WINS) add('base', id, ['--win', W, ...base, ...a]);
 // 주 화면 기준 한 장 (창이 얹히는 바탕)
