@@ -320,9 +320,23 @@ impl SceneUi {
         let before = self.draft.clone();
         let mut open = self.open;
         let screen = ctx.content_rect();
-        let size = Vec2::new((screen.width() - 40.0).clamp(900.0, 1480.0), (screen.height() - widgets::FLOAT_TOP - 12.0).clamp(520.0, 860.0));
-        let win = widgets::float_window(ctx, "scene-editor", tr("화면 구성"), [size.x, size.y]).open(&mut open).collapsible(false).vscroll(false).show(ctx, |ui| {
-            let h = ui.available_height().max(480.0);
+        let size = Vec2::new((screen.width() - 40.0).clamp(320.0, 1480.0), (screen.height() - widgets::FLOAT_TOP - 48.0).clamp(180.0, 860.0));
+        let win = crate::widgets_win::window(ctx, "scene-editor", tr("화면 구성"), [size.x, size.y]).open(&mut open).collapsible(false).vscroll(false).show(ctx, |ui| {
+            if ui.available_width() < 1050.0 {
+                let tab = crate::widgets_win::editor_tabs(ui, "scene", &[tr("화면 구성"), tr("미리보기"), tr("칸 속성")], None);
+                egui::ScrollArea::vertical().id_salt(("scene-compact", tab)).auto_shrink([false, false]).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    match tab {
+                        0 => self.list_column(ui, core, &list),
+                        1 if self.draft.is_null() => self.empty_center(ui, core),
+                        1 => self.center_column(ui, core, &pc),
+                        _ if !self.draft.is_null() => self.inspector(ui, core),
+                        _ => self.empty_center(ui, core),
+                    }
+                });
+                return;
+            }
+            let h = ui.available_height().max(180.0);
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 14.0;
                 ui.allocate_ui_with_layout(Vec2::new(220.0, h), egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -407,7 +421,7 @@ impl SceneUi {
             let bg = if on { p.sel } else if resp.hovered() { p.hover } else { Color32::TRANSPARENT };
             ui.painter().rect_filled(r, theme::cr(theme::Rad::Md), bg);
             if on {
-                ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), theme::cr(theme::Rad::Xs), p.accent);
+                ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), theme::cr(theme::Rad::Xs), crate::widgets_win::sel_mark());
             }
             // 쓰는 곳 표시를 먼저 오른쪽에 그리고, 이름은 그 왼쪽까지만 (긴 이름 · 영어에서 겹치지 않게)
             let mut x = r.right() - 8.0;
@@ -508,7 +522,7 @@ impl SceneUi {
     fn center_column(&mut self, ui: &mut egui::Ui, core: &Shared, pc: &paint::Ctx) {
         let p = pal();
         // 이름 · 쓰는 곳
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let mut name = self.draft["name"].as_str().unwrap_or("").to_string();
             if ui.add(egui::TextEdit::singleline(&mut name).desired_width(220.0).char_limit(40)).changed() {
                 self.draft["name"] = json!(name);
@@ -536,7 +550,7 @@ impl SceneUi {
         });
         ui.add_space(6.0);
         // 틀 바꾸기 (칸을 그 틀로 — 실행 취소 가능)
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(theme::rich(tr("틀"), 12.0, Weight::Regular, p.muted));
             for (k, n) in scenes::PRESETS {
                 if ui.add(Btn::new(tr(n)).icon(preset_icon(k)).size(Size::Sm).tooltip(tr("칸을 이 틀로 바꿉니다 (Ctrl+Z 로 되돌리기)"))).clicked() {
@@ -552,7 +566,7 @@ impl SceneUi {
         });
         ui.add_space(6.0);
         // 볼 출력 (그 출력의 템플릿 · 비율로 그림)
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(theme::rich(tr("미리 보기"), 12.0, Weight::Regular, p.muted));
             let mut v = self.view.clone();
             let list = outs(&core.lock());
@@ -562,8 +576,9 @@ impl SceneUi {
             let items: Vec<(String, &str)> = list.iter().map(|(k, n)| (k.clone(), n.as_str())).collect();
             widgets::segmented(ui, &mut v, &items);
             self.view = v;
-            // 이 구성으로 바뀔 때의 전환 (로드맵 4단계): 비우면 출력 · 전체 기본을 따라감
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        });
+        // 고르기와 시간은 읽는 차례대로, 미리 보기 출력과는 다른 양식 줄에 둔다.
+        crate::widgets_win::field(ui, &tr("이 구성으로 바뀔 때"), |ui| {
                 let cur = wp_core::scenectl::normalize(&self.draft["transition"]);
                 if let Some(nv) = crate::outputs_ui::transition_pick(ui, "scene", cur.as_ref(), Some(&tr("출력 설정 따라감"))) {
                     match nv {
@@ -573,8 +588,6 @@ impl SceneUi {
                         }
                     }
                 }
-                ui.label(theme::rich(tr("이 구성으로 바뀔 때"), 12.0, Weight::Regular, p.muted));
-            });
         });
         ui.add_space(6.0);
         // 캔버스
@@ -599,13 +612,13 @@ impl SceneUi {
         let _ = paint::take_hits();
         self.canvas_interact(ui, canvas, &resp, &name_of);
         ui.add_space(4.0);
-        ui.add(egui::Label::new(theme::rich(tr("맨 위에는 늘 오버레이 · 회중 메시지 · 로고 화면 · 그리기가 나옵니다 (칸에 직접 넣으면 그 자리 차례로)."), 11.0, Weight::Regular, p.muted)).truncate());
+        ui.add(egui::Label::new(theme::rich(tr("맨 위에는 늘 오버레이 · 회중 메시지 · 로고 화면 · 그리기가 나옵니다 (칸에 직접 넣으면 그 자리 차례로)."), 11.0, Weight::Regular, p.muted)).wrap());
     }
 
     fn canvas_interact(&mut self, ui: &mut egui::Ui, canvas: Rect, resp: &egui::Response, name_of: &dyn Fn(&str) -> String) {
         let p = pal();
         // 고른 칸 색: 전문가 테마의 노랑은 '다음' 에만 쓰므로 밝은 회색으로
-        let sel_col = if p.bevel { Color32::from_gray(232) } else { p.accent };
+        let sel_col = if p.bevel { Color32::from_gray(232) } else { crate::widgets_win::sel_mark() };
         let layers = self.layers();
         let to_screen = |r: [f64; 4]| Rect::from_min_size(canvas.min + Vec2::new(r[0] as f32 * canvas.width(), r[1] as f32 * canvas.height()), Vec2::new(r[2] as f32 * canvas.width(), r[3] as f32 * canvas.height()));
         let painter = ui.painter_at(canvas.expand(6.0));
@@ -783,7 +796,7 @@ impl SceneUi {
                     let lk = Rect::from_min_size(r.min + Vec2::new(24.0, 5.0), Vec2::splat(16.0));
                     // 고른 줄은 아이콘을 밝게 (흐리면 잘 안 보임)
                     crate::icons::paint(ui, eye, if vis { "eye" } else { "eye-off" }, if sel { p.text } else if vis { p.text2 } else { p.muted2 });
-                    crate::icons::paint(ui, lk, "lock", if lock { p.text } else if sel { p.text2 } else { p.muted2.gamma_multiply(0.5) });
+                    crate::icons::paint(ui, lk, "lock", if lock { p.text } else if sel { p.text2 } else { p.muted2 });
                     let src = l["source"].as_str().unwrap_or("");
                     let mut nm = name_of(src);
                     if let Some(n) = l["name"].as_str() {

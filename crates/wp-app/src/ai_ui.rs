@@ -150,7 +150,7 @@ fn consent_win(app: &mut App, ctx: &egui::Context) {
     let mut open = true;
     let mut agreed = false;
     let mut cancel = false;
-    crate::widgets::float_window(ctx, "ai-consent", tr("AI 로 글 보내기 안내"), [480.0, 300.0]).open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "ai-consent", tr("AI 로 글 보내기 안내"), [480.0, 300.0]).open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(tr(wp_core::aihelp::feature_name(&feature))).strong());
         ui.add_space(4.0);
         ui.label(tr_args("이 기능은 {1} 을(를) AI 제공자에게 보냅니다.", &[&tr(wp_core::aihelp::feature_what(&feature))]));
@@ -158,7 +158,7 @@ fn consent_win(app: &mut App, ctx: &egui::Context) {
         ui.add_space(4.0);
         ui.label(RichText::new(tr("· 음성은 PC 밖으로 보내지 않습니다 (음성 인식은 이 PC 안에서 합니다).\n· 보낸 글은 그 제공자의 약관에 따라 처리됩니다. 개인 정보(이름·연락처)가 든 글은 보내기 전에 지우세요.\n· 요금은 쓴 만큼 그 제공자 계정에서 나갑니다.\n· 동의는 AI → AI 설정에서 언제든지 끌 수 있습니다.")).small());
         ui.add_space(8.0);
-        ui.horizontal(|ui| {
+        crate::widgets_win::footer(ui, |ui| {
             if ui.add(Btn::new(tr("동의하고 계속")).kind(Kind::Primary)).clicked() {
                 agreed = true;
             }
@@ -191,7 +191,7 @@ fn settings_win(app: &mut App, ctx: &egui::Context) {
     let mut open = true;
     let s = &mut st.settings;
     let core = app.core.clone();
-    crate::widgets::float_window(ctx, "ai-settings", tr("AI 설정"), [560.0, 520.0]).open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "ai-settings", tr("AI 설정"), [560.0, 520.0]).open(&mut open).show(ctx, |ui| {
         let cfg = core.lock().ai_cfg();
         ui.label(RichText::new(tr("주보 → 큐시트 · PPT 나누기 · 설교 포인트 · 예배 전 점검 · 가사 정리 · 자막 번역 · 예배 후 정리 · 말로 시키기가 이 키를 함께 씁니다. 키가 없어도 규칙으로 하는 기능은 모두 됩니다.")).small().color(crate::theme::pal().muted));
         ui.add_space(4.0);
@@ -222,14 +222,8 @@ fn settings_win(app: &mut App, ctx: &egui::Context) {
                 }
             }
         });
-        egui::Grid::new("ai-set-grid").num_columns(2).show(ui, |ui| {
-            ui.label(tr("주소"));
-            ui.add(egui::TextEdit::singleline(&mut s.endpoint).desired_width(380.0).hint_text(wp_core::bulletin::DEFAULT_ENDPOINT));
-            ui.end_row();
-            ui.label(tr("모델"));
-            ui.add(egui::TextEdit::singleline(&mut s.model).desired_width(380.0).hint_text(wp_core::bulletin::DEFAULT_MODEL));
-            ui.end_row();
-        });
+        crate::widgets_win::field(ui, &tr("주소"), |ui| ui.add(egui::TextEdit::singleline(&mut s.endpoint).desired_width(ui.available_width()).hint_text(wp_core::bulletin::DEFAULT_ENDPOINT)));
+        crate::widgets_win::field(ui, &tr("모델"), |ui| ui.add(egui::TextEdit::singleline(&mut s.model).desired_width(ui.available_width()).hint_text(wp_core::bulletin::DEFAULT_MODEL)));
         if ui.add(Btn::new(tr("주소 · 모델 적용"))).clicked() {
             let (m, e) = (s.model.trim().to_string(), s.endpoint.trim().to_string());
             core.lock().set_ai(None, Some(&m), Some(&e));
@@ -311,7 +305,7 @@ fn check_win(app: &mut App, ctx: &egui::Context) {
     let mut open = true;
     let c = &mut st.check;
     let cue_name = app.core.lock().cue.as_ref().map(|q| q.name.clone()).unwrap_or_default();
-    crate::widgets::float_window(ctx, "cue-check", tr("예배 전 큐시트 점검"), [560.0, 560.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "cue-check", tr("예배 전 큐시트 점검"), [560.0, 560.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(if cue_name.is_empty() { tr("열린 큐시트 없음") } else { cue_name.clone() }).strong());
             if ui.add(Btn::new(tr("다시 점검")).icon("refresh-cw").size(Size::Sm)).clicked() {

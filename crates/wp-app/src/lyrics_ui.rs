@@ -116,7 +116,7 @@ impl App {
         let Some(p) = PENDING.lock().clone() else { return };
         let mut open = true;
         let mut agreed = false;
-        crate::widgets::float_window(ctx, "web-consent", wp_core::i18n::tr("인터넷 자료 사용 안내"), [520.0, 380.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "web-consent", wp_core::i18n::tr("인터넷 자료 사용 안내"), [520.0, 380.0]).open(&mut open).show(ctx, |ui| {
             ui.label(wp_core::i18n::tr(NOTICE));
             ui.add_space(8.0);
             ui.horizontal(|ui| {
@@ -160,7 +160,7 @@ impl App {
         }
         let sel_song = self.sel.and_then(|i| self.core.lock().cue.as_ref().and_then(|c| c.items.get(i).cloned())).filter(|it| it["type"] == "song");
         let data_dir = self.core.lock().data_dir.clone();
-        crate::widgets::float_window(ctx, "lyrics", wp_core::i18n::tr("웹에서 가사 찾기 (Ctrl+L)"), [560.0, 620.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "lyrics", wp_core::i18n::tr("웹에서 가사 찾기 (Ctrl+L)"), [560.0, 620.0]).open(&mut open).show(ctx, |ui| {
             let mut st = ST.lock();
             let mut search = false;
             ui.horizontal(|ui| {

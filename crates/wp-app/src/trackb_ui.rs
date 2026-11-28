@@ -97,7 +97,8 @@ impl App {
         let before = serde_json::to_value(&options).unwrap();
         let mut open = true;
         let mut preview = false;
-        crate::widgets::float_window(ctx, "print-options", tr("큐시트 인쇄"), [390.0, 280.0]).open(&mut open).show(ctx, |ui| {
+        let mut cancel = false;
+        crate::widgets_win::window(ctx, "print-options", tr("큐시트 인쇄"), [390.0, 280.0]).open(&mut open).show(ctx, |ui| {
             ui.label(tr("인쇄할 내용을 고르세요."));
             ui.separator();
             ui.checkbox(&mut options.lyrics, tr("가사·공지 글"));
@@ -108,9 +109,11 @@ impl App {
                 ui.checkbox(&mut options.big, tr("큰 글씨"));
                 ui.checkbox(&mut options.cols, tr("두 단"));
             });
-            ui.separator();
-            preview = ui.button(tr("인쇄 미리보기 열기…")).clicked();
             ui.weak(tr("브라우저에서 인쇄하거나 PDF로 저장할 수 있습니다."));
+            crate::widgets_win::footer(ui, |ui| {
+                preview = ui.add(crate::widgets_win::primary(tr("인쇄 미리보기 열기…"))).clicked() || crate::widgets_win::enter(ui);
+                cancel = ui.add(crate::widgets_win::secondary(tr("취소"))).clicked();
+            });
         });
         let after = serde_json::to_value(&options).unwrap();
         if before != after {
@@ -123,7 +126,7 @@ impl App {
             let r = r.map_err(|e| e.to_string()).and_then(|p| wp_core::trackd::open_path(&p));
             if let Err(e) = r { self.core.lock().notify(format!("{}: {}", tr("인쇄 미리보기를 열지 못했습니다."), e), "error"); }
         }
-        if open { self.tb.print_options = Some(options); }
+        if open && !cancel { self.tb.print_options = Some(options); }
     }
 
     pub(crate) fn trackb_windows(&mut self, ctx: &egui::Context) {
@@ -171,7 +174,7 @@ impl App {
     // ---------------- 찬양 ----------------
     fn songs_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.songs;
-        crate::widgets::float_window(ctx, "songs", wp_core::i18n::tr("찬양 라이브러리"), [520.0, 560.0]).open(&mut open).show(ctx, |ui|  self.songs_panel(ui));
+        crate::widgets_win::window(ctx, "songs", wp_core::i18n::tr("찬양 라이브러리"), [520.0, 560.0]).open(&mut open).show(ctx, |ui|  self.songs_panel(ui));
         self.tb.songs = open;
     }
 
@@ -179,7 +182,7 @@ impl App {
     fn lib_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.lib;
         if self.tb.lib_kind.is_empty() { self.tb.lib_kind = "image".into(); }
-        crate::widgets::float_window(ctx, "lib", wp_core::i18n::tr("라이브러리 (그림·영상·음악)"), [520.0, 520.0]).open(&mut open).show(ctx, |ui| { ui.set_max_height(520.0f32.min(ctx.content_rect().height() - 200.0)); self.library_panel(ui) }); // 격자가 남은 높이를 다 쓰므로 창 높이를 묶음
+        crate::widgets_win::window(ctx, "lib", wp_core::i18n::tr("라이브러리 (그림·영상·음악)"), [520.0, 520.0]).open(&mut open).show(ctx, |ui| { ui.set_max_height(520.0f32.min(ctx.content_rect().height() - 200.0)); self.library_panel(ui) }); // 격자가 남은 높이를 다 쓰므로 창 높이를 묶음
         self.tb.lib = open;
     }
 
@@ -430,7 +433,7 @@ impl App {
     // ---------------- 오버레이 ----------------
     fn overlays_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.overlays;
-        crate::widgets::float_window(ctx, "overlays", wp_core::i18n::tr("오버레이"), [460.0, 420.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "overlays", wp_core::i18n::tr("오버레이"), [460.0, 420.0]).open(&mut open).show(ctx, |ui| {
             self.overlays_panel(ui);
         });
         self.tb.overlays = open;
@@ -497,7 +500,7 @@ impl App {
     // ---------------- 회중 메시지 ----------------
     fn message_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.message;
-        crate::widgets::float_window(ctx, "message", wp_core::i18n::tr("회중 메시지"), [460.0, 480.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "message", wp_core::i18n::tr("회중 메시지"), [460.0, 480.0]).open(&mut open).show(ctx, |ui| {
             use crate::widgets::{self, Btn, HoverOp, Kind, Size};
             use crate::theme::pal;
             use wp_core::i18n::tr;
@@ -624,7 +627,7 @@ impl App {
         // 창이 닫혀 있으면 읽지 않는다. 폴더 경로만 잠금 안에서 꺼내고 파일은 잠금 밖에서 (전에는 매 프레임 잠금을 쥔 채 읽었다)
         let quick_dir = self.core.lock().data_dir.clone();
         let recent = if open { quick_recent(&quick_dir) } else { vec![] };
-        crate::widgets::float_window(ctx, "quick", wp_core::i18n::tr("즉석 자막"), [420.0, 200.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "quick", wp_core::i18n::tr("즉석 자막"), [420.0, 200.0]).open(&mut open).show(ctx, |ui| {
             ui.label(RichText::new(wp_core::i18n::tr("Enter 송출 · Shift+Enter 줄 바꿈 · Esc 닫기")).small().weak());
             let r = ui.add(egui::TextEdit::multiline(&mut self.tb.quick_text).id(input_id).desired_rows(3).desired_width(f32::INFINITY).hint_text(wp_core::i18n::tr("예: 예배 후 전 교인 식사가 있습니다")));
             crate::widgets::mark("quick-input", r.rect);
@@ -710,7 +713,7 @@ impl App {
     // ---------------- 무대 화면 ----------------
     fn stage_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.stage;
-        crate::widgets::float_window(ctx, "stage", wp_core::i18n::tr("무대 화면"), [440.0, 360.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "stage", wp_core::i18n::tr("무대 화면"), [440.0, 360.0]).open(&mut open).show(ctx, |ui| {
             self.workspace_stage(ui);
         });
         self.tb.stage = open;
@@ -942,7 +945,7 @@ impl App {
     // ---------------- 매크로 ----------------
     fn macros_window(&mut self, ctx: &egui::Context) {
         let mut open = self.tb.macros;
-        crate::widgets::float_window(ctx, "macros", wp_core::i18n::tr("매크로 (Alt+1~9)"), [420.0, 320.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "macros", wp_core::i18n::tr("매크로 (Alt+1~9)"), [420.0, 320.0]).open(&mut open).show(ctx, |ui| {
             let list = self.core.lock().settings.get()["macros"].as_array().cloned().unwrap_or_default();
             for (i, m) in list.iter().enumerate() {
                 ui.horizontal(|ui| {

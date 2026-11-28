@@ -412,17 +412,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let c = app.core.lock();
         (wp_core::settings::SHORTCUTS["labels"].clone(), c.settings.get()["shortcuts"].clone())
     };
-    crate::widgets::close_on_outside(ctx, egui::Id::unique("wp-float-shortcuts"), &mut open);
-    egui::Window::new(wp_core::i18n::tr("단축키")).id(egui::Id::unique("wp-float-shortcuts")).default_pos(crate::widgets::float_pos(ctx, egui::Id::unique("wp-float-shortcuts"), 420.0)).open(&mut open).default_width(420.0).collapsible(false).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "shortcuts", wp_core::i18n::tr("단축키"), [540.0, 560.0]).open(&mut open).show(ctx, |ui| {
         egui::Grid::new("keys").striped(true).num_columns(2).show(ui, |ui| {
             for (k, label) in labels.as_object().cloned().unwrap_or_default() {
                 ui.label(RichText::new(keys[&k].as_str().unwrap_or("")).monospace().strong());
-                ui.label(label.as_str().unwrap_or(""));
+                ui.label(wp_core::i18n::tr(label.as_str().unwrap_or("")));
                 ui.end_row();
             }
             for (k, l) in [("Ctrl+Z / Ctrl+Y", "실행 취소 · 다시"), ("Ctrl+E", "슬라이드 편집"), ("Ctrl+V", "클립보드에서 붙여 넣기 (새 순서)"), ("Alt+1~9", "매크로"), ("Space", "다음 슬라이드 (입력칸 밖)")] {
                 ui.label(RichText::new(k).monospace().strong());
-                ui.label(l);
+                ui.label(wp_core::i18n::tr(l));
                 ui.end_row();
             }
         });

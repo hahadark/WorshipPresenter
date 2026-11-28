@@ -761,7 +761,7 @@ fn offer_big_ppt(app: &mut App, ui: &mut egui::Ui) {
         let exists = app.core.lock().cue.as_ref().is_some_and(|c| c.items.iter().any(|x| x["id"] == it["id"]));
         if !exists { offer = None; } else {
             let mut visible = true;
-            crate::widgets::float_window(ui.ctx(), "big-ppt-offer", wp_core::i18n::tr("여러 순서로 나눌까요?"), [420.0, 120.0]).open(&mut visible).keep_on_outside().show(ui.ctx(), |ui| {
+            crate::widgets_win::window(ui.ctx(), "big-ppt-offer", wp_core::i18n::tr("여러 순서로 나눌까요?"), [420.0, 120.0]).open(&mut visible).keep_on_outside().show(ui.ctx(), |ui| {
                 ui.label(wp_core::i18n::tr_args("'{1}' PPT 는 슬라이드가 {2}장입니다.", &[&it["title"].as_str().unwrap_or(""), &n]));
                 if ui.button(wp_core::i18n::tr("PPT 나누기 창 열기…")).clicked() {
                     crate::pptsplit_ui::open(app, ui.ctx(), &it);

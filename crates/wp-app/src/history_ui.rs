@@ -113,7 +113,7 @@ impl HistoryUi {
             }
             let key_owner = crate::cue_ui::nav_owner(ctx) == Nav::History;
             let mut open = self.open;
-            let win = widgets::float_window(ctx, "history", wp_core::i18n::tr("송출 기록"), [520.0, 520.0]).open(&mut open).show(ctx, |ui| {
+            let win = crate::widgets_win::window(ctx, "history", wp_core::i18n::tr("송출 기록"), [520.0, 520.0]).open(&mut open).show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(wp_core::i18n::tr_args("{1}개 (최근 300개)", &[&(hist.len())]));
                     // 되살릴 수 없으므로 줄 안에서 한 번 더 묻는다 (휴리스틱 평가 3번)
@@ -173,7 +173,7 @@ impl HistoryUi {
         if self.usage_open {
             let mut open = self.usage_open;
             let f = usage::Filter { from: self.from.trim().into(), to: self.to.trim().into(), kinds: vec![], q: self.q.clone() };
-            widgets::float_window(ctx, "usage", wp_core::i18n::tr("사용 기록 (저작권 보고)"), [720.0, 540.0]).open(&mut open).show(ctx, |ui| {
+            crate::widgets_win::window(ctx, "usage", wp_core::i18n::tr("사용 기록 (저작권 보고)"), [720.0, 540.0]).open(&mut open).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(wp_core::i18n::tr("부터"));
                     ui.add(egui::TextEdit::singleline(&mut self.from).hint_text("2026-11-01").desired_width(90.0));
@@ -235,7 +235,7 @@ impl HistoryUi {
         }
         if self.about_open {
             let mut open = self.about_open;
-            widgets::float_window(ctx, "about", wp_core::i18n::tr("정보"), [520.0, 420.0]).open(&mut open).show(ctx, |ui| {
+            crate::widgets_win::window(ctx, "about", wp_core::i18n::tr("정보"), [520.0, 420.0]).open(&mut open).show(ctx, |ui| {
                 ui.heading(wp_core::i18n::tr("워십프리젠터 (Rust 판)"));
                 ui.label(wp_core::i18n::tr_args("버전 {1} · 라이선스 GPL-3.0-or-later", &[&(env!("CARGO_PKG_VERSION"))]));
                 ui.separator();

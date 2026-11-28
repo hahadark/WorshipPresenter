@@ -359,7 +359,7 @@ impl ThemeUi {
         let mut open = self.open;
         let screen = ctx.content_rect();
         let size = [(screen.width() - 80.0).clamp(560.0, 1260.0), (screen.height() - 130.0).clamp(380.0, 1000.0)];
-        widgets::float_window(ctx, "themes", tr("출력 테마 관리"), size).open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "themes", tr("출력 테마 관리"), size).open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
             ui.label(RichText::new(tr("예배당 화면과 OBS 자막에 나가는 '출력 디자인'을 고르고 관리합니다. 테마를 누르면 미리보기만 바뀌고, '고른 출력에 적용'을 눌러야 실제 출력이 바뀝니다. 프로그램 화면 색(다크·라이트)은 설정에서 바꿉니다.")).size(12.5).color(p.muted));
             ui.add_space(6.0);
             // ---- 도구 줄: 찾기 · 거르기 · 견본 · 저장 · 가져오기

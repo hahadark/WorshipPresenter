@@ -121,7 +121,7 @@ impl App {
         if !open {
             return;
         }
-        crate::widgets::float_window(ctx, "sync", wp_core::i18n::tr("여러 PC 동기화 · 백업"), [540.0, 460.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "sync", wp_core::i18n::tr("여러 PC 동기화 · 백업"), [540.0, 460.0]).open(&mut open).show(ctx, |ui| {
             let info = self.core.lock().sync_info();
             ui.label(RichText::new(wp_core::i18n::tr("원드라이브 같은 동기화 폴더를 고르면 찬양 · 큐시트 · 오버레이를 그 폴더의 WorshipCue-sync.json 으로 주고받습니다 (기존 워십프리젠터와 같은 파일). 시작할 때 읽고, 바뀌면 1분 안에, 끝날 때 씁니다.")).small());
             ui.horizontal(|ui| {
@@ -265,7 +265,7 @@ impl App {
             let r = wp_core::diagnose::diagnose(&mut self.core.lock(), &d);
             ST.lock().diag_result = r;
         }
-        crate::widgets::float_window(ctx, "diag", wp_core::i18n::tr("연결 점검 (예배 전 점검)"), [600.0, 560.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "diag", wp_core::i18n::tr("연결 점검 (예배 전 점검)"), [600.0, 560.0]).open(&mut open).show(ctx, |ui| {
             let r = ST.lock().diag_result.clone();
             ui.horizontal(|ui| {
                 let (f, w) = (r["summary"]["fail"].as_u64().unwrap_or(0), r["summary"]["warn"].as_u64().unwrap_or(0));
@@ -302,7 +302,7 @@ impl App {
         if !open {
             return;
         }
-        crate::widgets::float_window(ctx, "draw", wp_core::i18n::tr("화면에 그리기 · 강조"), [720.0, 500.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "draw", wp_core::i18n::tr("화면에 그리기 · 강조"), [720.0, 500.0]).open(&mut open).show(ctx, |ui| {
             let mut st = ST.lock();
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut st.spot_mode, false, wp_core::i18n::tr("펜"));
@@ -410,7 +410,7 @@ impl App {
         if !open {
             return;
         }
-        crate::widgets::float_window(ctx, "cameras", wp_core::i18n::tr("카메라 설정"), [520.0, 440.0]).open(&mut open).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "cameras", wp_core::i18n::tr("카메라 설정"), [520.0, 440.0]).open(&mut open).show(ctx, |ui| {
             ui.label(RichText::new(wp_core::i18n::tr("카메라(웹캠 · 캡처보드)마다 해상도 · 프레임 · 좌우 반전 · 밝기를 정합니다. 출력 화면이 카메라를 열 때 씁니다.")).small());
             // 화면 셋 공용 목록(camscan): 연결된 카메라 → 설정에 있는 카메라 → 큐시트의 카메라 순서
             crate::camscan::scan_bar(ui, &self.core);

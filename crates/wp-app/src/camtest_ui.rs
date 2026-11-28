@@ -71,17 +71,15 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
     }
     let p = pal();
     let mut keep = true;
-    let wid = egui::Id::new("wp-camtest");
-    crate::widgets::close_on_outside(ctx, wid, &mut keep);
     let (choices, port) = {
         let c = app.core.lock();
         (c.camera_choices(), c.port)
     };
-    egui::Window::new(tr("카메라 동시 열기 시험")).id(wid).default_pos(crate::widgets::float_pos(ctx, wid, 560.0)).open(&mut keep).default_width(560.0).collapsible(false).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "camtest", tr("카메라 동시 열기 시험"), [620.0, 480.0]).open(&mut keep).show(ctx, |ui| {
         ui.add(egui::Label::new(theme::rich(tr("같은 카메라를 예배당 출력 창과 방송 쪽(브라우저 · OBS)에서 동시에 쓸 수 있는지 봅니다. 실제 웹캠 · 캡처보드는 한 프로그램만 잡게 하는 경우가 있어 교회 PC 에서 직접 확인해야 합니다."), 11.5, Weight::Regular, p.muted)).wrap());
         ui.add_space(6.0);
         let mut st = ST.lock();
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(theme::rich(tr("카메라"), 12.5, Weight::Regular, p.text2));
             let cur = choices.iter().find(|c| c.device_id == st.cam).map(|c| c.label.clone()).unwrap_or_else(|| tr("카메라 고르기"));
             let mut pick = st.cam.clone();

@@ -259,7 +259,7 @@ impl SlideEditUi {
             core.lock().b.typing = None;
         }
         let mut open = self.open;
-        let win = crate::widgets::float_window(ctx, "slideedit", wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)"), [980.0, 640.0]).open(&mut open).keep_on_outside().show(ctx, |ui| {
+        let win = crate::widgets_win::window(ctx, "slideedit", wp_core::i18n::tr("슬라이드 편집 (Ctrl+E)"), [1100.0, 700.0]).open(&mut open).keep_on_outside().vscroll(false).show(ctx, |ui| {
             let Some(i) = sel else {
                 ui.label(wp_core::i18n::tr("큐시트에서 순서를 먼저 고르세요."));
                 return;
@@ -306,7 +306,7 @@ impl SlideEditUi {
             let mut new_it: Option<Value> = None;
             let mut split_back: Option<Value> = None;
 
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(it["title"].as_str().unwrap_or("")).strong());
                 ui.label(RichText::new(wp_core::i18n::tr_args("슬라이드 {1}장", &[&(slides.len())])).small().color(crate::theme::pal().muted));
                 ui.checkbox(&mut self.common, wp_core::i18n::tr("모든 슬라이드에 공통(*)"));
@@ -318,7 +318,8 @@ impl SlideEditUi {
                 }
             });
             ui.separator();
-            egui::Panel::left("se-list").default_size(300.0).show(ui, |ui| {
+            let list_w = (ui.available_width() * 0.24).clamp(145.0, 260.0);
+            egui::Panel::left("se-list").default_size(list_w).size_range(130.0..=280.0).show(ui, |ui| {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     let clip = ui.clip_rect();
                     if self.lasso.is_some() && ui.input(|i| i.pointer.primary_down()) {

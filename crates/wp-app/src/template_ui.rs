@@ -94,7 +94,7 @@ fn slot_color(slot: &str) -> Color32 {
         return p.text2;
     }
     match slot {
-        "main" => p.accent,
+        "main" => crate::widgets_win::sel_mark(),
         "overlay" => p.pv,
         _ => p.gold,
     }
@@ -134,6 +134,7 @@ impl TemplateUi {
         self.save = SaveState::Saved;
         self.confirm_del = false;
         self.drag = None;
+        self.last_focus = None;
     }
 
     /// 지금 고친 것을 저장하고 출력(미리보기·LIVE)에 다시 보낸다
@@ -227,14 +228,31 @@ impl TemplateUi {
         let before = self.draft.clone();
         let mut open = self.open;
         let screen = ctx.content_rect();
-        let size = Vec2::new((screen.width() - 40.0).clamp(900.0, 1560.0), (screen.height() - crate::widgets::FLOAT_TOP - 12.0).clamp(520.0, 880.0));
+        let size = Vec2::new((screen.width() - 40.0).clamp(320.0, 1560.0), (screen.height() - crate::widgets::FLOAT_TOP - 48.0).clamp(180.0, 880.0));
         // 자리는 다른 떠 있는 창과 같은 규칙 (widgets::float_window: 메뉴·검색줄 아래, 격치면 비껴 놓기)
-        let win = crate::widgets::float_window(ctx, "tpl-editor", tr("출력 템플릿"), [size.x, size.y])
+        let win = crate::widgets_win::window(ctx, "tpl-editor", tr("출력 템플릿"), [size.x, size.y])
             .open(&mut open)
             .collapsible(false)
             .vscroll(false)
             .show(ctx, |ui| {
-                let h = ui.available_height().max(480.0);
+                if ui.available_width() < 1100.0 {
+                    let go = self.focus.map(|_| 2);
+                    let tab = crate::widgets_win::editor_tabs(ui, "tpl", &[tr("템플릿"), tr("미리보기"), tr("속성")], go);
+                    egui::ScrollArea::vertical().id_salt(("tpl-compact", tab)).auto_shrink([false, false]).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        match tab {
+                            0 => self.list_column(ui, core, &list, &active, &pc),
+                            1 if !self.draft.is_null() => self.center_column(ui, core, &active, &pc),
+                            _ if !self.draft.is_null() => {
+                                let focus = self.focus.take();
+                                tpl_inspect::inspector(ui, &mut self.draft, focus, &pc, data_dir, &mut self.msg);
+                            }
+                            _ => {}
+                        }
+                    });
+                    return;
+                }
+                let h = ui.available_height().max(180.0);
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = 14.0;
                     ui.allocate_ui_with_layout(Vec2::new(236.0, h), egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -322,7 +340,7 @@ impl TemplateUi {
                 let bg = if on { p.sel } else if resp.hovered() { p.hover } else { Color32::TRANSPARENT };
                 ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), bg);
                 if on {
-                    ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), crate::theme::cr(crate::theme::Rad::Xs), if p.bevel { p.text2 } else { p.accent });
+                    ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(3.0, r.height())), crate::theme::cr(crate::theme::Rad::Xs), if p.bevel { p.text2 } else { crate::widgets_win::sel_mark() });
                 }
                 let tw = f(shown, "width", 1920.0) as f32;
                 let th = f(shown, "height", 1080.0) as f32;
@@ -446,7 +464,7 @@ impl TemplateUi {
     /// 가운데: 이름 · 실행 취소 · 저장 상태 / 견본 고르기 / 캔버스 / 쓰는 곳
     fn center_column(&mut self, ui: &mut egui::Ui, core: &Shared, active: &[String; 3], pc: &paint::Ctx) {
         let p = pal();
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let mut name = self.draft["name"].as_str().unwrap_or("").to_string();
             let r = ui.add(egui::TextEdit::singleline(&mut name).font(theme::font(15.0, Weight::SemiBold)).desired_width((ui.available_width() - 340.0).max(140.0)).hint_text(tr("템플릿 이름")));
@@ -489,7 +507,7 @@ impl TemplateUi {
             });
         });
         ui.add_space(6.0);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(theme::rich(tr("견본"), 12.5, Weight::Regular, p.muted));
             let items = [(0usize, tr("성경")), (1, tr("찬양")), (2, tr("공지")), (3, tr("제목"))];
             let refs: Vec<(usize, &str)> = items.iter().map(|(k, l)| (*k, l.as_str())).collect();
@@ -532,7 +550,7 @@ impl TemplateUi {
             }
         });
         ui.add_space(4.0);
-        ui.label(theme::rich(tr("캔버스에서 장절·본문·로고를 누르면 오른쪽에 그 설정이 열립니다. 점선 테두리를 끌면 여백, 로고를 끌면 자리가 바뀝니다."), 11.5, Weight::Regular, p.muted2));
+        ui.add(egui::Label::new(theme::rich(tr("캔버스에서 장절·본문·로고를 누르면 속성이 열립니다. 점선을 끌면 여백, 로고를 끌면 자리가 바뀝니다."), 11.5, Weight::Regular, p.muted2)).wrap());
     }
 
     /// 캔버스 위 직접 조작: 여백 테두리 끌기 · 로고 끌기 · 누르면 속성 묶음 펼치기 · 안전 영역
@@ -594,10 +612,10 @@ impl TemplateUi {
                     Pos2::new(rect.left() + rect.width() / 3.0 * match col { "left" => 0.0, "center" => 1.0, _ => 2.0 }, if row == "top" { rect.top() } else { rect.center().y }),
                     Vec2::new(rect.width() / 3.0, rect.height() / 2.0),
                 );
-                pt.rect_filled(zone, 0.0, alpha(p.accent, 0.10));
+                pt.rect_filled(zone, 0.0, alpha(crate::widgets_win::sel_mark(), 0.10));
                 pt.text(zone.center(), Align2::CENTER_CENTER, tr("여기에 놓기"), theme::font(12.0, Weight::SemiBold), alpha(p.text, 0.85));
                 let ghost = Rect::from_min_size(pp - off, lr.size());
-                pt.rect(ghost, crate::theme::cr(crate::theme::Rad::Sm), alpha(p.accent, 0.25), Stroke::new(1.5, p.accent), StrokeKind::Inside);
+                pt.rect(ghost, crate::theme::cr(crate::theme::Rad::Sm), alpha(crate::widgets_win::sel_mark(), 0.25), Stroke::new(1.5, crate::widgets_win::sel_mark()), StrokeKind::Inside);
                 if resp.drag_stopped() {
                     set(t, "logo.position", json!(format!("{row}-{col}")));
                     self.drag = None;
@@ -612,7 +630,7 @@ impl TemplateUi {
         if let Some(area) = hits.area {
             let dragging_edge = matches!(self.drag, Some(Drag::Edge(_)));
             if guides || dragging_edge {
-                dashed_rect(&pt, area, Stroke::new(1.0, alpha(p.accent, 0.85)));
+                dashed_rect(&pt, area, Stroke::new(1.0, alpha(crate::widgets_win::sel_mark(), 0.85)));
             }
             let grip = 10.0;
             let edges = [
@@ -635,10 +653,10 @@ impl TemplateUi {
                         Edge::Left => [area.left_top(), area.left_bottom()],
                         Edge::Right => [area.right_top(), area.right_bottom()],
                     };
-                    pt.line_segment(line, Stroke::new(2.5, p.accent));
+                    pt.line_segment(line, Stroke::new(2.5, crate::widgets_win::sel_mark()));
                 }
                 if guides || resp.hovered() || active {
-                    pt.rect(Rect::from_center_size(er.center(), Vec2::splat(8.0)), crate::theme::cr(crate::theme::Rad::Xs), p.accent, Stroke::new(1.0, p.text), StrokeKind::Inside);
+                    pt.rect(Rect::from_center_size(er.center(), Vec2::splat(8.0)), crate::theme::cr(crate::theme::Rad::Xs), crate::widgets_win::sel_mark(), Stroke::new(1.0, p.text), StrokeKind::Inside);
                 }
                 if active {
                     if let Some(pp) = ui.ctx().pointer_latest_pos() {
@@ -673,6 +691,18 @@ impl TemplateUi {
             if self.drag.is_none() {
                 pt.rect_stroke(r.expand(3.0), crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(1.5, alpha(p.hl, 0.9)), StrokeKind::Outside);
             }
+        }
+        // 누른 요소가 속성 칸과 이어져 보이도록 고른 테두리를 계속 남긴다.
+        let selected = match self.last_focus {
+            Some(Sec::Font) => hits.body,
+            Some(Sec::Ref) => hits.reference,
+            Some(Sec::Logo) => hits.logo,
+            Some(Sec::Layout) => hits.area,
+            Some(Sec::Bg) => Some(rect),
+            _ => None,
+        };
+        if let Some(r) = selected {
+            pt.rect_stroke(r.intersect(rect).shrink(1.0), 0.0, Stroke::new(1.5, p.text2), StrokeKind::Inside);
         }
         if !ui.ctx().input(|i| i.pointer.any_down()) && matches!(self.drag, Some(Drag::Logo(_))) {
             self.drag = None;

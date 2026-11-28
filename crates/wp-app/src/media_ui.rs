@@ -60,9 +60,8 @@ impl App {
             }
         });
         // 기존 폴더 등록/제거 UI를 선택한 미디어 종류로 연다. 데이터 변경은 그 UI에서만 한다.
-        crate::widgets::close_on_outside(ui.ctx(), window_id, &mut folders_open);
-        egui::Window::new(tr("라이브러리 폴더")).id(window_id).default_pos(crate::widgets::float_pos(ui.ctx(), window_id, 600.0)).open(&mut folders_open)
-            .default_size([600.0, 440.0]).collapsible(false).show(ui.ctx(), |ui| self.library_kind_panel(ui, kind));
+        crate::widgets_win::window(ui.ctx(), &format!("lib-folders-{kind}"), tr("라이브러리 폴더"), [600.0, 440.0]).open(&mut folders_open)
+            .show(ui.ctx(), |ui| self.library_kind_panel(ui, kind));
         ui.ctx().data_mut(|d| {
             d.insert_temp(search_id, q.clone());
             d.insert_temp(folder_id, folder.clone());

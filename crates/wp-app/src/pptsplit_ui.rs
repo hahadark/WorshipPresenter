@@ -176,7 +176,7 @@ impl App {
         let tpl = self.core.lock().template_for("main");
         let mut keep = true;
         let mut go = false;
-        widgets::float_window(ctx, "pptsplit", tr_args("'{1}' 여러 순서로 나누기", &[&st.title]), [880.0, 660.0]).open(&mut keep).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "pptsplit", tr_args("'{1}' 여러 순서로 나누기", &[&st.title]), [880.0, 660.0]).open(&mut keep).show(ctx, |ui| {
             ui.set_max_width(ui.available_width().min(900.0)); // 긴 안내 글이 창을 화면 끝까지 넓히지 않게
             // ---------------- 자동으로 나누기 ----------------
             ui.horizontal_wrapped(|ui| {

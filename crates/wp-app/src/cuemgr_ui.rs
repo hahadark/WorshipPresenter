@@ -173,7 +173,7 @@ impl App {
         };
         let p = pal();
         let mut keep = *open;
-        widgets::float_window(ctx, "cues", tr("큐시트 관리"), [900.0, 600.0]).open(&mut keep).show(ctx, |ui| {
+        crate::widgets_win::window(ctx, "cues", tr("큐시트 관리"), [960.0, 620.0]).open(&mut keep).vscroll(false).show(ctx, |ui| {
             // ---------------- 위 ----------------
             ui.horizontal_wrapped(|ui| {
                 let b = ui.add(Btn::new(tr("새 큐시트")).icon("plus").tooltip(tr("오늘 날짜로 기본 예배 순서가 든 큐시트를 만들어 엽니다")));
@@ -290,9 +290,12 @@ impl App {
             });
             ui.separator();
             // ---------------- 왼쪽 · 오른쪽 ----------------
-            let left_w = (ui.available_width() * 0.46).clamp(300.0, 420.0);
-            let h = ui.available_height().max(360.0);
+            let compact = ui.available_width() < 760.0;
+            let tab = if compact { crate::widgets_win::editor_tabs(ui, "cues", &[tr("큐시트 목록"), tr("상세")], None) } else { 0 };
+            let left_w = if compact { ui.available_width() } else { (ui.available_width() * 0.42).clamp(280.0, 420.0) };
+            let h = ui.available_height().max(180.0);
             ui.horizontal_top(|ui| {
+                if !compact || tab == 0 {
                 ui.allocate_ui_with_layout(egui::vec2(left_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_width(left_w);
                     let r = ui.add(egui::TextEdit::singleline(&mut st.q).hint_text(tr("이름 · 날짜 · 메모 · 순서 제목으로 찾기")).desired_width(f32::INFINITY));
@@ -437,7 +440,7 @@ impl App {
                                 let wg = ui.painter().layout_no_wrap(when, crate::theme::font(11.5, Weight::Regular), p.muted);
                                 let right = rect.right() - 8.0 - wg.size().x;
                                 ui.painter().galley(egui::pos2(right, rect.top() + 6.0), wg, p.muted);
-                                let clip = egui::Rect::from_min_max(egui::pos2(x, rect.top()), egui::pos2(right - 6.0, rect.bottom()));
+                                let clip = egui::Rect::from_min_max(egui::pos2(x, rect.top()), egui::pos2(right - 6.0, rect.bottom())).intersect(ui.clip_rect());
                                 let pt = ui.painter().with_clip_rect(clip);
                                 let hg = pt.layout_no_wrap(head, crate::theme::font(13.5, Weight::SemiBold), p.text);
                                 let hw = hg.size().x;
@@ -457,7 +460,8 @@ impl App {
                             // 고르기 칸 (줄 위에 놓아 줄 클릭보다 먼저 받는다)
                             let cb_rect = egui::Rect::from_center_size(egui::pos2(rect.left() + 17.0, rect.center().y), egui::vec2(20.0, 20.0));
                             let mut on = st.checked.contains(&id);
-                            let cb = ui.put(cb_rect, egui::Checkbox::without_text(&mut on));
+                            // 줄을 이미 할당했다. put 은 부모 커서를 체크박스 아래로 옮겨 줄이 겹치게 한다.
+                            let cb = crate::widgets_win::place(ui, cb_rect, |ui| ui.add(egui::Checkbox::without_text(&mut on)));
                             widgets::mark(&format!("cm-chk-{name}"), cb_rect);
                             if cb.changed() {
                                 if on {
@@ -483,8 +487,10 @@ impl App {
                         self.cm_open_cue(&id, open);
                     }
                 });
-                ui.separator();
-                ui.vertical(|ui| {
+                }
+                if !compact { ui.separator(); }
+                if !compact || tab == 1 {
+                egui::ScrollArea::vertical().id_salt("cm-detail").auto_shrink([false, false]).show(ui, |ui| {
                     match &sel_cue {
                         Some(c) => self.cm_detail(ui, &mut st, c, &current, times_on, open),
                         None => {
@@ -493,6 +499,7 @@ impl App {
                         }
                     }
                 });
+                }
             });
         });
         *open &= keep;

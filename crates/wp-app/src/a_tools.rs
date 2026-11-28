@@ -145,7 +145,7 @@ fn points_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     }
     let mut open = true;
     let p = &mut st.points;
-    crate::widgets::float_window(ctx, "sermon-points", wp_core::i18n::tr("설교 포인트 슬라이드"), [720.0, 640.0]).open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "sermon-points", wp_core::i18n::tr("설교 포인트 슬라이드"), [720.0, 640.0]).open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(wp_core::i18n::tr("설교 원고(또는 자막)에서 대지를 뽑아, 예배 중에 띄울 '제목' 순서 하나로 만듭니다.")).small().color(crate::theme::pal().muted));
         ui.horizontal(|ui| {
             if ui.button(wp_core::i18n::tr("원고 파일 열기…")).clicked() {
@@ -307,7 +307,7 @@ fn pre_win(app: &mut App, ctx: &egui::Context) {
         p.loaded = true;
     }
     let mut open = true;
-    crate::widgets::float_window(ctx, "preservice", wp_core::i18n::tr("예배 전 화면 만들기"), [640.0, 560.0]).open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "preservice", wp_core::i18n::tr("예배 전 화면 만들기"), [640.0, 560.0]).open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(wp_core::i18n::tr("지난주 말씀카드 + 이번 주 QT 첫날 본문 → 자동으로 넘기며 반복하는 슬라이드쇼 순서 (큐시트 맨 앞에)")).small().color(crate::theme::pal().muted));
         crate::widgets::group_head(ui, &wp_core::i18n::tr("말씀카드 그림"));
         ui.horizontal(|ui| {
@@ -404,7 +404,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
         h.url = app.core.lock().settings.get()["home"]["feedUrl"].as_str().unwrap_or("").to_string();
     }
     let mut open = true;
-    crate::widgets::float_window(ctx, "web-bulletin", wp_core::i18n::tr("홈페이지 주보"), [620.0, 520.0]).open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "web-bulletin", wp_core::i18n::tr("홈페이지 주보"), [620.0, 520.0]).open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(wp_core::i18n::tr("교회 홈페이지의 주보 JSON → 큐시트 · 광고 슬라이드")).small().color(crate::theme::pal().muted));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut h.url).hint_text(wp_core::i18n::tr("https://교회주소/bulletin/feed.json")).desired_width(420.0));

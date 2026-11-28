@@ -66,7 +66,7 @@ pub fn show(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
     let s = &mut *st;
     // 받을 순서가 아직 그대로인지
     let target_ok = s.target.as_ref().is_some_and(|(i, id)| app.core.lock().cue.as_ref().and_then(|c| c.items.get(*i)).is_some_and(|it| it["id"] == id.as_str() && it["type"] == "song"));
-    crate::widgets::float_window(ctx, "lyrics-fix", tr("가사 자동 정리"), [860.0, 640.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "lyrics-fix", tr("가사 자동 정리"), [860.0, 640.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
         let p = crate::theme::pal();
         ui.label(RichText::new(tr("붙여 넣은 가사를 절 · 후렴 · 브리지로 나누고, 코드 · 작사/작곡 · 저작권 줄을 빼고, 긴 줄과 띄어쓰기를 다듬습니다. 받아들이기 전에는 아무것도 바뀌지 않습니다.")).small().color(p.muted));
         ui.horizontal_wrapped(|ui| {

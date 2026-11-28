@@ -94,7 +94,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     let mut to_points = false;
     let mut open = true;
     let s = &mut *st;
-    crate::widgets::float_window(ctx, "sermon-slides", tr("설교 원고 → 슬라이드"), [700.0, 660.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
+    crate::widgets_win::window(ctx, "sermon-slides", tr("설교 원고 → 슬라이드"), [700.0, 660.0]).keep_on_outside().open(&mut open).show(ctx, |ui| {
         ui.label(RichText::new(tr("원고에서 제목 · 본문 성경 · 설교 포인트(대지) · 원고 속 성경 구절 · 인용문을 뽑아 큐시트 순서 묶음으로 만듭니다. 넣기 전에 고를 수 있습니다.")).small().color(crate::theme::pal().muted));
         ui.horizontal_wrapped(|ui| {
             if ui.add(Btn::new(tr("원고 파일 열기…")).icon("folder-open")).clicked() {

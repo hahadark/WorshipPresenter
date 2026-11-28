@@ -60,6 +60,7 @@ mod icons; // 디자인 기반: Lucide 아이콘
 mod widgets; // 디자인 기반: 공용 위젯
 mod kit; // 상태별 공용 조절 칸 (widgets 에서 다시 내보냄)
 mod specimen; // 자료를 열지 않는 디자인 체계 점검 화면
+mod widgets_win; // 창 · 대화상자 공용 부품 (창 래퍼 · Esc 닫기 · 아래 단추 줄 · 상태 표시)
 mod probar_ui; // (나) 전문가용 위 컨트롤 막대 · 상태 줄
 mod prolayout_ui; // (나) 고정 배치: 큐시트 판 · 뷰어 둘 · 인스펙터 (예전 독 작업공간 대신)
 mod timeline_ui; // (나) 아래 예배 시간표 (보기 전용)

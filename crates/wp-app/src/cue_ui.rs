@@ -1049,7 +1049,7 @@ pub fn windows(app: &mut App, ui: &mut egui::Ui, sel_item: Option<(usize, &Value
     let ctx = ui.ctx().clone();
     let mut open: bool = ctx.data(|d| d.get_temp(id(HYMN_PICK))).unwrap_or(false);
     if open {
-        crate::widgets::float_window(&ctx, "cue-hymn-win", tr("찬송가·PPT 넣기"), [460.0, 520.0]).open(&mut open).show(&ctx, |ui| {
+        crate::widgets_win::window(&ctx, "cue-hymn-win", tr("찬송가·PPT 넣기"), [460.0, 520.0]).open(&mut open).show(&ctx, |ui| {
             crate::hymns_ui::tab(app, ui, acts);
         });
         ctx.data_mut(|d| d.insert_temp(id(HYMN_PICK), open));
@@ -1064,7 +1064,7 @@ pub fn windows(app: &mut App, ui: &mut egui::Ui, sel_item: Option<(usize, &Value
     }
     if win == item_id {
         let mut o = true;
-        crate::widgets::float_window(&ctx, "cue-ppt-win", tr("PPT 도구"), [420.0, 360.0]).open(&mut o).show(&ctx, |ui| {
+        crate::widgets_win::window(&ctx, "cue-ppt-win", tr("PPT 도구"), [420.0, 360.0]).open(&mut o).show(&ctx, |ui| {
             crate::hymns_ui::ppt_box(app, ui, i, it);
         });
         if !o {

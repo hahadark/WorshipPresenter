@@ -636,6 +636,8 @@ impl App {
         if on("cueNext", "Ctrl+ArrowDown") { acts.push(Act::CuePreviewStep(1)) }
         if on("cuePrev", "Ctrl+ArrowUp") { acts.push(Act::CuePreviewStep(-1)) }
         if on("toggleOutputWindow", "Ctrl+Shift+F") { acts.push(Act::OutputToggle) }
+        // Esc 는 열린 창을 먼저 닫는다 (control.js: '열린 창·후보 목록을 먼저 닫고, 닫을 것이 없을 때만 단축키'). 맨 위 창 하나씩 — widgets_win
+        crate::widgets_win::esc_first(ctx, typing);
         // Esc 는 열린 즉석 자막 칸을 먼저 닫고, 닫을 것이 없을 때만 보조 화면 끄기 (control.js BCQuick.close)
         if !typing && self.tb.quick && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { self.tb.quick = false }
         if on("outputOff", "Escape") && self.out.running() { acts.push(Act::OutputToggle) }
@@ -664,7 +666,7 @@ impl App {
                     let (nav_arrows, nav_enter) = (crate::cue_ui::nav_takes_arrows(ctx), crate::cue_ui::nav_takes_enter(ctx));
                     if !nav_arrows && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowLeft)) { acts.push(Act::PreviewStep(-1)) }
                     if !nav_arrows && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowRight)) { acts.push(Act::PreviewStep(1)) }
-                    if !nav_enter && !crate::center_ui::results_focused(ctx) && ctx.input(|i| i.key_pressed(Key::Enter) && i.modifiers.is_none()) {
+                    if !nav_enter && !crate::widgets_win::modal_open(ctx) && !crate::center_ui::results_focused(ctx) && ctx.input(|i| i.key_pressed(Key::Enter) && i.modifiers.is_none()) {
                         ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
                         acts.push(Act::SendPreview)
                     }
