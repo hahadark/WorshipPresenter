@@ -71,6 +71,8 @@ add('edit-open-1280', 'edit', DESK, { steps: [login('4321'), openCue] });
 add('edit-open-tab', 'edit', { ...PHONES.tab, dpr: 1.5 }, { steps: [login('4321'), openCue] });
 add('edit-open-phone', 'edit', PHONES.s390, { steps: [login('4321'), openCue] });
 add('edit-open-1600', 'edit', { ...DESK, w: 1600, h: 960 }, { steps: [login('4321'), openCue] });
+add('edit-open-1000', 'edit', { w: 1000, h: 640, dpr: 1.25, mobile: false, touch: false }, { steps: [login('4321'), openCue] });
+add('edit-open-1920', 'edit', { w: 1920, h: 1080, dpr: 1.5, mobile: false, touch: false }, { steps: [login('4321'), openCue] });
 add('edit-item-song', 'edit', DESK, { steps: [login('4321'), openCue, click('.item[data-k="1"], [data-row="1"]')] });
 add('edit-item-phone', 'edit', PHONES.s390, { steps: [login('4321'), openCue, click('[data-row="1"]')] });
 add('edit-dirty', 'edit', DESK, { steps: [login('4321'), openCue, `(() => { const i = document.querySelector('.item input[data-f=title]'); if (!i) return 0; i.value += ' (고침)'; i.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`] });

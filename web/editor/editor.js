@@ -142,10 +142,19 @@
   function openCue(id, keepView) {
     if (dirty && cur && cur.id !== id && !confirm(t('저장하지 않은 고침이 있습니다. 버리고 다른 큐시트를 열까요?', 'You have unsaved changes. Discard them and open another cue sheet?'))) return Promise.resolve();
     setState('busy', t('불러오는 중…', 'Loading…'));
+    if (!cur || cur.id !== id) {
+      // 다른 큐시트: 불러오는 동안 옛 표를 비워 둔다 (느린 Wi-Fi 에서 옛 표를 고치는 일이 없게)
+      cur = null; dirty = false;
+      $('items').innerHTML = '';
+      $('editor').hidden = true;
+      $('placeholder').hidden = false;
+      $('placeholder').querySelector('b').textContent = t('불러오는 중…', 'Loading…');
+      $('list').querySelectorAll('button[data-id]').forEach(function (b) { b.classList.toggle('on', b.dataset.id === id); });
+    }
     var my = ++openCue.seq; // 늦게 온 옛 답이 나중에 누른 것을 덮지 않게
     return api('/e/cue?id=' + encodeURIComponent(id)).then(function (j) {
       if (j.auth || my !== openCue.seq) return;
-      if (!j.ok) { setState('err', t('불러오지 못함', 'Not loaded')); W.toast(t('큐시트를 불러오지 못했습니다', 'Could not load the cue sheet'), j.network ? t('PC 에 닿지 않습니다. 잠시 뒤 다시 누르세요.', 'Cannot reach the PC. Try again shortly.') : j.error, { err: true }); return; }
+      if (!j.ok) { $('placeholder').querySelector('b').textContent = t('큐시트를 고르세요', 'Choose a cue sheet'); setState('err', t('불러오지 못함', 'Not loaded')); W.toast(t('큐시트를 불러오지 못했습니다', 'Could not load the cue sheet'), j.network ? t('PC 에 닿지 않습니다. 잠시 뒤 다시 누르세요.', 'Cannot reach the PC. Try again shortly.') : j.error, { err: true }); return; }
       var keep = keepView && cur && cur.id === j.cue.id;
       cur = j.cue;
       cur.items = cur.items || [];
@@ -179,6 +188,7 @@
     $('app').classList.remove('editing');
     $('editor').hidden = true;
     $('placeholder').hidden = false;
+    $('placeholder').querySelector('b').textContent = t('큐시트를 고르세요', 'Choose a cue sheet');
     $('curName').textContent = '';
     drawList();
     setState('', '');

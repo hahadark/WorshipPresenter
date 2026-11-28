@@ -474,3 +474,53 @@ mod timer_until_tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+#[cfg(test)]
+mod web_ui_tests {
+    use serde_json::json;
+    /// 새 리모컨 화면이 쓰는 덧붙인 필드 (예전 화면은 지나친다) · 화면 언어 표시
+    #[test]
+    fn state_has_added_fields_and_app_lang() {
+        let dir = std::env::temp_dir().join(format!("wp-rmt-ui-{}-{}", std::process::id(), crate::util::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        let mut c = crate::core::Core::open(dir.clone(), dir.clone(), None).unwrap();
+        c.new_cue("주일").unwrap();
+        let mut a = crate::core::new_item("title", "예배로 부름");
+        a["note"] = json!("인도자 신호 뒤");
+        c.add_item(a, None);
+        c.add_item(crate::core::new_item("audio", "반주"), None);
+        c.add_item(crate::core::new_item("title", "설교"), None);
+        crate::trigger::send_cue_item(&mut c, 0).unwrap();
+        let s = super::state_for(&c);
+        let cue_id = c.cue.as_ref().unwrap().id.clone();
+        assert_eq!(s["live"]["kind"], "title");
+        assert_eq!(s["live"]["cueId"], cue_id.as_str());
+        assert_eq!(s["live"]["nextItem"], "설교", "마지막 장에서 '다음' 은 음악 순서를 건너뛴 다음 순서");
+        assert_eq!(s["cue"]["id"], cue_id.as_str());
+        assert_eq!(s["cue"]["items"][0]["note"], "인도자 신호 뒤");
+        assert_eq!(s["app"]["lang"], "ko");
+        // 예전 필드는 그대로
+        for k in ["has", "visible", "index", "count", "title", "text", "next", "image", "labels", "cueIndex"] {
+            assert!(s["live"].get(k).is_some(), "live.{k}");
+        }
+        drop(c);
+        let _ = std::fs::remove_dir_all(dir);
+        assert!(super::with_app_lang(b"<html lang=\"ko\"><head>", true).starts_with("<html lang=\"ko\" data-app-lang=\"en\">"));
+        assert!(super::with_app_lang(b"<html lang=\"ko\"><head>", false).contains("data-app-lang=\"ko\""));
+    }
+
+    /// /wpui/ 는 정해 둔 세 파일만 (다른 경로를 열어 주지 않는다)
+    #[test]
+    fn ui_asset_only_known_names() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let web = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web");
+        rt.block_on(async {
+            assert_eq!(super::ui_asset(&web, "wpweb.css").await.status(), axum::http::StatusCode::OK);
+            assert_eq!(super::ui_asset(&web, "wpweb.js").await.status(), axum::http::StatusCode::OK);
+            assert_eq!(super::ui_asset(&web, "pretendard.woff2").await.status(), axum::http::StatusCode::OK);
+            assert_eq!(super::ui_asset(&web, "../settings.json").await.status(), axum::http::StatusCode::NOT_FOUND);
+            assert_eq!(super::ui_asset(&web, "remote.js").await.status(), axum::http::StatusCode::NOT_FOUND);
+        });
+    }
+}

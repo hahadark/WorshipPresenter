@@ -184,3 +184,15 @@ body { font-size: 14px; }
   .edit-pane .add-pane { margin: 16px 8px 0; }
   .edit-pane .add-pane .adds .btn { flex-basis: 40%; min-height: 44px; }
 }
+
+/* 영어: 낱말이 길다 */
+html.lang-en .item .ty { width: 124px; }
+html.lang-en .frm > label { width: 92px; }
+@media (max-width: 759px) { html.lang-en .item .ty { width: auto; } html.lang-en .frm > label { width: auto; } }
+
+/* 아주 넓은 창: 표가 너무 길게 늘지 않게 */
+@media (min-width: 1500px) {
+  .meta, .items, .items-empty { max-width: 1120px; }
+  .meta { background: transparent; border-bottom: 0; }
+  .item .notep { flex-basis: 34%; }
+}

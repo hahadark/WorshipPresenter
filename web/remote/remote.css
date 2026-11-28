@@ -171,6 +171,21 @@ body.offline .big .btn, body.offline .util .btn { opacity: .5; }
 #bNext { flex: 2.4 1 0; font-size: 22px; font-weight: 700; letter-spacing: -.2px; }
 #bNext > span + .ic { margin-left: 6px; }
 
+/* ── 작은 휴대폰 (높이 760 미만): 표시창 · 단추를 조금 줄여 목록 칸을 살린다 ── */
+@media (max-height: 760px) and (min-width: 300px) and (max-width: 759px) {
+  .stage-col { padding-top: 10px; }
+  .rtext { font-size: 21px; }
+  .rnext { margin-top: 8px; padding-top: 7px; padding-bottom: 8px; min-height: 0; }
+  .labels { padding-top: 8px; }
+  .labels button { min-height: 38px; }
+  .tabs { margin-top: 6px; }
+  .tabs button { min-height: 42px; }
+  .phead { padding-top: 6px; min-height: 34px; }
+  .util { margin-bottom: 6px; }
+  .util .btn { min-height: 38px; }
+  .big .btn { min-height: 62px; }
+}
+
 /* ── 넓은 휴대폰 · 태블릿 ── */
 @media (min-height: 800px) {
   .rtext { -webkit-line-clamp: 4; height: 5.52em; font-size: 24px; }
