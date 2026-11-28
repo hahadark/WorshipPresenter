@@ -27,7 +27,11 @@ export async function renderPages(src, { width = 1920, maxPages = MAX_PAGES, onP
   const data = typeof src === 'string' ? await fetch(src).then(r => { if (!r.ok) throw new Error(`PDF 를 받지 못했습니다 (${r.status})`); return r.arrayBuffer(); })
     : src instanceof ArrayBuffer ? src : await src.arrayBuffer();
   // isEvalSupported:false — 웹 조작 화면의 CSP 에 unsafe-eval 이 없어도 되게
-  const task = getDocument({ data: new Uint8Array(data), isEvalSupported: false });
+  const v = '/cloud/vendor/pdfjs/';
+  const task = getDocument({
+    data: new Uint8Array(data), isEvalSupported: false,
+    cMapUrl: v + 'cmaps/', cMapPacked: true, standardFontDataUrl: v + 'standard_fonts/', wasmUrl: v + 'wasm/', iccUrl: v + 'iccs/', // 한글 CID 글꼴 · 기본 글꼴 · 그림 풀이 (모두 이 사이트에서)
+  });
   const doc = await task.promise;
   const n = Math.min(doc.numPages, maxPages);
   const out = [];
