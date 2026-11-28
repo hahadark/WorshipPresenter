@@ -28,7 +28,7 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 
 ## 2026-11-25 찬양 콘티 스튜디오에서 가져온 기능 → 2.0.5 공개 (2026-11-26)
 
-- 콘티(.worship) 가져오기 · 초성 검색 · 웹 가사 찾기 까닭 구분·보관 · 큰 폴더 목록 기억 · 곡 정보(Key·박자·BPM) · 큐시트 → PPT 내보내기 · 인터넷 자료 사용 안내. 세부는 docs/contistudio-and-choseong.md.
+- 콘티(.worship) 가져오기 · 초성 검색 · 웹 가사 찾기 까닭 구분·보관 · 큰 폴더 목록 기억 · 곡 정보(Key·박자·BPM) · 파일 → PPT로 내보내기… · 인터넷 자료 사용 안내. 세부는 docs/contistudio-and-choseong.md.
 - 찬양 콘티 스튜디오(윤명중, AGPL-3.0) 코드는 옮기지 않았다. 파일 형식과 동작만 참고.
 
 ## 2026-11-26 쉬운방송에서 가져온 아이디어 → 2.0.6 공개 (2026-11-26)
@@ -61,7 +61,7 @@ Electron 판 워십프리젠터(`F:\aside\WorshipCue`, 저장소 `hahadark/Worsh
 
 ## 2026-11-27 AI 도우미 일곱 가지 (가지 ai-features, 아직 릴리스 전)
 
-- 예배 전 큐시트 점검 · 설교 원고 → 슬라이드 · 음성 인식(설교 구절 따라가기 · 방송 실시간 자막·번역, whisper.cpp 를 처음 켤 때 받음) · 가사 자동 정리 · 예배 후 정리 · 말로 시키기 · AI 설정. 모두 도구 메뉴. 세부 · 실측 · 확인 못 한 것은 docs/ai-features.md.
+- 예배 전 큐시트 점검 · 설교 원고 → 슬라이드 · 음성 인식(설교 구절 따라가기 · 방송 실시간 자막·번역, whisper.cpp 를 처음 켤 때 받음) · 가사 자동 정리 · 예배 후 정리 · 말로 시키기 · AI 설정. 모두 AI 메뉴. 세부 · 실측 · 확인 못 한 것은 docs/ai-features.md.
 - 지킬 것: 음성 인식 결과는 '다음' 칸까지만(송출 금지) · 자막은 기본 방송 출력에만 · 말로 시키기에 송출·삭제 단계를 더하지 말 것 · 받는 파일은 stt.rs 의 SHA-256 대조.
 
 ## 구조
@@ -137,7 +137,7 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 
 - 쓰는 법 · 저장 형식 · 그리는 규칙 · 확인 · 3단계 전에 정할 것: docs/roadmap-sources.md '2단계 한 것'.
 - 코어 `scenes.rs`: 설정 `scenes[]` · `outputScenes` {main, overlay} (덧붙인 키), 기본 틀 5개, `effective_scene`(맨 위 오버레이 · 메시지 · 로고 화면 · 그리기 자동), `box_template`(칸 크기 글자 맞춤). `Core::scene_for` 가 고른 구성 → 없으면 기본 full.
-- 조작 화면 `scene_ui.rs` (별도 창, 보기 → 화면 구성 편집…, 점검 인자 `--scene-open [full|split|pip|lower|three]`), 뷰어는 `paint::paint_scene`.
+- 조작 화면 `scene_ui.rs` (별도 창, 화면 → 화면 구성 편집…, 점검 인자 `--scene-open [full|split|pip|lower|three]`), 뷰어는 `paint::paint_scene`.
 - 웹: render.js `sceneNeedsBox · sceneTemplate · sceneBoxCss · sceneHost`, output.js 칸 상자 · 카메라 칸(`.wp-cam`). 기본 구성은 무대에 바로 그려 2.0.8 과 화소까지 같음.
 - 점검: `node tools/scenes/e2e.js --exe targetdebugwp-app.exe --old-exe <2.0.8 web 을 옆에 둔 exe> --data tmpdata --out tmpscene-e2e --fake-cam`. **이 PC 의 OBS Virtual Camera 는 화면 내용을 내보낼 수 있으니 캡처는 --fake-cam 으로.**
 
@@ -145,7 +145,7 @@ egui 0.37 은 API 가 바뀌었다: `App::ui(&mut self, ui, frame)`, `egui::Pane
 
 - 쓰는 법 · 저장 형식 · 확인 · 4단계 전에 정할 것: docs/roadmap-sources.md '3단계 한 것'.
 - 코어 `outputs.rs`: 추가 출력 `extraOutputs[]`(/outputs/out-…, kind main|overlay 로 같은 종류 내장 출력처럼) · 종류별 기본 `typeScenes` · 순서 `scenes` · 소리 `output.audioOutput`. 구성 고르는 차례 = 순서 → 종류 기본 → 출력 기본 → full (`Core::scene_choice_for_deck`).
-- 조작 화면: 인스펙터 소스 탭 '화면 구성'(`sources_ui.rs scene_section`), 출력 설정 창 '출력' 구획 · 추가 출력 창(`outputs_ui.rs`), 도구 → 카메라 동시 열기 시험(`camtest_ui.rs` · 코어 `camtest.rs` · `/helper/camtest`), 구성 편집기 Alt+누름 = 겹친 아래 칸 차례로. 점검 인자 `--open-d camtest`.
+- 조작 화면: 인스펙터 소스 탭 '화면 구성'(`sources_ui.rs scene_section`), 출력 설정 창 '출력' 구획 · 추가 출력 창(`outputs_ui.rs`), 연결 → 카메라 동시 열기 시험(`camtest_ui.rs` · 코어 `camtest.rs` · `/helper/camtest`), 구성 편집기 Alt+누름 = 겹친 아래 칸 차례로. 점검 인자 `--open-d camtest`.
 - 점검: `node tools/scenes/e2e-outputs.js --exe target\debug\wp-app.exe --data tmp\data --out tmp\outputs-e2e --fake-cam` (시험 기준: 성경봉독 · 찬양 순서마다 예배당 · 방송이 각자 바뀜, cue-next 로 넘김).
 
 ## 2026-11-27 소스 · 화면 구성 로드맵 4단계 — 전환 · 자동화 + AI 도우미 7개 합침 (sources 가지, 아직 릴리스 전)

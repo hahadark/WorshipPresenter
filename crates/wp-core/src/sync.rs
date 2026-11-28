@@ -676,7 +676,7 @@ pub fn backup_files(data_dir: &Path) -> Result<Value> {
     let src = data_dir.join("bible.db");
     // 손상된 자료로 멀쩡한 백업을 밀어내지 않게 먼저 점검한다
     if matches!(db_is_healthy(&src), Ok(false)) {
-        bail!("자료 파일이 손상된 것 같아 백업하지 않았습니다. 파일 → 동기화 · 백업에서 지난 백업으로 되돌리세요.");
+        bail!("자료 파일이 손상된 것 같아 백업하지 않았습니다. 파일 → 여러 PC 동기화 · 백업에서 지난 백업으로 되돌리세요.");
     }
     // WAL에 아직 남은 변경까지 포함한다. 실패한 경우 원본 DB 단순 복사로 대체하면 안 된다.
     let result = (|| -> Result<()> {

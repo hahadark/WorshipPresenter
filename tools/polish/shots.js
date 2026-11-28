@@ -39,7 +39,7 @@ add('main-notify', ['--win', W, ...base, '--item', '2', '--send'], { 'output.aut
 for (const t of ['text', 'stage', 'media', 'sources']) add('ins-' + t, ['--win', W, ...base, '--item', '0', '--ins-tab', t]);
 add('edit-actions', ['--win', W, '--edit-actions']);
 // 메뉴
-for (const m of ['파일', '큐시트', '송출', '보기', '도구', '도움말']) add('menu-' + m, ['--win', W, ...base, '--open-menu', m]);
+for (const m of ['파일', '편집', '보기', '큐시트', '화면', '연결', '송출', 'AI', '도움말']) add('menu-' + m, ['--win', W, ...base, '--open-menu', m]);
 // 창 (메뉴 id)
 const wins = ['c:settings', 'c:templates', 'c:history', 'c:usage', 'c:about', 'c:slideedit', 'c:themes', 'c:import-bible', 'c:commentary',
   'b:songs', 'b:lib', 'b:overlays', 'b:message', 'b:names', 'b:quick', 'b:stage', 'b:macros', 'b:cues', 'b:sync', 'b:diagnose', 'b:draw', 'b:cameras',
@@ -63,7 +63,7 @@ add('main-prolight', ['--win', W, ...base, '--item', '1', '--send'], { 'ui.theme
 add('main-prolight-1000', ['--win', '1000x640', ...base, '--item', '1', '--send'], { 'ui.theme': 'pro-light' });
 for (const w of ['c:settings', 'd:output', 'b:cues', 'c:templates']) add(`prolight-${w.replace(':', '-')}`, ['--win', W, ...base, '--item', '1', '--open-menu', w], { 'ui.theme': 'pro-light' });
 add('prolight-tpl', ['--win', W, ...base, '--tpl-open', 'main'], { 'ui.theme': 'pro-light' });
-add('prolight-menu-도구', ['--win', W, ...base, '--open-menu', '도구'], { 'ui.theme': 'pro-light' });
+add('prolight-menu-연결', ['--win', W, ...base, '--open-menu', '연결'], { 'ui.theme': 'pro-light' });
 // 좁은 창에서 창
 for (const w of ['c:settings', 'd:output']) add('narrow-' + w.replace(':', '-'), ['--win', '1000x640', ...base, '--open-menu', w]);
 

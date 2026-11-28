@@ -61,7 +61,7 @@ pub fn feature_what(f: &str) -> &'static str {
     FEATURES.iter().find(|x| x.0 == f).map(|x| x.2).unwrap_or("입력한 글")
 }
 
-pub const NEED_KEY: &str = "AI 키가 필요합니다. 도구 → AI 설정에서 키를 넣으세요 (규칙으로 하는 기능은 키 없이도 됩니다).";
+pub const NEED_KEY: &str = "AI 키가 필요합니다. AI → AI 설정에서 키를 넣으세요 (규칙으로 하는 기능은 키 없이도 됩니다).";
 
 impl Core {
     pub fn ai_cfg(&self) -> AiCfg {

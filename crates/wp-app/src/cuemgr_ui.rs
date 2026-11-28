@@ -68,7 +68,7 @@ fn import_report(app: &App, n: usize, errs: Vec<String>, warns: &[String]) {
     app.core.lock().notify(format!("{done} {}\n{}{more}", tr("확인할 것:"), warns.iter().take(3).cloned().collect::<Vec<_>>().join("\n")), "warn");
 }
 
-/// 큐시트 메뉴 → PPT 파일로 내보내기: 열린 큐시트를 예배 순서대로 PPT 하나로.
+/// 파일 메뉴 → PPT로 내보내기…: 열린 큐시트를 예배 순서대로 PPT 하나로.
 /// 슬라이드 나눔·그림 위치는 잠금 안에서 빨리, 그림 읽기·파일 쓰기는 다른 스레드에서 (화면이 멈추지 않게)
 pub fn export_pptx_dialog(app: &mut App) {
     let name = app.core.lock().cue.as_ref().map(|c| c.name.clone());
@@ -107,7 +107,7 @@ pub fn export_pptx_dialog(app: &mut App) {
     });
 }
 
-/// 큐시트 메뉴 → 찬양 콘티 가져오기: 콘티 스튜디오의 .worship 파일을 골라 큐시트로 만들고 첫 큐시트를 연다
+/// 파일 메뉴 → 찬양 콘티 가져오기…: 콘티 스튜디오의 .worship 파일을 골라 큐시트로 만들고 첫 큐시트를 연다
 pub fn import_conti_dialog(app: &mut App) {
     let Some(fs) = rfd::FileDialog::new().add_filter(tr("찬양 콘티 스튜디오 콘티"), &["worship"]).add_filter(tr("큐시트 · 콘티"), &["json", "worship"]).pick_files() else { return };
     let (n, first, errs, warns) = app.core.lock().import_cue_files_ex(&fs);

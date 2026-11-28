@@ -17,7 +17,9 @@ fn lang_menu_click_switches_to_english_and_back() {
     let lang = |h: &H| h.app.core.lock().settings.get()["uiLang"].as_str().unwrap_or("").to_string();
 
     h.click("menu-보기", menu);
-    assert!(seen("menuitem-c:lang-en").is_some(), "보기 메뉴를 누르면 언어 항목이 보여야 함");
+    assert!(seen("menuitem-v:lang").is_some(), "보기 메뉴를 누르면 'Language · 언어' 줄이 보여야 함");
+    h.click("menuitem-v:lang", menu);
+    assert!(seen("menuitem-c:lang-en").is_some(), "'Language · 언어' 를 누르면 하위 메뉴에 언어 항목이 보여야 함");
     h.click("menuitem-c:lang-en", menu);
     assert_eq!(lang(&h), "en", "English 를 누르면 설정 uiLang 이 en");
     assert!(wp_core::i18n::is_en(), "누른 바로 그 프레임부터 영어 화면");
@@ -27,6 +29,7 @@ fn lang_menu_click_switches_to_english_and_back() {
 
     // 영어 화면에서도 메뉴 자리 이름(내부 이름)은 그대로라 다시 눌러 한국어로 돌아올 수 있다
     h.click("menu-보기", menu);
+    h.click("menuitem-v:lang", menu);
     h.click("menuitem-c:lang-ko", menu);
     assert_eq!(lang(&h), "ko");
     assert!(!wp_core::i18n::is_en());

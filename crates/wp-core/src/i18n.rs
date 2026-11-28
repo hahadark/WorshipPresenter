@@ -88,6 +88,11 @@ pub fn tr(s: &str) -> String {
     DICT.get(s).cloned().unwrap_or_else(|| s.to_string())
 }
 
+/// 지금 화면 언어와 상관없이 영어 사전에서 찾는다 (없으면 None). 시험 · 점검용: 화면 문구가 사전에 있는지 확인
+pub fn en_of(s: &str) -> Option<&'static str> {
+    EXTRA.get(s).copied().or_else(|| DICT.get(s).map(|e| e.as_str()))
+}
+
 /// 기본 템플릿·테마 이름처럼 자료에 든 이름: 사전에 있는 것만 영어로 (사용자가 지은 이름은 그대로).
 /// 테마를 적용해 생긴 "레드 쉴드 · 예배당" · "… · OBS 자막" 꼴도 앞·뒤를 따로 옮긴다.
 pub fn tr_name(s: &str) -> String {

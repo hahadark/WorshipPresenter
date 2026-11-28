@@ -1,4 +1,4 @@
-//! 예배 후 정리 창 (메뉴 도구 'ai:recap')
+//! 예배 후 정리 창 (메뉴 AI 'ai:recap')
 //! 그날 사용 기록(송출 시각) + 받아 적은 글 → 순서별 시간 표시 · 유튜브 설명 · 설교 요약 재료 · 쇼츠 후보 (복사 · 저장)
 //! 녹음 파일을 주면 PC 안에서 글로 바꾸고(whisper.cpp), 그 글만 AI 로 요약 (키 · 동의 필요). 음성은 밖으로 보내지 않는다.
 
@@ -67,7 +67,7 @@ fn build(app: &App, s: &mut St) {
     let items = c.cue.as_ref().map(|q| q.items.clone()).unwrap_or_default();
     drop(c);
     if events.is_empty() {
-        let m = tr_args("{1} 에 송출한 기록이 없습니다 (도구 → 사용 기록이 켜져 있어야 합니다).", &[&s.day]);
+        let m = tr_args("{1} 에 송출한 기록이 없습니다 (파일 → 사용 기록이 켜져 있어야 합니다).", &[&s.day]);
         s.out = [m.clone(), m.clone(), m.clone(), m];
         return;
     }
@@ -106,7 +106,7 @@ fn transcribe_file(app: &App, path: std::path::PathBuf, ctx: egui::Context) {
     let data = app.core.lock().data_dir.clone();
     let model = app.core.lock().settings.get()["stt"]["model"].as_str().map(String::from).unwrap_or_else(|| wp_core::stt::default_model().to_string());
     let Some(exe) = wp_core::stt::engine_path(&data) else {
-        app.core.lock().notify(tr("음성 인식 엔진이 없습니다. 도구 → 음성 인식 창에서 먼저 받으세요."), "warn");
+        app.core.lock().notify(tr("음성 인식 엔진이 없습니다. AI → 음성 인식 창에서 먼저 받으세요."), "warn");
         return;
     };
     CANCEL.store(false, Ordering::SeqCst);

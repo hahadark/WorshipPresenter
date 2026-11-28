@@ -156,7 +156,7 @@ fn consent_win(app: &mut App, ctx: &egui::Context) {
         ui.label(tr_args("이 기능은 {1} 을(를) AI 제공자에게 보냅니다.", &[&tr(wp_core::aihelp::feature_what(&feature))]));
         ui.label(tr_args("보내는 곳: {1} (모델 {2})", &[&cfg.host(), &cfg.model()]));
         ui.add_space(4.0);
-        ui.label(RichText::new(tr("· 음성은 PC 밖으로 보내지 않습니다 (음성 인식은 이 PC 안에서 합니다).\n· 보낸 글은 그 제공자의 약관에 따라 처리됩니다. 개인 정보(이름·연락처)가 든 글은 보내기 전에 지우세요.\n· 요금은 쓴 만큼 그 제공자 계정에서 나갑니다.\n· 동의는 도구 → AI 설정에서 언제든지 끌 수 있습니다.")).small());
+        ui.label(RichText::new(tr("· 음성은 PC 밖으로 보내지 않습니다 (음성 인식은 이 PC 안에서 합니다).\n· 보낸 글은 그 제공자의 약관에 따라 처리됩니다. 개인 정보(이름·연락처)가 든 글은 보내기 전에 지우세요.\n· 요금은 쓴 만큼 그 제공자 계정에서 나갑니다.\n· 동의는 AI → AI 설정에서 언제든지 끌 수 있습니다.")).small());
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui.add(Btn::new(tr("동의하고 계속")).kind(Kind::Primary)).clicked() {
@@ -455,7 +455,7 @@ pub fn open_from_args() {
 
 #[cfg(test)]
 mod tests {
-    /// 도구 메뉴의 AI 항목은 모두 처리기가 받고 아이콘이 있다
+    /// AI 메뉴의 AI 항목은 모두 처리기가 받고 아이콘이 있다
     #[test]
     fn ai_menu_items_are_handled() {
         let ids: Vec<&str> = crate::menubar::menus().iter().flat_map(|m| m.items.iter().map(|i| i.id)).filter(|id| id.starts_with("ai:")).collect();

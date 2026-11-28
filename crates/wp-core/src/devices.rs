@@ -129,7 +129,7 @@ pub fn run(devices: &Value, device: &str, action: &str) -> Result<Value, String>
     let d = devices
         .as_array()
         .and_then(|a| a.iter().find(|x| x["id"] == device))
-        .ok_or("장비를 찾을 수 없습니다. 도구 → 장비 에서 다시 고르세요.")?;
+        .ok_or("장비를 찾을 수 없습니다. 연결 → Companion · 장비 에서 다시 고르세요.")?;
     let kind = d["kind"].as_str().unwrap_or("");
     let host = d["host"].as_str().unwrap_or("");
     let name = d["name"].as_str().unwrap_or("");

@@ -530,7 +530,7 @@ impl Core {
         // 회중 메시지
         let msg_on: Vec<&'static str> = OUTPUTS.iter().copied().filter(|o| !crate::overlays::message_overlay(&self.b.message, o).is_empty()).collect();
         rows.push(row("message", "message", "회중 메시지", self.b.message.as_ref().map(|m| m.text.clone()).unwrap_or_default(), msg_on));
-        // 실시간 자막 (도구 → 음성 인식 → 방송 실시간 자막): 기본은 방송 출력 아래쪽
+        // 실시간 자막 (AI → 음성 인식 → 방송 실시간 자막): 기본은 방송 출력 아래쪽
         let cap: Vec<Vec<Value>> = OUTPUTS.iter().map(|o| crate::voicefollow::caption_overlay(o)).collect();
         let cap_on: Vec<&'static str> = OUTPUTS.iter().copied().zip(cap.iter()).filter(|(_, c)| !c.is_empty()).map(|(o, _)| o).collect();
         let cap_text = cap.iter().flatten().next().and_then(|c| c["text"].as_str()).unwrap_or("").to_string();

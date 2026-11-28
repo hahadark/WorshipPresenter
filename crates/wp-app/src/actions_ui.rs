@@ -4,7 +4,7 @@
 //!   stopMusic, macro, stagePin, obsScene, obsStream, obsRecord, companion, dev[]}`. 비우면 키를 지운다.
 //! - 정규화(범위·길이)는 저장할 때 `wp_core::actions::normalize_item_actions` 가 한다 (app.rs editor). 편집 중 글은 그대로 둔다.
 //! - 실행은 `wp_core::trackd::run_item_actions` (여기서는 호출하지 않음). '보내 보기'·'눌러 보기'는 그 자리에서 한 번 보낸다.
-//! - OBS 장면 목록: 도구 → OBS 원격 조작 창의 상태 캐시(`trackd_ui::obs_state`)에 장면이 있으면 콤보, 없으면 글 입력.
+//! - OBS 장면 목록: 연결 → OBS 원격 조작 창의 상태 캐시(`trackd_ui::obs_state`)에 장면이 있으면 콤보, 없으면 글 입력.
 
 use eframe::egui::{self, RichText};
 use once_cell::sync::Lazy;
@@ -266,7 +266,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
             ms.extend(settings["macros"].as_array().into_iter().flatten().map(|m| (m["id"].as_str().unwrap_or("").to_string(), m["name"].as_str().unwrap_or("").to_string())));
             ch |= combo(ui, e, "macro", &ms, 140.0);
             if st.macro_name.is_none() {
-                if ui.button(tr("이 동작을 매크로로 저장…")).on_hover_text(tr("지금 이 순서의 자동 동작 묶음에 이름을 붙여 단추 하나로 (도구 → 매크로 · Alt+1~9)")).clicked() {
+                if ui.button(tr("이 동작을 매크로로 저장…")).on_hover_text(tr("지금 이 순서의 자동 동작 묶음에 이름을 붙여 단추 하나로 (송출 → 매크로 · 예약 실행 · Alt+1~9)")).clicked() {
                     if wp_core::actions::count(e) == 0 {
                         core.lock().notify(tr("먼저 '송출할 때 자동으로' 에서 동작을 정하세요."), "warn");
                     } else {
@@ -290,7 +290,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
                                 Ok(_) => {
                                     let cnt = c.settings.get()["macros"].as_array().map(|l| l.len()).unwrap_or(0);
                                     let key = if cnt <= 9 { cnt.to_string() } else { "?".to_string() };
-                                    c.notify(wp_core::i18n::tr_args("매크로 '{1}' 을(를) 저장했습니다. 도구 → 매크로 · Alt+{2} 로 실행합니다.", &[&m["name"].as_str().unwrap_or(""), &key]), "ok");
+                                    c.notify(wp_core::i18n::tr_args("매크로 '{1}' 을(를) 저장했습니다. 송출 → 매크로 · 예약 실행 · Alt+{2} 로 실행합니다.", &[&m["name"].as_str().unwrap_or(""), &key]), "ok");
                                     done = true;
                                 }
                                 Err(err) => c.notify(err.to_string(), "error"),
@@ -355,7 +355,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
             ch |= combo(ui, e, "obsStream", &[keep.clone(), ("start".into(), tr("시작")), ("stop".into(), tr("끝"))], 80.0);
             ui.label(tr("녹화"));
             ch |= combo(ui, e, "obsRecord", &[keep.clone(), ("start".into(), tr("시작")), ("stop".into(), tr("끝"))], 80.0);
-            if !connected && ui.button(if enabled { tr("OBS 연결 안 됨…") } else { tr("OBS 연결하기…") }).on_hover_text(tr("도구 → OBS 원격 조작")).clicked() {
+            if !connected && ui.button(if enabled { tr("OBS 연결 안 됨…") } else { tr("OBS 연결하기…") }).on_hover_text(tr("연결 → OBS 원격 조작")).clicked() {
                 crate::trackd_ui::open(crate::trackd_ui::Win::Obs);
             }
         });
@@ -383,7 +383,7 @@ pub fn item_fields(ui: &mut egui::Ui, e: &mut Value, core: &Shared) -> bool {
                         .map_err(|e| format!("Companion: {e}"))
                 });
             }
-            ui.label(gray(tr("ATEM · PTZ · 조명 · 음향"))).on_hover_text(tr("ATEM · PTZ · 조명 · 음향을 Companion 으로 (도구 → 스트림덱·외부 단추에서 주소)"));
+            ui.label(gray(tr("ATEM · PTZ · 조명 · 음향"))).on_hover_text(tr("ATEM · PTZ · 조명 · 음향을 Companion 으로 (연결 → 스트림덱 · 외부 단추에서 주소)"));
         });
         ui.end_row();
         // 장비 (X32 · PTZ) — devicepanel.js actionHtml

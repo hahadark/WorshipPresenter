@@ -158,7 +158,7 @@ async fn handle(State(core): State<Shared>, Path(action): Path<String>, Query(q)
     let want = c.settings.str(&["triggerKey"]);
     let got = q.get("key").cloned().unwrap_or_default();
     if !safe_eq(&got, &want) {
-        return (StatusCode::FORBIDDEN, Json(json!({ "ok": false, "error": "열쇠(key)가 맞지 않습니다. 워십프리젠터 → 도구 → 스트림덱·외부 단추에서 주소를 다시 복사하세요." }))).into_response();
+        return (StatusCode::FORBIDDEN, Json(json!({ "ok": false, "error": "열쇠(key)가 맞지 않습니다. 워십프리젠터 → 연결 → 스트림덱 · 외부 단추에서 주소를 다시 복사하세요." }))).into_response();
     }
     match run(&mut c, &action, &q) {
         Ok(_) => Json(json!({ "ok": true, "result": true })).into_response(),

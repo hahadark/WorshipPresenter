@@ -348,7 +348,7 @@ pub fn parse_response(status: u16, body: &Value, model: &str, meta: &Value) -> R
 /// 오픈라우터로 뽑기 (실제 호출 — 다른 스레드에서)
 pub fn ask_points(api_key: &str, model: &str, endpoint: &str, text: &str, meta: &Value, extra: &str) -> Result<Value, String> {
     if api_key.is_empty() {
-        return Err(crate::i18n::tr("오픈라우터 API 키가 없습니다. 파일 → 주보로 큐시트 만들기 → API 키로 에서 넣거나, 채팅 AI 를 쓰세요.").into());
+        return Err(crate::i18n::tr("오픈라우터 API 키가 없습니다. AI → 주보로 큐시트 만들기… → API 키로 에서 넣거나, 채팅 AI 를 쓰세요.").into());
     }
     let body = request_body(model, text, meta, extra)?;
     let resp = ureq::post(if endpoint.is_empty() { DEFAULT_ENDPOINT } else { endpoint })

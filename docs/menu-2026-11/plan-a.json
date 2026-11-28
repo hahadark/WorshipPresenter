@@ -1,0 +1,597 @@
+[
+  {
+    "label": "파일",
+    "items": [
+      {
+        "id": "c:import-bible",
+        "label": "성경 번역본 가져오기…",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:conti",
+        "label": "찬양 콘티 가져오기…",
+        "desc": "콘티 스튜디오 .worship",
+        "key": ""
+      },
+      {
+        "id": "d:reimport",
+        "label": "1.x 자료 다시 가져오기…",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:pptx",
+        "label": "PPT로 내보내기…",
+        "desc": "예배 순서대로",
+        "key": ""
+      },
+      {
+        "id": "b:print",
+        "label": "큐시트 인쇄",
+        "desc": "",
+        "key": "Ctrl+P"
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:sync",
+        "label": "여러 PC 동기화 · 백업",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:usage",
+        "label": "사용 기록",
+        "desc": "저작권 보고",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:settings",
+        "label": "설정",
+        "desc": "",
+        "key": "Ctrl+,"
+      }
+    ]
+  },
+  {
+    "label": "편집",
+    "items": [
+      {
+        "id": "b:undo",
+        "label": "실행 취소",
+        "desc": "",
+        "key": "Ctrl+Z"
+      },
+      {
+        "id": "b:redo",
+        "label": "다시 실행",
+        "desc": "",
+        "key": "Ctrl+Y"
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:slideedit",
+        "label": "슬라이드 편집",
+        "desc": "고른 순서",
+        "key": "Ctrl+E"
+      }
+    ]
+  },
+  {
+    "label": "보기",
+    "items": [
+      {
+        "id": "w:workspaces",
+        "label": "배치",
+        "desc": "판 보이기 · 숨기기",
+        "key": ""
+      },
+      {
+        "id": "w:viewers",
+        "label": "뷰어 바꾸기",
+        "desc": "둘 다 · 송출 중만",
+        "key": "Ctrl+Shift+L"
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:commentary",
+        "label": "주석",
+        "desc": "보기 · 가져오기",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "v:lang",
+        "label": "Language · 언어",
+        "desc": "",
+        "key": "",
+        "sub": [
+          "c:lang-ko",
+          "c:lang-en"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "큐시트",
+    "items": [
+      {
+        "id": "b:cues",
+        "label": "큐시트 관리",
+        "desc": "휴지통 · 복제 · 내보내기",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "a:home",
+        "label": "홈페이지 주보 → 큐시트 · 광고",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "a:points",
+        "label": "설교 포인트 슬라이드",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "a:preservice",
+        "label": "예배 전 화면 만들기",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:songs",
+        "label": "찬양 라이브러리",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:lib",
+        "label": "그림 · 음악 · 영상 라이브러리",
+        "desc": "",
+        "key": ""
+      }
+    ]
+  },
+  {
+    "label": "화면",
+    "items": [
+      {
+        "id": "d:output",
+        "label": "출력 설정",
+        "desc": "예배당 화면 · 모니터 · OBS 숨김",
+        "key": ""
+      },
+      {
+        "id": "c:scenes",
+        "label": "화면 구성 편집…",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "x:tpl-main",
+        "label": "예배당 화면 템플릿",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "x:tpl-overlay",
+        "label": "OBS 자막 템플릿",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:templates",
+        "label": "템플릿 편집",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:themes",
+        "label": "테마 관리",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:obsfull",
+        "label": "OBS 자막: 슬라이드 그대로",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:obspip",
+        "label": "OBS 자막: 그림 슬라이드 작게",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:stage",
+        "label": "무대 화면",
+        "desc": "",
+        "key": ""
+      }
+    ]
+  },
+  {
+    "label": "연결",
+    "items": [
+      {
+        "id": "d:obs",
+        "label": "OBS 원격 조작",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "x:obs-url",
+        "label": "OBS 주소 복사",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "d:lan",
+        "label": "내부망 출력",
+        "desc": "다른 PC 의 OBS",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "d:remote",
+        "label": "휴대폰 리모컨",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "d:phonecam",
+        "label": "휴대폰 카메라",
+        "desc": "QR 로 연결",
+        "key": ""
+      },
+      {
+        "id": "d:webedit",
+        "label": "웹 편집기",
+        "desc": "다른 컴퓨터에서 큐시트 고치기",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "d:trigger",
+        "label": "스트림덱 · 외부 단추",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "d:devices",
+        "label": "Companion · 장비",
+        "desc": "X32 · PTZ",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:cameras",
+        "label": "카메라 설정",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "d:camtest",
+        "label": "카메라 동시 열기 시험",
+        "desc": "",
+        "key": ""
+      }
+    ]
+  },
+  {
+    "label": "송출",
+    "items": [
+      {
+        "id": "x:preview-off",
+        "label": "미리보기 끄기",
+        "desc": "클릭하면 바로 송출",
+        "key": ""
+      },
+      {
+        "id": "x:output-toggle",
+        "label": "예배당 화면 켜기·끄기",
+        "desc": "",
+        "key": "Ctrl+Shift+F"
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:quick",
+        "label": "즉석 자막",
+        "desc": "",
+        "key": "Ctrl+T"
+      },
+      {
+        "id": "b:message",
+        "label": "회중 메시지",
+        "desc": "",
+        "key": "Ctrl+M"
+      },
+      {
+        "id": "b:names",
+        "label": "이름 자막",
+        "desc": "설교자 · 기도자",
+        "key": ""
+      },
+      {
+        "id": "b:overlays",
+        "label": "오버레이",
+        "desc": "시계 · 카운트다운 · 배너",
+        "key": ""
+      },
+      {
+        "id": "b:draw",
+        "label": "화면에 그리기 · 강조",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:macros",
+        "label": "매크로 · 예약 실행",
+        "desc": "",
+        "key": "Alt+1~9"
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:history",
+        "label": "송출 기록",
+        "desc": "",
+        "key": "Ctrl+H"
+      }
+    ]
+  },
+  {
+    "label": "AI",
+    "items": [
+      {
+        "id": "d:bulletin",
+        "label": "주보로 큐시트 만들기…",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "ai:sermon",
+        "label": "설교 원고 → 슬라이드",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "ai:lyrics",
+        "label": "가사 자동 정리",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "ai:check",
+        "label": "예배 전 큐시트 점검",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "ai:say",
+        "label": "말로 시키기",
+        "desc": "찾기칸에 '>' 로도",
+        "key": ""
+      },
+      {
+        "id": "ai:listen",
+        "label": "음성 인식",
+        "desc": "구절 따라가기 · 실시간 자막",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "ai:recap",
+        "label": "예배 후 정리",
+        "desc": "시간 표시 · 유튜브 설명 · 요약",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "ai:settings",
+        "label": "AI 설정",
+        "desc": "키 · 제공자 · 동의",
+        "key": ""
+      }
+    ]
+  },
+  {
+    "label": "도움말",
+    "items": [
+      {
+        "id": "a:help-manual",
+        "label": "사용 설명서",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "a:help-readme",
+        "label": "그림으로 보는 사용법",
+        "desc": "README",
+        "key": ""
+      },
+      {
+        "id": "a:help-obs",
+        "label": "OBS 연결 안내",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "a:help-keys",
+        "label": "단축키 보기",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "a:help-news",
+        "label": "새 소식",
+        "desc": "버전별 바뀐 점",
+        "key": ""
+      },
+      {
+        "id": "d:update",
+        "label": "새 버전 확인",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:diagnose",
+        "label": "연결 점검",
+        "desc": "예배 전 점검",
+        "key": ""
+      },
+      {
+        "id": "b:logbundle",
+        "label": "로그 묶음 저장…",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "b:logs",
+        "label": "로그 폴더 열기",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "a:help-issue",
+        "label": "문제 알리기 · 건의",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "-",
+        "label": "-",
+        "desc": "",
+        "key": ""
+      },
+      {
+        "id": "c:about",
+        "label": "정보 · 라이선스",
+        "desc": "",
+        "key": ""
+      }
+    ]
+  }
+]

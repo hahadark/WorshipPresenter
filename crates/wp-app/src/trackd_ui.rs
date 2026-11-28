@@ -99,7 +99,7 @@ pub fn obs_status_line(settings: &Value) -> Option<(String, bool)> {
     Some((parts.join(" · "), false))
 }
 
-/// 장비(X32 · PTZ) 등록 창 (도구 → Companion·장비)
+/// 장비(X32 · PTZ) 등록 창 (연결 → Companion · 장비)
 pub fn open_devices() {
     crate::tools_ui::open(crate::tools_ui::Tool::Devices);
 }
@@ -1066,10 +1066,11 @@ mod ai_card_ui_tests {
     }
     #[test]
     fn menu_has_ai_entries() {
+        // 2026-11 메뉴 구성(안 A): 주보 → 큐시트는 AI 메뉴 한 자리에만 (전에는 파일 · 도구 두 자리)
         let m = crate::menubar::menus();
-        let file = m.iter().find(|x| x.label == "파일").unwrap();
-        assert!(file.items.iter().any(|i| i.id == "d:bulletin" && i.label.contains("(AI)")));
-        assert!(m.iter().flat_map(|x| &x.items).any(|i| i.id == "d:bulletin" && i.label == "주보 → 큐시트 (AI)"));
+        let ai = m.iter().find(|x| x.label == "AI").unwrap();
+        assert!(ai.items.iter().any(|i| i.id == "d:bulletin" && i.label == "주보로 큐시트 만들기…"));
+        assert_eq!(m.iter().flat_map(|x| &x.items).filter(|i| i.id == "d:bulletin").count(), 1);
         assert!(handle_menu("d:bulletin"));
     }
 }

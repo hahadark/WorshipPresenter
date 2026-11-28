@@ -72,9 +72,9 @@ fn reimport_menu_and_ask_dialog_by_synthetic_clicks() {
     fr::write_instance_pid(&dir); // 메뉴가 쓸 자료 폴더
     fr::set_ask(None);
 
-    // 1) 메뉴: 도움말 → '1.x 자료 다시 가져오기…' → 묻는 창이 뜬다
+    // 1) 메뉴: 파일 → '1.x 자료 다시 가져오기…' → 묻는 창이 뜬다
     assert!(!d.has("지금 자료 그대로 쓰기"));
-    d.click_text("도움말");
+    d.click_text("파일");
     d.click_text("1.x 자료 다시 가져오기…");
     let a = fr::ask().expect("메뉴를 누르면 묻는 창이 떠야 함");
     // 이 PC 에 1.x 자료가 있으면 "menu"(읽기만 한다), 없으면 "none"

@@ -16,7 +16,7 @@
 - 연결 점검 · 휴대폰 리모컨 · 내부망 출력 · 휴대폰 카메라 창에 같은 줄. 실제 UAC 경로는 사용자 화면에 창이 뜨므로 자동 점검하지 않았다.
 
 ## 4. 휴대폰을 카메라로 (phonecam.rs · web/phone/cam.html · render.js)
-- 도구 → 휴대폰 카메라. 설정 `phoneCam { enabled, port 37560, key }`. QR = `https://<내부망 IP>:37560/cam?k=<열쇠>`.
+- 연결 → 휴대폰 카메라. 설정 `phoneCam { enabled, port 37560, key }`. QR = `https://<내부망 IP>:37560/cam?k=<열쇠>`.
 - 휴대폰 브라우저는 https 에서만 카메라를 열어 주므로 스스로 만든 인증서(rcgen, 자료 폴더 `phonecam-cert.der · phonecam-key.der`, 한 번 만들어 계속 씀)로 https(tokio-rustls, ring) 서버를 연다. 처음 한 번 '안전하지 않음' 안내를 넘겨야 한다.
 - 이어 주기(시그널링)만 서버가 한다: 휴대폰은 0.7초마다 `POST /cam/poll`(살아 있음 + offer · bye 받기), 답은 `POST /cam/answer`. 출력 화면은 이 PC 서버의 `POST /phonecam/offer`(X-WorshipCue 머리글) → `GET /phonecam/answer?viewer=` 폴링 → `POST /phonecam/bye`.
 - ICE 는 STUN 없이 같은 내부망 주소만. 크롬이 가린 `xxxx.local` 주소는 서버가 실제 IP 로 바꿔 적는다(출력 쪽 offer → 휴대폰과 같은 대역의 이 PC 주소, 휴대폰 answer → 휴대폰이 보낸 요청의 IP).

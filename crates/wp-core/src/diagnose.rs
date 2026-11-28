@@ -30,14 +30,14 @@ pub fn check_obs_ws(settings: &Value, cache: &Value) -> Option<Value> {
     let fix_electron = || {
         vec![
             tr("OBS 가 켜져 있는지 확인하세요 (OBS 28 이상)."),
-            tr("OBS → 도구 → WebSocket 서버 설정 → 'WebSocket 서버 사용' 을 켜고, 포트(기본 4455)와 비밀번호를 도구 → OBS 원격 조작에 똑같이 넣으세요."),
+            tr("OBS → 도구 → WebSocket 서버 설정 → 'WebSocket 서버 사용' 을 켜고, 포트(기본 4455)와 비밀번호를 연결 → OBS 원격 조작에 똑같이 넣으세요."),
             tr("OBS 가 다른 PC 에 있으면 주소에 그 PC 의 IP(192.168.x.x)를 넣고, 그 PC 방화벽에서 OBS 를 허용하세요."),
         ]
     };
     let host = o["host"].as_str().filter(|x| !x.trim().is_empty()).unwrap_or("127.0.0.1").trim().to_string();
     let port = o["port"].as_u64().unwrap_or(4455);
     if port == 0 || port > 65535 {
-        return Some(item("obsws", &title, "fail", tr_args("포트가 잘못되었습니다: {1}", &[&o["port"]]), vec![tr("도구 → OBS 원격 조작에서 포트를 OBS 의 WebSocket 서버 설정과 같게(기본 4455) 넣으세요.")]));
+        return Some(item("obsws", &title, "fail", tr_args("포트가 잘못되었습니다: {1}", &[&o["port"]]), vec![tr("연결 → OBS 원격 조작에서 포트를 OBS 의 WebSocket 서버 설정과 같게(기본 4455) 넣으세요.")]));
     }
     if cache["connected"].as_bool() == Some(true) {
         let detail = match cache["scene"].as_str() {
@@ -56,7 +56,7 @@ pub fn check_obs_ws(settings: &Value, cache: &Value) -> Option<Value> {
         return Some(item("obsws", &title, "fail", tr("OBS 에 연결돼 있지 않습니다."), fix_electron()));
     }
     // 상태 캠시가 없음: 예배 전에 확인해 보라고 알린다 (연결 점검은 OBS 에 직접 붙지 않는다)
-    let mut fix = vec![tr("도구 → OBS 원격 조작 창을 열어 연결을 한 번 확인하세요. 그 결과가 여기에 반영됩니다.")];
+    let mut fix = vec![tr("연결 → OBS 원격 조작 창을 열어 연결을 한 번 확인하세요. 그 결과가 여기에 반영됩니다.")];
     fix.extend(fix_electron());
     Some(item("obsws", &title, "warn", tr_args("OBS 연결을 아직 확인하지 않았습니다 ({1}:{2}).", &[&host, &port]), fix))
 }
@@ -257,7 +257,7 @@ pub fn diagnose(core: &mut Core, d: &Desktop) -> Value {
         if lan["running"] == true {
             out.push(item("lan", "내부망 출력", "ok", format!("켜짐 — {}", lan["main"][0].as_str().unwrap_or("")), v(&["다른 PC 에서 안 열리면 Windows 방화벽에서 이 프로그램의 '개인 네트워크' 허용을 확인하세요.", "두 PC 가 같은 공유기(같은 192.168.x.x)에 있어야 합니다."])));
         } else {
-            out.push(item("lan", "내부망 출력", "fail", format!("켜 두었지만 열리지 않았습니다{}.", lan["error"].as_str().filter(|x| !x.is_empty()).map(|e| format!(" — {e}")).unwrap_or_default()), vec![format!("포트 {} 을 다른 프로그램이 쓰고 있을 수 있습니다. 도구 → 내부망 출력에서 껐다 켜 보세요.", lan["port"]), "그래도 안 되면 프로그램을 다시 시작하세요.".into()]));
+            out.push(item("lan", "내부망 출력", "fail", format!("켜 두었지만 열리지 않았습니다{}.", lan["error"].as_str().filter(|x| !x.is_empty()).map(|e| format!(" — {e}")).unwrap_or_default()), vec![format!("포트 {} 을 다른 프로그램이 쓰고 있을 수 있습니다. 연결 → 내부망 출력에서 껐다 켜 보세요.", lan["port"]), "그래도 안 되면 프로그램을 다시 시작하세요.".into()]));
         }
     } else {
         out.push(item("lan", "내부망 출력", "info", "꺼짐 (이 PC 의 OBS 만 쓸 때는 필요 없습니다).", vec![]));
@@ -269,7 +269,7 @@ pub fn diagnose(core: &mut Core, d: &Desktop) -> Value {
         if rm["running"] == true {
             out.push(item("remote", "휴대폰 리모컨", "ok", format!("켜짐 — {}", rm["urls"][0].as_str().unwrap_or("")), v(&["휴대폰이 같은 Wi-Fi 에 있어야 합니다. 안 열리면 방화벽의 '개인 네트워크' 허용을 확인하세요."])));
         } else {
-            out.push(item("remote", "휴대폰 리모컨", "fail", format!("켜 두었지만 열리지 않았습니다{}.", rm["error"].as_str().filter(|x| !x.is_empty()).map(|e| format!(" — {e}")).unwrap_or_default()), v(&["도구 → 휴대폰 리모컨 에서 껐다 켜 보세요."])));
+            out.push(item("remote", "휴대폰 리모컨", "fail", format!("켜 두었지만 열리지 않았습니다{}.", rm["error"].as_str().filter(|x| !x.is_empty()).map(|e| format!(" — {e}")).unwrap_or_default()), v(&["연결 → 휴대폰 리모컨 에서 껐다 켜 보세요."])));
         }
     } else {
         out.push(item("remote", "휴대폰 리모컨", "info", "꺼짐.", vec![]));
@@ -310,7 +310,7 @@ pub fn diagnose(core: &mut Core, d: &Desktop) -> Value {
     let sd = s["syncDir"].as_str().unwrap_or("").trim().to_string();
     if !sd.is_empty() {
         if !Path::new(&sd).is_dir() {
-            out.push(item("sync", "여러 PC 동기화", "fail", format!("동기화 폴더가 없습니다: {sd}"), v(&["원드라이브가 켜져 있는지, 폴더 이름이 바뀌지 않았는지 확인하세요.", "파일 → 여러 PC 동기화 에서 폴더를 다시 고르세요."])));
+            out.push(item("sync", "여러 PC 동기화", "fail", format!("동기화 폴더가 없습니다: {sd}"), v(&["원드라이브가 켜져 있는지, 폴더 이름이 바뀌지 않았는지 확인하세요.", "파일 → 여러 PC 동기화 · 백업에서 폴더를 다시 고르세요."])));
         } else {
             let probe = Path::new(&sd).join(".wp-write-test");
             let ok = std::fs::write(&probe, b"x").is_ok();

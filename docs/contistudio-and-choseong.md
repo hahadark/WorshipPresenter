@@ -4,7 +4,7 @@
 
 ## 1. 콘티(.worship) 가져오기
 
-- 들어가는 곳: `큐시트 → 찬양 콘티 가져오기 (콘티 스튜디오 .worship)…`(가져온 큐시트를 바로 연다), `큐시트 관리 → 가져오기…`(.json 과 .worship 을 함께 고를 수 있음).
+- 들어가는 곳: `파일 → 찬양 콘티 가져오기… (콘티 스튜디오 .worship)`(가져온 큐시트를 바로 연다), `큐시트 관리 → 가져오기…`(.json 과 .worship 을 함께 고를 수 있음).
 - 코어: `wp-core/src/contistudio.rs` (`is_conti` · `form_to_order` · `to_cue`), `Core::import_cue_files_ex` (cuemgr.rs). 점검 실행: `wp-app --data <임시> --import-cue <파일> --item 0 --shot a.png`.
 - .worship 은 JSON 이다: `service_info`(date · service_name · worship_leader · team_members · theme_message · memo) · `items`(ContiItem) · `ppt_extras`.
 
@@ -48,7 +48,7 @@
 
 ## 6. PPT 파일로 내보내기 (pptxout.rs)
 
-- 큐시트 → PPT 파일로 내보내기 (예배 순서대로)…: `Core::cue_pptx_plan`(잠금 안, item_deck 으로 슬라이드 나눔) → `pptxout::finish_pptx`(다른 스레드, 그림 읽기 · PPTX 쓰기).
+- 파일 → PPT로 내보내기… (예배 순서대로): `Core::cue_pptx_plan`(잠금 안, item_deck 으로 슬라이드 나눔) → `pptxout::finish_pptx`(다른 스레드, 그림 읽기 · PPTX 쓰기).
 - 글 슬라이드: 검정 바탕 · 흰 맑은 고딕 · normAutofit. 성경은 절 번호 + 오른쪽 아래 장절. 찬송가·PPT · 그림 · 악보는 그림 한 장(비율 유지, SVG 캐시는 resvg 로 PNG).
 - 넣지 않음: 영상 · 음악 · 카메라, 슬라이드 편집으로 덧붙인 요소, 템플릿 배경·글꼴(기본 검정/흰색).
 - 점검: `--export-pptx <파일>`. 2026-11-25 실제 PowerPoint 에서 열어 5장 · 글 · 모양 확인.

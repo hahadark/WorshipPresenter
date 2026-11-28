@@ -1,5 +1,5 @@
 //! [트랙 A] 도구 창: 설교 포인트 (Electron control/points.js) · 예배 전 화면 (control/preservice.js) · 홈페이지 주보 (control/home.js)
-//! 메뉴 도구 → 'a:points' · 'a:preservice' · 'a:home'. 오래 걸리는 일(AI · 홈페이지 받기)은 다른 스레드에서, 결과는 여기 상태로.
+//! 메뉴 큐시트 → 'a:points' · 'a:preservice' · 'a:home'. 오래 걸리는 일(AI · 홈페이지 받기)은 다른 스레드에서, 결과는 여기 상태로.
 
 use crate::app::{Act, App};
 use eframe::egui::{self, RichText};

@@ -1,18 +1,18 @@
 # AI 도우미 일곱 가지 (2026-11-27, 가지 `ai-features`, 아직 릴리스 전)
 
 모두 **도구** 메뉴 아래쪽에 있다. 키가 없어도 규칙으로 하는 부분은 다 되고, AI 단추는 'AI 키가 필요합니다' 로 안내한다.
-AI 는 주보 → 큐시트 · PPT 나누기와 같은 길(OpenAI 호환 `chat/completions`, `aihelp.rs`)을 쓴다. **도구 → AI 설정** 에서 키 · 제공자(오픈라우터 · DeepSeek · OpenAI 단추, 주소 직접) · 모델 · 기능별 동의를 고친다.
+AI 는 주보 → 큐시트 · PPT 나누기와 같은 길(OpenAI 호환 `chat/completions`, `aihelp.rs`)을 쓴다. **AI → AI 설정** 에서 키 · 제공자(오픈라우터 · DeepSeek · OpenAI 단추, 주소 직접) · 모델 · 기능별 동의를 고친다.
 글을 밖으로 보내는 기능은 처음 쓸 때 '무엇이 · 어디로' 를 보여 주고 동의를 받는다(설정 `aiConsent.<기능>`). 음성은 PC 밖으로 보내지 않는다.
 
 | 기능 | 쓰는 법 | 코어 · 화면 | 그림 |
 |---|---|---|---|
-| 1 예배 전 큐시트 점검 | 도구 → 예배 전 큐시트 점검. 목록을 누르면 그 순서로. '주보와 비교' 에 순서를 붙여 넣으면 빠진 순서 · 차례 다름 (주보로 큐시트 만들기의 초안 글이 있으면 그것으로). 'AI 로 오타 · 줄 나눔 보기' | `cuecheck.rs` · `ai_ui.rs` | images/ai/check.jpg |
+| 1 예배 전 큐시트 점검 | AI → 예배 전 큐시트 점검. 목록을 누르면 그 순서로. '주보와 비교' 에 순서를 붙여 넣으면 빠진 순서 · 차례 다름 (주보로 큐시트 만들기의 초안 글이 있으면 그것으로). 'AI 로 오타 · 줄 나눔 보기' | `cuecheck.rs` · `ai_ui.rs` | images/ai/check.jpg |
 | 2 설교 원고 → 슬라이드 | 도구 · 순서 넣기 → 설교 원고 → 슬라이드. txt · md · docx · hwp · hwpx. 규칙 또는 AI → 후보(제목 · 본문 성경 · 설교 포인트 · 원고 속 구절 · 인용) 골라 넣기(Ctrl+Z 한 번). 설교 포인트 창과 서로 오감 | `sermonslides.rs` · `refscan.rs` · `sermon_ui.rs` | images/ai/sermon.jpg |
-| 3 설교 구절 따라가기 | 도구 → 음성 인식. 처음엔 엔진 · 모델 받기(동의). '듣기 시작' → 들은 장절 목록. '찾으면 바로 다음 칸에'(기본 꺼짐)를 켜도 **'다음' 까지만**, 바로 송출 모드에서도 송출 안 함. 듣는 동안 오른쪽 아래 '듣는 중' | `stt.rs` · `voicefollow.rs` · `listen_ui.rs` · `Core::preview_passage_quiet` | images/ai/listen2.jpg |
-| 4 가사 자동 정리 | 도구 → 가사 자동 정리 · 찬양 편집칸 '가사 자동 정리…'. 두 칸 비교 → 받아들이기 · 새 찬양 순서로 | `lyricsclean.rs` · `lyricsfix_ui.rs` | images/ai/lyrics.jpg |
+| 3 설교 구절 따라가기 | AI → 음성 인식. 처음엔 엔진 · 모델 받기(동의). '듣기 시작' → 들은 장절 목록. '찾으면 바로 다음 칸에'(기본 꺼짐)를 켜도 **'다음' 까지만**, 바로 송출 모드에서도 송출 안 함. 듣는 동안 오른쪽 아래 '듣는 중' | `stt.rs` · `voicefollow.rs` · `listen_ui.rs` · `Core::preview_passage_quiet` | images/ai/listen2.jpg |
+| 4 가사 자동 정리 | AI → 가사 자동 정리 · 찬양 편집칸 '가사 자동 정리…'. 두 칸 비교 → 받아들이기 · 새 찬양 순서로 | `lyricsclean.rs` · `lyricsfix_ui.rs` | images/ai/lyrics.jpg |
 | 5 방송 실시간 자막 · 번역 | 음성 인식 창 '방송 실시간 자막'. 기본 꺼짐 · 기본은 방송 출력(`/outputs/overlay`)에만, '예배당 화면에도' 는 따로. 8초 조용하면 내림. 영어 번역은 키 + 동의 | `voicefollow.rs caption_overlay` (`trackb.rs overlays_for` 한 줄) | — |
-| 6 예배 후 정리 | 도구 → 예배 후 정리. 날짜 · 영상 시작 시각 → 순서별 시간 표시(유튜브 챕터) · 유튜브 설명 · 설교 요약 재료 · 쇼츠 후보(시간 구간). 녹음 파일 → PC 안에서 글 → 글만 AI 요약 | `recap.rs` · `recap_ui.rs` | images/ai/recap.jpg |
-| 7 말로 시키기 | 도구 → 말로 시키기 · 찾기칸(Ctrl+K)에 `>` 로 시작 + Enter. 할 일 목록을 보고 [실행]. 단계는 큐시트 열기·복제·이름, 순서 고치기·넣기·옮기기, 장절을 '다음' 에, 창 열기, 찾기뿐 — 송출 · 삭제 · 지우기 · 예배당 화면 · 설정은 없음 | `saycmd.rs` · `say_ui.rs` | images/ai/say.jpg |
+| 6 예배 후 정리 | AI → 예배 후 정리. 날짜 · 영상 시작 시각 → 순서별 시간 표시(유튜브 챕터) · 유튜브 설명 · 설교 요약 재료 · 쇼츠 후보(시간 구간). 녹음 파일 → PC 안에서 글 → 글만 AI 요약 | `recap.rs` · `recap_ui.rs` | images/ai/recap.jpg |
+| 7 말로 시키기 | AI → 말로 시키기 · 찾기칸(Ctrl+K)에 `>` 로 시작 + Enter. 할 일 목록을 보고 [실행]. 단계는 큐시트 열기·복제·이름, 순서 고치기·넣기·옮기기, 장절을 '다음' 에, 창 열기, 찾기뿐 — 송출 · 삭제 · 지우기 · 예배당 화면 · 설정은 없음 | `saycmd.rs` · `say_ui.rs` | images/ai/say.jpg |
 
 ## 음성 인식 (whisper.cpp)
 

@@ -18,7 +18,7 @@
 | 예배 카운트다운 타이머 · 시각(11:00)으로 맞추기 | 일부 | 오버레이 카운트다운은 시각 가능했음. **이번에**: 무대 타이머 '몇 시까지' (조작 화면 · 리모컨 · `/api/trigger/timer?at=11:00`) |
 | 설교자 이름 자막 | 있음 | 2.0.6 이름 자막 |
 | 광고 자동 넘김 | 있음 | 슬라이드쇼 · 자동 넘김 |
-| 다른 컴퓨터 웹 편집기(PIN) | 있음 | **2차**: 도구 → 웹 편집기 (기본 꺼짐, PIN 을 정했을 때만 다른 컴퓨터에서 · PIN 을 물음) |
+| 다른 컴퓨터 웹 편집기(PIN) | 있음 | **2차**: 연결 → 웹 편집기 (기본 꺼짐, PIN 을 정했을 때만 다른 컴퓨터에서 · PIN 을 물음) |
 | 전체 자료를 파일 하나로 → 새 컴퓨터 | 없음(백업은 같은 PC 안) | **이번에**: 다른 컴퓨터로 옮기기(.wpmove) |
 | 영어 메뉴 | 있음 | |
 | 베트남·태국·미얀마 자막 글꼴 | 일부 | 시스템 글꼴을 씀(윈도우에 대부분 있음). 글꼴 묶음 동봉 → 제안 |
@@ -50,7 +50,7 @@
 1. **순서지 글 복사에 곡 정보** (`parity_a.rs cue_text_with` · `Core::song_meta_of`): 순서에 적은 key·meter·bpm 이 먼저, 없으면 찬양 라이브러리 곡(songId). 큐시트 관리 '순서지 복사' · 큐시트 오른쪽 클릭 '큐시트를 글로 복사'.
 2. **무대 타이머 '몇 시까지'** (`localtime.rs parse_hm · ms_until` · `trackb.rs stage_timer_until`): "11:00" · "1100" · "11시 30분" · "오후 2시". 지난 시각은 오류. 무대 화면 창 · 휴대폰 리모컨(`op: until, at`) · `/api/trigger/timer?at=`. 맥에서 `local_offset_ms` 가 0 이던 것을 SQLite localtime 으로 고침(예약 실행 시각도).
 3. **예배당 화면 4:3** (`tpl_inspect.rs ASPECTS` · `paint.rs letterbox`): 템플릿 편집 → 위치와 여백 → 화면 비율. 4:3 = 1440×1080. 웹 출력은 원래 템플릿 크기로 그려 1024×768 화면을 꽉 채움(확인). 조작 화면 그림은 칸 비율이 다르면 가운데 + 검은 띠.
-4. **다른 컴퓨터로 옮기기** (`movedata.rs`): 파일 → 동기화·백업 창 아래. bible.db(VACUUM INTO) · settings.json · media → zip(.wpmove). 가져오기는 되돌리기 예약(bible.restore.db)으로 다음 시작 때. 지금 자료는 pre-restore 로 남김, 같은 이름 그림은 덮지 않음, quick_check 로 망가진 DB 거절, zip 이름의 `..` · 드라이브 글자 거절.
+4. **다른 컴퓨터로 옮기기** (`movedata.rs`): 파일 → 여러 PC 동기화 · 백업 창 아래. bible.db(VACUUM INTO) · settings.json · media → zip(.wpmove). 가져오기는 되돌리기 예약(bible.restore.db)으로 다음 시작 때. 지금 자료는 pre-restore 로 남김, 같은 이름 그림은 덮지 않음, quick_check 로 망가진 DB 거절, zip 이름의 `..` · 드라이브 글자 거절.
    - 옮겨지지 않는 것: 라이브러리에 파일 위치로 넣은 그림·영상, 찬송가 PPT 폴더, 암호로 저장한 글(AI 키·OBS 비밀번호 — 그 PC 에서만 풀림).
 
 ## 실제로 확인하지 못한 것
@@ -69,7 +69,7 @@
 | 예배 틀 묶음 | 큐시트 관리 → '예배 틀에서…' → 주일 낮 · 성찬 · 수요 · 금요 기도회 · 새벽 기도회. '다섯 틀을 서식 목록에 넣기' 는 고쳐 쓰라고 서식으로만 | `cuemgr.rs SERVICE_FRAMES · frame_items · new_cue_from_frame`, `cuemgr_ui.rs` | 새 큐시트 · 서식에서… 그대로 |
 | 다른 콘티 .json | 큐시트 관리 → 가져오기… 에서 .json (곡 목록 → 새 큐시트, 가사가 없으면 라이브러리에서 제목으로) · 찬양 라이브러리 → 가져오기 → 파일 고르기 (가사 있는 곡만) | `contijson.rs` (JSON 을 훑어 제목 + 가사·Key·BPM·부른 이 묶음을 곡으로, 송폼 → 부를 순서, 맨 위 이름·날짜), `cues::is_cue_file` | 우리 큐시트 파일(순서마다 type)은 예전처럼. 폴더 통째로 가져오기는 .json 을 훑지 않음 |
 | 손상 자동 복구 | 저절로: 켤 때 bible.db 가 손상(SQLITE_CORRUPT · NOTADB · quick_check)으로 안 열리면 | `sync.rs db_is_healthy · recover_from_backup`, `Core::open` | 원본(+wal·shm)은 지우지 않고 `damaged\<지역 시각>\` 으로 옮김, 망가진 백업은 건너뜀, 설정 파일은 그대로. 잠김·권한 같은 다른 까닭이면 예전처럼 오류 창. 매일 백업은 자료가 손상돼 보이면 하지 않음(알림) |
-| 웹 편집기 (PIN) | 도구 → 웹 편집기 → 켜기 (포트 37545). PIN 을 비우면 이 PC 의 브라우저에서만(묻지 않음), PIN 을 정하면 같은 내부망의 다른 컴퓨터에서 PIN 을 물음 | `webedit.rs` (axum, 5번 틀리면 30초 · 쓰기는 X-WorshipCue · 불러올 때의 updatedAt 이 다르면 409 '다시 불러오기'), `web/editor/index.html`, `tools_ui.rs webedit` | 기본 꺼짐. 고치는 칸: 이름·날짜·메모, 순서 차례·지우기·더하기(제목·찬양·성경·공지·빈 화면·라이브러리 곡), 제목·부제·가사·부를 순서·장절·공지 글·진행 메모. 나머지 칸은 지킴 |
+| 웹 편집기 (PIN) | 연결 → 웹 편집기 → 켜기 (포트 37545). PIN 을 비우면 이 PC 의 브라우저에서만(묻지 않음), PIN 을 정하면 같은 내부망의 다른 컴퓨터에서 PIN 을 물음 | `webedit.rs` (axum, 5번 틀리면 30초 · 쓰기는 X-WorshipCue · 불러올 때의 updatedAt 이 다르면 409 '다시 불러오기'), `web/editor/index.html`, `tools_ui.rs webedit` | 기본 꺼짐. 고치는 칸: 이름·날짜·메모, 순서 차례·지우기·더하기(제목·찬양·성경·공지·빈 화면·라이브러리 곡), 제목·부제·가사·부를 순서·장절·공지 글·진행 메모. 나머지 칸은 지킴 |
 | 유튜브 | 순서 넣기 → 더보기 → 유튜브 주소, 또는 영상 편집칸 '또는 유튜브 주소'. 송출 뒤 아래 미디어 패널(멈춤 · 처음부터 · ±10초 · 위치 · 소리 · 반복) | `youtube.rs parse`, `slides.rs` (slide.youtube), `render.js` (youtube-nocookie 임베드), `output.js syncYouTube` (postMessage, 코어 영상 상태를 따름 · videoMeta · videoEnded) | 파일 영상은 그대로. 소리는 예배당 창에서만. 인터넷 필요 · 퍼가기를 막은 영상은 안 됨 · 유튜브의 제목 줄·광고는 끌 수 없음 |
 | 움직이는 배경 | 템플릿 편집 → 배경 → 움직임: 없음 · 오로라 · 물결 · 별빛 · 빛망울 (단색 · 그라데이션 · 그림 위) | `render.js motionFrame · motionLayer` (캔버스 반 크기 · 30fps, 시각 Date.now()), `wp-app motion.rs` (같은 수식 · 같은 mulberry32 로 t=0 한 장면), `tpl_inspect.rs` | background.motion 이 없으면 예전과 같음 |
 | PDF | 순서 넣기 → 더보기 → PDF… (다른 스레드에서 쪽마다 그림 → 슬라이드쇼 순서, 자동 넘김 없음) | `pdf.rs` (Windows.Data.Pdf · 맥 PDFKit JXA, 자료 폴더 `pdf\<이름>-<지문>\page-NNN.png`, 화면 배율로 커진 것은 가로 1920 으로 줄임, 300쪽·300MB) | 새 순서만 |
