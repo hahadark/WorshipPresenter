@@ -1,7 +1,7 @@
 # 웹판 2단계 C — 그림 · 영상 · 글꼴 (R2) API (계약 v1, 구현함)
 
 `architecture.md` 6절(자산 길 예약) · `data-api.md` 8절을 구현한 것. 올리기 길 모양(1~5번)은 조율자가 2B(설치판 동기화)와 맞춰 정한 것 그대로다.
-코드: `cloud/src/assets/` (`routes.mjs` 길 · 종류 · Range · 안전장치 판단 · 글꼴 CSS, `fonts.mjs` 글꼴 파일 읽기, `usage.mjs` 사용량, `index.mjs` 처리) · `cloud/migrations/0003_assets.sql`.
+코드: `cloud/src/assets/` (`routes.mjs` 길 · 종류 · Range · 안전장치 판단 · 글꼴 CSS, `fonts.mjs` 글꼴 파일 읽기, `usage.mjs` 사용량, `index.mjs` 처리) · `cloud/migrations/0004_assets.sql`.
 시험: `cloud/test/assets.test.mjs`(단위) · `cloud/test/assets-e2e/assets.test.mjs`(wrangler dev + 로컬 R2 · D1) · `cloud/scripts/r2-remote-check.mjs`(실제 R2).
 저장통: **`worshippresenter-web-assets`** (비공개, APAC, Standard). r2.dev 주소 · 사용자 도메인은 켜지 않았다. Worker 묶음 이름은 `env.FILES`.
 
