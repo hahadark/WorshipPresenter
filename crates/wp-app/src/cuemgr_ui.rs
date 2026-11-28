@@ -490,14 +490,18 @@ impl App {
                 }
                 if !compact { ui.separator(); }
                 if !compact || tab == 1 {
-                egui::ScrollArea::vertical().id_salt("cm-detail").auto_shrink([false, false]).show(ui, |ui| {
-                    match &sel_cue {
-                        Some(c) => self.cm_detail(ui, &mut st, c, &current, times_on, open),
-                        None => {
-                            ui.add_space(24.0);
-                            ui.label(rich(tr("왼쪽에서 큐시트를 고르세요."), 13.0, Weight::Regular, p.muted));
+                // 스크롤 안쪽은 부모(가로 줄)의 배치를 물려받으므로 위에서 아래로 다시 정한다 — 안 그러면 양식 · 단추 · 순서가 옆으로 늘어서 창을 밀어낸다
+                let dw = ui.available_width();
+                ui.allocate_ui_with_layout(egui::vec2(dw, h), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    egui::ScrollArea::vertical().id_salt("cm-detail").auto_shrink([false, false]).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        match &sel_cue {
+                            Some(c) => self.cm_detail(ui, &mut st, c, &current, times_on, open),
+                            None => {
+                                crate::widgets_win::empty(ui, "file-text", &tr("왼쪽에서 큐시트를 고르세요."), "");
+                            }
                         }
-                    }
+                    });
                 });
                 }
             });

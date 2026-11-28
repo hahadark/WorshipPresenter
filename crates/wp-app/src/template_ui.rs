@@ -180,6 +180,7 @@ impl TemplateUi {
             }
         });
         if !self.open {
+            ctx.data_mut(|d| d.remove::<String>(egui::Id::new("tpl-list-scrolled")));
             if self.changed_at.is_some() {
                 self.flush(core);
             }
@@ -337,6 +338,14 @@ impl TemplateUi {
                 // 고른 것은 고치는 중인 모양(draft)으로
                 let shown = if on { &self.draft } else { t };
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 66.0), Sense::click());
+                // 열 때 · 다른 템플릿을 골랐을 때 고른 줄이 보이게 (목록 아래쪽 템플릿을 고치는 중인데 목록에는 안 보이던 것)
+                if on {
+                    let k = egui::Id::new("tpl-list-scrolled");
+                    if ui.data(|d| d.get_temp::<String>(k)).as_deref() != Some(self.sel.as_str()) {
+                        ui.scroll_to_rect(r, Some(egui::Align::Center));
+                        ui.data_mut(|d| d.insert_temp(k, self.sel.clone()));
+                    }
+                }
                 let bg = if on { p.sel } else if resp.hovered() { p.hover } else { Color32::TRANSPARENT };
                 ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Md), bg);
                 if on {

@@ -81,7 +81,7 @@ impl App {
         Desktop {
             monitors: self.out.monitors.len(),
             output_running: running,
-            output_monitor: m.as_ref().map(|m| format!("{} {}×{}", m.name, m.size.0, m.size.1)).unwrap_or_default(),
+            output_monitor: m.as_ref().map(|m| format!("{} ({}) {}×{}", m.label(&self.out.monitors), m.name, m.size.0, m.size.1)).unwrap_or_default(),
             same_as_control: m.is_some_and(|m| m.primary),
             obs_ws,
         }
@@ -266,32 +266,54 @@ impl App {
             ST.lock().diag_result = r;
         }
         crate::widgets_win::window(ctx, "diag", wp_core::i18n::tr("연결 점검 (예배 전 점검)"), [600.0, 560.0]).open(&mut open).show(ctx, |ui| {
+            use crate::widgets_win as win;
+            use wp_core::i18n::{tr, tr_args, tr_dyn_deep};
             let r = ST.lock().diag_result.clone();
-            ui.horizontal(|ui| {
-                let (f, w) = (r["summary"]["fail"].as_u64().unwrap_or(0), r["summary"]["warn"].as_u64().unwrap_or(0));
-                let (t, c) = if f > 0 { (wp_core::i18n::tr_args("문제 {1}곳 · 확인 {2}곳", &[&f, &w]), crate::theme::pal().danger_text) } else if w > 0 { (wp_core::i18n::tr_args("확인할 곳 {1}곳", &[&w]), crate::theme::pal().warn) } else { (wp_core::i18n::tr("모두 괜찮습니다"), crate::theme::pal().ok_text) };
-                ui.label(RichText::new(t).strong().color(c));
-                if ui.button(wp_core::i18n::tr("다시 점검")).clicked() { ST.lock().diag_result = Value::Null; }
-                if ui.button(wp_core::i18n::tr("로그 묶음 저장…")).on_hover_text(wp_core::i18n::tr("문제를 알릴 때 보낼 글 파일 (열쇠·PIN·AI 키는 가림)")).clicked() { self.save_log_bundle(); }
-                if ui.button(wp_core::i18n::tr("로그 폴더")).clicked() { handle_menu(self, "b:logs"); }
-            });
-            ui.separator();
+            let (f, w) = (r["summary"]["fail"].as_u64().unwrap_or(0), r["summary"]["warn"].as_u64().unwrap_or(0));
+            // 맨 위 한 줄: 결과 요약 (문제 = 주황 · 확인 = 깃발 · 괜찮음 = 회색 체크)
+            if f > 0 {
+                win::status(ui, win::Tone::Error, &tr_args("문제 {1}곳 · 확인 {2}곳", &[&f, &w]));
+            } else if w > 0 {
+                win::status(ui, win::Tone::Warn, &tr_args("확인할 곳 {1}곳", &[&w]));
+            } else {
+                win::status(ui, win::Tone::Ok, &tr("모두 괜찮습니다"));
+            }
             crate::firewall_ui::row(ui); // 휴대폰 리모컨 · 내부망 출력 · 휴대폰 카메라가 들어오는 길
-            ui.separator();
-            egui::ScrollArea::vertical().id_salt("diag").auto_shrink([false, false]).show(ui, |ui| {
-                for x in r["items"].as_array().into_iter().flatten() {
-                    let st = x["status"].as_str().unwrap_or("").to_string();
-                    ui.horizontal_wrapped(|ui| {
-                        crate::widgets::status_mark(ui, &st);
-                        ui.label(RichText::new(wp_core::i18n::tr_dyn_deep(x["title"].as_str().unwrap_or(""))).strong());
-                        ui.label(wp_core::i18n::tr_dyn_deep(x["detail"].as_str().unwrap_or("")));
+            win::section(ui, &tr("점검 결과"));
+            for x in r["items"].as_array().into_iter().flatten() {
+                let st = x["status"].as_str().unwrap_or("").to_string();
+                ui.horizontal_top(|ui| {
+                    crate::widgets::status_mark(ui, &st);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        ui.add(egui::Label::new(crate::theme::ty(&tr_dyn_deep(x["title"].as_str().unwrap_or("")), crate::theme::Type::BodyStrong, crate::theme::pal().text)).wrap());
+                        let detail = tr_dyn_deep(x["detail"].as_str().unwrap_or(""));
+                        if !detail.trim().is_empty() {
+                            ui.add(egui::Label::new(crate::theme::ty(&detail, crate::theme::Type::Body, crate::theme::pal().text2)).wrap());
+                        }
+                        for f in x["fix"].as_array().into_iter().flatten().filter_map(|f| f.as_str()) {
+                            win::hint(ui, &format!("· {}", tr_dyn_deep(f)));
+                        }
                     });
-                    for f in x["fix"].as_array().into_iter().flatten().filter_map(|f| f.as_str()) {
-                        ui.label(RichText::new(format!("    · {}", wp_core::i18n::tr_dyn_deep(f))).small().color(crate::theme::pal().muted));
+                });
+                ui.add_space(crate::theme::sp::X4);
+            }
+            win::footer_split(
+                ui,
+                |ui| {
+                    if ui.add(win::secondary(tr("로그 묶음 저장…")).tooltip(tr("문제를 알릴 때 보낼 글 파일 (열쇠·PIN·AI 키는 가림)"))).clicked() {
+                        self.save_log_bundle();
                     }
-                    ui.add_space(4.0);
-                }
-            });
+                    if ui.add(win::secondary(tr("로그 폴더")).icon("folder-open")).clicked() {
+                        handle_menu(self, "b:logs");
+                    }
+                },
+                |ui| {
+                    if ui.add(win::primary(tr("다시 점검")).icon("refresh-cw")).clicked() {
+                        ST.lock().diag_result = Value::Null;
+                    }
+                },
+            );
         });
         ST.lock().diag = open;
     }

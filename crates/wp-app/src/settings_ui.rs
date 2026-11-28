@@ -457,8 +457,8 @@ impl SettingsUi {
         let frame = egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(8, 6))
             .corner_radius(crate::theme::cr(crate::theme::Rad::Md))
-            .fill(if focused { p.accent_bg } else { egui::Color32::TRANSPARENT })
-            .stroke(if focused { egui::Stroke::new(1.5, p.accent) } else { egui::Stroke::NONE });
+            .fill(if focused { p.sel } else { egui::Color32::TRANSPARENT })
+            .stroke(if focused { egui::Stroke::new(1.5, crate::theme::pick()) } else { egui::Stroke::NONE });
         let r = frame
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());

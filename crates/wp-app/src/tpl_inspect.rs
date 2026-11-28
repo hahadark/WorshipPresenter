@@ -312,7 +312,7 @@ fn grad_dirs(ui: &mut egui::Ui, cur: &str, c1: &str, c2: &str) -> Option<String>
         }
         ui.painter().add(mesh);
         let on = v == cur;
-        ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(if on { 2.0 } else { 1.0 }, if on { p.accent } else if resp.hovered() { p.line2 } else { p.line }), StrokeKind::Inside);
+        ui.painter().rect_stroke(r, crate::theme::cr(crate::theme::Rad::Sm), Stroke::new(if on { 2.0 } else { 1.0 }, if on { crate::theme::pick() } else if resp.hovered() { p.line2 } else { p.line }), StrokeKind::Inside);
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }

@@ -37,8 +37,22 @@ use eframe::egui::{self, Color32, Id, Pos2, Rect, Response, RichText, Sense, Str
 /// `key` 는 창마다 다른 고정 이름. id 는 `widgets::float_window` 와 같다(`("wp-float", key)`) — 자리 · 크기 기억이 이어진다.
 pub fn window<'a>(ctx: &egui::Context, key: &str, title: impl Into<String>, size: [f32; 2]) -> Win<'a> {
     let size = fit_size(ctx, size);
-    Win { inner: widgets::float_window(ctx, key, title, size).max_width((ctx.content_rect().width() - 24.0).max(320.0)).vscroll(true), id: Id::unique(("wp-float", key)), open: None, modal: true, size }
+    let scr = ctx.content_rect();
+    let id = Id::unique(("wp-float", key));
+    // 처음 자리: 가운데 위쪽(왼쪽 큐시트는 비킴), 이미 열린 우리 창 수만큼 비껴 놓기. 넓은 창(화면 폭의 55% 넘음)은 가운데
+    // (widgets::float_pos 의 열린 창 세기는 닫힌 창도 셀 때가 있어 창이 화면 가운데까지 내려가 떴다 — 여기서 직접 정함)
+    let others = open_count(ctx, id);
+    let step = widgets::FLOAT_STEP * (others % 6) as f32;
+    let x = if size[0] > scr.width() * 0.55 { scr.center().x - size[0] / 2.0 } else { (scr.center().x - size[0] / 2.0).max(scr.left() + scr.width() * 0.22) };
+    let x = (x + step).min(scr.right() - size[0] - 8.0).max(scr.left() + 8.0);
+    let pos = Pos2::new(x, scr.top() + widgets::FLOAT_TOP + step);
+    // 높이 한도는 내용 칸 기준이라 창 머리(제목 줄)만큼 더 뺀다 — 안 그러면 큰 창이 위 메뉴 막대를 덮는다
+    let max_h = (scr.height() - widgets::FLOAT_TOP - 12.0 - TITLE_H).max(200.0);
+    Win { inner: widgets::float_window(ctx, key, title, size).max_width((scr.width() - 24.0).max(320.0)).max_height(max_h).vscroll(true), id, open: None, modal: true, size, fit: true, max_h, pos: Some(pos) }
 }
+
+/// 창 머리(제목 줄 + 테두리 안 여백) 높이 어림
+const TITLE_H: f32 = 48.0;
 
 // ---- 뷰어를 가리지 않는 자리 (진행 중에 여는 창: 즉석 자막 · 무대 화면 · 이름 자막 · 회중 메시지 · 오버레이)
 
@@ -85,7 +99,7 @@ pub fn beside_viewers(scr: Rect, viewers: Rect, size: [f32; 2]) -> Option<Pos2> 
 pub fn fit_size(ctx: &egui::Context, size: [f32; 2]) -> [f32; 2] {
     let scr = ctx.content_rect();
     let max_w = (scr.width() - 24.0).max(320.0);
-    let max_h = (scr.height() - widgets::FLOAT_TOP - 16.0).max(240.0);
+    let max_h = (scr.height() - widgets::FLOAT_TOP - 12.0 - TITLE_H).max(200.0);
     [size[0].min(max_w), size[1].min(max_h)]
 }
 
@@ -95,6 +109,12 @@ pub struct Win<'a> {
     open: Option<&'a mut bool>,
     modal: bool,
     size: [f32; 2],
+    /// 내용에 맞춘 높이로 연다 (창 안에서 스크롤하는 보통 창). 칸을 창 높이에 맞춰 나누는 편집기(`vscroll(false)`)는 정한 높이 그대로
+    fit: bool,
+    /// 내용 높이 한도 (넘으면 창 안에서 스크롤)
+    max_h: f32,
+    /// 처음 열 때 놓을 자리 (한 번만 — 그 뒤로는 egui 가 기억한 자리)
+    pos: Option<Pos2>,
 }
 
 impl<'a> Win<'a> {
@@ -102,19 +122,14 @@ impl<'a> Win<'a> {
     /// 뷰어 아래에 놓으면 높이를 화면 아래 끝까지로 묶는다 (넘치면 창 안에서 스크롤)
     pub fn live(mut self, ctx: &egui::Context) -> Self {
         let scr = ctx.content_rect();
-        let layer = egui::LayerId::new(egui::Order::Middle, self.id);
-        let known = ctx.memory(|m| m.area_rect(self.id).is_some());
-        if !known {
-            if let Some(pos) = viewers_rect(ctx).and_then(|v| beside_viewers(scr, v, self.size)) {
-                ctx.memory_mut(|m| {
-                    m.areas_mut().set_state(layer, egui::AreaState { pivot_pos: Some(pos), pivot: egui::Align2::LEFT_TOP, size: None, interactable: true, last_became_visible_at: None })
-                });
-            }
+        if let Some(pos) = viewers_rect(ctx).and_then(|v| beside_viewers(scr, v, self.size)) {
+            self.pos = Some(pos);
         }
-        let top = ctx.memory(|m| m.area_rect(self.id)).map(|r| r.top()).unwrap_or(scr.top() + widgets::FLOAT_TOP);
+        let top = ctx.memory(|m| m.area_rect(self.id)).map(|r| r.top()).or(self.pos.map(|p| p.y)).unwrap_or(scr.top() + widgets::FLOAT_TOP);
         // 창 머리(약 36px)와 아래 여백을 뺀 내용 높이 한도
         let max_h = (scr.bottom() - top - 48.0).max(200.0);
-        self.inner = self.inner.max_height(max_h);
+        self.max_h = self.max_h.min(max_h);
+        self.inner = self.inner.max_height(self.max_h);
         self
     }
     pub fn open(mut self, open: &'a mut bool) -> Self {
@@ -128,20 +143,44 @@ impl<'a> Win<'a> {
         self
     }
     pub fn resizable(mut self, v: bool) -> Self { self.inner = self.inner.resizable(v); self }
-    pub fn vscroll(mut self, v: bool) -> Self { self.inner = self.inner.vscroll(v); self }
+    pub fn vscroll(mut self, v: bool) -> Self { self.inner = self.inner.vscroll(v); self.fit = v; self }
     pub fn hscroll(mut self, v: bool) -> Self { self.inner = self.inner.hscroll(v); self }
     pub fn min_width(mut self, v: f32) -> Self { self.inner = self.inner.min_width(v); self }
     pub fn min_height(mut self, v: f32) -> Self { self.inner = self.inner.min_height(v); self }
     pub fn max_width(mut self, v: f32) -> Self { self.inner = self.inner.max_width(v); self }
-    pub fn max_height(mut self, v: f32) -> Self { self.inner = self.inner.max_height(v); self }
+    pub fn max_height(mut self, v: f32) -> Self { self.inner = self.inner.max_height(v); self.max_h = v; self }
     pub fn default_width(mut self, v: f32) -> Self { self.inner = self.inner.default_width(v); self }
-    pub fn default_height(mut self, v: f32) -> Self { self.inner = self.inner.default_height(v); self }
+    pub fn default_height(mut self, v: f32) -> Self { self.inner = self.inner.default_height(v); self.fit = false; self }
     pub fn collapsible(mut self, v: bool) -> Self { self.inner = self.inner.collapsible(v); self }
     pub fn id(&self) -> Id {
         self.id
     }
     pub fn show<R>(self, ctx: &egui::Context, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
-        let Win { inner, id, open, modal, .. } = self;
+        let Win { inner, id, open, modal, fit, max_h, pos, .. } = self;
+        let showing = open.as_ref().is_none_or(|o| **o);
+        // 처음 열 때 한 번만 자리를 정한다. 닫힌 창에는 하지 않는다 (set_state 는 그 층을 '보임' 으로 친다)
+        let placed = Id::new(("wp-win-placed", id));
+        if showing && !ctx.data(|d| d.get_temp::<bool>(placed).unwrap_or(false)) {
+            if let Some(pos) = pos.filter(|_| ctx.memory(|m| m.area_rect(id).is_none())) {
+                ctx.memory_mut(|m| m.areas_mut().set_state(egui::LayerId::new(egui::Order::Middle, id), egui::AreaState { pivot_pos: Some(pos), pivot: egui::Align2::LEFT_TOP, size: None, interactable: true, last_became_visible_at: None }));
+            }
+            ctx.data_mut(|d| d.insert_temp(placed, true));
+        }
+        // 높이 한도는 창이 실제로 놓인 자리에서 화면 아래까지 (비껴 놓인 창 · 사용자가 내린 창도 아래가 잘리지 않게)
+        let scr = ctx.content_rect();
+        let top = ctx.memory(|m| m.area_rect(id)).map(|r| r.top()).or(pos.map(|p| p.y)).unwrap_or(scr.top() + widgets::FLOAT_TOP);
+        let max_h = max_h.min((scr.bottom() - top - 12.0 - TITLE_H).max(200.0));
+        let inner = inner.max_height(max_h);
+        // 내용에 맞춘 높이: 창의 스크롤을 끄고 우리 스크롤(높이 한도 = 창 한도, 아래로는 내용만큼 줄어듦)을 넣는다.
+        // egui 의 Resize 는 지난 프레임 내용 크기까지 저절로 늘어나므로, 처음 높이를 작게 주면 내용 높이에서 멈춘다 (빈 칸이 큰 창이 없게)
+        let (inner, add): (_, Box<dyn FnOnce(&mut Ui) -> R + '_>) = if fit {
+            (
+                inner.vscroll(false).default_height(60.0),
+                Box::new(move |ui: &mut Ui| egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height(max_h).auto_shrink([false, true]).show(ui, |ui| add(ui)).inner),
+            )
+        } else {
+            (inner, Box::new(add))
+        };
         match open {
             Some(o) => {
                 if *o {
@@ -209,6 +248,13 @@ fn take_close(ctx: &egui::Context, id: Id) -> bool {
             _ => false,
         }
     })
+}
+
+/// 지금 열려 있는 우리 창 수 (`id` 는 빼고)
+fn open_count(ctx: &egui::Context, id: Id) -> usize {
+    let pass = ctx.cumulative_pass_nr();
+    let reg: Reg = ctx.data(|d| d.get_temp(reg_id())).unwrap_or_default();
+    reg.wins.iter().filter(|w| w.0 != id && w.1 + 2 >= pass).count()
 }
 
 /// 지금 열려 있는 창 가운데 맨 위 (Esc 로 닫아도 되는 것만)
@@ -501,6 +547,11 @@ pub fn sel_mark() -> Color32 {
     if p.bevel { p.text2 } else { p.accent }
 }
 
+/// 고른 것의 테두리 · 손잡이 색 (색 견본 · 캔버스의 고른 칸 · 편집 안내선): 전문가 테마는 밝은 무채색(노랑 = '다음' 에만), 옛 테마는 강조색
+pub fn sel_line() -> Color32 {
+    theme::pick() // 디자인 체계의 '고른 것' 색과 같은 것
+}
+
 /// 자리(`rect`)에 위젯 하나를 놓되 부모의 커서를 건드리지 않는다.
 /// `ui.put` 은 커서를 그 자리 아래로 옮겨서, 줄 가운데에 작은 칸을 놓으면 다음 줄이 위로 당겨져 겹친다 (큐시트 관리 목록의 첫 줄이 가려지던 까닭)
 pub fn place<R>(ui: &mut Ui, rect: Rect, add: impl FnOnce(&mut Ui) -> R) -> R {
@@ -592,6 +643,36 @@ mod tests {
         assert!(!pass(&ctx, &mut open, [true, false], esc()));
         pass(&ctx, &mut open, [true, false], vec![]);
         assert!(open[0], "편집기 · 음성 인식 창은 Esc 로 닫히지 않는다");
+    }
+
+    #[test]
+    fn 보통_창은_내용_높이에_맞춰_열린다() {
+        let ctx = egui::Context::default();
+        let mut open = true;
+        let mut rects = vec![];
+        for _ in 0..8 {
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1600.0, 960.0))), ..Default::default() };
+            let mut out = ctx.run_pass(input, |ctx| {
+                let w = window(ctx, "fit-a", "짧은 창", [400.0, 700.0]).open(&mut open);
+                w.show(ctx, |ui| {
+                    for i in 0..5 {
+                        ui.label(format!("줄 {i}"));
+                    }
+                });
+                window(ctx, "fit-b", "긴 창", [400.0, 700.0]).show(ctx, |ui| {
+                    for i in 0..200 {
+                        ui.label(format!("줄 {i}"));
+                    }
+                });
+            });
+            out.textures_delta.clear();
+            rects.push((ctx.memory(|m| m.area_rect(Id::unique(("wp-float", "fit-a")))), ctx.memory(|m| m.area_rect(Id::unique(("wp-float", "fit-b"))))));
+        }
+        eprintln!("{rects:?}");
+        let (a, b) = rects.last().cloned().unwrap();
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert!(a.height() < 200.0, "짧은 창은 내용만큼: {a:?}");
+        assert!(b.height() > 600.0 && b.bottom() <= 950.0 && b.top() >= widgets::FLOAT_TOP, "긴 창은 화면 한도까지 (메뉴 막대를 덮지 않게): {b:?}");
     }
 
     #[test]

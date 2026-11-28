@@ -591,9 +591,14 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
         });
     });
     form_row(ui, &wp_core::i18n::tr("모니터"), |ui| {
-        for m in app.out.monitors.clone() {
-            let t = format!("{}  {}×{}{}", m.name, m.size.0, m.size.1, if m.primary { wp_core::i18n::tr_s("  (주 모니터 · 조작 화면)") } else { "" });
-            if ui.radio(app.monitor == m.index, t).clicked() {
+        let all = app.out.monitors.clone();
+        if all.is_empty() {
+            crate::widgets_win::hint(ui, &wp_core::i18n::tr("모니터를 찾지 못했습니다. 모니터를 연결한 뒤 '모니터 다시 찾기' 를 누르세요."));
+        }
+        for m in all.clone() {
+            // '모니터 2 · 오른쪽  3840×2160' — 장치 이름(DISPLAY2)은 마우스를 올리면
+            let t = format!("{}  {}×{}", m.label(&all), m.size.0, m.size.1);
+            if ui.radio(app.monitor == m.index, t).on_hover_text(&m.name).clicked() {
                 app.monitor = m.index;
                 core.lock().settings.update(|d| d["rsOutputMonitor"] = json!(m.index));
                 if app.out.running() {
@@ -602,7 +607,7 @@ fn output_ui(ui: &mut egui::Ui, app: &mut App) {
                 }
             }
         }
-        if ui.small_button(wp_core::i18n::tr("모니터 다시 찾기")).clicked() {
+        if ui.add(crate::widgets::Btn::new(wp_core::i18n::tr("모니터 다시 찾기")).icon("refresh-cw").size(crate::widgets::Size::Sm).tooltip(wp_core::i18n::tr("모니터를 새로 연결했거나 뺐으면 누르세요"))).clicked() {
             app.out.refresh_monitors();
         }
     });

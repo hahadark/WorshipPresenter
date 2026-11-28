@@ -371,7 +371,7 @@ impl App {
         let kind = self.tb.lib_kind.clone();
         let folders = wp_core::library::folders(self.core.lock().settings.get(), &kind);
         if folders.is_empty() {
-            ui.label(RichText::new(wp_core::i18n::tr_args("등록한 {1} 폴더가 없습니다. '폴더 더하기…' 로 교회 {2} 폴더를 등록하세요.", &[&(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("그림·영상") }), &(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("사진") })])).color(crate::theme::pal().muted));
+            crate::widgets_win::hint(ui, &wp_core::i18n::tr_args("등록한 {1} 폴더가 없습니다. '폴더 더하기…' 로 교회 {2} 폴더를 등록하세요.", &[&(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("그림·영상") }), &(if kind == "audio" { wp_core::i18n::tr_s("음악") } else { wp_core::i18n::tr_s("사진") })]));
         }
         for f in &folders {
             ui.horizontal(|ui| {
@@ -429,7 +429,16 @@ impl App {
                 self.core.lock().notify(wp_core::i18n::tr_args("'{1}' 을(를) 큐시트에 넣었습니다.", &[&name]), "ok");
             }
         }
-        if ui.button(wp_core::i18n::tr("배경 미디어 끄기")).clicked() { self.core.lock().set_background_media(None); }
+        let bg_on = self.core.lock().layers.media.is_some();
+        crate::widgets_win::footer_split(
+            ui,
+            |ui| {
+                if ui.add(crate::widgets_win::secondary(wp_core::i18n::tr("배경 미디어 끄기")).icon("monitor-off").enabled(bg_on).tooltip(if bg_on { wp_core::i18n::tr("송출 화면의 배경 그림 · 영상을 끕니다") } else { wp_core::i18n::tr("지금 송출 배경으로 쓰는 그림 · 영상이 없습니다") })).clicked() {
+                    self.core.lock().set_background_media(None);
+                }
+            },
+            |_| {},
+        );
     }
 
     // ---------------- 오버레이 ----------------

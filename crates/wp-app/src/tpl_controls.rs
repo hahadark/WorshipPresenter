@@ -109,7 +109,7 @@ pub fn switch_widget(ui: &mut egui::Ui, on: &mut bool) -> Response {
     }
     let k = ui.ctx().animate_bool(resp.id, *on);
     // 전문가 테마: 켜짐 = 밝은 회색 바탕 · 어두운 손잡이 (노랑은 '다음' 에만)
-    let bg = if *on { if p.bevel { p.text2 } else { p.accent } } else if resp.hovered() { p.line2 } else { p.line };
+    let bg = if *on { if p.bevel { p.text2 } else { crate::theme::pick() } } else if resp.hovered() { p.line2 } else { p.line };
     ui.painter().rect_filled(r, crate::theme::cr(crate::theme::Rad::Xl), bg);
     let x = egui::lerp(r.left() + 10.0..=r.right() - 10.0, k);
     ui.painter().circle_filled(Pos2::new(x, r.center().y), 7.0, if p.bevel && *on { p.panel } else { p.text });
@@ -345,7 +345,7 @@ pub fn pos_grid(ui: &mut egui::Ui, salt: &str, cells: &[&[(&str, &str)]], cur: &
             let cr = Rect::from_min_size(Pos2::new(r.left() + pad + x as f32 * (cw + gap), r.top() + pad + y as f32 * (chh + gap)), Vec2::new(cw, chh));
             let resp = ui.interact(cr, ui.scope_id().with((salt, y, x)), Sense::click());
             let on = *v == cur;
-            let (bg, border) = if on { if p.bevel { (p.sel, p.text2) } else { (p.accent, p.accent) } } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
+            let (bg, border) = if on { if p.bevel { (p.sel, p.text2) } else { (crate::theme::pick(), crate::theme::pick()) } } else if resp.hovered() { (p.hover, p.line2) } else { (p.panel2, p.line) };
             ui.painter().rect(cr, crate::theme::cr(crate::theme::Rad::Sm), bg, Stroke::new(1.0, border), StrokeKind::Inside);
             // 칸 안 작은 막대: 그 칸에 글이 놓이는 모양
             let bar_x = match x {

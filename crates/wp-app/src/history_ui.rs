@@ -174,53 +174,40 @@ impl HistoryUi {
             let mut open = self.usage_open;
             let f = usage::Filter { from: self.from.trim().into(), to: self.to.trim().into(), kinds: vec![], q: self.q.clone() };
             crate::widgets_win::window(ctx, "usage", wp_core::i18n::tr("사용 기록 (저작권 보고)"), [720.0, 540.0]).open(&mut open).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(wp_core::i18n::tr("부터"));
-                    ui.add(egui::TextEdit::singleline(&mut self.from).hint_text("2026-11-01").desired_width(90.0));
-                    ui.label(wp_core::i18n::tr("까지"));
-                    ui.add(egui::TextEdit::singleline(&mut self.to).hint_text("2026-11-30").desired_width(90.0));
-                    ui.add(egui::TextEdit::singleline(&mut self.q).hint_text(wp_core::i18n::tr("제목 찾기")).desired_width(140.0));
-                    ui.checkbox(&mut self.by_title, wp_core::i18n::tr("제목별 횟수"));
+                use crate::widgets_win as win;
+                use wp_core::i18n::{tr, tr_args};
+                win::lead(ui, &tr("찬양 · 성경을 송출한 기록입니다. 저작권 보고에 낼 때는 CSV 로 저장하세요."));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(crate::theme::ty(&tr("부터"), crate::theme::Type::Small, crate::theme::pal().text2));
+                    widgets::text_field(ui, &mut self.from, "2026-11-01", 96.0, None);
+                    ui.label(crate::theme::ty(&tr("까지"), crate::theme::Type::Small, crate::theme::pal().text2));
+                    widgets::text_field(ui, &mut self.to, "2026-11-30", 96.0, None);
+                    widgets::text_field(ui, &mut self.q, &tr("제목 찾기"), 150.0, Some("search"));
+                    widgets::checkbox(ui, &mut self.by_title, &tr("제목별 횟수"));
                 });
-                ui.horizontal(|ui| {
-                    if ui.button(wp_core::i18n::tr("CSV 저장…")).clicked() {
-                        let csv = usage::csv(&core.lock().store.db, &f, self.by_title);
-                        let name = format!("WorshipCue-사용기록{}.csv", if self.by_title { wp_core::i18n::tr_s("-제목별") } else { "" });
-                        if let Some(p) = rfd::FileDialog::new().set_file_name(&name).add_filter("CSV", &["csv"]).save_file() {
-                            self.msg = match std::fs::write(&p, csv) { Ok(()) => format!("저장했습니다: {}", p.display()), Err(e) => format!("저장 실패: {e}") };
-                        }
-                    }
-                    ui.label(RichText::new(wp_core::i18n::tr_dyn(&self.msg)).small());
-                });
-                // 저작권 보고 자료라 되살릴 수 없다: 줄 안 확인 + 먼저 CSV 로 보관하라는 안내 (휴리스틱 평가 3번)
-                let all = usage::list(&core.lock().store.db, &usage::Filter::default()).len();
-                let q = wp_core::i18n::tr_args("사용 기록 {1}줄이 모두 지워지고 되살릴 수 없습니다. 먼저 'CSV 저장…'으로 보관해 두세요.", &[&all]);
-                let id = egui::Id::unique("usage-clear");
-                if widgets::confirm_armed(ui, id) {
-                    if widgets::confirm_row(ui, id, &q) {
-                        let n = usage::clear(&core.lock().store.db, "");
-                        self.msg = wp_core::i18n::tr_args("{1}줄을 지웠습니다.", &[&n]);
+                win::message(ui, &wp_core::i18n::tr_dyn(&self.msg));
+                let db = &core.lock().store.db;
+                let rows = usage::list(db, &f);
+                let all = usage::list(db, &usage::Filter::default()).len();
+                ui.add_space(crate::theme::sp::X4);
+                if rows.is_empty() {
+                    if all == 0 {
+                        win::empty(ui, "file-text", &tr("아직 송출한 기록이 없습니다"), &tr("찬양이나 성경을 송출하면 여기에 쌓입니다."));
+                    } else {
+                        win::empty(ui, "search", &tr("이 기간 · 찾는 말에 맞는 기록이 없습니다"), &tr("날짜나 찾는 말을 바꿔 보세요."));
                     }
                 } else {
-                    let tip = if all > 0 { wp_core::i18n::tr("누르면 한 번 더 묻습니다") } else { wp_core::i18n::tr("지울 사용 기록이 없습니다") };
-                    if ui.add(widgets::Btn::new(wp_core::i18n::tr("모두 지우기")).icon("trash-2").kind(widgets::Kind::Danger).size(widgets::Size::Sm).enabled(all > 0).tooltip(tip)).clicked() {
-                        widgets::confirm_arm(ui, id, true);
-                    }
-                }
-                ui.separator();
-                let db = &core.lock().store.db;
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    egui::Grid::new("usage-grid").striped(true).num_columns(4).show(ui, |ui| {
+                    egui::Grid::new("usage-grid").striped(true).num_columns(4).spacing([12.0, 4.0]).show(ui, |ui| {
                         if self.by_title {
                             for s in usage::summary(db, &f) {
                                 ui.label(usage::kind_name(&s.kind));
                                 ui.label(&s.title);
-                                ui.label(wp_core::i18n::tr_args("{1}번", &[&s.count]));
+                                ui.label(tr_args("{1}번", &[&s.count]));
                                 ui.label(RichText::new(&s.credit).small());
                                 ui.end_row();
                             }
                         } else {
-                            for r in usage::list(db, &f).iter().take(1000) {
+                            for r in rows.iter().take(1000) {
                                 ui.label(local_time(usage::iso_ms(&r.at).unwrap_or(0)));
                                 ui.label(usage::kind_name(&r.kind));
                                 ui.label(&r.title);
@@ -229,7 +216,37 @@ impl HistoryUi {
                             }
                         }
                     });
-                });
+                }
+                // 저작권 보고 자료라 되살릴 수 없다: 줄 안 확인 + 먼저 CSV 로 보관하라는 안내 (휴리스틱 평가 3번)
+                let q = tr_args("사용 기록 {1}줄이 모두 지워지고 되살릴 수 없습니다. 먼저 'CSV 저장…'으로 보관해 두세요.", &[&all]);
+                let id = egui::Id::unique("usage-clear");
+                if widgets::confirm_armed(ui, id) {
+                    if widgets::confirm_row(ui, id, &q) {
+                        let n = usage::clear(db, "");
+                        self.msg = tr_args("{1}줄을 지웠습니다.", &[&n]);
+                    }
+                }
+                win::footer_split(
+                    ui,
+                    |ui| {
+                        let tip = if all > 0 { tr("누르면 한 번 더 묻습니다") } else { tr("지울 사용 기록이 없습니다") };
+                        if ui.add(win::danger(tr("모두 지우기")).icon("trash-2").enabled(all > 0).tooltip(tip)).clicked() {
+                            widgets::confirm_arm(ui, id, true);
+                        }
+                    },
+                    |ui| {
+                        if ui.add(win::primary(tr("CSV 저장…")).icon("download")).clicked() {
+                            let csv = usage::csv(db, &f, self.by_title);
+                            let name = format!("WorshipCue-사용기록{}.csv", if self.by_title { wp_core::i18n::tr_s("-제목별") } else { "" });
+                            if let Some(p) = rfd::FileDialog::new().set_file_name(&name).add_filter("CSV", &["csv"]).save_file() {
+                                self.msg = match std::fs::write(&p, csv) {
+                                    Ok(()) => format!("✓ {}", tr_args("저장했습니다: {1}", &[&p.display()])),
+                                    Err(e) => format!("✗ {}", tr_args("저장하지 못했습니다: {1}", &[&e])),
+                                };
+                            }
+                        }
+                    },
+                );
             });
             self.usage_open = open;
         }

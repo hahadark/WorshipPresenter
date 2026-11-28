@@ -313,7 +313,7 @@ impl SlideEditUi {
                 if multi_on {
                     // se-multi-note
                     let n = self.multi.len();
-                    ui.label(RichText::new(wp_core::i18n::tr_args("고른 슬라이드 {1}장", &[&n])).strong().color(crate::theme::pal().accent));
+                    ui.label(RichText::new(wp_core::i18n::tr_args("고른 슬라이드 {1}장", &[&n])).strong().color(crate::theme::pick()));
                     ui.label(RichText::new(wp_core::i18n::tr_args("여기서 바꾸는 꾸미기·글상자·배경이 고른 {1}장에 함께 적용됩니다 (Esc: 한 장만)", &[&n])).small().color(crate::theme::pal().muted));
                 }
             });
@@ -344,13 +344,13 @@ impl SlideEditUi {
                         if multi_on && self.multi.contains(&key_k) {
                             // .se-slide.msel: accent 테두리 · accent 18% 바탕
                             let p = crate::theme::pal();
-                            ui.painter().rect(r.rect, 4.0, crate::theme::alpha(p.accent, 0.18), egui::Stroke::new(1.5, p.accent), egui::StrokeKind::Inside);
+                            ui.painter().rect(r.rect, 4.0, crate::theme::alpha(crate::theme::pick(), 0.12), egui::Stroke::new(1.5, crate::theme::pick()), egui::StrokeKind::Inside);
                         }
                         // 끌어 놓을 자리 표시선 (줄 위·아래)
                         if self.drag_slide.is_some_and(|f| f != k) && r.contains_pointer() {
                             if let Some(p) = ui.input(|i| i.pointer.interact_pos()) {
                                 let y = if p.y >= r.rect.center().y { r.rect.bottom() } else { r.rect.top() };
-                                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(3.0, crate::theme::pal().accent));
+                                ui.painter().hline(r.rect.x_range(), y, egui::Stroke::new(3.0, crate::theme::pick()));
                             }
                         }
                         if let Some(op) = crate::widgets::hover_ops(ui, egui::Id::new(("se-ops", k)), r.rect, &list_ops(&ty, s)) {
@@ -764,7 +764,7 @@ impl SlideEditUi {
                         // 끌거나 방향키로 옮긴 그 프레임에도 따라오게 지금 값으로
                         let now = if b.id == "main" { if e["box"].is_object() { se::PRect::of(&e["box"], b.r) } else { b.r } } else { own_pos(&e, &b.id).map(|j| se::PRect::of(&e["items"][j], b.r)).unwrap_or(b.r) };
                         let er = full(now);
-                        let col = if b.locked { pal.muted } else { pal.accent };
+                        let col = if b.locked { pal.muted } else { crate::theme::pick() };
                         p.rect_stroke(er, 0.0, egui::Stroke::new(2.0, col), egui::StrokeKind::Inside);
                         let tag = if b.locked { format!("{} {}", wp_core::i18n::tr(b.name), wp_core::i18n::tr("(공통 — '공통' 에서 고치세요)")) } else { format!("{}", wp_core::i18n::tr(b.name)) };
                         let g = p.layout_no_wrap(tag, egui::FontId::proportional(11.0), Color32::WHITE);
@@ -774,12 +774,12 @@ impl SlideEditUi {
                         if !b.locked {
                             for (_, fx, fy) in canvas::HANDLES {
                                 let hr = canvas::handle_rect(er, fx, fy);
-                                p.rect(hr, 2.0, Color32::WHITE, egui::Stroke::new(1.5, pal.accent), egui::StrokeKind::Inside);
+                                p.rect(hr, 2.0, Color32::WHITE, egui::Stroke::new(1.5, crate::theme::pick()), egui::StrokeKind::Inside);
                             }
                         }
                     }
-                    if let Some(gx) = guides.0 { p.vline(rect.left() + gx as f32 * rect.width() / 100.0, rect.y_range(), egui::Stroke::new(1.0, pal.accent)); }
-                    if let Some(gy) = guides.1 { p.hline(rect.x_range(), rect.top() + gy as f32 * rect.height() / 100.0, egui::Stroke::new(1.0, pal.accent)); }
+                    if let Some(gx) = guides.0 { p.vline(rect.left() + gx as f32 * rect.width() / 100.0, rect.y_range(), egui::Stroke::new(1.0, crate::theme::pick())); }
+                    if let Some(gy) = guides.1 { p.hline(rect.x_range(), rect.top() + gy as f32 * rect.height() / 100.0, egui::Stroke::new(1.0, crate::theme::pick())); }
                 }
                 let mut inline_rect = self.inline.as_ref().filter(|n| n.target == "main").map(|_| main_r);
                 let mut inline_size = e["style"]["size"].as_f64().or(tpl["font"]["size"].as_f64().map(|s| s * 1080.0 / th as f64)).unwrap_or(60.0) as f32;
@@ -914,7 +914,7 @@ impl SlideEditUi {
                             // 캔버스에서 고른 요소의 줄은 강조한다 · 이름을 누르면 캔버스에서 고른다
                             let on = !sel_now.is_empty() && x["id"].as_str() == Some(sel_now.as_str());
                             let mut name = RichText::new(wp_core::i18n::tr(match x["type"].as_str() { Some("text") => "글", Some("image") => "그림", Some("shape") => "도형", _ => "요소" })).small();
-                            if on { name = name.strong().color(crate::theme::pal().accent); }
+                            if on { name = name.strong().color(crate::theme::pick()); }
                             if ui.add(egui::Label::new(name).sense(Sense::click())).clicked() { pick_sel = x["id"].as_str().map(String::from); }
                             for k in ["x", "y", "w", "h"] {
                                 let mut v = x[k].as_f64().unwrap_or(0.0);

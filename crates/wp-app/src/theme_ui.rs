@@ -114,7 +114,7 @@ fn slot_color(slot: &str) -> Color32 {
         return p.text2;
     }
     match slot {
-        "main" => p.accent,
+        "main" => crate::widgets_win::sel_mark(),
         "overlay" => p.pv,
         _ => p.gold,
     }
