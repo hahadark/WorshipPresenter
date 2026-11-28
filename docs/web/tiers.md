@@ -6,7 +6,7 @@
 코드: `cloud/src/tiers/` (한도표 `limits.mjs` · 등급 확인 `index.mjs` · 데모 `demo.mjs` `demo-seed.mjs` · 옮기기 `move.mjs` · 관리자 길 `admin.mjs`) ·
 `cloud/src/drive/` (구글 OAuth · Drive 부르기 `google.mjs` · 형식 · 오류 코드 `format.mjs` · 가입 · 로그인 · 다시 연결 `oauth.mjs` · 문서 · 동기화 `docs.mjs` · 성경 `bible.mjs` · 파일 저장통 `bucket.mjs` · 폴더 `folders.mjs`) ·
 `cloud/src/data/bibleimport.mjs` (성경 넣기 길, 두 저장소) · `cloud/migrations/0005_tiers.sql` · 화면 `cloud/client/demo.*` · 로그인 · 주인 화면에 몇 줄.
-시험: `cloud/test/tiers.test.mjs`(단위 9) · `cloud/test/tiers-e2e/tiers.test.mjs`(끝에서 끝 12, wrangler dev + 가짜 구글 `cloud/test/fake-google/server.mjs`). 도구: `scripts/tier-move.mjs` · `scripts/bible-upload.mjs`.
+시험: `cloud/test/tiers.test.mjs`(단위 9) · `cloud/test/tiers-e2e/tiers.test.mjs`(끝에서 끝 12, wrangler dev + 가짜 구글 `cloud/test/fake-google/server.mjs`). 2026-11-28 web 2459f65 를 합친 뒤 전체 단위 168 · 끝에서 끝 58(1단계 · 2A · 2C · 4B · AI · 등급) 모두 통과. 도구: `scripts/tier-move.mjs` · `scripts/bible-upload.mjs`.
 
 ## 1. 큰 틀 — 길은 하나, 저장소만 교회마다
 
@@ -205,6 +205,7 @@ node scripts/tier-move.mjs --church c-abcd1234 --cleanup               # 끝난 
 
 ## 10. 확인 못 한 것
 
+- 구글 웹 서버 OAuth 문서(https://developers.google.com/identity/protocols/oauth2/web-server)에는 PKCE(`code_challenge`)가 적혀 있지 않다. 우리는 state + PKCE 를 같이 보낸다(가짜 구글은 PKCE 를 요구). 진짜 구글이 웹 클라이언트의 `code_challenge` 를 거절하면 `oauth.mjs start` 에서 두 칸을 빼면 된다(state 와 client secret 이 남음).
 - **진짜 구글에는 붙여 보지 않았다**(클라이언트가 없다 — 사관님 몫). 가짜 구글은 문서에 적힌 동작만 흉내 낸다. 특히 진짜 Drive 의 `sha256Checksum` 이 이어 올리기 직후 바로 오는지, multipart PATCH 로 휴지통 꺼내기 + 내용 바꾸기가 한 번에 되는지, 동의 화면에서 드라이브 칸을 끄는 화면 — 실제로 확인해야 한다.
 - 배포(workers.dev)에서 CPU 10 ms 안에 드는지 재지 않았다: 가입 콜백(토큰 봉인 둘 · HMAC), 성경 책 넣기(0.5 MB JSON 확인 · 다시 쓰기), 옮기기 단계. 넘으면 무료 플랜에서는 그 요청이 실패한다 → 배포 뒤 `wrangler tail` 로 재 볼 것. 시편 같은 큰 책은 `bible-upload.mjs` 가 나눠 보내게 고칠 수 있다.
 - 진짜 구글 · 교회 인터넷에서 영상 Range 가 끊기지 않는지(가짜 구글로는 Range 206 까지만).

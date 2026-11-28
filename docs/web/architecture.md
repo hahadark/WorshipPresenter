@@ -179,6 +179,7 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 | `web-media` (4B) | 카메라(이름으로) · 휴대폰 카메라 신호(DO) · PDF(pdf.js) · 영상 · 유튜브 — **구현함: `docs/web/media.md`** | `cloud/src/media/` · `cloud/client/media/` | 2C, TURN 은 켜지 않음(비용 승인) |
 | `web-ai` (5) | AI 길(서버 쪽 키 보관 · 동의) · 음성 인식 선택 — **클라우드 쪽 구현함: `docs/web/ai.md`**. 변환(HWP/PPTX)은 wasm 에서 그대로 돌아 따로 만들 것 없음 | `cloud/src/ai/` · `migrations/0003_ai.sql` | 2A · 2C, 유료 모델 자동 호출 금지 |
 | `web-offline` (6) | Service Worker · IndexedDB · 충돌 화면 · 끊김 시험 | `cloud/client/offline/` · `cloud/src/sync/` 의 받기 쪽 | 2A · 2B · 3 |
+| `web-tiers` (7 일부) | 계정 등급(데모 · 무료 · 유료) · 등급별 저장소(무료 = 교회의 구글 드라이브) · 둘러보기 · 옮기기 — **구현함: `docs/web/tiers.md`** (12절) | `cloud/src/tiers/` · `cloud/src/drive/` · `cloud/src/data/bibleimport.mjs` · `migrations/0005_tiers.sql` | 2A · 2C, 구글 준비(사관님) |
 
 - 순서: 2A → (2B · 2C · 3) 나란히 → (4A · 4B · 5) 나란히 → 6 이 마지막에 모두 합쳐 시험.
 - **공통 파일**(`cloud/src/index.mjs` 의 길 등록 · `protocol.mjs` · 이 문서 · `wrangler.jsonc`)은 각자 한두 줄 덧붙이는 것만 하고, 합칠 때 조율자가 한 번에 맞춘다. 길은 `route()` 표에 줄을 더하는 식으로.
@@ -226,3 +227,15 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 - 주소: https://worshippresenter-web.hahadark-media.workers.dev (Worker `worshippresenter-web` · D1 `worshippresenter-web` 새로 만듦, 다른 Worker · D1 은 건드리지 않음).
 - 들어가는 법: `/login` 에 교회 ID `sample` + 주인 열쇠. 열쇠 · 비밀값은 이 PC 의 `cloud/.secrets/sample.remote.json` · `auth.remote.json` 에만 있다(Git 제외). `ADMIN_TOKEN` 은 올리지 않아 교회 만들기 길은 닫혀 있다.
 - 지우려면: `npx wrangler delete worshippresenter-web` · `npx wrangler d1 delete worshippresenter-web`.
+
+## 12. 계정 등급과 등급별 저장소 (7단계 일부, 구현함 — 자세히는 [`tiers.md`](tiers.md), 구글 준비는 [`google-setup.md`](google-setup.md))
+
+- **길은 하나, 저장소만 교회마다.** 설치판 · 웹 조작 화면 · 출력 · 리모컨은 지금처럼 `/api/v1/documents` · `sync` · `bible/*` · `assets/*` 만 부른다. Worker 가 `churches.tier` 를 보고 뒤에서 고른다: **유료** = D1 · R2(2A · 2C 그대로) · **무료** = 그 교회의 구글 드라이브(D1 에는 계정 · 등급 · 봉인한 토큰 · 폴더 id · 판 번호 · 변경 순번 · 파일 목록만) · **데모** = D1 의 견본 교회(하루마다 되돌림). 답 모양 · 409 충돌 · seq · mutationId 가 같다.
+- 요청마다: 로그인 → 권한(`can`) → **등급 확인**(`tiers.prepare`: 이 등급에 있는 기능인가 · 한도 안인가 · 옮기는 중이면 쓰기 423) → 저장소. 새 오류는 `code` 로만(`drive_disconnected` 503 · `drive_quota` 507 · `drive_rate` 429 · `drive_missing` 410 · `drive_busy` 409 · `tier_blocked` 403 · `tier_limit` 429/413 · `tier_moving` 423 — tiers.md 5절).
+- 한도표는 `cloud/src/tiers/limits.mjs` 한 곳(값은 안 — 사관님이 정함). 화면 · 리모컨 수는 중계실이 `x-wp-max-*` 머리글로 받아 센다.
+- **무료 가입** = '구글로 시작하기'(`/auth/google/start?mode=signup`, 범위 `drive.file` + `openid email` — 구글의 비민감 범위라 보안 심사 없음). 드라이브 안은 `워십프리젠터/<교회 이름>/큐시트/…json · 성경/<번역본>/43 요한복음.json · 파일/그림/…`. 드라이브에는 조건부 쓰기가 없어 **판 번호는 D1 이 정하고**(잡기 → 드라이브 쓰기 → 마무리, 끊기면 다음 요청이 마무리 · 풀기), 드라이브 파일의 `version` 은 적어만 둔다.
+- **연결이 끊기면** 자료 길만 503 + 다시 연결 주소. 중계실 · 출력은 저장소를 보지 않으므로 **송출 중인 화면은 마지막 그대로**.
+- **둘러보기** `/demo`: 로그인 없이 2시간 데모 쿠키(역할 `demo`), 같이 보는 견본 교회, 실시간 중계실은 방문자마다 따로(`demo~d:…`), 파일 · AI · 초대 · 기기 열쇠 막음, 주소별 요청 한도.
+- **옮기기**(무료 ↔ 유료)는 관리자 길(`ADMIN_TOKEN`, `scripts/tier-move.mjs`) — 결제는 없다. 두 저장소가 `changes` 표를 같이 쓰고 revision 을 그대로 옮겨 동기화가 끊기지 않는다.
+- 시험: 단위 `test/tiers.test.mjs` · 끝에서 끝 `test/tiers-e2e/`(가짜 구글 `test/fake-google/server.mjs` — 진짜 구글은 부르지 않음). `npm run test:e2e` 가 가짜 구글을 띄우고 `--var GOOGLE_FAKE` 등으로 로컬 Worker 에 붙인다.
+- 새 Worker 비밀값 · 변수: `GOOGLE_CLIENT_ID` · `GOOGLE_CLIENT_SECRET`(없으면 구글 길 404) · (선택) `GOOGLE_REDIRECT_URI` · 시험용 `GOOGLE_FAKE`(로컬 주소만) · `TIER_CACHE_MS` · `TIER_OVERRIDES` · `SERVICE_OVERRIDES`. 배포 스크립트(`deploy.mjs`)는 아직 구글 비밀값을 넣지 않는다 — 사관님이 클라이언트를 만든 뒤 `wrangler secret put` (google-setup.md).
