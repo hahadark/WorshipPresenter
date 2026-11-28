@@ -34,6 +34,11 @@ pub fn font_file(path: &str) -> Option<&'static [u8]> {
     if let Some(v) = m.get(path) {
         return *v;
     }
+    #[cfg(target_arch = "wasm32")]
+    if let Some(b) = crate::web::registered_font(path) {
+        m.insert(path.to_string(), Some(b)); // [웹판] 시작할 때 받아 맡겨 둔 글꼴
+        return Some(b);
+    }
     // 파일 매핑으로 (복사하지 않음). 안 되면 읽어서 쥔다
     let v: Option<&'static [u8]> = crate::pptx::build::map_font_file(std::path::Path::new(path)).or_else(|| std::fs::read(path).ok().map(|b| &*Box::leak(b.into_boxed_slice())));
     m.insert(path.to_string(), v);

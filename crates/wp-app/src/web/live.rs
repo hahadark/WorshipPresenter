@@ -16,8 +16,10 @@ use std::collections::HashMap;
 use wp_core::core::{Ev, OutputClient, Shared};
 
 const CHANNEL: &str = "wp-live";
-/// 같은 PC 송출의 교회 표시. 클라우드에 붙으면(3단계 뒤) 로그인한 교회 ID 로 바꾼다
-const CHURCH: &str = "";
+/// 같은 PC 송출의 교회 표시: 로그인한 교회 ID (둘러보기 · 내 PC 시험은 빈 글). 클라우드 어댑터 · local-live.js 가 같은 교회 것만 받는다
+fn church() -> String {
+    super::cloud::church()
+}
 
 struct Live {
     bc: web_sys::BroadcastChannel,
@@ -76,17 +78,19 @@ impl Live {
                 continue;
             }
             self.last.insert(cl.clone(), s);
-            post(&self.bc, &json!({ "t": "render", "client": cl, "data": data, "church": CHURCH }));
+            post(&self.bc, &json!({ "t": "render", "client": cl, "data": data, "church": church() }));
+            super::cloud::send(&json!({ "t": "render", "client": cl, "data": data })); // 클라우드 출력 (송출 주체일 때만)
         }
         let ds = draw.to_string();
         if force || ds != self.last_draw {
             self.last_draw = ds;
-            post(&self.bc, &json!({ "t": "draw", "data": draw, "church": CHURCH }));
+            post(&self.bc, &json!({ "t": "draw", "data": draw, "church": church() }));
+            super::cloud::send(&json!({ "t": "draw", "data": draw }));
         }
     }
 
     fn on_message(&mut self, m: Value) {
-        if m["church"].as_str().unwrap_or("") != CHURCH {
+        if m["church"].as_str().unwrap_or("") != church() {
             return;
         }
         match m["t"].as_str() {
@@ -184,6 +188,11 @@ pub fn start(core: Shared) {
     tick.forget();
 }
 
+/// 모든 화면을 다시 보낸다 (새 출력 탭 · 클라우드 sync)
+pub fn push_all() {
+    with(|l| l.push(true));
+}
+
 fn with(f: impl FnOnce(&mut Live)) {
     LIVE.with(|l| {
         if let Some(l) = l.borrow_mut().as_mut() {
@@ -222,7 +231,7 @@ pub fn window_open() -> bool {
 /// 출력 창 열기. 팝업이 막히면 오류 글
 pub fn open_window(client: &str, monitor: usize, windowed: bool) -> Result<(), String> {
     let w = web_sys::window().ok_or("창 없음")?;
-    let url = format!("outputs/{client}?window=1");
+    let url = format!("{}{client}?window=1", super::cloud::outputs_base());
     let feat = if windowed { "popup,width=960,height=540" } else { "popup,width=1280,height=720" };
     let p = w.open_with_url_and_target_and_features(&url, &format!("wp-out-{client}"), feat).map_err(|e| format!("{e:?}"))?;
     let Some(p) = p else { return Err("브라우저가 새 창을 막았습니다. 주소 표시줄의 팝업 허용을 눌러 주세요.".into()) };

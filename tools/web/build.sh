@@ -26,5 +26,7 @@ inject web/output/index.html "$OUT/outputs/main.html"
 inject web/output/index.html "$OUT/outputs/overlay.html"
 inject web/output/stage.html "$OUT/outputs/stage.html"
 [ -d web/app/sample ] && cp -r web/app/sample "$OUT/sample"
+# 조작 화면 글꼴(Pretendard, OFL)은 wasm 에 넣지 않고 따로 (web/mod.rs fonts) — 첫 열기 크기 · 따로 캐시
+mkdir -p "$OUT/fonts" && cp assets/fonts/Pretendard-*.ttf assets/fonts/OFL-Pretendard.txt "$OUT/fonts/"
 # Cloudflare 처럼 압축해 보내는 크기를 재려고 미리 brotli 로 눌러 둔다
-node -e "const z=require('zlib'),fs=require('fs');for(const f of process.argv.slice(1)){const b=fs.readFileSync(f);fs.writeFileSync(f+'.br',z.brotliCompressSync(b,{params:{[z.constants.BROTLI_PARAM_QUALITY]:11,[z.constants.BROTLI_PARAM_SIZE_HINT]:b.length}}));console.log(f,b.length,'→ br',fs.statSync(f+'.br').size)}" "$OUT/wp-app_bg.wasm" "$OUT/wp-app.js"
+node -e "const z=require('zlib'),fs=require('fs');for(const f of process.argv.slice(1)){const b=fs.readFileSync(f);fs.writeFileSync(f+'.br',z.brotliCompressSync(b,{params:{[z.constants.BROTLI_PARAM_QUALITY]:11,[z.constants.BROTLI_PARAM_SIZE_HINT]:b.length}}));console.log(f,b.length,'→ br',fs.statSync(f+'.br').size)}" "$OUT/wp-app_bg.wasm" "$OUT/wp-app.js" "$OUT"/fonts/*.ttf

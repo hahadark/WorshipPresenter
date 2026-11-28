@@ -15,6 +15,9 @@ use std::sync::Arc;
 use wp_core::core::{Core, Ev};
 use wp_core::lockcheck::Mutex;
 
+pub mod bible;
+pub mod cloud;
+pub mod fonts;
 pub mod live;
 pub mod store;
 
@@ -63,6 +66,7 @@ impl eframe::App for WebApp {
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.0.ui(ui, frame);
+        cloud::ui(ui.ctx()); // 클라우드 상태 띠 (보기 전용 · 넘겨받기 · 교회 관리)
         if !DEBUG_ON.with(|d| *d) {
             return;
         }
@@ -72,7 +76,7 @@ impl eframe::App for WebApp {
             let live = serde_json::json!({ "version": l["version"], "hasLive": l["hasLive"], "visible": l["visible"], "title": l["passage"]["title"], "index": l["index"], "outputs": g.outputs.len() });
             (g.cue.as_ref().map(|c| serde_json::json!({ "id": c.id, "items": c.items })), ui.ctx().memory(|m| m.focused()).map(|i| format!("{i:?}")), live)
         };
-        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live }).to_string();
+        let s = serde_json::json!({ "search": self.0.search, "cue": cue, "focus": focus, "live": live, "cloud": format!("{:?}", cloud::state()), "versions": self.0.core.lock().store.list_versions().iter().map(|v| v.id.clone()).collect::<Vec<_>>() }).to_string();
         DEBUG.with(|d| *d.borrow_mut() = s);
     }
 }
@@ -99,9 +103,17 @@ pub fn start() {
     }
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
     let t0 = now_ms();
+    // 어디서 열었나: 로그인한 클라우드(/control/) · 둘러보기(/demo/) · 내 PC 시험(tools/web/serve.js)
+    let authed = cloud::authed();
+    wp_core::web::ai::enable(authed && cloud::can("ai"));
+    // 자료 폴더 이름(브라우저 저장소 열쇠 앞머리)은 교회마다 따로 — 같은 브라우저에서 교회 · 둘러보기 설정이 섞이지 않게
+    let data_dir = if authed { format!("/wp/c/{}/data", cloud::church()) } else { DATA_DIR.to_string() };
     wasm_bindgen_futures::spawn_local(async move {
-        // 견본 자료 (브라우저 안 DB 가 비었을 때만 넣는다 — wp_core::web::seed)
-        let seed: Option<serde_json::Value> = fetch_text("sample/seed.json").await.and_then(|t| serde_json::from_str(&t).ok());
+        boot("progress", "글꼴 받는 중…");
+        let font_bytes = fonts::load_first("").await;
+        // 견본 자료: 로그인하지 않았을 때만 (브라우저 안 DB 가 비었을 때 넣는다 — wp_core::web::seed)
+        let seed: Option<serde_json::Value> = if authed { None } else { fetch_text("sample/seed.json").await.and_then(|t| serde_json::from_str(&t).ok()) };
+        log::info!("글꼴 {:.1}MB 받음 ({:.0}ms)", font_bytes as f64 / 1048576.0, now_ms() - t0);
         let canvas = web_sys::window()
             .and_then(|w| w.document())
             .and_then(|d| d.get_element_by_id("wp_canvas"))
@@ -121,7 +133,7 @@ pub fn start() {
                     imgcache::install(&cc.egui_ctx);
                     theme::apply(&cc.egui_ctx, theme::ThemeId::Pro);
                     let t2 = now_ms();
-                    let core = Core::open(PathBuf::from(DATA_DIR), PathBuf::from(WEB_DIR), None).map_err(|e| format!("{e:#}"))?;
+                    let core = Core::open(PathBuf::from(&data_dir), PathBuf::from(WEB_DIR), None).map_err(|e| format!("{e:#}"))?;
                     let mut core = core;
                     if let Some(seed) = &seed {
                         match wp_core::web::seed::apply(&mut core, seed) {
@@ -129,9 +141,19 @@ pub fn start() {
                             Err(e) => log::warn!("견본 자료를 넣지 못함: {e:#}"),
                         }
                     }
-                    store::restore(&mut core); // 고친 큐시트 · 찬양 (브라우저 저장소) 가 견본보다 앞선다
+                    if !authed {
+                        store::restore(&mut core); // 고친 큐시트 · 찬양 (브라우저 저장소) 가 견본보다 앞선다
+                    }
                     let shared = Arc::new(Mutex::new(core));
-                    store::start(shared.clone());
+                    wp_core::hymns::install(&shared); // 백그라운드 일(run_bg)이 끝나면 코어를 다시 잡으려고 (웹은 다음 차례에 같은 스레드)
+                    if authed {
+                        store::cloud_start(shared.clone()); // 큐시트 · 찬양: /api/v1/documents · sync
+                        bible::start(shared.clone()); // 성경: 교회 번역본 (IndexedDB 에 보관)
+                        cloud::start_bridge(shared.clone()); // 송출 주체 (/bridge, 주인만)
+                    } else {
+                        store::start(shared.clone()); // 둘러보기 · 시험: localStorage
+                    }
+                    fonts::load_later(String::new(), cc.egui_ctx.clone());
                     live::start(shared.clone()); // 같은 브라우저의 출력 창으로 송출 (BroadcastChannel 'wp-live')
                     {
                         // 송출 중인가 (페이지가 닫힐 때 묻기 — index.html beforeunload)
@@ -173,7 +195,7 @@ pub fn start() {
                         }
                         tick.forget();
                     }
-                    let app = app::App::new(shared, PathBuf::from(WEB_DIR), PathBuf::from(DATA_DIR));
+                    let app = app::App::new(shared, PathBuf::from(WEB_DIR), PathBuf::from(&data_dir));
                     let t3 = now_ms();
                     log::info!("웹 시작: wasm 시작→창 {:.0}ms · 글꼴 {:.0}ms · 자료·화면 {:.0}ms", t1 - t0, t2 - t1, t3 - t2);
                     boot("ready", &format!("{:.0}", t3));

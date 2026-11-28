@@ -131,6 +131,10 @@ pub fn chat(cfg: &AiCfg, system: &str, user: &str, json_mode: bool, max_tokens: 
     if let Some(t) = env_mock() {
         return Ok((t, Value::Null));
     }
+    #[cfg(target_arch = "wasm32")]
+    if crate::web::ai::cloud() {
+        return crate::web::ai::chat(system, user, json_mode, max_tokens); // [웹판] 교회 키로 클라우드가 대신 부른다
+    }
     if !cfg.has_key() {
         return Err(crate::i18n::tr(NEED_KEY).into());
     }

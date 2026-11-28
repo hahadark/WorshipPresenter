@@ -605,10 +605,15 @@ pub fn font_definitions() -> egui::FontDefinitions {
     let mut add = |name: &str, bytes: &'static [u8]| {
         defs.font_data.insert(name.into(), Arc::new(egui::FontData::from_static(bytes)));
     };
-    add("pretendard", include_bytes!("../../../assets/fonts/Pretendard-Regular.ttf"));
-    add("pretendard-medium", include_bytes!("../../../assets/fonts/Pretendard-Medium.ttf"));
-    add("pretendard-semibold", include_bytes!("../../../assets/fonts/Pretendard-SemiBold.ttf"));
-    add("pretendard-bold", include_bytes!("../../../assets/fonts/Pretendard-Bold.ttf"));
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        add("pretendard", include_bytes!("../../../assets/fonts/Pretendard-Regular.ttf"));
+        add("pretendard-medium", include_bytes!("../../../assets/fonts/Pretendard-Medium.ttf"));
+        add("pretendard-semibold", include_bytes!("../../../assets/fonts/Pretendard-SemiBold.ttf"));
+        add("pretendard-bold", include_bytes!("../../../assets/fonts/Pretendard-Bold.ttf"));
+    }
+    #[cfg(target_arch = "wasm32")]
+    crate::web::fonts::add_pretendard(&mut add); // [웹판] 실행 파일에 넣지 않고 따로 받는다 (첫 열기 크기)
     let mut malgun = vec![];
     let mut malgun_bold = vec![];
     if let Some(r) = wp_core::measure::font_file(r"C:\Windows\Fonts\malgun.ttf") {

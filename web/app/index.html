@@ -39,6 +39,13 @@ window.wpBoot = (stage, detail) => {
   else $('boot_msg').textContent = detail;
 };
 window.addEventListener('error', (e) => { if (!T.ready) fail('오류: ' + (e.message || e)); });
+// 브라우저 안 보관함 (IndexedDB 'wp-web' / kv): 교회 성경 번역본 등 큰 것 — localStorage(5MB)에 넣지 못하는 것
+window.wpIdb = (() => {
+  let db = null;
+  const open = () => db || (db = new Promise((res, rej) => { const r = indexedDB.open('wp-web', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+  const run = (mode, f) => open().then(d => new Promise(res => { const t = d.transaction('kv', mode); const q = f(t.objectStore('kv')); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); })).catch(() => null);
+  return { get: k => run('readonly', s => s.get(k)), put: (k, v) => run('readwrite', s => s.put(v, k)).then(() => 'ok'), del: k => run('readwrite', s => s.delete(k)).then(() => 'ok') };
+})();
 // 단축키: 조작 화면이 쓰는 키의 브라우저 기본 동작(새로 고침 · 주소 표시줄 · 기록 · 뒤로 가기 …)을 막는다.
 // 조작 화면(egui)은 그대로 받는다 (eframe 는 defaultPrevented 를 보지 않음). 막을 수 없는 키(Ctrl+T · W · N · Tab)는 docs/web/egui-web.md
 const BLOCK = new Set(['F1', 'F3', 'F5', 'F6', 'F7', 'F10', 'C-r', 'C-k', 'C-b', 'C-h', 'C-l', 'C-m', 'C-f', 'C-g', 'C-j', 'C-d', 'C-e', 'C-u', 'C-S-f', 'C-S-e', 'C-S-l', 'C-S-y', 'A-ArrowLeft', 'A-ArrowRight', 'BrowserBack', 'BrowserForward']);

@@ -89,3 +89,383 @@ pub fn start(core: Shared) {
     }
     hide.forget();
 }
+
+// ================ 클라우드 (2단계 길: /api/v1/documents · /api/v1/sync) ================
+// 로그인한 조작 화면은 큐시트 · 찬양을 교회 클라우드에서 받고, 고친 것을 문서마다 If-Match(판)로 올린다.
+// 충돌(409)이면 덮어쓰지 않는다: 최신 것을 불러오고, 이 화면에서 고친 것은 '(내 사본)' 새 문서로 남긴다 (사람이 고름).
+// 20초마다(보이는 동안) 동기화 받기로 다른 곳(설치판 · 다른 웹)에서 고친 것을 들인다.
+// 문서 모양(payload)은 설치판 JSON 그대로 — wp_core::web::seed::export_docs / import_docs.
+
+use serde_json::json;
+use std::collections::HashMap;
+
+type Key = (String, String);
+
+#[derive(Default)]
+struct Cloud {
+    rev: HashMap<Key, i64>,
+    /// 마지막으로 클라우드와 맞춘 본문 (같으면 올리지 않는다)
+    sent: HashMap<Key, String>,
+    head: i64,
+    busy: bool,
+    again: bool,
+    ready: bool,
+    warned: bool,
+    /// 내가 올린 변경 (동기화 받기에서 다시 오면 건너뜀)
+    mine: std::collections::HashSet<String>,
+}
+
+thread_local! {
+    static CL: std::cell::RefCell<Cloud> = std::cell::RefCell::new(Cloud::default());
+    static CPENDING: Cell<bool> = const { Cell::new(false) };
+}
+
+fn kinds() -> [&'static str; 2] {
+    ["cue", "song"]
+}
+
+/// export_docs 를 (종류, id) → 본문 으로
+fn exported(core: &Shared) -> HashMap<Key, Value> {
+    let d = wp_core::web::seed::export_docs(&core.lock());
+    let mut m = HashMap::new();
+    for k in kinds() {
+        for x in d[k].as_array().into_iter().flatten() {
+            if let Some(id) = x["id"].as_str() {
+                m.insert((k.to_string(), id.to_string()), x.clone());
+            }
+        }
+    }
+    m
+}
+
+fn mutation_id() -> String {
+    format!("web-{:x}-{:x}", js_sys::Date::now() as u64, (js_sys::Math::random() * 1e12) as u64)
+}
+
+fn doc_path(kind: &str, id: &str) -> String {
+    format!("/api/v1/documents/{kind}/{}", String::from(js_sys::encode_uri_component(id)))
+}
+
+/// 하나만 DB 에 넣는다 (고친 곳이 다른 곳일 때 · 충돌 뒤 최신)
+fn import_one(core: &Shared, kind: &str, payload: &Value) {
+    let mut c = core.lock();
+    let open = c.cue.as_ref().map(|q| q.id.clone());
+    let _ = wp_core::web::seed::import_docs(&mut c, &json!({ kind: [payload] }));
+    // 열려 있는 큐시트가 바뀌었으면 화면도 새것으로
+    if kind == "cue" && open.as_deref() == payload["id"].as_str() {
+        if let Some(id) = open {
+            c.open_cue(&id);
+        }
+    }
+    c.emit(Ev::Ui);
+}
+
+async fn list_all(kind: &str) -> Result<Vec<Value>, String> {
+    let (mut out, mut cursor) = (vec![], String::new());
+    loop {
+        let q = if cursor.is_empty() { String::new() } else { format!("&cursor={}", String::from(js_sys::encode_uri_component(&cursor))) };
+        let (st, v) = super::cloud::api("GET", &format!("/api/v1/documents?kind={kind}&include=payload&limit=200{q}"), None, &[]).await;
+        if st != 200 {
+            return Err(v["error"].as_str().unwrap_or("문서 목록을 받지 못했습니다").to_string());
+        }
+        out.extend(v["documents"].as_array().cloned().unwrap_or_default());
+        match v["next"].as_str() {
+            Some(n) if !n.is_empty() => cursor = n.to_string(),
+            _ => return Ok(out),
+        }
+    }
+}
+
+/// 로그인한 조작 화면: 받기 → 고칠 때마다 올리기 → 20초마다 받기
+pub fn cloud_start(core: Shared) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let mut docs = json!({ "cue": [], "song": [] });
+        let mut revs = vec![];
+        for k in kinds() {
+            match list_all(k).await {
+                Ok(list) => {
+                    for d in list {
+                        if d["deleted"].as_bool().unwrap_or(false) || !d["payload"].is_object() {
+                            continue;
+                        }
+                        revs.push(((k.to_string(), d["id"].as_str().unwrap_or("").to_string()), d["revision"].as_i64().unwrap_or(0)));
+                        docs[k].as_array_mut().unwrap().push(d["payload"].clone());
+                    }
+                }
+                Err(e) => {
+                    core.lock().notify(format!("교회 자료를 받지 못했습니다: {e}"), "error");
+                    return;
+                }
+            }
+        }
+        {
+            let mut c = core.lock();
+            let n = (docs["cue"].as_array().map_or(0, |a| a.len()), docs["song"].as_array().map_or(0, |a| a.len()));
+            if let Err(e) = wp_core::web::seed::import_docs(&mut c, &docs) {
+                c.notify(format!("교회 자료를 넣지 못했습니다: {e:#}"), "error");
+            }
+            // 처음 연 큐시트: 설정에 남은 것(이 브라우저) 또는 목록 첫째
+            let want = c.settings.get()["activeCueId"].as_str().unwrap_or("").to_string();
+            let pick = if c.cues.iter().any(|x| x.id == want) { Some(want) } else { c.cues.first().map(|x| x.id.clone()) };
+            if let Some(id) = pick {
+                c.open_cue(&id);
+            }
+            log::info!("교회 자료: 큐시트 {} · 찬양 {}", n.0, n.1);
+            c.emit(Ev::Ui);
+        }
+        let (_, h) = super::cloud::api("GET", "/api/v1/sync?after=0&limit=1", None, &[]).await;
+        let now = exported(&core);
+        CL.with(|cl| {
+            let mut cl = cl.borrow_mut();
+            for (k, r) in revs {
+                if let Some(p) = now.get(&k) {
+                    cl.sent.insert(k.clone(), p.to_string());
+                }
+                cl.rev.insert(k, r);
+            }
+            cl.head = h["head"].as_i64().unwrap_or(0);
+            cl.ready = true;
+        });
+        // 고칠 때마다 (1.5초 모아서)
+        let mut rx = core.lock().tx.subscribe();
+        let c2 = core.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(Ev::Ui) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        if CPENDING.with(|p| p.replace(true)) {
+                            continue;
+                        }
+                        let c3 = c2.clone();
+                        wp_core::web::defer(1500, move || {
+                            CPENDING.with(|p| p.set(false));
+                            wasm_bindgen_futures::spawn_local(push(c3));
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+        });
+        // 20초마다 받기 (숨긴 탭은 묻지 않는다 — 요청 수)
+        let c4 = core.clone();
+        let tick = Closure::<dyn FnMut()>::new(move || {
+            let hidden = web_sys::window().and_then(|w| w.document()).is_some_and(|d| d.hidden());
+            if !hidden {
+                wasm_bindgen_futures::spawn_local(pull(c4.clone()));
+            }
+        });
+        if let Some(w) = web_sys::window() {
+            let _ = w.set_interval_with_callback_and_timeout_and_arguments_0(tick.as_ref().unchecked_ref(), 20_000);
+        }
+        tick.forget();
+    });
+}
+
+/// 바뀐 문서를 올린다
+async fn push(core: Shared) {
+    if !CL.with(|c| c.borrow().ready) {
+        return;
+    }
+    if !super::cloud::can("write") {
+        // 보기만 권한: 화면에서는 고쳐지지만 클라우드에는 남지 않는다 — 한 번만 알림
+        let now = exported(&core);
+        let changed = CL.with(|c| now.iter().any(|(k, v)| c.borrow().sent.get(k) != Some(&v.to_string())));
+        if changed && !CL.with(|c| std::mem::replace(&mut c.borrow_mut().warned, true)) {
+            core.lock().notify("보기 권한이라 고친 것이 교회 클라우드에 저장되지 않습니다.", "error");
+        }
+        return;
+    }
+    let go = CL.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.busy {
+            c.again = true;
+            return false;
+        }
+        c.busy = true;
+        true
+    });
+    if !go {
+        return;
+    }
+    loop {
+        let now = exported(&core);
+        let todo: Vec<(Key, Value)> = CL.with(|c| {
+            let c = c.borrow();
+            now.iter().filter(|(k, v)| c.sent.get(*k) != Some(&v.to_string())).map(|(k, v)| (k.clone(), v.clone())).collect()
+        });
+        let gone: Vec<Key> = CL.with(|c| c.borrow().sent.keys().filter(|k| !now.contains_key(*k)).cloned().collect());
+        for (k, v) in todo {
+            put(&core, &k, &v).await;
+        }
+        for k in gone {
+            delete(&core, &k).await;
+        }
+        if !CL.with(|c| std::mem::replace(&mut c.borrow_mut().again, false)) {
+            break;
+        }
+    }
+    CL.with(|c| c.borrow_mut().busy = false);
+}
+
+async fn put(core: &Shared, k: &Key, payload: &Value) {
+    let rev = CL.with(|c| c.borrow().rev.get(k).copied());
+    let mid = mutation_id();
+    let rv = rev.map(|r| r.to_string()).unwrap_or_default();
+    let mut h: Vec<(&str, &str)> = vec![("x-mutation-id", &mid)];
+    if rev.is_some() {
+        h.push(("if-match", &rv));
+    }
+    let (st, v) = super::cloud::api("PUT", &doc_path(&k.0, &k.1), Some(payload), &h).await;
+    match st {
+        200 | 201 => CL.with(|c| {
+            let mut c = c.borrow_mut();
+            c.rev.insert(k.clone(), v["revision"].as_i64().unwrap_or(0));
+            c.sent.insert(k.clone(), payload.to_string());
+            c.mine.insert(mid.clone());
+            c.warned = false;
+        }),
+        409 => conflict(core, k, payload, &v["current"]).await,
+        _ => {
+            let e = v["error"].as_str().unwrap_or("인터넷 연결을 확인해 주세요").to_string();
+            // 다음 고침 때 다시 해 본다 (sent 를 바꾸지 않음). 같은 오류를 자꾸 띄우지 않게 한 번만
+            if !CL.with(|c| std::mem::replace(&mut c.borrow_mut().warned, true)) {
+                core.lock().notify(format!("교회 클라우드에 저장하지 못했습니다 ({st}): {e}"), "error");
+            }
+        }
+    }
+}
+
+/// 다른 곳에서 먼저 고쳤다: 최신 것을 들이고, 이 화면의 것은 '(내 사본)' 새 문서로
+async fn conflict(core: &Shared, k: &Key, mine: &Value, current: &Value) {
+    let copy_id = format!("{}~{:x}", k.1, js_sys::Date::now() as u64);
+    let mut copy = mine.clone();
+    copy["id"] = json!(copy_id);
+    let name_key = if k.0 == "cue" { "name" } else { "title" };
+    let name = mine[name_key].as_str().unwrap_or("").to_string();
+    copy[name_key] = json!(format!("{name} (내 사본)"));
+    let (st, v) = super::cloud::api("PUT", &doc_path(&k.0, &copy_id), Some(&copy), &[("x-mutation-id", &mutation_id())]).await;
+    if st == 201 || st == 200 {
+        import_one(core, &k.0, &copy);
+        let now = exported(core);
+        CL.with(|c| {
+            let mut c = c.borrow_mut();
+            let ck = (k.0.clone(), copy_id.clone());
+            c.rev.insert(ck.clone(), v["revision"].as_i64().unwrap_or(1));
+            if let Some(p) = now.get(&ck) {
+                c.sent.insert(ck, p.to_string());
+            }
+        });
+    }
+    if current["payload"].is_object() && !current["deleted"].as_bool().unwrap_or(false) {
+        import_one(core, &k.0, &current["payload"]);
+        let now = exported(core);
+        CL.with(|c| {
+            let mut c = c.borrow_mut();
+            c.rev.insert(k.clone(), current["revision"].as_i64().unwrap_or(0));
+            if let Some(p) = now.get(k) {
+                c.sent.insert(k.clone(), p.to_string());
+            }
+        });
+    } else {
+        CL.with(|c| {
+            let mut c = c.borrow_mut();
+            c.rev.remove(k);
+            c.sent.remove(k);
+        });
+    }
+    core.lock().notify(format!("다른 곳에서 먼저 고친 '{name}' — 최신 것을 불러왔고, 이 화면에서 고친 것은 '(내 사본)' 으로 남겼습니다."), "error");
+}
+
+async fn delete(core: &Shared, k: &Key) {
+    let Some(rev) = CL.with(|c| c.borrow().rev.get(k).copied()) else {
+        CL.with(|c| c.borrow_mut().sent.remove(k));
+        return;
+    };
+    let mid = mutation_id();
+    let rs = rev.to_string();
+    let (st, v) = super::cloud::api("DELETE", &doc_path(&k.0, &k.1), None, &[("if-match", &rs), ("x-mutation-id", &mid)]).await;
+    if st == 200 || st == 404 {
+        CL.with(|c| {
+            let mut c = c.borrow_mut();
+            c.rev.remove(k);
+            c.sent.remove(k);
+            c.mine.insert(mid);
+        });
+    } else if st == 409 && v["current"]["payload"].is_object() {
+        // 지우려는 사이에 다른 곳에서 고침: 지우지 않고 최신 것으로 되살린다
+        import_one(core, &k.0, &v["current"]["payload"]);
+        let now = exported(core);
+        CL.with(|c| {
+            let mut c = c.borrow_mut();
+            c.rev.insert(k.clone(), v["current"]["revision"].as_i64().unwrap_or(0));
+            if let Some(p) = now.get(k) {
+                c.sent.insert(k.clone(), p.to_string());
+            }
+        });
+        core.lock().notify("다른 곳에서 고친 문서라 지우지 않고 최신 것으로 되살렸습니다.", "error");
+    }
+}
+
+/// 다른 곳에서 고친 것을 들인다
+async fn pull(core: Shared) {
+    if !CL.with(|c| c.borrow().ready && !c.borrow().busy) {
+        return;
+    }
+    loop {
+        let after = CL.with(|c| c.borrow().head);
+        let (st, v) = super::cloud::api("GET", &format!("/api/v1/sync?after={after}"), None, &[]).await;
+        if st != 200 {
+            return;
+        }
+        let now = exported(&core);
+        for ch in v["changes"].as_array().into_iter().flatten() {
+            if ch["superseded"].as_bool().unwrap_or(false) {
+                continue;
+            }
+            let kind = ch["kind"].as_str().unwrap_or("");
+            if !kinds().contains(&kind) {
+                continue;
+            }
+            let k: Key = (kind.to_string(), ch["id"].as_str().unwrap_or("").to_string());
+            if ch["mutationId"].as_str().is_some_and(|m| CL.with(|c| c.borrow().mine.contains(m))) {
+                continue;
+            }
+            // 이 화면에서 고치다 만 것이 있으면 들이지 않는다 — 올릴 때 409 로 사본 규칙을 따른다
+            if CL.with(|c| now.get(&k).is_some_and(|p| c.borrow().sent.get(&k) != Some(&p.to_string()))) {
+                continue;
+            }
+            if ch["op"] == "delete" {
+                {
+                    let mut c = core.lock();
+                    if kind == "cue" {
+                        let _ = c.store.db.execute("UPDATE Cuesheets SET deleted_at = ?2 WHERE id = ?1", [k.1.as_str(), wp_core::util::iso_now().as_str()]);
+                        c.cues = c.store.list_cues();
+                    } else {
+                        let _ = wp_core::songs::delete_song(&c.store.db, &k.1);
+                    }
+                    c.emit(Ev::Ui);
+                }
+                CL.with(|c| {
+                    let mut c = c.borrow_mut();
+                    c.rev.remove(&k);
+                    c.sent.remove(&k);
+                });
+            } else if ch["payload"].is_object() {
+                import_one(&core, kind, &ch["payload"]);
+                let after_import = exported(&core);
+                CL.with(|c| {
+                    let mut c = c.borrow_mut();
+                    c.rev.insert(k.clone(), ch["revision"].as_i64().unwrap_or(0));
+                    if let Some(p) = after_import.get(&k) {
+                        c.sent.insert(k.clone(), p.to_string());
+                    }
+                });
+            }
+        }
+        CL.with(|c| c.borrow_mut().head = v["next"].as_i64().unwrap_or(after));
+        if !v["more"].as_bool().unwrap_or(false) {
+            return;
+        }
+    }
+}

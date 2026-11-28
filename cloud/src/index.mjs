@@ -8,6 +8,7 @@ import * as data from './data/index.mjs';
 import * as identity from './identity/index.mjs';
 import * as assets from './assets/index.mjs';
 import * as ai from './ai/index.mjs'; // 5단계 AI (docs/web/ai.md)
+import * as control from './control/index.mjs'; // 3단계 웹 조작 화면 (docs/web/egui-web.md)
 
 export { ChurchRoom } from './room.mjs';
 
@@ -62,6 +63,9 @@ async function handle(request, env) {
     return json({ ok: true }, 200, { 'set-cookie': auth.setCookie(auth.COOKIE, '', request, 0) });
   }
   if (path === '/api/v1/admin/churches' && method === 'POST') return adminCreateChurch(request, env);
+  // 3단계: 로그인 없이 둘러보기 (견본 자료 · 브라우저 안 저장만) — 조작 화면 · 같은 브라우저 출력
+  if (control.isDemo(method, path)) return page('control', { v: PROTOCOL, church: '', role: '', authed: false, demo: true, page: 'control' });
+  { const d = control.demoOutput(method, path); if (d) return page(d, { v: PROTOCOL, church: '', role: '', authed: false, demo: true, page: d }); }
   if (path.startsWith('/auth/')) { const x = await identity.publicRoute(request, env, url); if (x) return x; }
 
   // 설치판(2B)의 자료 동기화: 쿠키 대신 설치판 연결 열쇠 (data/index.mjs bearer)
@@ -150,6 +154,7 @@ async function handle(request, env) {
   else if (r.kind === 'identity') res = await identity.handle(request, env, url, s, r);
   else if (r.kind === 'assets') res = await assets.handle(request, env, url, s, r);
   else if (r.kind === 'ai') res = await ai.handle(request, env, url, s, r);
+  else if (r.kind === 'control') res = await control.handle(request, env, url, s, r);
   else res = await toRoom(env, request, s);
   return withCookies(res, fresh?.headers);
 }

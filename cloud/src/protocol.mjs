@@ -3,6 +3,7 @@
 import { dataRoute } from './data/routes.mjs'; // 2단계 A 길 (docs/web/data-api.md)
 import { assetRoute } from './assets/routes.mjs'; // 2단계 C 길 (docs/web/assets-api.md)
 import { aiRoute } from './ai/routes.mjs'; // 5단계 AI 길 (docs/web/ai.md)
+import { controlRoute } from './control/index.mjs'; // 3단계 웹 조작 화면 (docs/web/egui-web.md)
 
 export const PROTOCOL = 1;
 
@@ -80,7 +81,7 @@ export function route(method, path, query) {
   if (get && path === '/api/v1/room') return { kind: 'room', cap: 'manage' };
   if (path === '/api/v1/credentials' && (get || post)) return { kind: 'api', cap: 'manage' };
   if (method === 'DELETE' && /^\/api\/v1\/credentials\/[A-Za-z0-9]{6,24}$/.test(path)) return { kind: 'api', cap: 'manage' };
-  return dataRoute(method, path) || assetRoute(method, path) || aiRoute(method, path);
+  return dataRoute(method, path) || assetRoute(method, path) || aiRoute(method, path) || controlRoute(method, path);
 }
 
 /** 출력 화면이 /api/command 로 알릴 수 있는 것 (설치판 내부망 출력과 같은 경계). 그 밖의 명령은 클라우드에서 받지 않는다. */
@@ -88,7 +89,9 @@ export const VIEW_COMMANDS = ['videoMeta', 'videoEnded'];
 
 // ---------- 실시간 메시지 (글 프레임은 JSON, 미디어 본문만 이진 프레임) ----------
 // 송출 주체(설치판 · 웹 조작 화면) → 중계실
-export const FROM_SOURCE = ['hello', 'render', 'draw', 'remote', 'res'];
+export const FROM_SOURCE = ['hello', 'render', 'draw', 'remote', 'res', 'claim', 'release'];
+// 송출 주체 겹침 (3단계, 덧붙임): 설치판(desktop)이 기본 주체. 웹 조작 화면(web)은 주체가 이미 있으면 '대기'(standby)로 붙고,
+// 주인이 넘겨받기(claim)를 눌러야만 주체가 된다. 넘겨받은 동안 다시 붙는 설치판은 대기. release 로 돌려준다.
 // 보는 쪽(출력 · 리모컨) → 중계실
 export const FROM_VIEWER = ['ack', 'cmd'];
 

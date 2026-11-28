@@ -7,8 +7,9 @@ import editorHtml from '../../web/editor/index.html';
 import loginHtml from '../client/login.html';
 import ownerHtml from '../client/owner.html';
 import deniedHtml from '../client/denied.html';
+import controlHtml from '../../web/app/index.html'; // 3단계 웹 조작 화면 (wasm 은 정적 파일 /control/*)
 
-const PAGES = { output: outputHtml, stage: stageHtml, remote: remoteHtml, editor: editorHtml, login: loginHtml, owner: ownerHtml, denied: deniedHtml };
+const PAGES = { output: outputHtml, stage: stageHtml, remote: remoteHtml, editor: editorHtml, login: loginHtml, owner: ownerHtml, denied: deniedHtml, control: controlHtml };
 /** 웹판이 새로 만든 페이지 (어댑터가 필요 없고, 엄격한 보안 머리글을 붙인다) */
 const OWN = ['login', 'owner', 'denied'];
 
@@ -24,6 +25,9 @@ export function inject(html, cfg) {
 export function pageFor(name, cfg) {
   const html = PAGES[name];
   if (!html) throw new Error(`모르는 페이지: ${name}`);
+  // 3단계: 조작 화면은 어댑터 없이 설정 · 기준 주소(/control/)만. 둘러보기 출력은 클라우드 대신 같은 브라우저 어댑터
+  if (name === 'control') return html.replace(/<head([^>]*)>/i, `<head$1><base href="/control/"><script>window.WP_CLOUD=${JSON.stringify(cfg).replace(/</g, '\\u003c')}</script>${cfg.authed ? '<link rel="stylesheet" href="/api/v1/assets/fonts.css">' : ''}`);
+  if (cfg.demo) return html.replace(/<head([^>]*)>/i, '<head$1><script src="/cloud/control/local-live.js"></script>');
   if (OWN.includes(name)) return html.replace('"__WP_CLOUD__"', JSON.stringify(cfg).replace(/</g, '\\u003c'));
   return inject(html, cfg);
 }
@@ -41,5 +45,10 @@ export function page(name, cfg, status = 200) {
   };
   if (OWN.includes(name)) headers['content-security-policy'] = "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
   if (OWN.includes(name) || name === 'remote' || name === 'editor') headers['x-frame-options'] = 'DENY';
+  // 3단계 조작 화면: wasm 을 돌리고(wasm-unsafe-eval) 같은 곳에만 붙는다. 다른 사이트 안에 끼우지 못하게
+  if (name === 'control') {
+    headers['content-security-policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'";
+    headers['x-frame-options'] = 'DENY';
+  }
   return new Response(pageFor(name, cfg), { status, headers });
 }

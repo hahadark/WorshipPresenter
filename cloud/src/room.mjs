@@ -26,7 +26,9 @@ export class ChurchRoom extends DurableObject {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
-  source() { return this.ctx.getWebSockets('source')[0] || null; }
+  /** 지금 송출 주체 (대기 중인 연결은 빼고) */
+  source() { return this.ctx.getWebSockets('source').find(ws => !this.att(ws).standby) || null; }
+  standbys() { return this.ctx.getWebSockets('source').filter(ws => this.att(ws).standby); }
   viewers(client) { return this.ctx.getWebSockets(client ? `c:${client}` : 'viewer'); }
   att(ws) { try { return ws.deserializeAttachment() || {}; } catch { return {}; } }
 
@@ -48,17 +50,73 @@ export class ChurchRoom extends DurableObject {
   // ---------- 붙기 ----------
   acceptSource(request, who) {
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return fail(426, 'WebSocket 으로 연결하세요.');
-    // 같은 교회에 새 송출 주체가 붙으면 앞의 것을 끊는다 (끊긴 줄 모르고 남은 옛 연결이 새 연결을 막지 않게)
-    for (const old of this.ctx.getWebSockets('source')) {
-      try { old.serializeAttachment({ ...this.att(old), replaced: true }); old.close(CLOSE.replaced, 'replaced'); } catch { /* 이미 닫힘 */ }
-    }
-    this.failPending(503, '설치판 연결이 바뀌었습니다. 다시 해 보세요.');
-    this.renders.clear(); this.draw = null; this.remote = null; this.clearCache();
+    // 송출 주체 겹침 (3단계): 설치판 열쇠(Bearer) = desktop, 주인 쿠키 = web (웹 조작 화면)
+    const kind = who.role === 'bridge' ? 'desktop' : 'web';
+    const cur = this.source();
+    const ca = cur ? this.att(cur) : null;
+    // 대기로 붙는 경우: 웹은 주체가 이미 있으면 늘 대기. 설치판은 웹이 넘겨받아(claim) 쥐고 있을 때만 대기
+    const standby = !!cur && (kind === 'web' || (ca.kind === 'web' && ca.claimed));
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server, ['source']);
-    server.serializeAttachment({ role: 'source', cred: who.cred, since: Date.now(), app: '', lang: 'ko', outputs: [], caps: {} });
-    send(server, { t: 'ready', v: PROTOCOL, viewers: this.viewers().length });
+    server.serializeAttachment({ role: 'source', kind, owner: who.role === 'owner', cred: who.cred, since: Date.now(), app: '', lang: 'ko', outputs: [], caps: {}, standby, claimed: false });
+    if (standby) {
+      send(server, { t: 'ready', v: PROTOCOL, viewers: this.viewers().length, standby: true, active: this.who(cur) });
+      return new Response(null, { status: 101, webSocket: client });
+    }
+    // 주체가 된다: 같은 종류의 옛 연결은 끊고(끊긴 줄 모르고 남은 옛 연결이 막지 않게), 웹 주체는 설치판에게 대기로 내려간다
+    for (const old of this.ctx.getWebSockets('source')) {
+      if (old === server) continue;
+      const a = this.att(old);
+      if (a.standby) continue;
+      if (a.kind === 'web' && kind === 'desktop') { this.demote(old, server); continue; }
+      try { old.serializeAttachment({ ...a, replaced: true }); old.close(CLOSE.replaced, 'replaced'); } catch { /* 이미 닫힘 */ }
+    }
+    this.takeOver();
+    send(server, { t: 'ready', v: PROTOCOL, viewers: this.viewers().length, standby: false });
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** 송출 주체가 바뀔 때: 앞 주체의 기억을 비운다 (새 주체가 전부 다시 보낸다) */
+  takeOver() {
+    this.failPending(503, '설치판 연결이 바뀌었습니다. 다시 해 보세요.');
+    this.renders.clear(); this.draw = null; this.remote = null; this.clearCache();
+  }
+  who(ws) { const a = this.att(ws); return { source: a.kind || 'desktop', app: a.app || '', since: a.since || 0, claimed: !!a.claimed }; }
+  /** 주체 → 대기 (끊지 않는다. 화면에 '보기 전용' 을 알리게) */
+  demote(ws, by) {
+    const a = this.att(ws);
+    ws.serializeAttachment({ ...a, standby: true, claimed: false });
+    send(ws, { t: 'standby', active: by ? this.who(by) : null });
+  }
+  /** 대기 → 주체. 새 주체에게 전부 다시 달라고 하고, 화면에 '연결됨' 을 알린다 */
+  promote(ws, claimed) {
+    const a = this.att(ws);
+    ws.serializeAttachment({ ...a, standby: false, claimed: !!claimed });
+    this.takeOver();
+    send(ws, { t: 'active', claimed: !!claimed });
+    this.lastSync = 0;
+    send(ws, { t: 'sync' });
+    for (const v of this.viewers()) send(v, { t: 'status', online: true });
+    this.presenceSoon();
+  }
+  /** 주인이 넘겨받기를 눌렀다 (웹 조작 화면). 설치판은 끊고(다시 붙으면 대기), 다른 웹 주체는 대기로 */
+  claim(ws, a) {
+    if (a.kind !== 'web' || !a.owner) return send(ws, { t: 'denied', error: '넘겨받기는 주인만 할 수 있습니다.' });
+    const cur = this.source();
+    if (cur && cur !== ws) {
+      const ca = this.att(cur);
+      if (ca.kind === 'desktop') { try { cur.serializeAttachment({ ...ca, replaced: true }); cur.close(CLOSE.replaced, 'claimed'); } catch { /* 이미 닫힘 */ } }
+      else this.demote(cur, ws);
+    }
+    this.promote(ws, true);
+  }
+  /** 넘겨받은 웹이 돌려준다: 대기 중인 설치판이 있으면 그것을 주체로, 없으면 넘겨받음 표시만 지운다 */
+  release(ws) {
+    const a = this.att(ws);
+    const desk = this.standbys().find(x => this.att(x).kind === 'desktop');
+    if (!desk) { ws.serializeAttachment({ ...a, claimed: false }); send(ws, { t: 'active', claimed: false }); return; }
+    this.demote(ws, desk);
+    this.promote(desk, false);
   }
 
   acceptViewer(request, url, who) {
@@ -101,6 +159,7 @@ export class ChurchRoom extends DurableObject {
   // ---------- 실시간 메시지 ----------
   async webSocketMessage(ws, message) {
     const a = this.att(ws);
+    if (a.role === 'source' && a.standby) return typeof message === 'string' ? this.fromStandby(ws, a, message) : undefined;
     if (a.role === 'source') return typeof message === 'string' ? this.fromSource(ws, a, message) : this.chunk(message);
     if (typeof message !== 'string' || message.length > 4096) return ws.close(CLOSE.protocol, 'too large');
     if (a.exp && a.exp < Date.now()) return ws.close(CLOSE.revoked, 'expired');
@@ -114,6 +173,17 @@ export class ChurchRoom extends DurableObject {
     } else if (m.t === 'cmd' && a.client !== 'remote') {
       this.viewCommand(m);
     }
+  }
+
+  /** 대기 중인 송출 주체: 화면 자료는 버리고 hello · claim 만 받는다 */
+  fromStandby(ws, a, text) {
+    if (text.length > LIMITS.message) return ws.close(CLOSE.protocol, 'too large');
+    let m;
+    try { m = JSON.parse(text); } catch { return ws.close(CLOSE.protocol, 'json'); }
+    if (m?.t === 'hello') {
+      if (m.v !== PROTOCOL) return ws.close(CLOSE.protocol, 'version');
+      ws.serializeAttachment({ ...a, app: String(m.app || '').slice(0, 40), lang: m.lang === 'en' ? 'en' : 'ko' });
+    } else if (m?.t === 'claim') this.claim(ws, a);
   }
 
   fromSource(ws, a, text) {
@@ -155,6 +225,13 @@ export class ChurchRoom extends DurableObject {
       case 'res':
         this.answer(m);
         break;
+      case 'claim': // 이미 주체 — 넘겨받은 것으로 표시만 (그 뒤 다시 붙는 설치판이 대기로 들어오게)
+        if (a.kind === 'web' && a.owner) { ws.serializeAttachment({ ...a, claimed: true }); send(ws, { t: 'active', claimed: true }); }
+        else send(ws, { t: 'denied', error: '넘겨받기는 주인만 할 수 있습니다.' });
+        break;
+      case 'release':
+        if (a.kind === 'web') this.release(ws);
+        break;
     }
   }
 
@@ -162,8 +239,11 @@ export class ChurchRoom extends DurableObject {
     const a = this.att(ws);
     try { ws.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* 이미 닫힘 */ }
     if (a.role === 'source') {
-      // 바뀐 것(4001)이면 새 송출 주체가 이미 있다 — 그때는 화면에 '끊김' 을 알리지 않는다
-      if (a.replaced) return;
+      // 바뀐 것(4001)이면 새 송출 주체가 이미 있다 — 그때는 화면에 '끊김' 을 알리지 않는다. 대기는 화면과 상관없다
+      if (a.replaced || a.standby) return;
+      // 주체가 떠났는데 대기 중인 설치판이 있으면 그것이 주체가 된다 (설치판이 기본 주체). 대기 중인 웹은 저절로 올라가지 않는다
+      const desk = this.standbys().find(x => this.att(x).kind === 'desktop');
+      if (desk) { this.promote(desk, false); return; }
       this.failPending(503, OFFLINE);
       for (const v of this.viewers()) send(v, { t: 'status', online: false });
     } else {
@@ -186,7 +266,8 @@ export class ChurchRoom extends DurableObject {
     const src = this.source();
     const s = src ? this.att(src) : null;
     const viewers = this.viewers().map(v => { const a = this.att(v); return { id: a.id, client: a.client, kind: a.kind, since: a.since, ack: a.ack }; });
-    return { online: !!src, app: s?.app || '', lang: s?.lang || 'ko', outputs: s?.outputs || [], caps: s?.caps || {}, since: s?.since || 0, viewers };
+    return { online: !!src, app: s?.app || '', lang: s?.lang || 'ko', outputs: s?.outputs || [], caps: s?.caps || {}, since: s?.since || 0, viewers,
+      source: s ? s.kind || 'desktop' : null, claimed: !!s?.claimed, standby: this.standbys().map(x => this.who(x)) }; // 3단계 덧붙임
   }
   /** 붙은 화면 목록을 송출 주체에게 (조작 화면이 '클라우드로 보는 화면 N개' 를 보이게). 잦은 변화는 모아서 한 번 */
   presenceSoon() {

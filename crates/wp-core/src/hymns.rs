@@ -456,6 +456,11 @@ pub fn set_folder_render(core: &mut Core, dir: &str, render: &str) {
 
 /// 큰 스택으로 스레드 (resvg·XML 이 깊게 들어가 기본 2MB 로는 넘칠 수 있다 — 넘치면 프로그램 전체가 죽는다)
 pub fn spawn_big(f: impl FnOnce() + Send + 'static) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        crate::web::defer(40, f); // [웹판] 스레드가 없다 — '하는 중…' 을 한 번 그린 뒤 같은 스레드에서
+        return;
+    }
     let _ = std::thread::Builder::new().stack_size(64 * 1024 * 1024).spawn(f);
 }
 
