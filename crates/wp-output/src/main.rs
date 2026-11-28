@@ -27,6 +27,27 @@ enum UserEv {
     SelfTest,
     /// 첫 화면을 다 그렸으니 창을 보인다 (페이지의 'ready' 또는 시간 초과)
     Show,
+    /// 모니터 살펴보기 (2초마다): 예배당 모니터를 뽑았으면 숨기고, 다시 꽂으면 그 모니터에 다시 띄운다
+    Monitors,
+}
+
+/// 예배당 모니터가 빠지고 돌아올 때 할 일
+#[derive(Debug, PartialEq)]
+enum MonitorAct {
+    Stay,
+    /// 고른 모니터가 없어졌다 → 숨긴다 (윈도우가 '항상 위' 전체 화면 창을 조작 화면 모니터로 옮겨 조작 화면을 가리지 않게)
+    Hide,
+    /// 고른 모니터가 돌아왔다 → 그 모니터에 전체 화면으로 다시
+    Restore,
+}
+
+/// want = 고른 모니터 번호, count = 지금 모니터 수, gone = 지금 숨겨 둔 상태인가
+fn monitor_act(want: usize, count: usize, gone: bool) -> MonitorAct {
+    match (want < count, gone) {
+        (false, false) => MonitorAct::Hide,
+        (true, true) => MonitorAct::Restore,
+        _ => MonitorAct::Stay,
+    }
 }
 
 /// 창을 숨긴 채 페이지를 불러오고, 첫 화면(글꼴·무대·그림)이 준비되면 'ready' 를 보낸다.
@@ -133,14 +154,18 @@ fn main() -> anyhow::Result<()> {
         .with_background_color((0, 0, 0, 255))
         .with_inner_size(tao::dpi::LogicalSize::new(960.0, 540.0))
         .build(&event_loop)?;
+    let want: usize = arg("--monitor").and_then(|x| x.parse().ok()).unwrap_or(1);
+    // 고른 모니터가 처음에 있었을 때만 빠짐 · 돌아옴을 살핀다 (모니터 하나뿐이라 마지막 모니터에 띄운 경우는 그대로)
+    let mut watch_monitor = false;
     if !windowed {
-        let want: usize = arg("--monitor").and_then(|x| x.parse().ok()).unwrap_or(1);
         let mons: Vec<_> = window.available_monitors().collect();
+        watch_monitor = want > 0 && want < mons.len();
         let mon = mons.get(want).or(mons.last()).cloned();
         window.set_fullscreen(Some(Fullscreen::Borderless(mon)));
         window.set_always_on_top(true);
     }
     let proxy: EventLoopProxy<UserEv> = event_loop.create_proxy();
+    let proxy_watch = event_loop.create_proxy();
     let esc_close = flag("--esc-close");
     let selftest = flag("--selftest-esc");
     let mut web_context = WebContext::new(webview_data_dir());
@@ -195,6 +220,16 @@ fn main() -> anyhow::Result<()> {
         })?;
     let started = std::time::Instant::now();
     let mut shown = false;
+    let mut monitor_gone = false;
+    if watch_monitor {
+        let p = proxy_watch;
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            if p.send_event(UserEv::Monitors).is_err() {
+                break;
+            }
+        });
+    }
     event_loop.run(move |event, _, control_flow| {
         *control_flow = if helper { ControlFlow::WaitUntil(started + HELPER_TIMEOUT) } else { ControlFlow::Wait };
         match event {
@@ -205,8 +240,30 @@ fn main() -> anyhow::Result<()> {
             }
             Event::UserEvent(UserEv::Show) if !shown && !helper => {
                 shown = true;
-                window.set_visible(true);
+                if !monitor_gone {
+                    window.set_visible(true);
+                }
                 println!("shown {}ms", started.elapsed().as_millis());
+            }
+            Event::UserEvent(UserEv::Monitors) => {
+                let mons: Vec<_> = window.available_monitors().collect();
+                match monitor_act(want, mons.len(), monitor_gone) {
+                    MonitorAct::Hide => {
+                        monitor_gone = true;
+                        window.set_visible(false);
+                        println!("monitor-gone {want}/{}", mons.len());
+                    }
+                    MonitorAct::Restore => {
+                        monitor_gone = false;
+                        window.set_fullscreen(Some(Fullscreen::Borderless(mons.get(want).cloned())));
+                        window.set_always_on_top(true);
+                        if shown {
+                            window.set_visible(true);
+                        }
+                        println!("monitor-back {want}");
+                    }
+                    MonitorAct::Stay => {}
+                }
             }
             Event::UserEvent(UserEv::SelfTest) => {
                 println!("selftest-esc: keydown Escape");
@@ -216,4 +273,18 @@ fn main() -> anyhow::Result<()> {
             _ => {}
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{monitor_act, MonitorAct};
+    /// 예배 중 예배당 모니터(2번째)를 뽑았다 다시 꽂기
+    #[test]
+    fn unplug_hides_and_replug_restores() {
+        assert_eq!(monitor_act(1, 2, false), MonitorAct::Stay, "꽂혀 있음");
+        assert_eq!(monitor_act(1, 1, false), MonitorAct::Hide, "뽑음 → 조작 화면을 가리지 않게 숨김");
+        assert_eq!(monitor_act(1, 1, true), MonitorAct::Stay, "빠진 동안은 그대로 숨김");
+        assert_eq!(monitor_act(1, 2, true), MonitorAct::Restore, "다시 꽂음 → 그 모니터에 다시");
+        assert_eq!(monitor_act(2, 2, false), MonitorAct::Hide, "세 대 중 셋째를 뽑음");
+    }
 }

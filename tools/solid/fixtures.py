@@ -3,6 +3,8 @@ import argparse
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sqlite3
 import struct
 import zlib
@@ -59,6 +61,12 @@ def create(out, large=False):
         items[i] = {'id': f'image{i}', 'type': 'image', 'title': '그림 안내', 'image': '/media/sample.png', 'caption': '함께 예배드리신 여러분을 환영합니다'}
     items[6] = {'id': 'bible6', 'type': 'bible', 'title': '성경봉독', 'ref': '요3:16-17'}
     items[7] = {'id': 'score7', 'type': 'slideshow', 'title': '악보', 'slides': [{'image': '/media/sample.png', 'caption': '온 마음 다하여 찬양합니다'}]}
+    # 영상 (ffmpeg 가 있으면 1080p 시험 영상을 만든다 — 성능 점검의 '영상 재생 중')
+    video = media / 'test.mp4'
+    if not video.exists() and shutil.which('ffmpeg'):
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=30', '-t', '60', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', str(video)], check=False)
+    items[9] = {'id': 'ps119', 'type': 'bible', 'title': '시편 119편', 'ref': '시119'}
+    items[8] = {'id': 'video8', 'type': 'video', 'title': '시험 영상', 'file': '/media/test.mp4', 'sound': False, 'volume': 0, 'endAction': 'loop'}
     (out / 'cue.json').write_text(json.dumps({'format': 'worshipcue-cues', 'version': 1, 'cues': [{'name': '점검 예배', 'items': items}]}, ensure_ascii=False), encoding='utf-8')
     (out / 'empty-legacy').mkdir(exist_ok=True)
     print(seed.resolve())

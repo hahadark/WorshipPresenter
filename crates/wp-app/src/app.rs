@@ -1799,6 +1799,12 @@ impl App {
             }
             if let Some(i) = std::env::args().position(|x| x == "--item").and_then(|i| std::env::args().nth(i + 1)).and_then(|x| x.parse().ok()) { self.sel = Some(i); acts.push(Act::PreviewItem(i)); }
             if send { acts.push(Act::SendPreview); }
+            // 점검용 --outwin-open: 예배당 창(wp-output)을 작은 창으로 띄워 둔다 (밖에서 그 프로세스를 끊어 자동 다시 열기 확인 — tools/solid/robust.ps1)
+            if std::env::args().any(|x| x == "--outwin-open") {
+                let port = self.core.lock().port;
+                self.out.open(port, self.monitor, true);
+                log::info!("점검: 예배당 창 띄움 (running={})", self.out.running());
+            }
             // 점검용 --outwin-esc-test: 예배당 창(wp-output)을 작은 창으로 실제로 띄우고, 창 안 페이지에서 Esc keydown 을 흉내 낸다 → 창이 꺼지고 상태가 '꺼짐' 으로
             if std::env::args().any(|x| x == "--outwin-esc-test") {
                 let port = self.core.lock().port;
@@ -1930,7 +1936,7 @@ impl App {
     fn ui_body(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         crate::dnd::frame(self, &ctx); // 끌어다 놓은 파일 · 붙여 넣은 파일 처리와 안내
-        // 점검용 --panic-test ui|relock : 60번째 프레임 뒤에 한 번, 일부러 오류를 낸다.
+        // 점검용 --panic-test ui|relock : 켠 지 8초 뒤(가만히 있으면 초당 한 번만 그리므로 프레임 수가 아닌 시간) 한 번, 일부러 오류를 낸다.
         // (logs\ 에 남는지 · 조작 화면이 계속 도는지 · 예배당 출력이 유지되는지 확인)
         {
             static KIND: once_cell::sync::Lazy<Option<String>> = once_cell::sync::Lazy::new(|| {
@@ -1939,7 +1945,7 @@ impl App {
             });
             static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
             if let Some(k) = KIND.as_deref() {
-                if ctx.cumulative_pass_nr() > 60 && !DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                if ctx.input(|i| i.time) > 8.0 && !DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
                     if k == "relock" {
                         let _a = self.core.lock();
                         let _b = self.core.lock(); // 재진입: 멈추지 않고 panic 이어야 한다
