@@ -22,6 +22,10 @@ static FILE_WORK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 pub(crate) fn file_work() -> &'static parking_lot::Mutex<()> {
     &FILE_WORK
 }
+/// 시험: 파일 작업(FILE_WORK)을 쓰는 시험은 하나씩. 프로그램에서는 한 프로세스에 하나라 '진행 중이면 바로 실패' 가 맞지만,
+/// 시험은 한 프로세스에서 병렬로 돌아 다른 시험의 백업이 잡고 있으면 '백업 또는 복원이 진행 중' 으로 흔들렸다
+#[cfg(test)]
+pub(crate) static FILE_TESTS: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 #[derive(Default, Clone)]
 pub struct SyncStatus {
@@ -497,6 +501,7 @@ mod tests {
 
     #[test]
     fn two_pcs_and_backup() {
+        let _serial = FILE_TESTS.lock();
         let root = std::env::temp_dir().join(format!("wp-sync-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
         let share = root.join("onedrive");
         std::fs::create_dir_all(&share).unwrap();
@@ -550,6 +555,7 @@ mod tests {
 
     #[test]
     fn damaged_db_recovers_from_newest_good_backup_and_keeps_original() {
+        let _serial = FILE_TESTS.lock();
         let dir = std::env::temp_dir().join(format!("wp-recover-{}-{}", crate::util::now_ms(), rand::random::<u32>()));
         // 백업이 있는 정상 자료
         let mut c = core(&dir);

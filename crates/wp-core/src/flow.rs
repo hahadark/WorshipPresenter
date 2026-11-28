@@ -18,6 +18,9 @@ pub struct Flow {
     hide_due: Option<i64>,
     /// 자동으로 글자를 숨긴 판 — 그다음 F5·F6 은 넘기면서 다시 보인다
     pub auto_hid_at: Option<u64>,
+    /// 순서 자동 동작을 마지막으로 실행한 송출(sentAt) — 같은 송출에서 두 번 돌지 않게. 코어마다 따로
+    /// (전에는 프로세스 전역이라, 병렬 시험 둘이 같은 밀리초에 송출하면 한쪽의 동작이 빠졌다)
+    pub(crate) last_actions: i64,
 }
 
 /// 0.2초마다 타이머 확인 (main 에서 한 번 부른다)
@@ -106,11 +109,13 @@ pub fn step(c: &mut Core, d: i64) {
     if auto_hid {
         c.flow.auto_hid_at = None;
     }
+    let same = c.preview_in_step_with_live();
     match c.pres.move_by(d) {
         Move::Ok => {
             if auto_hid {
                 c.pres.restore();
             }
+            c.follow_live(same);
             c.sync_video_state(); // [트랙 B]
             c.emit(Ev::Live);
         }
@@ -178,6 +183,7 @@ pub fn extend_live(c: &mut Core, dir: i64) -> bool {
     if sl.is_empty() {
         return false;
     }
+    let same = c.preview_in_step_with_live();
     let l = c.pres.live.as_mut().unwrap();
     let k = sl.len();
     if dir > 0 {
@@ -190,6 +196,7 @@ pub fn extend_live(c: &mut Core, dir: i64) -> bool {
         l.deck.index = k - 1;
     }
     l.deck.passage["title"] = pass["title"].clone();
+    c.follow_live(same);
     c.pres.bump();
     c.emit(Ev::Live);
     c.emit(Ev::Ui);
@@ -286,5 +293,73 @@ mod tests {
         assert_eq!(p["edgeHide"], json!(true));
         item_meta(&mut p, &json!({ "hideAfter": 0.3 }));
         assert_eq!(p["hideAfter"], json!(0.0));
+    }
+}
+
+#[cfg(test)]
+mod follow_tests {
+    use crate::core::Core;
+    use crate::presentation::Deck;
+    use serde_json::json;
+
+    fn core() -> Core {
+        let dir = std::env::temp_dir().join("wp-test-data").join(crate::util::short_id("follow"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bible.db"), b"").unwrap();
+        Core::open(dir.clone(), dir, None).unwrap()
+    }
+    fn reading() -> Deck {
+        let slides = (16..22).map(|v| json!({ "kind": "bible", "text": format!("3:{v}") })).collect();
+        Deck { passage: json!({ "title": "요한복음 3:16-21" }), slides, index: 0 }
+    }
+
+    /// 감사 A1(사고): 봉독을 F6 으로 넘긴 뒤 F9 — 미리보기에 남은 첫 장이 나가 되돌아가면 안 된다.
+    /// 미리보기는 송출의 다음 장을 따라가고, F9 = 그 다음 장 송출
+    #[test]
+    fn f6_then_f9_never_jumps_back() {
+        let mut c = core();
+        c.pres.preview = Some(reading());
+        c.send_preview();
+        assert_eq!(c.pres.preview.as_ref().unwrap().index, 0, "보낸 직후 미리보기는 그대로 (보낸 장)");
+        c.step(1);
+        c.step(1);
+        assert_eq!(c.pres.live.as_ref().unwrap().deck.index, 2);
+        assert_eq!(c.pres.preview.as_ref().unwrap().index, 3, "미리보기 = 송출 다음 장");
+        c.send_preview();
+        assert_eq!(c.pres.live.as_ref().unwrap().deck.index, 3, "F9 = 다음 장 (3:16 으로 돌아가지 않음)");
+        c.step(1);
+        assert_eq!(c.pres.preview.as_ref().unwrap().index, 5);
+        c.step(-1);
+        assert_eq!(c.pres.preview.as_ref().unwrap().index, 4, "뒤로 가도 따라감");
+        c.goto_live(5);
+        assert_eq!(c.pres.preview.as_ref().unwrap().index, 5, "마지막 장이면 그 장");
+        c.send_preview();
+        assert_eq!(c.pres.live.as_ref().unwrap().deck.index, 5);
+    }
+
+    /// 미리보기를 일부러 다른 장에 두었으면(건너뛰려고) 송출을 넘겨도 그 자리 그대로
+    #[test]
+    fn a_preview_moved_on_purpose_is_left_alone() {
+        let mut c = core();
+        c.pres.preview = Some(reading());
+        c.send_preview();
+        c.pres.preview.as_mut().unwrap().index = 4;
+        c.step(1);
+        assert_eq!(c.pres.preview.as_ref().unwrap().index, 4, "건너뛰려고 골라 둔 장은 그대로");
+        c.send_preview();
+        assert_eq!(c.pres.live.as_ref().unwrap().deck.index, 4, "F9 = 골라 둔 장으로 건너뜀");
+    }
+
+    /// 다른 본문을 미리보기에 올려 두었으면 송출을 넘겨도 미리보기는 그 본문
+    #[test]
+    fn another_deck_in_preview_is_not_replaced() {
+        let mut c = core();
+        c.pres.preview = Some(reading());
+        c.send_preview();
+        let mut other = reading();
+        other.passage = json!({ "title": "로마서 8:28" });
+        c.pres.preview = Some(other);
+        c.step(1);
+        assert_eq!(c.pres.preview.as_ref().unwrap().passage["title"], "로마서 8:28");
     }
 }

@@ -370,12 +370,10 @@ mod tests {
 }
 
 // ---------------- 송출할 때 (core.send_preview · send_deck 끝에서 부름) ----------------
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// 예배당 창을 켜 달라는 요청 (조작 화면이 프레임마다 가져감)
 static WANT_OUTPUT_ON: AtomicBool = AtomicBool::new(false);
-/// 자동 동작을 마지막으로 실행한 송출 (sentAt) — 같은 송출에서 두 번 돌지 않게
-static LAST_ACTIONS: AtomicI64 = AtomicI64::new(0);
 /// 조작 화면이 알려 주는 예배당 창 상태 (outputStatus.desktop)
 static DESKTOP: once_cell::sync::Lazy<parking_lot::Mutex<Value>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(Value::Null));
 
@@ -399,7 +397,7 @@ pub fn on_send(c: &mut Core) {
     }
     // 큐시트 순서의 '송출할 때 자동으로' (item.actions)
     let ci = l.deck.passage["cueIndex"].as_i64().unwrap_or(-1);
-    if ci < 0 || LAST_ACTIONS.swap(l.sent_at, Ordering::SeqCst) == l.sent_at {
+    if ci < 0 || std::mem::replace(&mut c.flow.last_actions, l.sent_at) == l.sent_at {
         return;
     }
     let it = c.cue.as_ref().and_then(|q| q.items.get(ci as usize)).cloned();

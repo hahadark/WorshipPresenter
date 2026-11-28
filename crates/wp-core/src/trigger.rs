@@ -206,8 +206,8 @@ mod tests_b {
         assert!(c.b.stage.timer.running);
         run(&mut c, "timer-reset", &q(&[])).unwrap();
         assert_eq!(c.b.stage.timer.duration, 0);
-        // 몇 시까지: 이미 지난 0시는 오류, 지금부터 한 시간 뒤(자정 전일 때)는 그만큼
-        assert!(run(&mut c, "timer", &q(&[("at", "0:00")])).is_err());
+        // 몇 시까지: 못 읽는 시각은 오류, 지금부터 한 시간 뒤(자정 전일 때)는 그만큼 (자정 넘기기는 localtime 시험)
+        assert!(run(&mut c, "timer", &q(&[("at", "25:00")])).is_err());
         assert!(c.stage_timer_until("열한시").is_err());
         let now = crate::util::now_ms() + crate::localtime::local_offset_ms();
         let min = now.div_euclid(60_000).rem_euclid(1440);

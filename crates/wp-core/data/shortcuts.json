@@ -14,7 +14,7 @@
   "previewNextVerse": "미리보기 다음 절",
   "previewChapterStart": "미리보기 현재 장 처음으로",
   "toggleOutputWindow": "보조 화면 출력 켜기·끄기",
-  "outputOff": "보조 화면 출력 끄기",
+  "outputOff": "예배당 화면 끄기 (Esc 는 두 번)",
   "cuePrev": "큐시트 이전 순서 미리보기",
   "cueNext": "큐시트 다음 순서 미리보기",
   "cueEdit": "선택한 순서 편집",

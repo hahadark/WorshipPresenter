@@ -69,11 +69,16 @@ pub fn parse_hm(s: &str) -> Option<i64> {
     ((0..24).contains(&h) && (0..60).contains(&m)).then_some(h * 60 + m)
 }
 
-/// 오늘 그 시각까지 남은 밀리초 (local_now_ms = UTC ms + 시간대). 이미 지났으면 None
+/// 그 시각까지 남은 밀리초 (local_now_ms = UTC ms + 시간대). 오늘 그 시각이 지났으면 내일 그 시각 — 단 12시간 안일 때만
+/// (자정을 넘는 밤 예배 · 송구영신: 23:30 에 '0:30' = 1시간 뒤). 방금 지난 시각(10:50 에 '10:00')은 None
 pub fn ms_until(hm_min: i64, local_now_ms: i64) -> Option<i64> {
     let day = local_now_ms.div_euclid(86_400_000) * 86_400_000;
     let left = day + hm_min * 60_000 - local_now_ms;
-    (left > 0).then_some(left)
+    if left > 0 {
+        return Some(left);
+    }
+    let tomorrow = left + 86_400_000;
+    (tomorrow > 0 && tomorrow <= 12 * 3_600_000).then_some(tomorrow)
 }
 
 #[cfg(test)]
@@ -92,6 +97,12 @@ mod tests {
         assert_eq!(ms_until(660, now), Some(570_000));
         assert_eq!(ms_until(600, now), None);
         assert_eq!(ms_until(650, now), None, "같은 분이라도 지났으면 없음");
+        // 자정 넘기기 (감사 13번): 23:30 에 0:30 = 1시간 뒤, 23:59:30 에 0:00 = 30초 뒤
+        let night = 20786 * 86_400_000 + (23 * 60 + 30) * 60_000;
+        assert_eq!(ms_until(30, night), Some(3_600_000));
+        assert_eq!(ms_until(0, night + 29 * 60_000 + 30_000), Some(30_000));
+        assert_eq!(ms_until(11 * 60 + 30, night), Some(12 * 3_600_000), "12시간 뒤까지는 내일");
+        assert_eq!(ms_until(11 * 60 + 31, night), None, "그보다 먼 내일은 '이미 지난' 오늘 시각으로 본다");
     }
 
     #[test]

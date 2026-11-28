@@ -352,7 +352,7 @@ impl Core {
     pub fn stage_timer_until(&mut self, at: &str) -> Result<()> {
         let Some(hm) = crate::localtime::parse_hm(at) else { anyhow::bail!(crate::i18n::tr("시각을 '11:00' 처럼 적어 주세요.")) };
         let now = crate::util::now_ms() + crate::localtime::local_offset_ms();
-        let Some(ms) = crate::localtime::ms_until(hm, now) else { anyhow::bail!(crate::i18n::tr("이미 지난 시각입니다.")) };
+        let Some(ms) = crate::localtime::ms_until(hm, now) else { anyhow::bail!(crate::i18n::tr("이미 지난 시각입니다. 앞으로 12시간 안의 시각을 적어 주세요 (예: 11:00).")) };
         self.stage_timer("start", ms as f64 / 60000.0)
     }
     pub fn stage_message(&mut self, text: &str) {

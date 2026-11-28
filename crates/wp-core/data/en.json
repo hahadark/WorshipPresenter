@@ -5167,5 +5167,8 @@
  "예배당 화면이 예기치 않게 닫혀 다시 열었습니다. 반복되면 도움말에서 로그를 확인해 주세요.": "The Sanctuary screen closed unexpectedly and has reopened. If this happens again, check the logs under Help.",
  "예배당 화면 창이 닫혔습니다. '예배당 화면 켜기'를 눌러 다시 열어 주세요.": "The Sanctuary screen closed. Click 'Open Sanctuary screen' to reopen it.",
  "예배당 화면을 유지하지 못했습니다. '예배당 화면 켜기'를 누르고, 반복되면 도움말에서 로그를 확인해 주세요.": "The Sanctuary screen could not stay open. Click 'Open Sanctuary screen'; if this happens again, check the logs under Help.",
- "프로그램 연결 포트를 열지 못했습니다. 다른 워십프리젠터를 닫거나 설정 파일의 port 값을 바꾼 뒤 다시 켜세요.": "The app could not open its connection port. Close other WorshipPresenter instances or change port in the settings file, then restart."
+ "프로그램 연결 포트를 열지 못했습니다. 다른 워십프리젠터를 닫거나 설정 파일의 port 값을 바꾼 뒤 다시 켜세요.": "The app could not open its connection port. Close other WorshipPresenter instances or change port in the settings file, then restart.",
+ "Esc 를 한 번 더 누르면 예배당 화면을 끕니다.": "Press Esc again to turn off the Sanctuary screen.",
+ "예배당 화면 끄기 (Esc 는 두 번)": "Turn off Sanctuary screen (Esc: press twice)",
+ "이미 지난 시각입니다. 앞으로 12시간 안의 시각을 적어 주세요 (예: 11:00).": "That time has already passed. Enter a time within the next 12 hours (e.g. 11:00)."
 }

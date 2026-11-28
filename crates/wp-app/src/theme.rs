@@ -387,9 +387,27 @@ static PALETTES: once_cell::sync::Lazy<[Palette; 7]> = once_cell::sync::Lazy::ne
     ]
 });
 
+#[cfg(not(test))]
 static CURRENT: AtomicU8 = AtomicU8::new(ThemeId::Pro as u8);
 /// 마지막으로 egui Style 에 적용한 테마 (255 = 아직 안 함)
+#[cfg(not(test))]
 static APPLIED: AtomicU8 = AtomicU8::new(255);
+// 시험: 테마는 시험 스레드마다 따로. 화면 시험이 병렬로 돌 때 한 시험이 바꾼 테마(설정 센터 시험의 navy 등)가
+// 다른 시험의 프레임 사이에 끼어들면 단추 높이(ctl_h)가 바뀌어 누를 자리가 어긋났다 (흔들리는 시험의 한 뿌리).
+// 시험마다 새 egui Context 라 '적용함' 표시도 따로여야 새 Context 에 Style 이 들어간다
+#[cfg(test)]
+thread_local! {
+    static CURRENT: AtomicU8 = const { AtomicU8::new(ThemeId::Pro as u8) };
+    static APPLIED: AtomicU8 = const { AtomicU8::new(255) };
+}
+#[cfg(not(test))]
+fn cur() -> &'static AtomicU8 { &CURRENT }
+#[cfg(not(test))]
+fn applied<R>(f: impl FnOnce(&AtomicU8) -> R) -> R { f(&APPLIED) }
+#[cfg(test)]
+fn cur_load() -> u8 { CURRENT.with(|c| c.load(Ordering::Relaxed)) }
+#[cfg(test)]
+fn applied<R>(f: impl FnOnce(&AtomicU8) -> R) -> R { APPLIED.with(|a| f(a)) }
 
 impl Palette {
     /// 입력칸 바탕 (.field)
@@ -411,7 +429,14 @@ pub fn strong_text() -> Color32 {
 
 /// 지금 조작 화면 테마의 색
 pub fn pal() -> &'static Palette {
-    &PALETTES[CURRENT.load(Ordering::Relaxed) as usize]
+    &PALETTES[current_index()]
+}
+
+fn current_index() -> usize {
+    #[cfg(not(test))]
+    return cur().load(Ordering::Relaxed) as usize;
+    #[cfg(test)]
+    return cur_load() as usize;
 }
 
 /// 특정 테마의 색 (테마 고르기 미리보기 카드 등)
@@ -420,13 +445,16 @@ pub fn palette_of(id: ThemeId) -> &'static Palette {
 }
 
 pub fn current() -> ThemeId {
-    PALETTES[CURRENT.load(Ordering::Relaxed) as usize].id
+    PALETTES[current_index()].id
 }
 
 /// 테마를 바꾸고 egui Style 에 적용한다. 같은 테마면 아무것도 안 한다 (프레임마다 불러도 됨)
 pub fn apply(ctx: &egui::Context, id: ThemeId) {
-    CURRENT.store(id as u8, Ordering::Relaxed);
-    if APPLIED.swap(id as u8, Ordering::Relaxed) == id as u8 {
+    #[cfg(not(test))]
+    cur().store(id as u8, Ordering::Relaxed);
+    #[cfg(test)]
+    CURRENT.with(|c| c.store(id as u8, Ordering::Relaxed));
+    if applied(|a| a.swap(id as u8, Ordering::Relaxed)) == id as u8 {
         return;
     }
     let p = pal();

@@ -637,7 +637,7 @@ impl App {
         if on("toggleOutputWindow", "Ctrl+Shift+F") { acts.push(Act::OutputToggle) }
         // Esc 는 열린 즉석 자막 칸을 먼저 닫고, 닫을 것이 없을 때만 보조 화면 끄기 (control.js BCQuick.close)
         if !typing && self.tb.quick && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { self.tb.quick = false }
-        if on("outputOff", "Escape") && self.out.running() { acts.push(Act::OutputToggle) }
+        if on("outputOff", "Escape") && self.out.running() && output_off_confirmed(ctx, &st, &self.core) { acts.push(Act::OutputToggle) }
         // [트랙 C] 미리보기 앞뒤 절 · 장 처음
         if on("previewPrevVerse", "Alt+ArrowLeft") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), -1) }
         if on("previewNextVerse", "Alt+ArrowRight") { wp_core::flow::preview_adjacent_verse(&mut self.core.lock(), 1) }
@@ -1701,6 +1701,53 @@ pub(crate) fn editor_big(ctx: &egui::Context) -> bool {
 }
 fn set_editor_big(ctx: &egui::Context, on: bool) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new("editor-big"), on));
+}
+
+/// 예배당 화면 끄기가 Esc(기본)면 1.2초 안에 두 번 눌러야 끈다 — 창을 닫으려던 Esc 가 한 번 더 눌려 회중 화면이
+/// 꺼지던 일(2.1.1 감사 6번). 첫 번은 상태 줄에 안내만. 다른 키(조합)로 바꿨으면 한 번에 끈다
+static ESC_FIRST: crate::uistate::Global<Option<f64>> = crate::uistate::Global::new(|| None);
+pub(crate) const ESC_TWICE_SECS: f64 = 1.2;
+fn output_off_confirmed(ctx: &egui::Context, st: &Value, core: &Shared) -> bool {
+    if !crate::keys::label(st, "outputOff", "Escape").eq_ignore_ascii_case("Escape") {
+        return true;
+    }
+    let now = ctx.input(|i| i.time);
+    let mut first = ESC_FIRST.lock();
+    if first.is_some_and(|t| now - t <= ESC_TWICE_SECS) {
+        *first = None;
+        return true;
+    }
+    *first = Some(now);
+    drop(first);
+    core.lock().notify(wp_core::i18n::tr("Esc 를 한 번 더 누르면 예배당 화면을 끕니다."), "info");
+    false
+}
+
+#[cfg(test)]
+mod esc_off_tests {
+    use super::*;
+    fn press(ctx: &egui::Context, t: f64, st: &Value, core: &Shared) -> bool {
+        let mut r = false;
+        let mut out = ctx.run_pass(egui::RawInput { time: Some(t), ..Default::default() }, |ctx| r = output_off_confirmed(ctx, st, core));
+        out.textures_delta.clear();
+        r
+    }
+    #[test]
+    fn escape_turns_the_sanctuary_screen_off_only_when_pressed_twice_quickly() {
+        crate::uistate::new_scope();
+        let h = crate::app::auditc_tests::H::new(vec![]);
+        let core = h.app.core.clone();
+        let ctx = egui::Context::default();
+        let st = json!({ "shortcuts": {} });
+        assert!(!press(&ctx, 10.0, &st, &core), "한 번은 안내만");
+        assert!(core.lock().toast.as_ref().is_some_and(|t| format!("{t:?}").contains("한 번 더")), "상태 줄 안내");
+        assert!(press(&ctx, 10.8, &st, &core), "1.2초 안에 두 번 = 끔");
+        assert!(!press(&ctx, 12.0, &st, &core), "끈 뒤 다시 처음부터");
+        assert!(!press(&ctx, 13.5, &st, &core), "너무 늦은 두 번째는 새 첫 번");
+        // 다른 키로 바꿨으면 한 번에
+        let st = json!({ "shortcuts": { "outputOff": "Ctrl+Shift+Q" } });
+        assert!(press(&ctx, 20.0, &st, &core));
+    }
 }
 
 static SHOT_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
