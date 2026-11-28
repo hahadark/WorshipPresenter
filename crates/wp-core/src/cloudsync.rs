@@ -192,6 +192,8 @@ fn ctype_of(ext: &str) -> &'static str {
         ".ogg" => "audio/ogg",
         ".pdf" => "application/pdf",
         ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".ppsx" => "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+        ".ppt" | ".pps" => "application/vnd.ms-powerpoint",
         _ => "application/octet-stream",
     }
 }
@@ -206,6 +208,8 @@ pub fn upload_ok(ext: &str, size: u64) -> bool {
         ".mp3" | ".m4a" | ".aac" | ".wav" | ".ogg" | ".oga" | ".opus" | ".flac" => 500 * MI,
         ".ttf" | ".otf" | ".ttc" | ".woff" | ".woff2" => 50 * MI,
         ".pdf" => 200 * MI,
+        // PowerPoint (2026-11-28 사관님 '슬라이드를 온라인에 저장') — 클라우드는 내려받기로만 내보낸다 (attachment)
+        ".pptx" | ".ppsx" | ".ppt" | ".pps" => 500 * MI,
         _ => 0,
     };
     size > 0 && size <= max
@@ -926,6 +930,11 @@ impl<'a> Engine<'a> {
             if r["ok"] != true {
                 return Err(ApiErr::Http(200, r["error"].as_str().unwrap_or("").into()));
             }
+            if r["reset"] == true {
+                // 변경 기록이 잘렸거나(after 가 너무 옛것) 교회를 옮김 → 목록부터 전체를 다시 맞춘다
+                self.resync(r["head"].as_i64().unwrap_or(0))?;
+                continue;
+            }
             for c in r["changes"].as_array().into_iter().flatten() {
                 if c["superseded"] == true {
                     continue;
@@ -940,6 +949,48 @@ impl<'a> Engine<'a> {
                 break;
             }
         }
+        Ok(())
+    }
+
+    /// reset 뒤: 클라우드 문서 전체를 받아 하나씩 맞춘다. 판 번호는 믿지 않고(옮긴 교회는 판이 처음부터일 수 있다) 지문으로 본다.
+    /// 이 PC 에서 고치고 아직 안 올린 것은 충돌 규칙대로 사본으로 남기고, 클라우드에 없는 이 PC 문서는 지우지 않고 새로 올린다.
+    fn resync(&mut self, head: i64) -> Result<(), ApiErr> {
+        log::info!("클라우드 동기화: 변경 기록을 처음부터 다시 맞춤 (reset, head {head})");
+        let mut remote: Vec<Value> = vec![];
+        let mut cursor = String::new();
+        for _ in 0..100_000 {
+            let r = self.api.list(&cursor)?;
+            if r["ok"] != true {
+                return Err(ApiErr::Http(200, r["error"].as_str().unwrap_or("").into()));
+            }
+            remote.extend(r["documents"].as_array().cloned().unwrap_or_default());
+            match r["next"].as_str().filter(|n| !n.is_empty()) {
+                Some(n) => cursor = n.to_string(),
+                None => break,
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        for d in &remote {
+            let (kind, id) = (d["kind"].as_str().unwrap_or(""), d["id"].as_str().unwrap_or(""));
+            if !KINDS.contains(&kind) || id.is_empty() || (kind == "settings" && id != CHURCH) {
+                continue;
+            }
+            let k = key(kind, id);
+            seen.insert(k.clone());
+            let rev = d["revision"].as_i64().unwrap_or(0);
+            let deleted = d["deleted"] == true;
+            if deleted && self.st.docs.get(&k).is_some_and(|e| e.deleted && e.rev == rev) {
+                continue;
+            }
+            self.report.pulled += 1;
+            self.settle(kind, id, rev, (!deleted).then(|| d["payload"].clone()), false);
+        }
+        // 클라우드에 없는 것: 기록만 지운다 → 이 PC 에 있으면 다음 올리기에서 새로 (지우지 않음)
+        self.st.docs.retain(|k, _| seen.contains(k));
+        self.st.outbox.clear();
+        self.st.cursor = head;
+        self.last_sig.clear();
+        self.save();
         Ok(())
     }
 

@@ -25,6 +25,8 @@ struct Fake {
     lose_reply: Cell<bool>,
     /// 다음 받기에서 변경을 안 보여 줌 (그 사이에 남이 고친 경우 흉내)
     hide_once: Cell<bool>,
+    /// 다음 받기에서 reset:true (변경 기록을 잘랐거나 교회를 옮김)
+    reset_once: Cell<bool>,
     pushes: Cell<usize>,
     uploads: Cell<usize>,
 }
@@ -75,6 +77,9 @@ impl Api for Fake {
             return Err(ApiErr::Net("끊김".into()));
         }
         let head = self.seq();
+        if self.reset_once.replace(false) {
+            return Ok(json!({ "ok": true, "changes": [], "next": head, "more": false, "head": head, "reset": true }));
+        }
         if self.hide_once.replace(false) {
             return Ok(json!({ "ok": true, "changes": [], "next": after, "more": false, "head": after, "reset": false }));
         }
@@ -141,6 +146,15 @@ impl Api for Fake {
         Ok(json!({ "ok": true, "results": results, "head": self.seq() }))
     }
 
+    fn list(&self, cursor: &str) -> Result<Value, ApiErr> {
+        // 두 개씩 쪽 나누기 (cursor = 건너뛸 개수)
+        let skip: usize = cursor.parse().unwrap_or(0);
+        let all: Vec<Value> = self.docs.borrow().iter().map(|((k, i), d)| json!({ "kind": k, "id": i, "revision": d.rev, "deleted": d.deleted, "payload": d.payload })).collect();
+        let page: Vec<Value> = all.iter().skip(skip).take(2).cloned().collect();
+        let next = if skip + page.len() < all.len() { json!((skip + page.len()).to_string()) } else { Value::Null };
+        Ok(json!({ "ok": true, "documents": page, "next": next }))
+    }
+
     fn asset_find(&self, sha: &str) -> Result<Option<String>, ApiErr> {
         if self.offline.get() {
             return Err(ApiErr::Net("끊김".into()));
@@ -174,6 +188,15 @@ impl Api for Fake {
 static SERIAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 fn temp_core(tag: &str) -> (Shared, PathBuf) {
+    // 앞 실행에서 남은 시험 폴더 (윈도에서 열린 로그 파일 때문에 바로 못 지운 것) — 1시간 지난 것만
+    if let Ok(rd) = std::fs::read_dir(std::env::temp_dir()) {
+        for e in rd.flatten() {
+            let old = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|d| d > Duration::from_secs(3600));
+            if old && e.file_name().to_string_lossy().starts_with("wp-cloudsync-") {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
     let dir = std::env::temp_dir().join(format!("wp-cloudsync-{tag}-{}-{}", std::process::id(), short_id("t")));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("bible.db"), b"").unwrap();
@@ -450,7 +473,7 @@ fn file_paths_become_assets_and_never_leak() {
     eng.tick().unwrap();
     let text = fake.all_text();
     leak_free(&text, &user);
-    assert_eq!(fake.uploads.get(), 3, "같은 파일(sha256)은 한 번만 올린다 — 그림 · 영상 · 로고");
+    assert_eq!(fake.uploads.get(), 4, "같은 파일(sha256)은 한 번만 올린다 — 그림 · 영상 · 로고 · PowerPoint");
     let items = fake.get("cue", "c1").unwrap().payload.unwrap()["items"].clone();
     let a = items[0]["image"].as_str().unwrap();
     assert!(a.starts_with("/api/v1/assets/") && a.ends_with("?e=.png"), "{a}");
@@ -460,7 +483,7 @@ fn file_paths_become_assets_and_never_leak() {
     assert!(items[3]["image"].as_str().unwrap().starts_with("/api/v1/assets/"), "/media/ 도 올림 (웹 화면이 설치판 없이 보이게)");
     assert!(items[5]["bg"].as_str().unwrap().starts_with("url(\"/api/v1/assets/"), "글 안에 낀 주소도");
     assert!(items[6]["image"].as_str().unwrap().starts_with("wp-local:"), "없는 파일은 가림표");
-    assert!(items[7]["file"].as_str().unwrap().starts_with("wp-local:"), "저장소가 받지 않는 종류(pptx)는 올리지 않고 가림표");
+    assert!(items[7]["file"].as_str().unwrap().starts_with("/api/v1/assets/") && items[7]["file"].as_str().unwrap().ends_with("?e=.pptx"), "PowerPoint 도 올린다");
     assert!(fake.get("template", fake.live("template")[0].0.as_str()).is_some());
     // 이 PC 는 그대로 (원래 주소)
     assert_eq!(core.lock().store.get_cue("c1").unwrap().items[0]["image"], url.as_str());
@@ -477,7 +500,7 @@ fn file_paths_become_assets_and_never_leak() {
     assert_eq!(back.name, "그림 예배 (웹)");
     assert_eq!(back.items[0]["image"], url.as_str(), "자산 주소 → 이 PC 의 원래 주소");
     assert_eq!(back.items[6]["image"], dir.join("없는 파일.png").to_string_lossy().as_ref(), "가림표 → 원래 주소");
-    assert_eq!(back.items[7]["file"], pics.join("광고.pptx").to_string_lossy().as_ref(), "가림표 pptx → 원래 경로");
+    assert_eq!(back.items[7]["file"], pics.join("광고.pptx").to_string_lossy().as_ref(), "PowerPoint 자산 → 원래 경로");
     let h = back.items[8]["image"].as_str().unwrap();
     assert!(h.starts_with("/media/cloud-") && h.ends_with(".png"), "{h}");
     assert_eq!(std::fs::read(core.lock().media_dir.join(&h[7..])).unwrap(), web_png);
@@ -617,7 +640,50 @@ fn second_pc_with_same_data_adopts_without_copies() {
 }
 
 #[test]
+fn reset_resyncs_everything_and_keeps_local_edits_as_copies() {
+    let _serial = SERIAL.lock();
+    let (core, dir) = temp_core("reset");
+    save_cue(&core, &cue("c1", "주일", vec![]));
+    save_cue(&core, &cue("c2", "이 PC 에만 남을 것", vec![]));
+    save_cue(&core, &cue("c4", "그대로", vec![]));
+    let fake = Fake::default();
+    let mut eng = Engine::new(&core, &fake, "sample", URL);
+    eng.tick().unwrap();
+    // 교회를 옮긴 것처럼: 변경 기록이 새로 시작하고, 판 번호도 처음부터 · 내용이 다르다
+    let c4 = fake.get("cue", "c4").unwrap().payload.unwrap();
+    fake.changes.borrow_mut().clear();
+    fake.docs.borrow_mut().clear();
+    fake.mids.borrow_mut().clear();
+    fake.web_put("cue", "c1", json!({ "id": "c1", "name": "주일 (옮긴 클라우드 판)", "items": [] }));
+    fake.web_put("cue", "c3", json!({ "id": "c3", "name": "클라우드에만 있던 것", "items": [] }));
+    fake.web_put("cue", "c4", c4);
+    // 이 PC 에서 c1 을 고쳤는데 아직 안 올림
+    let mut c = core.lock().store.get_cue("c1").unwrap();
+    c.name = "주일 (이 PC 에서 고침)".into();
+    save_cue(&core, &c);
+    fake.reset_once.set(true);
+    eng.tick().unwrap();
+    assert_eq!(cue_name(&core, "c1").as_deref(), Some("주일 (옮긴 클라우드 판)"), "원래 자리는 클라우드 판");
+    let names: Vec<String> = core.lock().store.list_cues().into_iter().map(|c| c.name).collect();
+    assert!(names.iter().any(|n| n.starts_with("주일 (이 PC 에서 고침) (충돌 사본")), "이 PC 판은 사본으로: {names:?}");
+    assert_eq!(cue_name(&core, "c3").as_deref(), Some("클라우드에만 있던 것"));
+    assert_eq!(cue_name(&core, "c2").as_deref(), Some("이 PC 에만 남을 것"), "클라우드에 없다고 이 PC 것을 지우지 않는다");
+    assert_eq!(fake.get("cue", "c2").unwrap().payload.unwrap()["name"], "이 PC 에만 남을 것", "다시 올렸다");
+    assert!(fake.live("cue").iter().any(|(_, p)| p["name"].as_str().unwrap().starts_with("주일 (이 PC 에서 고침) (충돌 사본")), "사본도 클라우드에");
+    assert_eq!(fake.get("cue", "c4").unwrap().rev, 1, "같은 내용은 다시 올리지 않는다");
+    let before = fake.seq();
+    eng.tick().unwrap();
+    eng.tick().unwrap();
+    assert_eq!(fake.seq(), before, "맞춘 뒤에는 조용하다");
+    drop(eng);
+    drop(core);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn path_helpers() {
+    let ppt = (upload_ok(".pptx", 10), upload_ok(".pps", 10), upload_ok(".ppsx", 10), upload_ok(".ppt", 10), upload_ok(".pptm", 10), upload_ok(".exe", 10));
+    assert_eq!(ppt, (true, true, true, true, false, false), "PowerPoint 는 올림 (매크로 pptm · 실행 파일은 아님)");
     let _serial = SERIAL.lock();
     let m = Path::new("D:\\data\\media");
     assert_eq!(local_file(m, "/lib/file?p=C%3A%5CUsers%5Ca%5Cb.png"), Some(PathBuf::from("C:\\Users\\a\\b.png")));
@@ -785,5 +851,51 @@ fn e2e_local_cloud() {
         assert_eq!(hex(&Sha256::digest(&bytes)), f.sha, "올린 파일 = 받은 파일");
         println!("자산 {} 다시 받음 ({} 바이트)", f.asset, bytes.len());
     }
+    // 7) 90 MiB 넘는 나눠 올리기: 가짜 영상 105 MB → (앞 중계가 둘째 조각에서 한 번 끊음 → 그만두고 처음부터 다시) → Range 로 받기
+    let big = data.join("큰 영상.mp4");
+    {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&big).unwrap();
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut buf = vec![0u8; 1 << 20];
+        let size = 105_000_000usize;
+        let mut left = size;
+        while left > 0 {
+            for b in buf.iter_mut() {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                *b = x as u8;
+            }
+            let n = left.min(buf.len());
+            f.write_all(&buf[..n]).unwrap();
+            left -= n;
+        }
+    }
+    let size = std::fs::metadata(&big).unwrap().len();
+    assert!(size > api::ONE_SHOT);
+    let sha = sha256_file(&big).unwrap();
+    let t0 = Instant::now();
+    let first = api.asset_put(&big, &sha, "큰 영상.mp4", "video/mp4", size);
+    let id = if std::env::var("WP_SYNC_E2E_CUT").is_ok() {
+        assert!(matches!(first, Err(ApiErr::Net(_))), "첫 번째는 끊겨야 함: {first:?}");
+        assert_eq!(api.asset_find(&sha).unwrap(), None, "끊긴 것은 남지 않는다");
+        api.asset_put(&big, &sha, "큰 영상.mp4", "video/mp4", size).expect("처음부터 다시 올리기")
+    } else {
+        first.unwrap()
+    };
+    println!("나눠 올리기 {size} 바이트 {:?} → {id}", t0.elapsed());
+    assert_eq!(api.asset_find(&sha).unwrap().as_deref(), Some(id.as_str()));
+    let whole = std::fs::read(&big).unwrap();
+    for (a, b) in [(0u64, 99u64), (50_000_000, 50_000_099), (size - 100, size - 1)] {
+        let mut r = web.agent.get(format!("{url}/api/v1/assets/{id}")).header("authorization", &format!("Bearer {key}")).header("range", &format!("bytes={a}-{b}")).call().unwrap();
+        assert_eq!(r.status().as_u16(), 206, "Range {a}-{b}");
+        let cr = r.headers().get("content-range").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+        assert_eq!(cr, format!("bytes {a}-{b}/{size}"));
+        let got = r.body_mut().read_to_vec().unwrap();
+        assert_eq!(got, whole[a as usize..=b as usize], "Range {a}-{b} 내용");
+    }
+    let _ = std::fs::remove_file(&big);
+    println!("나눠 올린 영상 Range 받기 3곳 같음");
     println!("끝에서 끝 통과");
 }

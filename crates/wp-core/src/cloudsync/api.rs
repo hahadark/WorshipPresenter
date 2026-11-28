@@ -38,6 +38,8 @@ pub trait Api {
     fn pull(&self, after: i64) -> Result<Value, ApiErr>;
     /// `POST /api/v1/sync {mutations}` → `{results, head}` (20개까지)
     fn push(&self, mutations: &[Value]) -> Result<Value, ApiErr>;
+    /// `GET /api/v1/documents?include=payload&deleted=1&cursor=` → `{documents, next}` (reset 뒤 전체 다시 맞추기)
+    fn list(&self, cursor: &str) -> Result<Value, ApiErr>;
     /// `GET /api/v1/assets?sha256=` → 있으면 id
     fn asset_find(&self, sha: &str) -> Result<Option<String>, ApiErr>;
     /// 파일 올리기 (90 MB 넘으면 나눠서) → id. 같은 sha256 이 있으면 서버가 본문을 버리고 그 id
@@ -47,7 +49,7 @@ pub trait Api {
 }
 
 /// 한 번에 올리는 크기 한도 (계약: 90 MB 이하는 한 번에, 넘으면 나눠 올리기)
-pub const ONE_SHOT: u64 = 90 * 1000 * 1000;
+pub const ONE_SHOT: u64 = 90 * 1024 * 1024;
 
 pub struct Http {
     base: String,
@@ -111,6 +113,12 @@ impl Api for Http {
 
     fn push(&self, mutations: &[Value]) -> Result<Value, ApiErr> {
         let r = self.agent.post(self.url("/api/v1/sync")).header("authorization", &self.auth).send_json(json!({ "mutations": mutations })).map_err(net)?;
+        Self::json_of(r)
+    }
+
+    fn list(&self, cursor: &str) -> Result<Value, ApiErr> {
+        let c = if cursor.is_empty() { String::new() } else { format!("&cursor={}", enc_name(cursor)) };
+        let r = self.agent.get(self.url(&format!("/api/v1/documents?include=payload&deleted=1&limit=200{c}"))).header("authorization", &self.auth).call().map_err(net)?;
         Self::json_of(r)
     }
 

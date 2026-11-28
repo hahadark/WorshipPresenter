@@ -48,6 +48,10 @@ export const TYPES = {
   'font/woff': T('font', 50 * MiB, 'woff'),
   'font/woff2': T('font', 50 * MiB, 'woff2'),
   'application/pdf': T('pdf', 200 * MiB, 'pdf'),
+  // 슬라이드 (PowerPoint, 사관님 2026-11-28 '슬라이드를 온라인에 저장'). 브라우저가 열지 않게 늘 attachment 로 내보낸다 (disposition)
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': T('slides', 500 * MiB, 'pptx'),
+  'application/vnd.openxmlformats-officedocument.presentationml.slideshow': T('slides', 500 * MiB, 'ppsx'),
+  'application/vnd.ms-powerpoint': T('slides', 500 * MiB, 'ppt', 'pps'),
 };
 /** 다른 이름으로 오는 같은 종류 */
 const TYPE_ALIASES = {
@@ -56,6 +60,7 @@ const TYPE_ALIASES = {
   'application/x-font-woff': 'font/woff', 'application/font-woff2': 'font/woff2', 'application/x-font-ttf': 'font/ttf',
   'application/x-font-truetype': 'font/ttf', 'application/font-sfnt': 'font/ttf', 'application/x-font-otf': 'font/otf',
   'application/x-font-opentype': 'font/otf', 'application/vnd.ms-opentype': 'font/otf',
+  'application/mspowerpoint': 'application/vnd.ms-powerpoint', 'application/powerpoint': 'application/vnd.ms-powerpoint', 'application/x-mspowerpoint': 'application/vnd.ms-powerpoint',
 };
 const BY_EXT = Object.fromEntries(Object.entries(TYPES).flatMap(([t, v]) => v.exts.map(e => [e, t])));
 const GENERIC = ['', 'application/octet-stream', 'binary/octet-stream', 'application/unknown'];
@@ -70,7 +75,7 @@ export function resolveType(contentType, name) {
   const raw = String(contentType || '').split(';')[0].trim().toLowerCase();
   const fromExt = BY_EXT[extOf(name)];
   const t = GENERIC.includes(raw) ? fromExt : (TYPE_ALIASES[raw] || raw);
-  if (!t || !TYPES[t]) return { status: 415, error: '받지 않는 파일 종류입니다 (그림 · 영상 · 소리 · 글꼴 · PDF 만).' };
+  if (!t || !TYPES[t]) return { status: 415, error: '받지 않는 파일 종류입니다 (그림 · 영상 · 소리 · 글꼴 · PDF · PowerPoint 만).' };
   if (fromExt && TYPES[fromExt].kind !== TYPES[t].kind) return { status: 415, error: '파일 종류와 확장자가 맞지 않습니다.' };
   return { type: t, kind: TYPES[t].kind, max: TYPES[t].max };
 }
@@ -159,7 +164,8 @@ export const FILE_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-in
 export function disposition(name, kind) {
   const n = displayName(name);
   const ascii = n.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
-  return `${kind === 'other' ? 'attachment' : 'inline'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(n)}`;
+  // 슬라이드(PowerPoint)는 내려받기만 (주소를 바로 열어도 브라우저 · 오피스가 그 자리에서 열지 않게)
+  return `${kind === 'other' || kind === 'slides' ? 'attachment' : 'inline'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(n)}`;
 }
 
 /**

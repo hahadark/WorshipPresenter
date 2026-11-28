@@ -116,10 +116,11 @@ async function startCloud() {
 }
 
 // ---------- 그림·영상 길 (계약대로, 메모리) + 나머지는 wrangler 로 ----------
-function startProxy(upstream, key) {
+function startProxy(upstream, key, fake) {
   const assets = new Map(); // id → {sha256, name, type, bytes}
   const bySha = new Map();
-  const stats = { uploads: 0, existed: 0, reads: 0, bytes: 0 };
+  const stats = { uploads: 0, existed: 0, reads: 0, bytes: 0, mpStart: 0, mpParts: 0, mpAbort: 0, mpDone: 0, cut: 0 };
+  let cutDone = false;
   const MAX = 200 * 1000 * 1000; // 이보다 크면 507 (한도 흉내)
   const send = (res, code, obj, headers = {}) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(obj)); };
   const server = httpServer(async (req, res) => {
@@ -128,7 +129,17 @@ function startProxy(upstream, key) {
       const chunks = [];
       for await (const c of req) chunks.push(c);
       const body = Buffer.concat(chunks);
-      if (u.pathname === '/api/v1/assets' || u.pathname.startsWith('/api/v1/assets/')) {
+      // 2C 실제 길 앞에서: 나눠 올리기를 세고, 처음 한 번은 둘째 조각에서 연결을 끊는다 (끊긴 뒤 처음부터 다시 올리는지)
+      if (!fake && u.pathname.startsWith('/api/v1/assets/uploads')) {
+        if (req.method === 'POST' && u.pathname === '/api/v1/assets/uploads') stats.mpStart++;
+        if (req.method === 'PUT' && /\/parts\/\d+$/.test(u.pathname)) {
+          stats.mpParts++;
+          if (!cutDone && u.pathname.endsWith('/parts/2')) { cutDone = true; stats.cut++; req.socket.destroy(); return; }
+        }
+        if (req.method === 'DELETE') stats.mpAbort++;
+        if (req.method === 'POST' && u.pathname.endsWith('/complete')) stats.mpDone++;
+      }
+      if (fake && (u.pathname === '/api/v1/assets' || u.pathname.startsWith('/api/v1/assets/'))) {
         if (req.headers.authorization !== `Bearer ${key}`) return send(res, 401, { ok: false, error: '로그인' });
         if (req.method === 'GET' && u.pathname === '/api/v1/assets') {
           const id = bySha.get(u.searchParams.get('sha256') || '');
@@ -180,13 +191,17 @@ async function main() {
     const key = seedChurch(authSecret());
     const c = await startCloud();
     dev = c.dev;
-    if (FAKE) proxy = await startProxy(c.base, key);
-    const url = proxy ? proxy.url : c.base;
-    console.log(`로컬 클라우드 ${c.base} (D1 · R2 ${persist})${proxy ? ` · 그림·영상 길 가짜 중계 ${proxy.url}` : ' · 그림·영상 길 = 2C (로컬 R2)'}`);
-    const env = { ...process.env, WP_SYNC_E2E_URL: url, WP_SYNC_E2E_KEY: key, WP_SYNC_E2E_DATA: data, WP_LEGACY_DATA: join(work, 'no-legacy') };
+    proxy = await startProxy(c.base, key, FAKE);
+    const url = proxy.url;
+    console.log(`로컬 클라우드 ${c.base} (D1 · R2 ${persist}) · 앞 중계 ${proxy.url}${FAKE ? ' · 그림·영상 길 가짜' : ' · 그림·영상 길 = 2C (로컬 R2)'}`);
+    const env = { ...process.env, WP_SYNC_E2E_URL: url, WP_SYNC_E2E_KEY: key, WP_SYNC_E2E_DATA: data, WP_LEGACY_DATA: join(work, 'no-legacy'), ...(FAKE ? {} : { WP_SYNC_E2E_CUT: '1' }) };
     const t = spawn('cargo', ['test', '-p', 'wp-core', '--lib', 'cloudsync::tests::e2e_local_cloud', '--', '--ignored', '--nocapture', '--exact'], { cwd: repo, stdio: 'inherit', env });
     code = await new Promise(r => t.on('exit', r));
-    if (proxy) console.log(`그림·영상 길(가짜): 새로 올림 ${proxy.stats.uploads} (${proxy.stats.bytes} 바이트) · 이미 있음 ${proxy.stats.existed} · 읽기 ${proxy.stats.reads}`);
+    if (!FAKE) {
+      console.log(`나눠 올리기: 시작 ${proxy.stats.mpStart} · 조각 ${proxy.stats.mpParts} · 끊음 ${proxy.stats.cut} · 그만두기 ${proxy.stats.mpAbort} · 끝내기 ${proxy.stats.mpDone}`);
+      if (code === 0 && !(proxy.stats.mpStart >= 2 && proxy.stats.cut === 1 && proxy.stats.mpAbort >= 1 && proxy.stats.mpDone === 1)) { console.log('나눠 올리기 흐름이 기대와 다름'); code = 4; }
+    }
+    if (FAKE) console.log(`그림·영상 길(가짜): 새로 올림 ${proxy.stats.uploads} (${proxy.stats.bytes} 바이트) · 이미 있음 ${proxy.stats.existed} · 읽기 ${proxy.stats.reads}`);
     else {
       const r = await fetch(`${c.base}/api/v1/assets?limit=200`, { headers: { authorization: `Bearer ${key}` } }).then(r => r.json());
       const list = r.assets || [];
