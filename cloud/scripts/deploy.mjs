@@ -26,8 +26,11 @@ if (!/^[0-9a-f-]{36}$/.test(d1)) { console.error('WP_D1_DATABASE_ID 가 없습�
 if (secret.length < 32) { console.error('WP_AUTH_SECRET 이 없거나 32자보다 짧습니다.'); process.exit(2); }
 
 const base = readFileSync(join(cloud, 'wrangler.jsonc'), 'utf8');
-const conf = base.replace('"00000000-0000-0000-0000-000000000000"', JSON.stringify(d1));
-if (conf === base) { console.error('wrangler.jsonc 의 D1 자리 표시를 찾지 못했습니다.'); process.exit(2); }
+let conf = base.replace('"00000000-0000-0000-0000-000000000000"', JSON.stringify(d1));
+// 클라우드 음성 인식(Workers AI whisper, docs/web/ai.md): 사관님이 켜기로 정했을 때만 WP_ENABLE_WORKERS_AI=1 로.
+// AI 바인딩은 로컬 개발에서도 늘 원격을 부르므로 wrangler.jsonc 에는 넣지 않는다. 무료 할당 안에서만 돌게 하는 것은 src/ai/index.mjs 가 한다
+if (process.env.WP_ENABLE_WORKERS_AI === '1') conf = conf.replace('"observability"', '"ai": { "binding": "AI" },\n  "observability"');
+if (!conf.includes(JSON.stringify(d1))) { console.error('wrangler.jsonc 의 D1 자리 표시를 찾지 못했습니다.'); process.exit(2); }
 writeFileSync(join(cloud, 'wrangler.preview.jsonc'), conf);
 
 execFileSync(process.execPath, [join(cloud, 'scripts', 'assets.mjs')], { cwd: cloud, stdio: 'inherit' });

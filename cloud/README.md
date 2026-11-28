@@ -12,7 +12,8 @@
 | `client/adapter.js` | 클라우드에서 연 페이지의 SSE → WebSocket 바꾸기 |
 | `client/{login,owner,denied}.*` | 웹판이 새로 만든 화면 |
 | `src/data/` · `src/identity/` | 2단계 A: 문서 · 동기화 · 성경 API · 장절 파서(설치판과 대조) · 사람 계정 ([`docs/web/data-api.md`](../docs/web/data-api.md)) |
-| `migrations/` | D1 (`0002_data.sql` = 2단계 A) |
+| `src/ai/` | 5단계 AI: 교회 키 봉인 · 동의 · 한도 · 기록 · 대신 부르기 · 클라우드 음성 인식(무료 할당 안에서만) ([`docs/web/ai.md`](../docs/web/ai.md)) |
+| `migrations/` | D1 (`0002_data.sql` = 2단계 A · `0003_ai.sql` = 5단계 AI) |
 | `scripts/` | `assets`(web/ → public/) · `seed`(견본 교회) · `e2e` · `deploy` · `inventory`(대조표 빠짐 검사) · `desktop-e2e`(설치판과 함께) · `bible-import`(bible.db 사본 → D1) |
 
 ```sh

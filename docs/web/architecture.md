@@ -174,7 +174,7 @@ members   (church_id, subject, role, created_at, PRIMARY KEY (church_id, subject
 | `web-egui` (3) | 웹 조작 화면 (지금 진행 중) | 새 WASM 크레이트 · `cloud/src/control/` · `cloud/client/control/` | 1단계 `/bridge`, 뒤에 2A |
 | `web-scenes` (4A) | 화면 구성 편집 · 출력별 구성 · 전환 (웹) | 3단계 화면 안의 새 모듈 | 3 |
 | `web-media` (4B) | 카메라(이름으로 고르기) · 휴대폰 카메라 신호(DO) · PDF(pdf.js) · 영상 | `cloud/src/media/` · `cloud/client/media/` | 2C, TURN 이 필요하면 비용 승인 |
-| `web-ai` (5) | AI 길(서버 쪽 키 보관 · 동의) · 변환(HWP/PPTX WASM) · 음성 인식 선택 | `cloud/src/ai/` · 새 WASM 변환 크레이트 | 2A · 2C, 유료 모델 자동 호출 금지 |
+| `web-ai` (5) | AI 길(서버 쪽 키 보관 · 동의) · 음성 인식 선택 — **클라우드 쪽 구현함: `docs/web/ai.md`**. 변환(HWP/PPTX)은 wasm 에서 그대로 돌아 따로 만들 것 없음 | `cloud/src/ai/` · `migrations/0003_ai.sql` | 2A · 2C, 유료 모델 자동 호출 금지 |
 | `web-offline` (6) | Service Worker · IndexedDB · 충돌 화면 · 끊김 시험 | `cloud/client/offline/` · `cloud/src/sync/` 의 받기 쪽 | 2A · 2B · 3 |
 
 - 순서: 2A → (2B · 2C · 3) 나란히 → (4A · 4B · 5) 나란히 → 6 이 마지막에 모두 합쳐 시험.

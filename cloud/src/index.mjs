@@ -6,6 +6,7 @@ import { PROTOCOL, SESSION_TTL, can, fail, homeOf, json, route, validChurch } fr
 import { page } from './pages.mjs';
 import * as data from './data/index.mjs';
 import * as identity from './identity/index.mjs';
+import * as ai from './ai/index.mjs'; // 5단계 AI (docs/web/ai.md)
 
 export { ChurchRoom } from './room.mjs';
 
@@ -145,6 +146,7 @@ async function handle(request, env) {
   else if (r.kind === 'api') res = await api(request, env, url, s);
   else if (r.kind === 'data') res = await data.handle(request, env, url, s, r);
   else if (r.kind === 'identity') res = await identity.handle(request, env, url, s, r);
+  else if (r.kind === 'ai') res = await ai.handle(request, env, url, s, r);
   else res = await toRoom(env, request, s);
   return withCookies(res, fresh?.headers);
 }
