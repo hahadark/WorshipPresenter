@@ -3,6 +3,7 @@
 import { dataRoute } from './data/routes.mjs'; // 2단계 A 길 (docs/web/data-api.md)
 import { assetRoute } from './assets/routes.mjs'; // 2단계 C 길 (docs/web/assets-api.md)
 import { aiRoute } from './ai/routes.mjs'; // 5단계 AI 길 (docs/web/ai.md)
+import { mediaRoute } from './media/routes.mjs'; // 4단계 B 미디어 길 (docs/web/media.md)
 
 export const PROTOCOL = 1;
 
@@ -80,7 +81,7 @@ export function route(method, path, query) {
   if (get && path === '/api/v1/room') return { kind: 'room', cap: 'manage' };
   if (path === '/api/v1/credentials' && (get || post)) return { kind: 'api', cap: 'manage' };
   if (method === 'DELETE' && /^\/api\/v1\/credentials\/[A-Za-z0-9]{6,24}$/.test(path)) return { kind: 'api', cap: 'manage' };
-  return dataRoute(method, path) || assetRoute(method, path) || aiRoute(method, path);
+  return dataRoute(method, path) || assetRoute(method, path) || aiRoute(method, path) || mediaRoute(method, path);
 }
 
 /** 출력 화면이 /api/command 로 알릴 수 있는 것 (설치판 내부망 출력과 같은 경계). 그 밖의 명령은 클라우드에서 받지 않는다. */
@@ -90,7 +91,7 @@ export const VIEW_COMMANDS = ['videoMeta', 'videoEnded'];
 // 송출 주체(설치판 · 웹 조작 화면) → 중계실
 export const FROM_SOURCE = ['hello', 'render', 'draw', 'remote', 'res'];
 // 보는 쪽(출력 · 리모컨) → 중계실
-export const FROM_VIEWER = ['ack', 'cmd'];
+export const FROM_VIEWER = ['ack', 'cmd', 'rtc']; // rtc: 4단계 B 휴대폰 카메라 신호 (media/signal.mjs)
 
 export const LIMITS = {
   /** 글 프레임 하나 (출력 자료 한 장). Cloudflare 가 받는 한도는 32MiB — 그보다 훨씬 작게 잡는다 */
