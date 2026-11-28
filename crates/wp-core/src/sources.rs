@@ -62,7 +62,11 @@ pub fn check_url(url: &str) -> Result<String> {
 }
 
 fn rand_id() -> String {
-    format!("src-{:x}", crate::util::now_ms() ^ (std::process::id() as i64).rotate_left(20) ^ rand_salt())
+    #[cfg(target_arch = "wasm32")]
+    let pid: i64 = 0; // [웹판] 브라우저에는 프로세스 번호가 없다 (std::process::id 는 panic)
+    #[cfg(not(target_arch = "wasm32"))]
+    let pid = std::process::id() as i64;
+    format!("src-{:x}", crate::util::now_ms() ^ pid.rotate_left(20) ^ rand_salt())
 }
 
 fn rand_salt() -> i64 {

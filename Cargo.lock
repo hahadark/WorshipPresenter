@@ -7329,6 +7329,7 @@ dependencies = [
  "ureq",
  "url",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
  "web-time",
  "webpki-roots",

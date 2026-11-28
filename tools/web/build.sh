@@ -15,7 +15,7 @@ if [ "$PROFILE" = release ]; then
   wasm-opt -O2 --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-reference-types --enable-multivalue "$OUT/wp-app_bg.wasm" -o "$OUT/wp-app_bg.opt.wasm"
   mv "$OUT/wp-app_bg.opt.wasm" "$OUT/wp-app_bg.wasm"
 fi
-cp web/app/index.html "$OUT/"
+cp web/app/index.html web/app/media-glue.js "$OUT/"
 # 출력 페이지(예배당 · 방송 · 무대)는 설치판과 같은 web/ 를 그대로 쓰고, <head> 바로 뒤에 같은 브라우저 어댑터만 끼운다
 cp -r web/shared "$OUT/shared"
 mkdir -p "$OUT/outputs" "$OUT/app"

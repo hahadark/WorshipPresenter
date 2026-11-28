@@ -414,7 +414,7 @@ fn home_win(app: &mut App, ctx: &egui::Context, acts: &mut Vec<Act>) {
                 h.busy = true;
                 let url = h.url.trim().to_string();
                 hymns::run_bg(
-                    move || homefeed::fetch_feed(&url).map(|f| (f, url)),
+                    move || homefeed::fetch_feed(&url).map(|f| (f, url.clone())), // [웹판] 일을 다시 돌릴 수 있게
                     |c, r| {
                         let mut s = ST.lock();
                         s.home.busy = false;

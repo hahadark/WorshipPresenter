@@ -58,6 +58,11 @@ fn enc(s: &str) -> String {
 
 /// 카메라 찾기 시작: 코어에 일회용 토큰을 만들고 숨은 도우미 창을 띄운다. 이미 찾는 중이면 그냥 둔다.
 pub fn probe(core: &Shared) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        crate::web::media::probe_cameras(core.clone()); // [웹판] 이 페이지가 직접 찾는다 (도우미 창 없음)
+        return;
+    }
     let (port, token) = {
         let mut c = core.lock();
         if c.camera_probing() {
@@ -73,6 +78,11 @@ pub fn probe(core: &Shared) {
 
 /// 찾는 중인데 도우미 창이 결과 없이 꺼졌으면(페이지 오류 등) 찾기를 그만둔다 — 60초를 기다리지 않게
 fn watch(core: &Shared) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = core; // [웹판] 도우미 창이 없다
+        return;
+    }
     let helper_alive = reap();
     let mut c = core.lock();
     if c.camera_probing() && !helper_alive {
@@ -82,6 +92,12 @@ fn watch(core: &Shared) {
 
 /// 카메라 미리보기 창 (작은 창, 사용자가 닫는다)
 pub fn preview(core: &Shared, id: &str, label: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (core, id, label);
+        crate::web::media::preview_cameras(); // [웹판] '이 PC 카메라 맞추기' 화면 (4B)
+        return;
+    }
     let port = core.lock().port;
     let title = format!("{}", if label.is_empty() { tr("기본 카메라") } else { label.to_string() });
     reap();

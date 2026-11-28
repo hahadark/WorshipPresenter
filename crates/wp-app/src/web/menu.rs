@@ -9,7 +9,8 @@ pub const HIDDEN: &[&str] = &[
     // 파일: 이 PC 파일 · 폴더 · 설치판 자체
     "c:import-bible", "b:conti", "d:reimport", "b:pptx", "b:sync", "c:commentary", "d:bulletin",
     // 화면 · 연결: 소켓 · 이 PC 서버 · 장치
-    "d:obs", "x:obs-url", "d:lan", "d:remote", "d:phonecam", "d:webedit", "d:cloud", "d:trigger", "d:devices", "b:cameras", "d:camtest", "b:lib",
+    // (카메라 설정 · 라이브러리는 4단계부터 웹에서도 — 카메라 찾기를 이 페이지가 한다, web/media.rs)
+    "d:obs", "x:obs-url", "d:lan", "d:remote", "d:phonecam", "d:webedit", "d:cloud", "d:trigger", "d:devices", "d:camtest",
     // 도움말: 설치판 업데이트 · 로그 폴더 · 이 PC 연결 점검
     "d:update", "b:diagnose", "b:logbundle", "b:logs",
 ];
