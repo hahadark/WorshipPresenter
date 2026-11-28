@@ -127,6 +127,11 @@
     };
     // 새로 연 출력 화면이 '지금 화면을 달라' 고 알린다 (조작 화면이 듣고 다시 보낸다)
     window.addEventListener('load', function () { try { bc.postMessage({ t: 'sync', church: CFG.church || '' }); } catch (e) { /* 무시 */ } });
+    // (3단계 덧붙임) 같은 PC 의 웹 조작 화면에 '살아 있음' 을 알린다 — 인터넷이 끊겨도 조작 화면이 연결된 출력 수를 안다.
+    // cloud:true = 클라우드로도 붙은 화면 (조작 화면은 클라우드 연결 중이면 중계실의 viewers 로 세고 이것은 세지 않는다)
+    var outId = 1 + Math.floor(Math.random() * 2147483646);
+    setInterval(function () { links.forEach(function (es) { try { bc.postMessage({ t: 'out', id: outId, client: es.client, kind: 'browser', cloud: es.link.isOpen(), church: CFG.church || '' }); } catch (e) { /* 무시 */ } }); }, 2000);
+    window.addEventListener('pagehide', function () { try { bc.postMessage({ t: 'bye', id: outId, church: CFG.church || '' }); } catch (e) { /* 무시 */ } });
   } catch (e) { /* BroadcastChannel 없음 */ }
 
   // ---------- 3. 리모컨 상태를 실시간으로 ----------
@@ -161,6 +166,8 @@
       var es = links[0];
       if (b && u.pathname === '/api/ack' && es.link.send({ t: 'ack', version: b.version, width: b.width, height: b.height, visible: b.visible })) return ok({ ok: true });
       if (b && u.pathname === '/api/command' && (b.cmd === 'videoMeta' || b.cmd === 'videoEnded') && es.link.send({ t: 'cmd', cmd: b.cmd, args: b.args })) return ok({ ok: true, result: null });
+      // (3단계 덧붙임) 클라우드가 끊겼으면 영상 알림을 같은 PC 의 웹 조작 화면에 (영상 끝 → 자동 넘김이 인터넷 없이도)
+      if (b && u.pathname === '/api/command' && (b.cmd === 'videoMeta' || b.cmd === 'videoEnded') && bc) { try { bc.postMessage({ t: 'cmd', cmd: b.cmd, args: b.args, church: CFG.church || '' }); return ok({ ok: true, result: null }); } catch (e) { /* 무시 */ } }
     }
     if (method === 'GET' && u.pathname === '/r/state') {
       if (remote.link && remote.link.isOpen() && remote.state) return Promise.resolve(remoteAnswer());

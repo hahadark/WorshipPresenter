@@ -97,6 +97,10 @@ impl Live {
             Some("sync") => self.push(true),
             Some("out") => {
                 let Some(id) = m["id"].as_u64() else { return };
+                // 클라우드로도 붙은 출력은 중계실의 viewers 로 센다 (두 번 세지 않게)
+                if m["cloud"].as_bool().unwrap_or(false) && super::cloud::active() {
+                    return;
+                }
                 let client = m["client"].as_str().unwrap_or("main").to_string();
                 let kind = m["kind"].as_str().unwrap_or("browser").to_string();
                 let first = !self.seen.contains_key(&id);

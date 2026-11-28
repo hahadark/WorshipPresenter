@@ -19,6 +19,7 @@ pub mod bible;
 pub mod cloud;
 pub mod fonts;
 pub mod live;
+pub mod menu;
 pub mod store;
 
 /// 브라우저 안에서 쓰는 가짜 경로 (실제 폴더가 아니라 저장소 열쇠의 앞머리)

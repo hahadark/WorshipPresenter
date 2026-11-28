@@ -253,7 +253,7 @@ pub fn check(core: &Shared, manual: bool) {
     *ASSET.lock() = None;
     *READY.lock() = None;
     let sh = core.clone();
-    std::thread::spawn(move || {
+    crate::bg::spawn(move || {
         let _guard = guard;
         let result = get_json(&url).and_then(|r| {
             let mut s = state_from_release(&r, VERSION, crate::util::now_ms())?;
@@ -420,7 +420,7 @@ pub fn download(core: &Shared) -> Result<(), String> {
     *READY.lock() = None;
     UPDATE.lock()["state"] = json!("downloading");
     let sh = core.clone();
-    std::thread::spawn(move || {
+    crate::bg::spawn(move || {
         let _guard = guard;
         let result = response(&a.url).and_then(|mut r| {
             cache_stream(
@@ -569,7 +569,7 @@ pub fn start_telemetry(core: Shared) {
         return;
     }
     let url = std::env::var("WC_TELEMETRY_URL").unwrap_or_else(|_| TELEMETRY_URL.to_string());
-    std::thread::spawn(move || {
+    crate::bg::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(60));
         loop {
             let _ = send_once(&core, &url); // 인터넷이 없으면 다음에
@@ -603,7 +603,7 @@ mod tests {
         let port = l.local_addr().unwrap().port();
         let got = std::sync::Arc::new(parking_lot::Mutex::new(String::new()));
         let g = got.clone();
-        std::thread::spawn(move || {
+        crate::bg::spawn(move || {
             if let Ok((mut s, _)) = l.accept() {
                 s.set_read_timeout(Some(std::time::Duration::from_secs(3))).ok();
                 let mut all = vec![];

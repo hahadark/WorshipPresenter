@@ -54,6 +54,17 @@ fn dynsub(id: &'static str, label: &'static str) -> Item {
 
 /// 메뉴 목록 (안 A). id "-" 는 구분선
 pub fn menus() -> Vec<Menu> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut m = menus_all();
+        crate::web::menu::filter(&mut m); // [웹판] 브라우저로 할 수 없는 항목은 뺀다
+        return m;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    menus_all()
+}
+
+fn menus_all() -> Vec<Menu> {
     vec![
         Menu { label: "파일", items: vec![
             it("c:import-bible", "성경 번역본 가져오기…", ""),

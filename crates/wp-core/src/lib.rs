@@ -34,6 +34,7 @@ pub mod presentation;
 pub mod server;
 #[cfg(target_arch = "wasm32")]
 pub mod web; // [웹판] 브라우저에서만: 플랫폼 층 (docs/web/egui-web.md)
+pub mod bg; // 백그라운드 일 한 겹 (설치판 = 스레드, 웹판 = 알림)
 pub mod settings;
 pub mod slides;
 pub mod textnorm;

@@ -111,7 +111,7 @@ fn transcribe_file(app: &App, path: std::path::PathBuf, ctx: egui::Context) {
     };
     CANCEL.store(false, Ordering::SeqCst);
     ST.lock().rec_busy = Some(0.0);
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let r = (|| -> anyhow::Result<String> {
             let pcm = decode(&path)?;
             let srv = wp_core::stt::Server::start(&exe, &wp_core::stt::model_path(&data, &model), "ko", wp_core::stt::threads())?;

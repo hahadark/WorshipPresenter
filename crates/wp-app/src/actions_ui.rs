@@ -136,7 +136,7 @@ fn pick_audio_url() -> Option<String> {
 
 /// 백그라운드에서 한 번 보내고 결과를 알림으로 (송출 화면이 멈추지 않게)
 fn spawn_notify(f: impl FnOnce() -> Result<String, String> + Send + 'static) {
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let r = f();
         if let Some(sh) = wp_core::hymns::shared() {
             match r {

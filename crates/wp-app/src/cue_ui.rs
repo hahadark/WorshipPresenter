@@ -996,7 +996,7 @@ fn pick_pdf(app: &mut App) {
     let dir = app.core.lock().data_dir.clone();
     app.core.lock().notify(tr("PDF 를 쪽마다 그림으로 바꾸는 중…"), "ok");
     PDF_BUSY.store(true, std::sync::atomic::Ordering::Relaxed);
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let title = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "PDF".into());
         let r = wp_core::pdf::render(&dir, &f).map(|pages| wp_core::pdf::item(&title, &pages)).map_err(|e| tr_args("PDF 를 넣지 못했습니다: {1}", &[&tr(&e.to_string())]));
         *PDF_DONE.lock() = Some(r);

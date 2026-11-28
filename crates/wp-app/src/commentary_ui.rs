@@ -103,7 +103,7 @@ impl CommentaryUi {
                         self.busy = Some(rx);
                         self.analysis = None;
                         self.msg.clear();
-                        std::thread::spawn(move || { let _ = tx.send(commentary::analyze_epub(&p).map_err(|e| e.to_string())); });
+                        wp_core::bg::spawn(move || { let _ = tx.send(commentary::analyze_epub(&p).map_err(|e| e.to_string())); });
                     }
                 }
                 ui.label(RichText::new(wp_core::i18n::tr("OCR 로 만든 주석서는 절 표시(1:1)로 항목을 나눕니다. 결과는 참고용입니다.")).small().color(crate::theme::pal().muted));

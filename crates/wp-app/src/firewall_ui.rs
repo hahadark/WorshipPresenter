@@ -30,7 +30,7 @@ pub fn check(ctx: &egui::Context) {
         s.busy = true;
     }
     let ctx = ctx.clone();
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let r = wp_core::firewall::status(&exe());
         let mut s = ST.lock();
         s.result = Some(r);
@@ -49,7 +49,7 @@ fn open(ctx: &egui::Context) {
         s.note = tr("관리자 승인 창에서 [예]를 누르세요…");
     }
     let ctx = ctx.clone();
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let r = wp_core::firewall::open(&exe());
         let st = wp_core::firewall::status(&exe());
         let mut s = ST.lock();

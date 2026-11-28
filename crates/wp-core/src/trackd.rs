@@ -284,7 +284,7 @@ pub fn ai_make_cue_job(shared: &crate::core::Shared, input: Input, extra: String
         (c.ai_key(), a["model"].as_str().unwrap_or("").to_string(), a["endpoint"].as_str().unwrap_or("").to_string())
     };
     let sh = shared.clone();
-    std::thread::spawn(move || {
+    crate::bg::spawn(move || {
         let r = bulletin::ask_ai(&key, &model, &endpoint, &input, &extra);
         let out = r.and_then(|(plan, usage, m)| {
             let mut v = sh.lock().plan_save(&plan, false)?;
@@ -308,7 +308,7 @@ pub fn ai_make_cue(shared: &crate::core::Shared, input: Input, extra: String) {
     };
     let sh = shared.clone();
     shared.lock().notify(crate::i18n::tr("AI 가 주보를 읽는 중…"), "info");
-    std::thread::spawn(move || {
+    crate::bg::spawn(move || {
         let r = bulletin::ask_ai(&key, &model, &endpoint, &input, &extra);
         let mut c = sh.lock();
         match r.and_then(|(plan, _usage, _m)| c.plan_to_saved_cue(&plan)) {
@@ -497,7 +497,7 @@ pub fn run_item_actions(c: &mut Core, a: &Value, depth: u8) {
         return;
     }
     let sh = crate::hymns::shared();
-    std::thread::spawn(move || {
+    crate::bg::spawn(move || {
         let mut errs = vec![];
         for (d, act) in devs {
             if let Err(e) = crate::devices::run(&devices, &d, &act) {

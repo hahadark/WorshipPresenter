@@ -322,10 +322,10 @@ mod tests {
         let log = Arc::new(Mutex::new(vec![]));
         let outs = Arc::new(Mutex::new((true, false)));
         let (lg, os) = (log.clone(), outs.clone());
-        std::thread::spawn(move || {
+        crate::bg::spawn(move || {
             for s in l.incoming().flatten() {
                 let (lg, os) = (lg.clone(), os.clone());
-                std::thread::spawn(move || {
+                crate::bg::spawn(move || {
                     let mut ws = tungstenite::accept(s).unwrap();
                     ws.send(Message::text(json!({ "op": 0, "d": { "rpcVersion": 1, "authentication": { "salt": "SALT", "challenge": "CH" } } }).to_string())).unwrap();
                     let id = read_json(&mut ws).unwrap();

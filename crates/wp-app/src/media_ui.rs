@@ -200,7 +200,7 @@ fn probe_video_duration(ctx: &egui::Context, url: &str) -> Option<f64> {
     }
     let Ok(path) = String::from_utf8(bytes) else { return None };
     let key = url.to_owned(); let ctx = ctx.clone();
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let Some(ffmpeg) = wp_core::thumbs::ffmpeg() else { return };
         let probe = ffmpeg.with_file_name(if cfg!(windows) {"ffprobe.exe"} else {"ffprobe"});
         let mut cmd = std::process::Command::new(probe);

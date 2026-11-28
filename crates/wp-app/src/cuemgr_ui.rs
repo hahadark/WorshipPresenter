@@ -85,7 +85,7 @@ pub fn export_pptx_dialog(app: &mut App) {
     };
     app.core.lock().notify(tr("PPT 파일을 만드는 중…"), "info");
     let core = app.core.clone();
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let r = wp_core::pptxout::finish_pptx(plan, &path);
         let mut c = core.lock();
         match r {

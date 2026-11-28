@@ -52,7 +52,9 @@
 | `/` | GET | 역할의 첫 화면으로 302 (owner `/owner`, output `/outputs/main`, remote `/remote`, editor `/editor`) |
 | `/outputs/main` · `overlay` · `stage` · `out-…` | GET · view | 설치판과 **같은 페이지** + 어댑터. `?key=` 로그인 가능 |
 | `/remote` · `/editor` | GET · remote/editor | 같은 페이지. 로그인 전에도 `?c=교회` 면 PIN 칸만 있는 껍데기(자료 없음) |
-| `/owner` | GET · manage | 주인 화면 (연결 상태 · 기기 열쇠) |
+| `/owner` | GET · manage | 주인 화면 (연결 상태 · 기기 열쇠 · 3단계: 사람 · 교회 AI) |
+| `/control/` | GET · read | 3단계 웹 조작 화면 (주인 · 편집자 · 보기만 · 둘러보기). 페이지만 Worker 가 보내고 wasm · js · 글꼴은 정적 파일 `/control/*` (파일 하나 25 MiB 아래) |
+| `/api/v1/control/bible/book?version=&book=` | GET · read | 3단계: 번역본의 한 권 전체 `{verses:[[장,절,글]…], headings}` — 웹 조작 화면이 메모리 SQLite 에 넣는다 |
 | `/events?client=main\|overlay\|stage\|out-…\|remote` | WebSocket · view (remote 는 remote) | 아래 '실시간' — 보는 쪽 |
 | `/bridge` | WebSocket · Bearer 설치판 열쇠 (또는 owner 쿠키) | 아래 '실시간' — 송출 주체 |
 | `/r/state` | GET · remote | 설치판 `remote::state_for` + `ok:true`. 중계실이 받아 둔 것으로 바로 답함 |
@@ -89,7 +91,7 @@
 
 | 방향 | 메시지 | 뜻 |
 |---|---|---|
-| ↓ | `{t:'ready', v, viewers}` | 붙자마자 |
+| ↓ | `{t:'ready', v, viewers, standby?, active?}` | 붙자마자. `standby:true` 면 대기로 붙은 것(아래 '송출 주체 겹침'), `active` = 지금 주체 `{source, app, since, claimed}` |
 | ↑ | `{t:'hello', v:1, app, lang:'ko'\|'en', outputs:[…], caps:{remote, editor, media}}` | 첫 글. `caps` 로 리모컨 · 편집기 · 미디어 요청을 받을지 알림 |
 | ↑ | `{t:'render', client, data}` | 화면 하나의 출력 자료. **붙으면 모든 화면(main · overlay · stage · 추가 출력)을 한 번씩**, 그 뒤로는 바뀐 화면만(같은 글이면 보내지 않음) |
 | ↑ | `{t:'draw', data}` · `{t:'remote', data}` | 그리기 · 리모컨 상태 (바뀔 때만) |
@@ -100,9 +102,17 @@
 | ↑ | `{t:'res', id, status, headers, body}` | JSON 답 |
 | ↑ | `{t:'res', id, status, headers, stream:true}` + 이진 `[id u32 BE][표시 u8][본문]` … | 파일 답. 표시 1 = 끝, 2 = 중단. 조각은 256 KiB 이하 |
 | ↓ | `{t:'cancel', id}` | 기다리던 쪽이 그만둠(시간 초과 · 끊김) |
+| ↑ | `{t:'claim'}` | (3단계) 대기 중인 웹 조작 화면이 송출을 넘겨받는다. **주인 쿠키로 붙은 웹만** — 아니면 ↓ `{t:'denied', error}` |
+| ↑ | `{t:'release'}` | (3단계) 넘겨받은 웹이 돌려준다 → 대기 중인 설치판이 주체 |
+| ↓ | `{t:'standby', active}` · `{t:'active', claimed}` | (3단계) 대기로 내려감 · 주체가 됨(뒤이어 `sync`) |
 
 - 요청 기다림: JSON 12초, 파일 조각 사이 30초. 넘으면 504 — **쓰기를 자동으로 다시 보내지 않는다**(리모컨 '다음' 이 두 번 되지 않게). 기다리는 요청 최대 64개.
 - 송출 주체는 교회마다 하나. 새로 붙으면 앞의 것을 4001 로 닫는다(끊긴 줄 모르고 남은 옛 연결이 막지 않게). 화면에는 '끊김' 을 알리지 않는다.
+- **송출 주체 겹침 (3단계, 덧붙임 — 구현 `room.mjs`, 시험 `test/e2e/claim.test.mjs` · `tools/web/cloud-e2e.js`)**: 설치판 열쇠(Bearer)로 붙은 것 = `desktop`, 주인 쿠키 = `web`.
+  - 설치판이 **기본 주체**. 웹은 주체가 이미 있으면 **대기**(`standby`)로 붙는다 — 대기의 `render` · `draw` · `remote` · `res` 는 버리고(출력에 닿지 않음), `viewers` · `req` 도 보내지 않는다. 대기를 끊지 않는다.
+  - 웹이 주체였는데 설치판이 붙으면(예배 전 웹으로 준비 → 설치판을 켬) 설치판이 주체, 웹은 대기로 내려간다(끊지 않음, ↓ `standby`).
+  - 주인이 웹에서 **[넘겨받기]** 를 누르면(`claim`) 설치판은 4001 로 닫히고 웹이 주체(`claimed`). 넘겨받은 동안 다시 붙는 설치판(자동 재연결)은 대기 — 웹을 밀어내지 않는다. `release` 또는 넘겨받은 웹이 떠나면 대기 중인 설치판이 저절로 주체. **대기 중인 웹은 저절로 주체가 되지 않는다.**
+  - 설치판은 이 메시지를 몰라도 된다(모르는 `t` 는 버림): 대기일 때 보낸 것이 버려질 뿐이다. `/api/v1/room` 에 `source`('desktop'|'web') · `claimed` · `standby[]` 를 덧붙였다.
 - 중계실은 예배 자료를 **디스크에 쓰지 않는다**(메모리만). 잠들었다 깨면 `sync` 로 다시 받는다 → DO 저장 쓰기 0.
 - 한도(`LIMITS`): 글 프레임 4 MiB, 요청 본문 2 MiB, 화면 200개, 작은 파일 기억 하나 2 MiB · 전체 32 MiB.
 - 닫는 코드: 4001 바뀜 · 4003 열쇠 지움/만료 · 4008 계약 위반.
@@ -116,11 +126,14 @@
 
 ## 5. 3단계(웹 조작 화면)가 이 계약을 쓰는 법 — `web-egui` 작업자용
 
-- 브라우저의 조작 화면 = **또 하나의 송출 주체**. owner 쿠키로 `/bridge` 에 붙고 설치판과 같은 메시지(`hello` · `render` · `draw` · `remote` · `res`)를 보낸다. 출력 · 리모컨 · 편집기 · OBS 쪽은 한 줄도 바뀌지 않는다.
+- 브라우저의 조작 화면 = **또 하나의 송출 주체**. owner 쿠키로 `/bridge` 에 붙고 설치판과 같은 메시지(`hello` · `render` · `draw` · `remote` · `res`)를 보낸다. 출력 · 리모컨 · 편집기 · OBS 쪽은 한 줄도 바뀌지 않는다. (구현함: `crates/wp-app/src/web/cloud.rs`. `hello.source:'web'`, `caps` 는 모두 false — 리모컨 · 편집기 · 미디어 요청은 설치판 몫이라 받지 않고 `req` 에는 501)
+- **여는 곳**: `/control/` (로그인 · read 권한, 없으면 `/login?next=/control/`). 송출 주체로는 주인(`source`)만 붙고, 편집자 · 보기만은 자료만. 둘러보기(`/demo` 의 demo 역할)도 같은 화면 — 방문자마다 따로인 중계실. 파일은 `tools/web/build.sh` → `dist-web/` → `cloud/scripts/assets.mjs` 가 `public/control/` 로 (wasm 18.9 MB < 25 MiB · 글꼴은 따로).
 - **같은 PC 출력**: 조작 화면이 `BroadcastChannel('wp-live')` 로 `{t:'render', client, data, church}` · `{t:'draw', data, church}` 를 보내면, 같은 브라우저의 클라우드 출력 탭이 인터넷 없이도 받는다(어댑터에 구현함). 새 출력 탭은 `{t:'sync', church}` 를 보낸다 → 조작 화면이 전체를 다시 보냄. 출력 탭은 사용자가 눌러 연다(팝업 막힘).
+- **같은 PC 출력 → 조작 화면 (3단계 덧붙임)**: 출력 탭은 2초마다 `{t:'out', id, client, kind, cloud, ack?, church}`(살아 있음 · 수신 확인), 닫힐 때 `{t:'bye', id, church}`, 클라우드가 끊겼을 때 영상 알림 `{t:'cmd', cmd:'videoMeta'|'videoEnded', args, church}` 를 같은 채널로 보낸다 → 인터넷 없이도 '연결된 출력' 수와 영상 끝 자동 넘김이 맞는다. `cloud:true`(클라우드로도 붙은 탭)는 조작 화면이 클라우드 송출 중일 때 세지 않는다(중계실 `viewers` 로 센다). 구현: `cloud/client/adapter.js` · `web/app/local-live.js`(클라우드 없이 띄울 때).
 - **자료**: 1단계에서는 설치판이 원본이라 웹 조작 화면은 `/e/*` · `/r/*` 로만 고칠 수 있다(설치판이 켜져 있어야 함). 2단계 `/api/v1/documents` 가 생기면 그것을 쓴다(아래 6). 지금 만들 때는 `Transport` 한 겹(문서 읽기 · 쓰기 · 구독 · 송출 · 명령)을 두고 1단계 길 · 2단계 길을 바꿔 끼운다.
-- **송출 주체 겹침**(3단계에서 정할 것): 지금은 '나중에 붙은 쪽이 이김'. 웹 조작 화면이 예배 중 설치판을 몰래 밀어내지 않도록, 3단계는 `hello.source = 'desktop'|'web'` 과 `claim`(주인이 넘겨받기를 눌러야 함) 메시지를 더한다 — 덧붙이는 것이라 v1 그대로.
-- 브라우저에서 쓰지 못하는 것: OS 파일 경로 · SQLite 파일 · TCP/UDP(장비) · 전역 단축키 · IME. https 페이지에서 `http://127.0.0.1:37528` 을 부르는 것은 섞인 내용 · 로컬 네트워크 접근 허락에 걸려 기본 길로 삼지 않는다.
+  - (구현함, `web/store.rs` · `web/bible.rs`) 로그인하면 큐시트 · 찬양을 `/api/v1/documents?include=payload` 로 받고, 고친 문서를 `PUT` + `If-Match` + `X-Mutation-Id` 로 올리고(1.5초 모아서), 20초마다 `/api/v1/sync?after=` 로 받는다(`more` 를 끝까지). 409 충돌은 덮어쓰지 않는다 — 최신 것을 들이고 이 화면의 것은 `(내 사본)` 새 문서로. 성경은 `/api/v1/bible/versions` + 책마다 `/api/v1/control/bible/book`, IndexedDB 에 보관(번역본 `importedAt` · 절 수가 바뀔 때만 다시). 로그인 없이 내 PC 에서 띄우면 localStorage + 견본(`web/app/sample/seed.json`).
+- **송출 주체 겹침**: 4절 '송출 주체 겹침' 에 정한 대로 구현함(대기 · `claim` · `release`). 웹 조작 화면은 위쪽 가운데 띠에 상태(클라우드 송출 · 보기 전용)와 [넘겨받기…](확인 창) · [설치판에 돌려주기] · [교회 관리] 를 보인다.
+- 브라우저에서 쓰지 못하는 것: OS 파일 경로 · SQLite 파일 · TCP/UDP(장비) · 전역 단축키. (한글 IME 는 된다 — 실제 Windows 한국어 입력기로 Edge · Chrome 15/15, `docs/web/egui-web.md`) https 페이지에서 `http://127.0.0.1:37528` 을 부르는 것은 섞인 내용 · 로컬 네트워크 접근 허락에 걸려 기본 길로 삼지 않는다.
 
 ## 6. 2단계 자료 계약 (2A 구현함 — 쓰는 법 · 예시 · 덧붙인 칸은 [`data-api.md`](data-api.md), 자산 길은 2C)
 

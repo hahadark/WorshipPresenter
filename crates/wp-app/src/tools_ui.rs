@@ -294,7 +294,7 @@ fn trigger(ui: &mut egui::Ui, core: &Shared) {
 
 fn run_bg(f: impl FnOnce() -> Result<Value, String> + Send + 'static) {
     ST.lock().msg = wp_core::i18n::tr("보내는 중…").into();
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let r = f();
         *RESULT.lock() = Some(match r {
             Ok(v) => format!("보냈습니다 {v}"),

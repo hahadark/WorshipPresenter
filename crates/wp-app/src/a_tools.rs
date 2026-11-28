@@ -91,6 +91,8 @@ pub fn pick_folder(title: &str) -> Option<String> {
 }
 
 fn open_link(url: &str) {
+    #[cfg(target_arch = "wasm32")]
+    crate::web::menu::open_link(url); // [웹판] 새 탭
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

@@ -675,7 +675,7 @@ pub(crate) fn obs_urls(ui: &mut egui::Ui, port: u16) {
 /// OBS 창의 동작·연결 확인을 백그라운드에서 (코어 잠금 없이). 상태는 `obs::status` 가 캐시에 남기고, 동작 오류만 BG 로 돌려준다
 fn obs_bg(conf: wp_core::obs::Conf, then_act: Option<Value>) {
     ST.lock().obs_busy = true;
-    std::thread::spawn(move || {
+    wp_core::bg::spawn(move || {
         let mut err = String::new();
         if let Some(a) = then_act {
             if let Err(e) = wp_core::obs::action(&conf, &a) {

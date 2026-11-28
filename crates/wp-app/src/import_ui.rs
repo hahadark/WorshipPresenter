@@ -71,7 +71,7 @@ impl ImportUi {
                         self.busy = Some(rx);
                         self.analysis = None;
                         self.msg.clear();
-                        std::thread::spawn(move || { let _ = tx.send(importer::analyze_file(&p)); });
+                        wp_core::bg::spawn(move || { let _ = tx.send(importer::analyze_file(&p)); });
                     }
                 }
                 ui.label(RichText::new(wp_core::i18n::tr("JSON · CSV/TSV · Zefania XML · 베들레헴 .bdb")).small().color(crate::theme::pal().muted));

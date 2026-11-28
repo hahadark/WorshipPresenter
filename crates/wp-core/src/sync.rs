@@ -364,7 +364,7 @@ impl Core {
 /// 시작 뒤 백그라운드: 곧바로 읽기 · 20초 뒤 하루 1회 백업 · 1분마다 바뀌었으면 쓰기
 pub fn install(core: &Shared) {
     let core = core.clone();
-    std::thread::spawn(move || {
+    crate::bg::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(2));
         {
             let mut c = core.lock();

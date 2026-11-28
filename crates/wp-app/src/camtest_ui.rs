@@ -122,7 +122,7 @@ pub fn frame(app: &mut App, ctx: &egui::Context) {
                 }
                 // 브라우저는 조금 뒤에 (창이 먼저 장치를 잡은 상태에서 두 번째로 열기 — OBS 가 나중에 여는 것과 같은 차례)
                 let burl = page_url(port, &token, "browser", &st.cam, &st.label);
-                std::thread::spawn(move || {
+                wp_core::bg::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(2500));
                     open_in_browser(&burl);
                 });
