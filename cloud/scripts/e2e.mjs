@@ -44,8 +44,8 @@ async function main() {
     }
     console.log(`로컬 클라우드: ${base}`);
   }
-  // 기본: test/e2e/*.test.mjs (1단계) + test/data-e2e/*.test.mjs (2단계 A)
-  const all = ['e2e', 'data-e2e', 'ai-e2e'].flatMap(d => existsSync(join(cloud, 'test', d)) ? readdirSync(join(cloud, 'test', d)).filter(f => f.endsWith('.test.mjs')).sort().map(f => join('test', d, f)) : []);
+  // 기본: test/e2e/*.test.mjs (1단계) + test/data-e2e/*.test.mjs (2단계 A) + test/assets-e2e/*.test.mjs (2단계 C) + test/ai-e2e/*.test.mjs (5단계)
+  const all = ['e2e', 'data-e2e', 'assets-e2e', 'ai-e2e'].flatMap(d => existsSync(join(cloud, 'test', d)) ? readdirSync(join(cloud, 'test', d)).filter(f => f.endsWith('.test.mjs')).sort().map(f => join('test', d, f)) : []);
   const files = process.argv.slice(2).length ? process.argv.slice(2) : all;
   const t = spawn(process.execPath, ['--test', '--test-concurrency=1', '--test-timeout=30000', '--test-force-exit', ...files], { cwd: cloud, stdio: 'inherit', env: { ...process.env, WP_BASE: base } });
   const code = await new Promise(r => t.on('exit', r));

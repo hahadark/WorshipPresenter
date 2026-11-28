@@ -30,5 +30,7 @@
       "migrations_dir": "migrations"
     }
   ],
+  // 2단계 C: 그림 · 영상 · 글꼴 (비공개 저장통 — r2.dev · 사용자 도메인 공개 주소는 켜지 않는다. Worker 가 로그인을 본 뒤 내보낸다)
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "worshippresenter-web-assets" }],
   "observability": { "enabled": false }
 }

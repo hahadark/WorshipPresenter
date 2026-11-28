@@ -13,7 +13,7 @@
 | `client/{login,owner,denied}.*` | 웹판이 새로 만든 화면 |
 | `src/data/` · `src/identity/` | 2단계 A: 문서 · 동기화 · 성경 API · 장절 파서(설치판과 대조) · 사람 계정 ([`docs/web/data-api.md`](../docs/web/data-api.md)) |
 | `src/ai/` | 5단계 AI: 교회 키 봉인 · 동의 · 한도 · 기록 · 대신 부르기 · 클라우드 음성 인식(무료 할당 안에서만) ([`docs/web/ai.md`](../docs/web/ai.md)) |
-| `migrations/` | D1 (`0002_data.sql` = 2단계 A · `0003_ai.sql` = 5단계 AI) |
+| `migrations/` | D1 (`0002_data.sql` = 2단계 A · `0003_ai.sql` = 5단계 AI · `0004_assets.sql` = 2단계 C 파일) |
 | `scripts/` | `assets`(web/ → public/) · `seed`(견본 교회) · `e2e` · `deploy` · `inventory`(대조표 빠짐 검사) · `desktop-e2e`(설치판과 함께) · `bible-import`(bible.db 사본 → D1) |
 
 ```sh
@@ -22,6 +22,7 @@ npm run seed        # 로컬 D1 에 견본 교회 'sample' + 열쇠 (.secrets/sa
 npm run dev         # http://127.0.0.1:8787  → /login 에 sample + .secrets 의 owner 열쇠
 npm test            # 단위
 npm run test:e2e    # 빈 포트에 wrangler dev 를 띄워 끝에서 끝
+node scripts/assets-purge.mjs --usage   # 2C: R2 사용량 · 지운 파일 정리 (docs/web/assets-api.md)
 ```
 
 실제 자료(큐시트 · 성경 · 미디어)를 개발 · 미리보기 클라우드에 올리지 않는다. 비밀값(`.dev.vars` · `.secrets/`)은 커밋하지 않는다.

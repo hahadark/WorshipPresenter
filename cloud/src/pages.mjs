@@ -15,7 +15,9 @@ const OWN = ['login', 'owner', 'denied'];
 /** <head> 바로 뒤에 설정과 어댑터를 넣는다. 설정 값이 글 밖으로 새지 않게 '<' 를 바꾼다 */
 export function inject(html, cfg) {
   const data = JSON.stringify(cfg).replace(/</g, '\\u003c');
-  const tag = `<script>window.WP_CLOUD=${data}</script><script src="/cloud/adapter.js"></script>`;
+  // 2C: 로그인한 페이지는 교회가 올린 글꼴(@font-face)을 받는다 — 글꼴이 없는 PC 의 OBS · 브라우저에서도 템플릿 글꼴로 보이게
+  const fonts = cfg.authed ? '<link rel="stylesheet" href="/api/v1/assets/fonts.css">' : '';
+  const tag = `<script>window.WP_CLOUD=${data}</script><script src="/cloud/adapter.js"></script>${fonts}`;
   return /<head[^>]*>/i.test(html) ? html.replace(/<head([^>]*)>/i, `<head$1>${tag}`) : tag + html;
 }
 
